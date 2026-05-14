@@ -117,17 +117,19 @@ class RealtimeVoiceService {
         throw Exception('Failed to create SDP offer');
       }
 
-      final response = await http.post(
-        Uri.parse(realtimeCallUrl).replace(
-          queryParameters: {
-            ...Uri.parse(realtimeCallUrl).queryParameters,
-            'petName': petName.trim(),
-            'userId': userId.trim(),
-          },
-        ),
-        headers: {'Content-Type': 'application/sdp'},
-        body: offerSdp,
-      );
+      final response = await http
+          .post(
+            Uri.parse(realtimeCallUrl).replace(
+              queryParameters: {
+                ...Uri.parse(realtimeCallUrl).queryParameters,
+                'petName': petName.trim(),
+                'userId': userId.trim(),
+              },
+            ),
+            headers: {'Content-Type': 'application/sdp'},
+            body: offerSdp,
+          )
+          .timeout(const Duration(seconds: 12));
       _log('Realtime call status: ${response.statusCode}');
       if (response.statusCode >= 400) {
         throw Exception(

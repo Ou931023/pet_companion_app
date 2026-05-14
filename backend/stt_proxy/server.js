@@ -149,6 +149,16 @@ async function loadRelevantMemorySummaries(userId, query, topK) {
   }
 }
 
+function withTimeout(promise, timeoutMs, fallbackValue) {
+  let timeoutId;
+  const timeout = new Promise((resolve) => {
+    timeoutId = setTimeout(() => resolve(fallbackValue), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  });
+}
+
 app.get("/health", (_, res) => {
   res.json({ status: "ok" });
 });
@@ -730,17 +740,27 @@ app.post(
     userId = userId.replace(/\r|\n/g, ' ').substring(0, 128) || "local_user";
 
     const memoryTopK = Number(process.env.MEMORY_TOP_K || 5);
-    const contextResult = await buildMemoryContext({
-      userId,
-      userText: "找出最近值得自然關心使用者的長期偏好、生活習慣或近況",
-      limit: memoryTopK,
-    });
-    const memorySummaries = contextResult.memories?.map((item) => item.memorySummary).filter(Boolean) || [];
+    const contextResult = await withTimeout(
+      buildMemoryContext({
+        userId,
+        userText: "找出最近值得自然關心使用者的長期偏好、生活習慣或近況",
+        limit: memoryTopK,
+      }).catch((error) => {
+        logError("Realtime memory context failed", { error: error?.message || error });
+        return null;
+      }),
+      1200,
+      null,
+    );
+    if (!contextResult) {
+      logInfo("Realtime memory context skipped", { reason: "timeout_or_failure" });
+    }
+    const memorySummaries = contextResult?.memories?.map((item) => item.memorySummary).filter(Boolean) || [];
     logInfo("[REALTIME_INSTRUCTIONS]", {
       petName,
       userId,
       memoryCount: memorySummaries.length,
-      memoryProvider: contextResult.provider,
+      memoryProvider: contextResult?.provider || "none",
     });
 
     const sessionConfig = {
@@ -754,7 +774,7 @@ app.post(
       instructions: buildRealtimeInstructions(
         petName,
         memorySummaries,
-        contextResult.memoryContext,
+        contextResult?.memoryContext || "",
       ),
     };
 

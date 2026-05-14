@@ -385,13 +385,18 @@ class VoiceAgentController extends ChangeNotifier {
   void _handleRealtimeFailureSilently(Object error) {
     debugPrint('[VoiceAgentController] realtime unavailable: $error');
     _lastError = '';
-    unawaited(_recoverToIdleAfterError());
+    unawaited(_recoverToIdleAfterError(
+      message: '目前連不到即時語音服務。你還是可以先用文字跟我聊天，或確認手機和電腦在同一個 Wi-Fi。',
+    ));
   }
 
-  Future<void> _recoverToIdleAfterError() async {
+  Future<void> _recoverToIdleAfterError({String? message}) async {
     await realtimeVoiceService.stop();
     if (_state != VoiceAgentState.speaking) {
       _setState(VoiceAgentState.idle);
+    }
+    if (message != null && message.isNotEmpty) {
+      petController.setModeAndMessage(PetMode.listening, message);
     }
   }
 

@@ -101,8 +101,6 @@ class _HomeScreenState extends State<HomeScreen> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxHeight < 690;
-          final avatarSize = (constraints.maxHeight * (compact ? 0.28 : 0.35))
-              .clamp(168.0, 292.0);
           return Stack(
             children: [
               Padding(
@@ -142,6 +140,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       ],
                     ),
                     SizedBox(height: compact ? 8 : 10),
+                    if (conversationController.latestUserText
+                        .trim()
+                        .isNotEmpty) ...[
+                      _UserMessageBubble(
+                        text: conversationController.latestUserText,
+                      ),
+                      SizedBox(height: compact ? 6 : 8),
+                    ],
                     SpeechBubble(text: petController.message),
                     if (conversationController.latestReplyIsSearch) ...[
                       const SizedBox(height: 8),
@@ -159,66 +165,89 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                     SizedBox(height: compact ? 8 : 10),
                     Expanded(
-                      child: Center(
-                        child: DragTarget<InventoryItem>(
-                          onWillAcceptWithDetails: (_) {
-                            setState(() => _isPetDragHovering = true);
-                            return true;
-                          },
-                          onLeave: (_) =>
-                              setState(() => _isPetDragHovering = false),
-                          onAcceptWithDetails: (details) async {
-                            setState(() => _isPetDragHovering = false);
-                            await _applyInventoryItem(
-                              context: context,
-                              item: details.data,
-                              inventoryController: inventoryController,
-                              petStatsController: petStatsController,
-                            );
-                          },
-                          builder: (_, __, ___) => GestureDetector(
-                            onTap: () {
-                              if (isDead) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('寵物需要復活後才能一起玩')),
+                      child: LayoutBuilder(
+                        builder: (context, petConstraints) {
+                          final avatarSize =
+                              (petConstraints.biggest.shortestSide *
+                                      (compact ? 0.96 : 1.0))
+                                  .clamp(188.0, 430.0);
+                          final auraSize =
+                              (avatarSize - 54).clamp(150.0, avatarSize);
+
+                          return Center(
+                            child: DragTarget<InventoryItem>(
+                              onWillAcceptWithDetails: (_) {
+                                setState(() => _isPetDragHovering = true);
+                                return true;
+                              },
+                              onLeave: (_) =>
+                                  setState(() => _isPetDragHovering = false),
+                              onAcceptWithDetails: (details) async {
+                                setState(() => _isPetDragHovering = false);
+                                await _applyInventoryItem(
+                                  context: context,
+                                  item: details.data,
+                                  inventoryController: inventoryController,
+                                  petStatsController: petStatsController,
                                 );
-                                return;
-                              }
-                              Navigator.of(context).pushNamed(AppRoute.puzzle);
-                            },
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 150),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(16),
-                                border: _isPetDragHovering
-                                    ? Border.all(color: Colors.green, width: 3)
-                                    : null,
-                              ),
-                              child: ColorFiltered(
-                                colorFilter: isDead
-                                    ? const ColorFilter.mode(
-                                        Colors.grey,
-                                        BlendMode.saturation,
-                                      )
-                                    : const ColorFilter.mode(
-                                        Colors.transparent,
-                                        BlendMode.srcOver,
+                              },
+                              builder: (_, __, ___) => GestureDetector(
+                                onTap: () {
+                                  if (isDead) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('寵物需要復活後才能一起玩'),
                                       ),
-                                child: Stack(
+                                    );
+                                    return;
+                                  }
+                                  Navigator.of(context)
+                                      .pushNamed(AppRoute.puzzle);
+                                },
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 150),
+                                  width: petConstraints.maxWidth,
+                                  height: petConstraints.maxHeight,
                                   alignment: Alignment.center,
-                                  children: [
-                                    if (showVoiceAura)
-                                      _VoiceListeningBubbles(size: avatarSize),
-                                    PetAvatar(
-                                      mode: petController.mode,
-                                      size: avatarSize,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: _isPetDragHovering
+                                        ? Border.all(
+                                            color: Colors.green,
+                                            width: 3,
+                                          )
+                                        : null,
+                                  ),
+                                  child: ColorFiltered(
+                                    colorFilter: isDead
+                                        ? const ColorFilter.mode(
+                                            Colors.grey,
+                                            BlendMode.saturation,
+                                          )
+                                        : const ColorFilter.mode(
+                                            Colors.transparent,
+                                            BlendMode.srcOver,
+                                          ),
+                                    child: Stack(
+                                      alignment: Alignment.center,
+                                      clipBehavior: Clip.none,
+                                      children: [
+                                        if (showVoiceAura)
+                                          _VoiceListeningBubbles(
+                                            size: auraSize,
+                                          ),
+                                        PetAvatar(
+                                          mode: petController.mode,
+                                          size: avatarSize,
+                                        ),
+                                      ],
                                     ),
-                                  ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        ),
+                          );
+                        },
                       ),
                     ),
                     PetStatusPanel(
@@ -520,6 +549,70 @@ class _SearchMetaLine extends StatelessWidget {
         color: Colors.black.withValues(alpha: 0.48),
         fontSize: 11,
         fontWeight: FontWeight.w700,
+      ),
+    );
+  }
+}
+
+class _UserMessageBubble extends StatelessWidget {
+  const _UserMessageBubble({
+    required this.text,
+  });
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.sizeOf(context).width * 0.78,
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.indigo,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(14),
+              topRight: Radius.circular(14),
+              bottomLeft: Radius.circular(14),
+              bottomRight: Radius.circular(4),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 7,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.person_outline,
+                color: Colors.white,
+                size: 19,
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  text.trim(),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    height: 1.28,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

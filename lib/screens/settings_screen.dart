@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../controllers/conversation_controller.dart';
 import '../controllers/pet_controller.dart';
 import '../controllers/profile_controller.dart';
 import '../routes/app_routes.dart';
@@ -208,6 +209,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         ),
+        const SizedBox(height: 14),
+        const _SettingsSection(
+          title: '寵物代辦',
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _PetCommandChip(
+                label: '幫我簽到',
+                command: '幫我簽到',
+              ),
+              _PetCommandChip(
+                label: '買小餅乾',
+                command: '幫我買小餅乾',
+              ),
+              _PetCommandChip(
+                label: '聲音關掉',
+                command: '把聲音關掉',
+              ),
+              _PetCommandChip(
+                label: '文字調大',
+                command: '把文字調大',
+              ),
+              _PetCommandChip(
+                label: '慢慢說',
+                command: '說話慢一點',
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -264,6 +295,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (value >= 1.1) return '文字：較大';
     if (value < 1.0) return '文字：較小';
     return '文字：標準';
+  }
+}
+
+class _PetCommandChip extends StatelessWidget {
+  const _PetCommandChip({
+    required this.label,
+    required this.command,
+  });
+
+  final String label;
+  final String command;
+
+  @override
+  Widget build(BuildContext context) {
+    return ActionChip(
+      avatar: const Icon(Icons.pets, size: 18),
+      label: Text(label),
+      onPressed: () {
+        context.read<ConversationController>().quickAction(command);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已請寵物處理：$label')),
+        );
+      },
+    );
   }
 }
 

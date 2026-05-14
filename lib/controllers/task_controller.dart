@@ -63,15 +63,22 @@ class TaskController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> completeTaskById(String taskId) async {
+  Future<bool> completeTaskById(
+    String taskId, {
+    bool grantReward = true,
+  }) async {
     final index = _tasks.indexWhere((task) => task.id == taskId);
     if (index == -1) return false;
     if (_tasks[index].completed) return false;
     _tasks = [..._tasks]..[index] = _tasks[index].copyWith(completed: true);
     final taskMap = {for (final task in _tasks) task.id: task.completed};
     await profileController.updateStats(
-      coins: profileController.coins + _tasks[index].rewardCoins,
-      bond: profileController.bond + _tasks[index].rewardBond,
+      coins: grantReward
+          ? profileController.coins + _tasks[index].rewardCoins
+          : profileController.coins,
+      bond: grantReward
+          ? profileController.bond + _tasks[index].rewardBond
+          : profileController.bond,
       taskCompletionState: taskMap,
       checkInDate: taskId == 'dailyCheckIn'
           ? DateTime.now().toIso8601String().split('T').first

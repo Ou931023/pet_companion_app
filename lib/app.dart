@@ -114,16 +114,17 @@ class PetCompanionApp extends StatelessWidget {
         Provider(create: (_) => SearchService()),
         Provider(create: (_) => TextToSpeechService()),
         Provider(create: (_) => RealtimeVoiceService()),
-        ProxyProvider6<ProfileController, TaskController, WalletController,
-            MockShopService, WebSearchService, MockAiService, AiToolRouter>(
-          update: (context, profile, task, wallet, shop, web, ai, __) =>
-              AiToolRouter(
-            profileController: profile,
-            taskController: task,
-            walletController: wallet,
-            shopService: shop,
-            webSearchService: web,
-            mockAiService: ai,
+        Provider<AiToolRouter>(
+          create: (context) => AiToolRouter(
+            profileController: context.read<ProfileController>(),
+            taskController: context.read<TaskController>(),
+            walletController: context.read<WalletController>(),
+            checkInController: context.read<CheckInController>(),
+            petStatsController: context.read<PetStatsController>(),
+            inventoryController: context.read<InventoryController>(),
+            shopService: context.read<ShopService>(),
+            webSearchService: context.read<WebSearchService>(),
+            mockAiService: context.read<MockAiService>(),
             companionContentService: context.read<CompanionContentService>(),
           ),
         ),

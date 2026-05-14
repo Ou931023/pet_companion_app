@@ -30,63 +30,84 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final profileController = context.read<ProfileController>();
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 16),
-              const Text(
-                '歡迎使用愛陪伴，先幫你的陪伴寵物取一個名字吧。',
-                style: TextStyle(
-                    fontSize: 30, fontWeight: FontWeight.w800, height: 1.3),
-              ),
-              const SizedBox(height: 20),
-              Center(
-                child: Image.asset(
-                  'assets/pets/rest/dog_rest_01.png',
-                  width: 240,
-                  height: 240,
-                  errorBuilder: (_, __, ___) => Container(
-                    width: 240,
-                    height: 240,
-                    alignment: Alignment.center,
-                    color: Colors.grey.shade200,
-                    child: const Text('請放置 dog_rest_01.png'),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            const pagePadding = EdgeInsets.all(24);
+            final minContentHeight =
+                (constraints.maxHeight - pagePadding.vertical)
+                    .clamp(0.0, double.infinity);
+
+            return SingleChildScrollView(
+              padding: pagePadding,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: minContentHeight),
+                child: IntrinsicHeight(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 16),
+                      const Text(
+                        '歡迎使用愛陪伴，先幫你的陪伴寵物取一個名字吧。',
+                        style: TextStyle(
+                          fontSize: 30,
+                          fontWeight: FontWeight.w800,
+                          height: 1.3,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Center(
+                        child: Image.asset(
+                          'assets/pets/rest/dog_rest_01.png',
+                          width: 240,
+                          height: 240,
+                          errorBuilder: (_, __, ___) => Container(
+                            width: 240,
+                            height: 240,
+                            alignment: Alignment.center,
+                            color: Colors.grey.shade200,
+                            child: const Text('請放置 dog_rest_01.png'),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      TextField(
+                        controller: _nameController,
+                        textInputAction: TextInputAction.done,
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: '寵物名稱',
+                          border: OutlineInputBorder(),
+                        ),
+                        onSubmitted: (_) =>
+                            _completeOnboarding(context, profileController),
+                      ),
+                      const Spacer(),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () =>
+                              _completeOnboarding(context, profileController),
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            child: Text(
+                              '開始陪伴',
+                              style: TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
-              TextField(
-                controller: _nameController,
-                textInputAction: TextInputAction.done,
-                style:
-                    const TextStyle(fontSize: 24, fontWeight: FontWeight.w600),
-                decoration: const InputDecoration(
-                  labelText: '寵物名稱',
-                  border: OutlineInputBorder(),
-                ),
-                onSubmitted: (_) =>
-                    _completeOnboarding(context, profileController),
-              ),
-              const Spacer(),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () =>
-                      _completeOnboarding(context, profileController),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 16),
-                    child: Text(
-                      '開始陪伴',
-                      style:
-                          TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );

@@ -3,6 +3,16 @@ import '../models/shop_item.dart';
 class ShopService {
   const ShopService();
 
+  static const Map<String, List<String>> _aliases = {
+    'cookie': ['餅乾', '小餅乾', '狗狗餅乾', '點心'],
+    'rice_ball': ['飯糰', '飯團'],
+    'warm_milk': ['牛奶', '溫牛奶', '熱牛奶'],
+    'juice': ['果汁', '飲料'],
+    'yarn_ball': ['毛線球', '玩具球'],
+    'bell': ['鈴鐺', '小鈴鐺'],
+    'revive_potion': ['復活', '復活藥水', '藥水'],
+  };
+
   List<ShopItem> allItems() {
     return const [
       ShopItem(
@@ -73,5 +83,15 @@ class ShopService {
         isRevive: true,
       ),
     ];
+  }
+
+  ShopItem? findByText(String text) {
+    final normalized = text.trim();
+    for (final item in allItems()) {
+      if (normalized.contains(item.name)) return item;
+      final aliases = _aliases[item.id] ?? const [];
+      if (aliases.any(normalized.contains)) return item;
+    }
+    return null;
   }
 }

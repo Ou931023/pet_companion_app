@@ -221,7 +221,7 @@ class ConversationController extends ChangeNotifier {
   bool shouldHandleAsLocalCommand(String text) {
     return reminderController.isCreateReminderCommand(text) ||
         reminderController.isListReminderCommand(text) ||
-        toolRouter.isCompanionContentOrSearch(text);
+        toolRouter.shouldHandleLocally(text);
   }
 
   void appendExternalTurn(ConversationTurn turn) {
