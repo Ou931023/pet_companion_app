@@ -1,0 +1,16 @@
+enum PetMode {
+  talking,
+  listening,
+  thinking,
+  rest,
+  normal,
+  caring,
+  concerned,
+  happy,
+  smile,
+  excited,
+  thirsty,
+  sleepy,
+  hungry,
+  sad,
+}

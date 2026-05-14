@@ -1,0 +1,29 @@
+# Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+
+# IDE
+.idea/
+.vscode/
+
+# Platform
+android/.gradle/
+android/.kotlin/
+ios/Pods/
+ios/.symlinks/
+
+# Env
+.env
+.env.local
+.env.production
+backend/stt_proxy/.env
+
+# Node/backend local files
+backend/stt_proxy/node_modules/
+backend/stt_proxy/uploads/
+backend/stt_proxy/tmp_*.js

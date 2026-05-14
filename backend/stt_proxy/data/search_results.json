@@ -1,0 +1,1482 @@
+[
+  {
+    "id": "b94ea9d6-0c0c-4e47-96d0-32056e46214d",
+    "queryId": "18c9b0cf-4add-431f-a29e-cdbf5b131598",
+    "documentId": "008b5c64-cdd3-4722-a541-dabcae17325b",
+    "title": "長者睡眠保健小提醒",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=health-sleep-demo",
+    "snippet": "長者睡眠可以從固定作息、白天活動與睡前放鬆開始調整。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:00:27.180Z"
+  },
+  {
+    "id": "fd65957e-7875-41b1-a371-79c5d9669449",
+    "queryId": "18c9b0cf-4add-431f-a29e-cdbf5b131598",
+    "documentId": "51230a01-45fd-4d46-acfc-8885977cc628",
+    "title": "高齡者每日飲水與補水觀念",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=hydration-demo",
+    "snippet": "長者補水宜少量多次，特殊疾病者要依醫囑。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:00:27.180Z"
+  },
+  {
+    "id": "834e48cf-e3bc-487f-9f9f-2f622b9df525",
+    "queryId": "18c9b0cf-4add-431f-a29e-cdbf5b131598",
+    "documentId": "8db47bc6-9417-4ba2-a119-84165eda6ffd",
+    "title": "長者安全運動建議",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=elder-exercise-demo",
+    "snippet": "長者運動重點是低強度、規律、安全，身體不適要停止。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:00:27.180Z"
+  },
+  {
+    "id": "d281f336-96e4-45a6-b149-72f7ed565ed9",
+    "queryId": "18c9b0cf-4add-431f-a29e-cdbf5b131598",
+    "documentId": "3db85b14-a20b-4419-8b6e-ea5a8e177ae1",
+    "title": "長者用藥安全三步驟",
+    "url": "https://www.mohw.gov.tw/cp-elder-medication-demo.html",
+    "snippet": "用藥要固定、清楚、不要自行停藥，疑問問醫師或藥師。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:00:27.180Z"
+  },
+  {
+    "id": "f101815b-3ed5-45e7-a920-4428858a449d",
+    "queryId": "903adedf-f2e2-4522-a408-b40ae3b2bbef",
+    "documentId": "008b5c64-cdd3-4722-a541-dabcae17325b",
+    "title": "長者睡眠保健小提醒",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=health-sleep-demo",
+    "snippet": "長者睡眠可以從固定作息、白天活動與睡前放鬆開始調整。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:01:02.380Z"
+  },
+  {
+    "id": "45c01d21-e6e3-44ce-b71c-7ae2c2c26269",
+    "queryId": "903adedf-f2e2-4522-a408-b40ae3b2bbef",
+    "documentId": "51230a01-45fd-4d46-acfc-8885977cc628",
+    "title": "高齡者每日飲水與補水觀念",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=hydration-demo",
+    "snippet": "長者補水宜少量多次，特殊疾病者要依醫囑。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:01:02.380Z"
+  },
+  {
+    "id": "696dfc7e-57f3-4527-9f36-9ee096f55dc1",
+    "queryId": "903adedf-f2e2-4522-a408-b40ae3b2bbef",
+    "documentId": "8db47bc6-9417-4ba2-a119-84165eda6ffd",
+    "title": "長者安全運動建議",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=elder-exercise-demo",
+    "snippet": "長者運動重點是低強度、規律、安全，身體不適要停止。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:01:02.380Z"
+  },
+  {
+    "id": "9b2c7365-c108-494f-ad97-e21d075e1c72",
+    "queryId": "903adedf-f2e2-4522-a408-b40ae3b2bbef",
+    "documentId": "3db85b14-a20b-4419-8b6e-ea5a8e177ae1",
+    "title": "長者用藥安全三步驟",
+    "url": "https://www.mohw.gov.tw/cp-elder-medication-demo.html",
+    "snippet": "用藥要固定、清楚、不要自行停藥，疑問問醫師或藥師。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:01:02.380Z"
+  },
+  {
+    "id": "db3e9a16-d27a-4dac-a0d4-a62c70830bac",
+    "queryId": "4eaade30-460c-4a57-b83b-b165a30c9155",
+    "documentId": "96be32e0-2733-42dc-9f23-107ada4b6939",
+    "title": "活躍老化中的飲水與均衡飲食",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=571&pid=14166",
+    "snippet": "長者可少量多次補水、均衡攝取六大類食物；特殊疾病要依醫囑。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:12:25.150Z"
+  },
+  {
+    "id": "7013a4d3-6b96-4f52-a7d2-5a4e17d746ed",
+    "queryId": "4eaade30-460c-4a57-b83b-b165a30c9155",
+    "documentId": "1607c449-180b-4bbe-a87e-732832924e5e",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:12:25.150Z"
+  },
+  {
+    "id": "415fcd13-aa0e-4a10-9c32-5bded6b0d394",
+    "queryId": "4eaade30-460c-4a57-b83b-b165a30c9155",
+    "documentId": "ff7afcde-2a6d-4c9a-a0b0-f3d3692d84fc",
+    "title": "長者生活節奏與睡眠：活動、飲食、社交一起顧",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=571&pid=14166",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:12:25.150Z"
+  },
+  {
+    "id": "1a472b54-b93c-4d82-a176-b5a071f3b3a0",
+    "queryId": "4eaade30-460c-4a57-b83b-b165a30c9155",
+    "documentId": "1cd7211f-cca5-4fef-989a-0a4cc6823079",
+    "title": "長者飲食料理：牙口不好也要吃得下",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4306&pid=14604",
+    "snippet": "長者餐點可調整軟硬與大小，幫助吃得下；吞嚥困難要找專業協助。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:12:25.150Z"
+  },
+  {
+    "id": "16eafb9d-b2c9-4e66-8e87-333813371004",
+    "queryId": "0d493b79-761c-4430-ac48-fb01b8b0de34",
+    "documentId": "1758a175-22a6-42d8-84e0-3c786afd6cb7",
+    "title": "活躍老化中的飲水與均衡飲食",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=571&pid=14166",
+    "snippet": "長者可少量多次補水、均衡攝取六大類食物；特殊疾病要依醫囑。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:12:55.467Z"
+  },
+  {
+    "id": "74de536e-5725-4bd8-a447-93beea4fd74b",
+    "queryId": "0d493b79-761c-4430-ac48-fb01b8b0de34",
+    "documentId": "29a5f1a4-0a73-4c18-aa03-7abdbaf68238",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:12:55.467Z"
+  },
+  {
+    "id": "67ea9008-451e-4b02-8688-dacecfcbfbf2",
+    "queryId": "0d493b79-761c-4430-ac48-fb01b8b0de34",
+    "documentId": "c52fb021-974a-48b3-b97c-8bb511118b36",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:12:55.467Z"
+  },
+  {
+    "id": "d936bbdc-7554-469d-be4b-867b0dfa086c",
+    "queryId": "0d493b79-761c-4430-ac48-fb01b8b0de34",
+    "documentId": "b873ed8e-5922-4f53-8491-6e4004c17fc1",
+    "title": "長者飲食料理：牙口不好也要吃得下",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4306&pid=14604",
+    "snippet": "長者餐點可調整軟硬與大小，幫助吃得下；吞嚥困難要找專業協助。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:12:55.467Z"
+  },
+  {
+    "id": "6f747a86-2fa2-423b-93c9-39998929dd2b",
+    "queryId": "9e645d35-b2ed-4cb8-8f6b-38314cbb89b4",
+    "documentId": "723e655f-6d51-40da-9537-dc3ef233e682",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:18:25.120Z"
+  },
+  {
+    "id": "e4293db1-efc3-4997-8148-4918ee79d3a2",
+    "queryId": "9e645d35-b2ed-4cb8-8f6b-38314cbb89b4",
+    "documentId": "5dfc23f0-4610-428e-9a33-816a2f7116b2",
+    "title": "認識睡眠醫學：失眠與睡眠檢查",
+    "url": "https://www.wanfang.gov.tw/departments/education/post/e97f58e393ea3e85",
+    "snippet": "長期睡眠困擾或疑似呼吸中止，適合請醫療專業評估。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:18:25.120Z"
+  },
+  {
+    "id": "3aa2edbf-2d29-4cce-9dca-a3535c6e6fbd",
+    "queryId": "9e645d35-b2ed-4cb8-8f6b-38314cbb89b4",
+    "documentId": "0ebdd77b-0864-49cc-87c1-d14460cce2ac",
+    "title": "認識失眠：睡不好時先找原因",
+    "url": "https://ihealth.vghtc.gov.tw/media/500",
+    "snippet": "失眠要先了解可能原因，藥物調整需配合醫師指示。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:18:25.120Z"
+  },
+  {
+    "id": "63fa1a4c-d844-4327-84ce-630ff3c7cd13",
+    "queryId": "9e645d35-b2ed-4cb8-8f6b-38314cbb89b4",
+    "documentId": "9d660307-8a6e-46cd-883d-7572f3ba8e55",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:18:25.120Z"
+  },
+  {
+    "id": "6356ca71-4199-4ca6-8aa0-95c98b53651a",
+    "queryId": "ef0e8c45-57bc-4537-ace9-ebad90950c8d",
+    "documentId": "d3f52409-343f-4554-b608-6f90984b32a3",
+    "title": "強化長者軟食力：友善飲食環境",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4878&pid=19630",
+    "snippet": "質地調整飲食能幫助牙口不佳的長者吃得更安心。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:18:25.122Z"
+  },
+  {
+    "id": "98fb82d2-6e62-4921-aa0b-2d7cedc44f48",
+    "queryId": "ef0e8c45-57bc-4537-ace9-ebad90950c8d",
+    "documentId": "5d5691ef-95b6-4a24-8055-526d37fd6245",
+    "title": "長者日常 6 個動作：把運動放進生活",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4576&pid=15596",
+    "snippet": "長者可把簡單動作融入日常，重點是規律、安全、量力而為。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:18:25.122Z"
+  },
+  {
+    "id": "ea92a197-4075-48d3-9c3d-bea2b8c2e08f",
+    "queryId": "ef0e8c45-57bc-4537-ace9-ebad90950c8d",
+    "documentId": "69122701-f1b0-4a4a-b48f-0b857f5ca617",
+    "title": "高齡長者簡易居家運動",
+    "url": "https://ihealth.vghtc.gov.tw/media/1006",
+    "snippet": "高齡運動可從短時間日常走動開始，重點是安全與持續。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:18:25.122Z"
+  },
+  {
+    "id": "d767b97a-106f-42ef-b58a-5d80b75da19d",
+    "queryId": "ef0e8c45-57bc-4537-ace9-ebad90950c8d",
+    "documentId": "723e655f-6d51-40da-9537-dc3ef233e682",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:18:25.122Z"
+  },
+  {
+    "id": "73074a83-6e17-4707-aebe-bc62ab837822",
+    "queryId": "2a192fb5-b58d-4eee-b647-bdc74f89d183",
+    "documentId": "723e655f-6d51-40da-9537-dc3ef233e682",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:18:25.124Z"
+  },
+  {
+    "id": "7888ca85-75db-4a5e-9379-28be29c088e0",
+    "queryId": "2a192fb5-b58d-4eee-b647-bdc74f89d183",
+    "documentId": "9d660307-8a6e-46cd-883d-7572f3ba8e55",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:18:25.124Z"
+  },
+  {
+    "id": "ab64c50a-cb86-4756-939a-9595b7632c26",
+    "queryId": "2a192fb5-b58d-4eee-b647-bdc74f89d183",
+    "documentId": "e38889fe-cc18-4021-94e9-168fd5db8f16",
+    "title": "長者飲食料理：牙口不好也要吃得下",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4306&pid=14604",
+    "snippet": "長者餐點可調整軟硬與大小，幫助吃得下；吞嚥困難要找專業協助。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:18:25.124Z"
+  },
+  {
+    "id": "5b91eef4-8604-4d12-b011-1cfa7affeb28",
+    "queryId": "2a192fb5-b58d-4eee-b647-bdc74f89d183",
+    "documentId": "d3f52409-343f-4554-b608-6f90984b32a3",
+    "title": "強化長者軟食力：友善飲食環境",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4878&pid=19630",
+    "snippet": "質地調整飲食能幫助牙口不佳的長者吃得更安心。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:18:25.124Z"
+  },
+  {
+    "id": "4bddffbe-59d0-4b1d-b039-b06bebf3571b",
+    "queryId": "0ab645ae-ba73-4ae9-ac28-0d3a17aaf52b",
+    "documentId": "723e655f-6d51-40da-9537-dc3ef233e682",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:18:25.125Z"
+  },
+  {
+    "id": "cea7e86c-480b-49ed-b2ee-76b0e8a46d10",
+    "queryId": "0ab645ae-ba73-4ae9-ac28-0d3a17aaf52b",
+    "documentId": "9d660307-8a6e-46cd-883d-7572f3ba8e55",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:18:25.125Z"
+  },
+  {
+    "id": "189af408-5e4a-458f-8f91-404fa0296d10",
+    "queryId": "0ab645ae-ba73-4ae9-ac28-0d3a17aaf52b",
+    "documentId": "e38889fe-cc18-4021-94e9-168fd5db8f16",
+    "title": "長者飲食料理：牙口不好也要吃得下",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4306&pid=14604",
+    "snippet": "長者餐點可調整軟硬與大小，幫助吃得下；吞嚥困難要找專業協助。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:18:25.125Z"
+  },
+  {
+    "id": "1bdea591-03eb-43b0-85bd-c00f54a720da",
+    "queryId": "0ab645ae-ba73-4ae9-ac28-0d3a17aaf52b",
+    "documentId": "d3f52409-343f-4554-b608-6f90984b32a3",
+    "title": "強化長者軟食力：友善飲食環境",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4878&pid=19630",
+    "snippet": "質地調整飲食能幫助牙口不佳的長者吃得更安心。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:18:25.125Z"
+  },
+  {
+    "id": "56a43bba-d1e7-4b89-a6be-eb44d47b6361",
+    "queryId": "df487246-6bd3-4b08-a0c0-c35018f955b4",
+    "documentId": "723e655f-6d51-40da-9537-dc3ef233e682",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:18:25.126Z"
+  },
+  {
+    "id": "67d0316b-b57a-4760-bc5f-04a416d4aac0",
+    "queryId": "df487246-6bd3-4b08-a0c0-c35018f955b4",
+    "documentId": "9d660307-8a6e-46cd-883d-7572f3ba8e55",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:18:25.126Z"
+  },
+  {
+    "id": "1b069bdc-e225-4aca-9b31-dcf118b5e2f6",
+    "queryId": "df487246-6bd3-4b08-a0c0-c35018f955b4",
+    "documentId": "e38889fe-cc18-4021-94e9-168fd5db8f16",
+    "title": "長者飲食料理：牙口不好也要吃得下",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4306&pid=14604",
+    "snippet": "長者餐點可調整軟硬與大小，幫助吃得下；吞嚥困難要找專業協助。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:18:25.126Z"
+  },
+  {
+    "id": "e963a1e8-5029-4db6-a597-34d8b19fcfda",
+    "queryId": "df487246-6bd3-4b08-a0c0-c35018f955b4",
+    "documentId": "d3f52409-343f-4554-b608-6f90984b32a3",
+    "title": "強化長者軟食力：友善飲食環境",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4878&pid=19630",
+    "snippet": "質地調整飲食能幫助牙口不佳的長者吃得更安心。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:18:25.126Z"
+  },
+  {
+    "id": "6979cd84-5b01-480d-b90a-e7a03b98cdd4",
+    "queryId": "0096445a-8170-4413-b88e-ee7c67c510da",
+    "documentId": "723e655f-6d51-40da-9537-dc3ef233e682",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:18:39.728Z"
+  },
+  {
+    "id": "1b997ef5-b75d-4fd4-8ec3-413ebb46dc1e",
+    "queryId": "0096445a-8170-4413-b88e-ee7c67c510da",
+    "documentId": "5dfc23f0-4610-428e-9a33-816a2f7116b2",
+    "title": "認識睡眠醫學：失眠與睡眠檢查",
+    "url": "https://www.wanfang.gov.tw/departments/education/post/e97f58e393ea3e85",
+    "snippet": "長期睡眠困擾或疑似呼吸中止，適合請醫療專業評估。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:18:39.728Z"
+  },
+  {
+    "id": "68162d43-5d29-48eb-9abd-cd3eeaabfefd",
+    "queryId": "0096445a-8170-4413-b88e-ee7c67c510da",
+    "documentId": "0ebdd77b-0864-49cc-87c1-d14460cce2ac",
+    "title": "認識失眠：睡不好時先找原因",
+    "url": "https://ihealth.vghtc.gov.tw/media/500",
+    "snippet": "失眠要先了解可能原因，藥物調整需配合醫師指示。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:18:39.728Z"
+  },
+  {
+    "id": "4b32566e-e7ab-4902-be70-30797e695cfe",
+    "queryId": "0096445a-8170-4413-b88e-ee7c67c510da",
+    "documentId": "9d660307-8a6e-46cd-883d-7572f3ba8e55",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:18:39.728Z"
+  },
+  {
+    "id": "2244146b-ad25-46b3-88e3-6da1a65ff4dc",
+    "queryId": "7d2e00b5-92dc-43f8-9d45-0e01b4c3bd6c",
+    "documentId": "d3f52409-343f-4554-b608-6f90984b32a3",
+    "title": "強化長者軟食力：友善飲食環境",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4878&pid=19630",
+    "snippet": "質地調整飲食能幫助牙口不佳的長者吃得更安心。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:18:40.978Z"
+  },
+  {
+    "id": "28faff4f-4d3f-4354-a105-2391a5f3c309",
+    "queryId": "7d2e00b5-92dc-43f8-9d45-0e01b4c3bd6c",
+    "documentId": "5d5691ef-95b6-4a24-8055-526d37fd6245",
+    "title": "長者日常 6 個動作：把運動放進生活",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4576&pid=15596",
+    "snippet": "長者可把簡單動作融入日常，重點是規律、安全、量力而為。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:18:40.978Z"
+  },
+  {
+    "id": "7fa79137-ebb2-4e29-a084-89cbf59ff074",
+    "queryId": "7d2e00b5-92dc-43f8-9d45-0e01b4c3bd6c",
+    "documentId": "69122701-f1b0-4a4a-b48f-0b857f5ca617",
+    "title": "高齡長者簡易居家運動",
+    "url": "https://ihealth.vghtc.gov.tw/media/1006",
+    "snippet": "高齡運動可從短時間日常走動開始，重點是安全與持續。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:18:40.978Z"
+  },
+  {
+    "id": "4a39cdc1-0c4d-40fe-a37c-9c1f7ad250d9",
+    "queryId": "7d2e00b5-92dc-43f8-9d45-0e01b4c3bd6c",
+    "documentId": "723e655f-6d51-40da-9537-dc3ef233e682",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:18:40.978Z"
+  },
+  {
+    "id": "6b9f10c2-7a49-433a-81de-1992833d6ae4",
+    "queryId": "ff7b7a5b-1c0e-47ed-ad87-0ba48ad2980e",
+    "documentId": "723e655f-6d51-40da-9537-dc3ef233e682",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:18:42.293Z"
+  },
+  {
+    "id": "09bba610-1750-4d4c-b505-f52d83669e6e",
+    "queryId": "ff7b7a5b-1c0e-47ed-ad87-0ba48ad2980e",
+    "documentId": "9d660307-8a6e-46cd-883d-7572f3ba8e55",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:18:42.293Z"
+  },
+  {
+    "id": "85ffc361-c793-45fe-bad3-08da073211fe",
+    "queryId": "ff7b7a5b-1c0e-47ed-ad87-0ba48ad2980e",
+    "documentId": "e38889fe-cc18-4021-94e9-168fd5db8f16",
+    "title": "長者飲食料理：牙口不好也要吃得下",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4306&pid=14604",
+    "snippet": "長者餐點可調整軟硬與大小，幫助吃得下；吞嚥困難要找專業協助。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:18:42.293Z"
+  },
+  {
+    "id": "6991646d-1758-4a97-b92a-3c0ac903aa30",
+    "queryId": "ff7b7a5b-1c0e-47ed-ad87-0ba48ad2980e",
+    "documentId": "d3f52409-343f-4554-b608-6f90984b32a3",
+    "title": "強化長者軟食力：友善飲食環境",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4878&pid=19630",
+    "snippet": "質地調整飲食能幫助牙口不佳的長者吃得更安心。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:18:42.293Z"
+  },
+  {
+    "id": "cd8f20bf-52b3-41a9-906b-ed3163b47033",
+    "queryId": "9eb46ae5-3f93-4e3c-bc8f-49ec30d89e25",
+    "documentId": "723e655f-6d51-40da-9537-dc3ef233e682",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:18:43.620Z"
+  },
+  {
+    "id": "f1380f50-952b-4c2c-9c53-1ccc06dac0b7",
+    "queryId": "9eb46ae5-3f93-4e3c-bc8f-49ec30d89e25",
+    "documentId": "9d660307-8a6e-46cd-883d-7572f3ba8e55",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:18:43.620Z"
+  },
+  {
+    "id": "48151829-2ce4-4407-a281-981503bc6b5c",
+    "queryId": "9eb46ae5-3f93-4e3c-bc8f-49ec30d89e25",
+    "documentId": "e38889fe-cc18-4021-94e9-168fd5db8f16",
+    "title": "長者飲食料理：牙口不好也要吃得下",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4306&pid=14604",
+    "snippet": "長者餐點可調整軟硬與大小，幫助吃得下；吞嚥困難要找專業協助。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:18:43.620Z"
+  },
+  {
+    "id": "c777b662-d2bc-4390-9ec9-7616a5d86b88",
+    "queryId": "9eb46ae5-3f93-4e3c-bc8f-49ec30d89e25",
+    "documentId": "d3f52409-343f-4554-b608-6f90984b32a3",
+    "title": "強化長者軟食力：友善飲食環境",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4878&pid=19630",
+    "snippet": "質地調整飲食能幫助牙口不佳的長者吃得更安心。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:18:43.620Z"
+  },
+  {
+    "id": "f5fb1ced-7d84-479b-9f87-6235349b46fd",
+    "queryId": "00e458ff-1cc6-4819-bf3e-c6fc7563b5f1",
+    "documentId": "723e655f-6d51-40da-9537-dc3ef233e682",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:18:45.002Z"
+  },
+  {
+    "id": "9a25059e-f492-4c06-9106-ee97fca73b21",
+    "queryId": "00e458ff-1cc6-4819-bf3e-c6fc7563b5f1",
+    "documentId": "9d660307-8a6e-46cd-883d-7572f3ba8e55",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:18:45.002Z"
+  },
+  {
+    "id": "8e7be200-00ee-4ccc-8ec2-8d5240e33873",
+    "queryId": "00e458ff-1cc6-4819-bf3e-c6fc7563b5f1",
+    "documentId": "e38889fe-cc18-4021-94e9-168fd5db8f16",
+    "title": "長者飲食料理：牙口不好也要吃得下",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4306&pid=14604",
+    "snippet": "長者餐點可調整軟硬與大小，幫助吃得下；吞嚥困難要找專業協助。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:18:45.002Z"
+  },
+  {
+    "id": "a0b46447-43db-4442-96ee-817b30e6e829",
+    "queryId": "00e458ff-1cc6-4819-bf3e-c6fc7563b5f1",
+    "documentId": "d3f52409-343f-4554-b608-6f90984b32a3",
+    "title": "強化長者軟食力：友善飲食環境",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4878&pid=19630",
+    "snippet": "質地調整飲食能幫助牙口不佳的長者吃得更安心。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:18:45.002Z"
+  },
+  {
+    "id": "abd4d5c5-15ff-45b2-a7b0-09a74d3c67c1",
+    "queryId": "378d6eff-fc63-415b-bbc9-c3f2c1cfa113",
+    "documentId": "723e655f-6d51-40da-9537-dc3ef233e682",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:19:16.241Z"
+  },
+  {
+    "id": "762f16b1-597b-41ff-86e4-22d141c88012",
+    "queryId": "378d6eff-fc63-415b-bbc9-c3f2c1cfa113",
+    "documentId": "5dfc23f0-4610-428e-9a33-816a2f7116b2",
+    "title": "認識睡眠醫學：失眠與睡眠檢查",
+    "url": "https://www.wanfang.gov.tw/departments/education/post/e97f58e393ea3e85",
+    "snippet": "長期睡眠困擾或疑似呼吸中止，適合請醫療專業評估。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:19:16.241Z"
+  },
+  {
+    "id": "4393e4f8-c20e-4f6b-b4f6-7deb59f0f446",
+    "queryId": "378d6eff-fc63-415b-bbc9-c3f2c1cfa113",
+    "documentId": "0ebdd77b-0864-49cc-87c1-d14460cce2ac",
+    "title": "認識失眠：睡不好時先找原因",
+    "url": "https://ihealth.vghtc.gov.tw/media/500",
+    "snippet": "失眠要先了解可能原因，藥物調整需配合醫師指示。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:19:16.241Z"
+  },
+  {
+    "id": "4d93dc6a-e433-42fd-a80c-aeeb87aa3436",
+    "queryId": "378d6eff-fc63-415b-bbc9-c3f2c1cfa113",
+    "documentId": "9d660307-8a6e-46cd-883d-7572f3ba8e55",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:19:16.241Z"
+  },
+  {
+    "id": "5473fdb2-c2e0-40f0-a05d-333298285296",
+    "queryId": "f5ff36e5-d57d-4118-8aa2-52014c0c973e",
+    "documentId": "d3f52409-343f-4554-b608-6f90984b32a3",
+    "title": "強化長者軟食力：友善飲食環境",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4878&pid=19630",
+    "snippet": "質地調整飲食能幫助牙口不佳的長者吃得更安心。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:19:17.697Z"
+  },
+  {
+    "id": "44d6301b-4f90-476f-87de-9243b8870dee",
+    "queryId": "f5ff36e5-d57d-4118-8aa2-52014c0c973e",
+    "documentId": "5d5691ef-95b6-4a24-8055-526d37fd6245",
+    "title": "長者日常 6 個動作：把運動放進生活",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4576&pid=15596",
+    "snippet": "長者可把簡單動作融入日常，重點是規律、安全、量力而為。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:19:17.697Z"
+  },
+  {
+    "id": "810e62b0-d4f8-4536-9263-efc1fd6c8025",
+    "queryId": "f5ff36e5-d57d-4118-8aa2-52014c0c973e",
+    "documentId": "69122701-f1b0-4a4a-b48f-0b857f5ca617",
+    "title": "高齡長者簡易居家運動",
+    "url": "https://ihealth.vghtc.gov.tw/media/1006",
+    "snippet": "高齡運動可從短時間日常走動開始，重點是安全與持續。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:19:17.697Z"
+  },
+  {
+    "id": "a95d2d00-a171-447d-a195-6dc8dfd06858",
+    "queryId": "f5ff36e5-d57d-4118-8aa2-52014c0c973e",
+    "documentId": "723e655f-6d51-40da-9537-dc3ef233e682",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:19:17.697Z"
+  },
+  {
+    "id": "d4008d12-e41d-410c-ad55-810a08c5e449",
+    "queryId": "78ee580e-d5e2-47f7-ba82-e1ee9ba9558d",
+    "documentId": "723e655f-6d51-40da-9537-dc3ef233e682",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:19:19.076Z"
+  },
+  {
+    "id": "f1dc52e4-e877-4978-b6dd-6f28ea7bca07",
+    "queryId": "78ee580e-d5e2-47f7-ba82-e1ee9ba9558d",
+    "documentId": "9d660307-8a6e-46cd-883d-7572f3ba8e55",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:19:19.076Z"
+  },
+  {
+    "id": "1d462c25-5c93-45c4-806b-d64507ec63d3",
+    "queryId": "78ee580e-d5e2-47f7-ba82-e1ee9ba9558d",
+    "documentId": "e38889fe-cc18-4021-94e9-168fd5db8f16",
+    "title": "長者飲食料理：牙口不好也要吃得下",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4306&pid=14604",
+    "snippet": "長者餐點可調整軟硬與大小，幫助吃得下；吞嚥困難要找專業協助。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:19:19.076Z"
+  },
+  {
+    "id": "49d0476b-3aae-4e3e-b312-f09f72fb531b",
+    "queryId": "78ee580e-d5e2-47f7-ba82-e1ee9ba9558d",
+    "documentId": "d3f52409-343f-4554-b608-6f90984b32a3",
+    "title": "強化長者軟食力：友善飲食環境",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4878&pid=19630",
+    "snippet": "質地調整飲食能幫助牙口不佳的長者吃得更安心。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:19:19.076Z"
+  },
+  {
+    "id": "493e1251-b49b-49fd-ad63-381f0f98b731",
+    "queryId": "3026c554-ffcf-4a4d-a4aa-286372d33ffe",
+    "documentId": "723e655f-6d51-40da-9537-dc3ef233e682",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:19:20.382Z"
+  },
+  {
+    "id": "33875160-274b-4252-bcaf-d9fd0f4f92f1",
+    "queryId": "3026c554-ffcf-4a4d-a4aa-286372d33ffe",
+    "documentId": "9d660307-8a6e-46cd-883d-7572f3ba8e55",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:19:20.382Z"
+  },
+  {
+    "id": "eee84c6f-233d-4728-86c0-8c4a93b9c86d",
+    "queryId": "3026c554-ffcf-4a4d-a4aa-286372d33ffe",
+    "documentId": "e38889fe-cc18-4021-94e9-168fd5db8f16",
+    "title": "長者飲食料理：牙口不好也要吃得下",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4306&pid=14604",
+    "snippet": "長者餐點可調整軟硬與大小，幫助吃得下；吞嚥困難要找專業協助。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:19:20.382Z"
+  },
+  {
+    "id": "d1d8ffc5-3d05-4b0b-846f-00e4a9971619",
+    "queryId": "3026c554-ffcf-4a4d-a4aa-286372d33ffe",
+    "documentId": "d3f52409-343f-4554-b608-6f90984b32a3",
+    "title": "強化長者軟食力：友善飲食環境",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4878&pid=19630",
+    "snippet": "質地調整飲食能幫助牙口不佳的長者吃得更安心。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:19:20.382Z"
+  },
+  {
+    "id": "19e6612f-e2c0-4796-afec-8452b24671f5",
+    "queryId": "fbe54aeb-83e8-4368-9675-8bfe045cb874",
+    "documentId": "723e655f-6d51-40da-9537-dc3ef233e682",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:19:21.872Z"
+  },
+  {
+    "id": "9a4b9dbb-8156-44ce-9137-7b631348b02e",
+    "queryId": "fbe54aeb-83e8-4368-9675-8bfe045cb874",
+    "documentId": "9d660307-8a6e-46cd-883d-7572f3ba8e55",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:19:21.872Z"
+  },
+  {
+    "id": "e877696e-0af0-4146-b716-f87f3fbfac07",
+    "queryId": "fbe54aeb-83e8-4368-9675-8bfe045cb874",
+    "documentId": "e38889fe-cc18-4021-94e9-168fd5db8f16",
+    "title": "長者飲食料理：牙口不好也要吃得下",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4306&pid=14604",
+    "snippet": "長者餐點可調整軟硬與大小，幫助吃得下；吞嚥困難要找專業協助。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:19:21.872Z"
+  },
+  {
+    "id": "726f7c4f-9c16-4406-ba13-3c6a14ee9eb3",
+    "queryId": "fbe54aeb-83e8-4368-9675-8bfe045cb874",
+    "documentId": "d3f52409-343f-4554-b608-6f90984b32a3",
+    "title": "強化長者軟食力：友善飲食環境",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4878&pid=19630",
+    "snippet": "質地調整飲食能幫助牙口不佳的長者吃得更安心。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:19:21.872Z"
+  },
+  {
+    "id": "55686d1e-47df-474d-ba68-2651e60ac7e2",
+    "queryId": "f54c4e13-80d8-4a73-810e-aa06cb8ffaeb",
+    "documentId": "723e655f-6d51-40da-9537-dc3ef233e682",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:19:46.194Z"
+  },
+  {
+    "id": "a41860ae-b45c-4836-9231-17ab965000ab",
+    "queryId": "f54c4e13-80d8-4a73-810e-aa06cb8ffaeb",
+    "documentId": "5dfc23f0-4610-428e-9a33-816a2f7116b2",
+    "title": "認識睡眠醫學：失眠與睡眠檢查",
+    "url": "https://www.wanfang.gov.tw/departments/education/post/e97f58e393ea3e85",
+    "snippet": "長期睡眠困擾或疑似呼吸中止，適合請醫療專業評估。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:19:46.194Z"
+  },
+  {
+    "id": "9b738138-b23d-4f48-a94c-23fcdc5ec5b3",
+    "queryId": "f54c4e13-80d8-4a73-810e-aa06cb8ffaeb",
+    "documentId": "0ebdd77b-0864-49cc-87c1-d14460cce2ac",
+    "title": "認識失眠：睡不好時先找原因",
+    "url": "https://ihealth.vghtc.gov.tw/media/500",
+    "snippet": "失眠要先了解可能原因，藥物調整需配合醫師指示。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:19:46.194Z"
+  },
+  {
+    "id": "522652b8-3689-4e9f-8daa-47b57a43d680",
+    "queryId": "f54c4e13-80d8-4a73-810e-aa06cb8ffaeb",
+    "documentId": "9d660307-8a6e-46cd-883d-7572f3ba8e55",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:19:46.194Z"
+  },
+  {
+    "id": "9d92a909-627e-4720-950b-38e5c8aa3b16",
+    "queryId": "4606fcfe-32fc-48a3-a877-f146afcdb2c3",
+    "documentId": "d3f52409-343f-4554-b608-6f90984b32a3",
+    "title": "強化長者軟食力：友善飲食環境",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4878&pid=19630",
+    "snippet": "質地調整飲食能幫助牙口不佳的長者吃得更安心。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:19:47.595Z"
+  },
+  {
+    "id": "45f5e735-08f6-484e-873b-ed86b932fda7",
+    "queryId": "4606fcfe-32fc-48a3-a877-f146afcdb2c3",
+    "documentId": "5d5691ef-95b6-4a24-8055-526d37fd6245",
+    "title": "長者日常 6 個動作：把運動放進生活",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4576&pid=15596",
+    "snippet": "長者可把簡單動作融入日常，重點是規律、安全、量力而為。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:19:47.595Z"
+  },
+  {
+    "id": "fd40262a-e79a-4ca8-bab8-cddca8517fa8",
+    "queryId": "4606fcfe-32fc-48a3-a877-f146afcdb2c3",
+    "documentId": "69122701-f1b0-4a4a-b48f-0b857f5ca617",
+    "title": "高齡長者簡易居家運動",
+    "url": "https://ihealth.vghtc.gov.tw/media/1006",
+    "snippet": "高齡運動可從短時間日常走動開始，重點是安全與持續。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:19:47.595Z"
+  },
+  {
+    "id": "4809164e-7d67-46e3-a24e-fc68dcae2aa8",
+    "queryId": "4606fcfe-32fc-48a3-a877-f146afcdb2c3",
+    "documentId": "723e655f-6d51-40da-9537-dc3ef233e682",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:19:47.595Z"
+  },
+  {
+    "id": "85ef45d7-2208-4447-8d76-83a27b55791c",
+    "queryId": "e46c4040-003b-4e74-9a45-2a8c1ba1ea1d",
+    "documentId": "723e655f-6d51-40da-9537-dc3ef233e682",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:19:48.934Z"
+  },
+  {
+    "id": "28f8cf59-4571-4903-afa9-6d9a9a9f8148",
+    "queryId": "e46c4040-003b-4e74-9a45-2a8c1ba1ea1d",
+    "documentId": "9d660307-8a6e-46cd-883d-7572f3ba8e55",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:19:48.934Z"
+  },
+  {
+    "id": "a283efd3-2581-492e-a34d-a84c42e19cf3",
+    "queryId": "e46c4040-003b-4e74-9a45-2a8c1ba1ea1d",
+    "documentId": "e38889fe-cc18-4021-94e9-168fd5db8f16",
+    "title": "長者飲食料理：牙口不好也要吃得下",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4306&pid=14604",
+    "snippet": "長者餐點可調整軟硬與大小，幫助吃得下；吞嚥困難要找專業協助。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:19:48.934Z"
+  },
+  {
+    "id": "141d5d93-39da-4fea-838b-028ca614f7ab",
+    "queryId": "e46c4040-003b-4e74-9a45-2a8c1ba1ea1d",
+    "documentId": "d3f52409-343f-4554-b608-6f90984b32a3",
+    "title": "強化長者軟食力：友善飲食環境",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4878&pid=19630",
+    "snippet": "質地調整飲食能幫助牙口不佳的長者吃得更安心。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:19:48.934Z"
+  },
+  {
+    "id": "20f9fa4d-adad-4553-83b5-442963ab7484",
+    "queryId": "ebd022d4-ea37-46f3-ad33-c705ffa218b5",
+    "documentId": "723e655f-6d51-40da-9537-dc3ef233e682",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:19:50.236Z"
+  },
+  {
+    "id": "f2fe0a42-523b-4bd2-bc90-288e53e0a981",
+    "queryId": "ebd022d4-ea37-46f3-ad33-c705ffa218b5",
+    "documentId": "9d660307-8a6e-46cd-883d-7572f3ba8e55",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:19:50.236Z"
+  },
+  {
+    "id": "cc473c69-7915-4b92-a889-42347e901873",
+    "queryId": "ebd022d4-ea37-46f3-ad33-c705ffa218b5",
+    "documentId": "e38889fe-cc18-4021-94e9-168fd5db8f16",
+    "title": "長者飲食料理：牙口不好也要吃得下",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4306&pid=14604",
+    "snippet": "長者餐點可調整軟硬與大小，幫助吃得下；吞嚥困難要找專業協助。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:19:50.236Z"
+  },
+  {
+    "id": "7d954a92-8e06-481c-802d-ea54ac4e0d7a",
+    "queryId": "ebd022d4-ea37-46f3-ad33-c705ffa218b5",
+    "documentId": "d3f52409-343f-4554-b608-6f90984b32a3",
+    "title": "強化長者軟食力：友善飲食環境",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4878&pid=19630",
+    "snippet": "質地調整飲食能幫助牙口不佳的長者吃得更安心。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:19:50.236Z"
+  },
+  {
+    "id": "6ef9d2b4-a5d7-4afc-93a9-1b406614bb1f",
+    "queryId": "9b473fe7-c231-44e4-b3c7-b11ec8022155",
+    "documentId": "723e655f-6d51-40da-9537-dc3ef233e682",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:19:51.665Z"
+  },
+  {
+    "id": "ff7f230a-4ba6-4d97-b296-6a41606dd1eb",
+    "queryId": "9b473fe7-c231-44e4-b3c7-b11ec8022155",
+    "documentId": "9d660307-8a6e-46cd-883d-7572f3ba8e55",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:19:51.665Z"
+  },
+  {
+    "id": "f62e0475-6d30-4d61-be6a-b66da82ecd2c",
+    "queryId": "9b473fe7-c231-44e4-b3c7-b11ec8022155",
+    "documentId": "e38889fe-cc18-4021-94e9-168fd5db8f16",
+    "title": "長者飲食料理：牙口不好也要吃得下",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4306&pid=14604",
+    "snippet": "長者餐點可調整軟硬與大小，幫助吃得下；吞嚥困難要找專業協助。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:19:51.665Z"
+  },
+  {
+    "id": "ba996918-62d8-4edc-aa89-9979de309693",
+    "queryId": "9b473fe7-c231-44e4-b3c7-b11ec8022155",
+    "documentId": "d3f52409-343f-4554-b608-6f90984b32a3",
+    "title": "強化長者軟食力：友善飲食環境",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4878&pid=19630",
+    "snippet": "質地調整飲食能幫助牙口不佳的長者吃得更安心。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:19:51.665Z"
+  },
+  {
+    "id": "3bcb65e1-d6c0-44fb-8f03-33f35eab46bf",
+    "queryId": "acc340e7-1e18-47e0-9774-63ec907064b3",
+    "documentId": "98ed6e90-a467-47c7-b50d-301b52913d1d",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:20:18.149Z"
+  },
+  {
+    "id": "538462f4-5f7d-4ed9-8637-b330b2e835fd",
+    "queryId": "acc340e7-1e18-47e0-9774-63ec907064b3",
+    "documentId": "39b5a287-ed28-4346-880f-54196f23c784",
+    "title": "認識睡眠醫學：失眠與睡眠檢查",
+    "url": "https://www.wanfang.gov.tw/departments/education/post/e97f58e393ea3e85",
+    "snippet": "長期睡眠困擾或疑似呼吸中止，適合請醫療專業評估。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:20:18.149Z"
+  },
+  {
+    "id": "8d4051ff-3b55-43a7-a349-995325b2e038",
+    "queryId": "acc340e7-1e18-47e0-9774-63ec907064b3",
+    "documentId": "272c55ad-bcab-47d4-9fe8-f5823eb0e2e4",
+    "title": "認識失眠：睡不好時先找原因",
+    "url": "https://ihealth.vghtc.gov.tw/media/500",
+    "snippet": "失眠要先了解可能原因，藥物調整需配合醫師指示。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:20:18.149Z"
+  },
+  {
+    "id": "76cc4941-3bcc-4d6f-8717-c33adc1a8d2e",
+    "queryId": "acc340e7-1e18-47e0-9774-63ec907064b3",
+    "documentId": "a3447612-0f84-4f9f-ab3b-5eb0123de616",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:20:18.149Z"
+  },
+  {
+    "id": "4dca7c09-4f1b-4222-837f-b584f448b596",
+    "queryId": "58408094-105a-4b02-be1f-5fe9349def8e",
+    "documentId": "98ed6e90-a467-47c7-b50d-301b52913d1d",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:23:06.195Z"
+  },
+  {
+    "id": "da8aee9c-c928-4a0a-be30-b6c09d59ab04",
+    "queryId": "58408094-105a-4b02-be1f-5fe9349def8e",
+    "documentId": "39b5a287-ed28-4346-880f-54196f23c784",
+    "title": "認識睡眠醫學：失眠與睡眠檢查",
+    "url": "https://www.wanfang.gov.tw/departments/education/post/e97f58e393ea3e85",
+    "snippet": "長期睡眠困擾或疑似呼吸中止，適合請醫療專業評估。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:23:06.195Z"
+  },
+  {
+    "id": "07e5b46e-6e0e-43ce-baa8-18586e34b520",
+    "queryId": "58408094-105a-4b02-be1f-5fe9349def8e",
+    "documentId": "272c55ad-bcab-47d4-9fe8-f5823eb0e2e4",
+    "title": "認識失眠：睡不好時先找原因",
+    "url": "https://ihealth.vghtc.gov.tw/media/500",
+    "snippet": "失眠要先了解可能原因，藥物調整需配合醫師指示。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:23:06.195Z"
+  },
+  {
+    "id": "bca4eca5-adc2-4162-b32d-fab76527abb7",
+    "queryId": "58408094-105a-4b02-be1f-5fe9349def8e",
+    "documentId": "a3447612-0f84-4f9f-ab3b-5eb0123de616",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:23:06.195Z"
+  },
+  {
+    "id": "ed01cbe0-9f16-46ae-a850-1a9ecb1fa11a",
+    "queryId": "be08ee5f-6931-4f85-a881-53d6d3cc426d",
+    "documentId": "f9a74811-999a-435c-be4f-43a531acdd32",
+    "title": "強化長者軟食力：友善飲食環境",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4878&pid=19630",
+    "snippet": "質地調整飲食能幫助牙口不佳的長者吃得更安心。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:23:07.497Z"
+  },
+  {
+    "id": "123d327d-3713-4330-bfcc-c25f0cd490c9",
+    "queryId": "be08ee5f-6931-4f85-a881-53d6d3cc426d",
+    "documentId": "ccffad7d-e159-43f1-b7d8-44d329945830",
+    "title": "長者日常 6 個動作：把運動放進生活",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4576&pid=15596",
+    "snippet": "長者可把簡單動作融入日常，重點是規律、安全、量力而為。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:23:07.497Z"
+  },
+  {
+    "id": "c62db732-46db-45f6-a9f0-9c678995f1d5",
+    "queryId": "be08ee5f-6931-4f85-a881-53d6d3cc426d",
+    "documentId": "579bf79b-4e81-47e0-85bf-b75c1cabf733",
+    "title": "高齡長者簡易居家運動",
+    "url": "https://ihealth.vghtc.gov.tw/media/1006",
+    "snippet": "高齡運動可從短時間日常走動開始，重點是安全與持續。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:23:07.497Z"
+  },
+  {
+    "id": "bec9e577-57e5-4f71-a6c3-65b03f87bd2d",
+    "queryId": "be08ee5f-6931-4f85-a881-53d6d3cc426d",
+    "documentId": "98ed6e90-a467-47c7-b50d-301b52913d1d",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:23:07.497Z"
+  },
+  {
+    "id": "417d84cf-0ef5-4f62-8c6c-1f9ec1313260",
+    "queryId": "46a6fe5b-c4a6-414f-9435-65692af63062",
+    "documentId": "98ed6e90-a467-47c7-b50d-301b52913d1d",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:23:08.786Z"
+  },
+  {
+    "id": "957d15e2-e997-4096-8d22-ac7e449afd85",
+    "queryId": "46a6fe5b-c4a6-414f-9435-65692af63062",
+    "documentId": "a3447612-0f84-4f9f-ab3b-5eb0123de616",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:23:08.786Z"
+  },
+  {
+    "id": "5e343906-56c7-4d08-bf6c-819c201f7cef",
+    "queryId": "46a6fe5b-c4a6-414f-9435-65692af63062",
+    "documentId": "5021d6d1-c765-4b03-9b84-e8e74b5c35ee",
+    "title": "長者飲食料理：牙口不好也要吃得下",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4306&pid=14604",
+    "snippet": "長者餐點可調整軟硬與大小，幫助吃得下；吞嚥困難要找專業協助。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:23:08.786Z"
+  },
+  {
+    "id": "352ea31c-7c0e-4728-a0ac-4fefc87495f0",
+    "queryId": "46a6fe5b-c4a6-414f-9435-65692af63062",
+    "documentId": "f9a74811-999a-435c-be4f-43a531acdd32",
+    "title": "強化長者軟食力：友善飲食環境",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4878&pid=19630",
+    "snippet": "質地調整飲食能幫助牙口不佳的長者吃得更安心。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:23:08.786Z"
+  },
+  {
+    "id": "77c210e1-ebe1-4aad-92e5-d984f46f0098",
+    "queryId": "d1e4fba1-0bb0-42ef-aa3a-0c01c1d5dcb5",
+    "documentId": "98ed6e90-a467-47c7-b50d-301b52913d1d",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:23:09.940Z"
+  },
+  {
+    "id": "3ccf9f37-a95e-4678-80cf-c4a4b05f84d9",
+    "queryId": "d1e4fba1-0bb0-42ef-aa3a-0c01c1d5dcb5",
+    "documentId": "a3447612-0f84-4f9f-ab3b-5eb0123de616",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:23:09.940Z"
+  },
+  {
+    "id": "5ef595c9-146e-4af6-b71a-b16d82e5542e",
+    "queryId": "d1e4fba1-0bb0-42ef-aa3a-0c01c1d5dcb5",
+    "documentId": "5021d6d1-c765-4b03-9b84-e8e74b5c35ee",
+    "title": "長者飲食料理：牙口不好也要吃得下",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4306&pid=14604",
+    "snippet": "長者餐點可調整軟硬與大小，幫助吃得下；吞嚥困難要找專業協助。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:23:09.940Z"
+  },
+  {
+    "id": "5f8eb49c-3926-4a90-aad3-352aa90d9799",
+    "queryId": "d1e4fba1-0bb0-42ef-aa3a-0c01c1d5dcb5",
+    "documentId": "f9a74811-999a-435c-be4f-43a531acdd32",
+    "title": "強化長者軟食力：友善飲食環境",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4878&pid=19630",
+    "snippet": "質地調整飲食能幫助牙口不佳的長者吃得更安心。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:23:09.940Z"
+  },
+  {
+    "id": "9030940a-0b19-4dd6-9ce8-8ba71e80cd64",
+    "queryId": "3bebea10-8f65-4d52-85de-c96b8d9beebf",
+    "documentId": "98ed6e90-a467-47c7-b50d-301b52913d1d",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:23:11.214Z"
+  },
+  {
+    "id": "7da97113-37a7-4300-af15-bc173dea7e96",
+    "queryId": "3bebea10-8f65-4d52-85de-c96b8d9beebf",
+    "documentId": "a3447612-0f84-4f9f-ab3b-5eb0123de616",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:23:11.214Z"
+  },
+  {
+    "id": "9dba00c3-38c3-4c1f-83b7-711499494f3a",
+    "queryId": "3bebea10-8f65-4d52-85de-c96b8d9beebf",
+    "documentId": "5021d6d1-c765-4b03-9b84-e8e74b5c35ee",
+    "title": "長者飲食料理：牙口不好也要吃得下",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4306&pid=14604",
+    "snippet": "長者餐點可調整軟硬與大小，幫助吃得下；吞嚥困難要找專業協助。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:23:11.214Z"
+  },
+  {
+    "id": "b09a8366-422e-4c41-9f11-5254199de74e",
+    "queryId": "3bebea10-8f65-4d52-85de-c96b8d9beebf",
+    "documentId": "f9a74811-999a-435c-be4f-43a531acdd32",
+    "title": "強化長者軟食力：友善飲食環境",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4878&pid=19630",
+    "snippet": "質地調整飲食能幫助牙口不佳的長者吃得更安心。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:23:11.214Z"
+  },
+  {
+    "id": "099678f1-6707-4a51-8471-5abcb777516e",
+    "queryId": "0586f14c-f5b5-423e-b72f-dd38d229a993",
+    "documentId": "98ed6e90-a467-47c7-b50d-301b52913d1d",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:23:24.922Z"
+  },
+  {
+    "id": "84bf11e3-fe4f-4b8e-b182-6696bc68d3bc",
+    "queryId": "0586f14c-f5b5-423e-b72f-dd38d229a993",
+    "documentId": "39b5a287-ed28-4346-880f-54196f23c784",
+    "title": "認識睡眠醫學：失眠與睡眠檢查",
+    "url": "https://www.wanfang.gov.tw/departments/education/post/e97f58e393ea3e85",
+    "snippet": "長期睡眠困擾或疑似呼吸中止，適合請醫療專業評估。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:23:24.922Z"
+  },
+  {
+    "id": "284ec8a3-32d9-4e81-8618-2f53a8211dd8",
+    "queryId": "0586f14c-f5b5-423e-b72f-dd38d229a993",
+    "documentId": "272c55ad-bcab-47d4-9fe8-f5823eb0e2e4",
+    "title": "認識失眠：睡不好時先找原因",
+    "url": "https://ihealth.vghtc.gov.tw/media/500",
+    "snippet": "失眠要先了解可能原因，藥物調整需配合醫師指示。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:23:24.922Z"
+  },
+  {
+    "id": "9b277760-5c18-498d-9ff7-2066d4b9a07e",
+    "queryId": "0586f14c-f5b5-423e-b72f-dd38d229a993",
+    "documentId": "a3447612-0f84-4f9f-ab3b-5eb0123de616",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:23:24.922Z"
+  },
+  {
+    "id": "3c1170e6-79aa-4d88-8693-a203782d5cf1",
+    "queryId": "68454a08-90fa-44eb-afd2-43e8dd4c5b52",
+    "documentId": "f9a74811-999a-435c-be4f-43a531acdd32",
+    "title": "強化長者軟食力：友善飲食環境",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4878&pid=19630",
+    "snippet": "質地調整飲食能幫助牙口不佳的長者吃得更安心。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:23:29.554Z"
+  },
+  {
+    "id": "adfa79bb-18d8-48f6-83a9-6dbf20fc3e26",
+    "queryId": "68454a08-90fa-44eb-afd2-43e8dd4c5b52",
+    "documentId": "ccffad7d-e159-43f1-b7d8-44d329945830",
+    "title": "長者日常 6 個動作：把運動放進生活",
+    "url": "https://www.hpa.gov.tw/Pages/Detail.aspx?nodeid=4576&pid=15596",
+    "snippet": "長者可把簡單動作融入日常，重點是規律、安全、量力而為。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:23:29.554Z"
+  },
+  {
+    "id": "7c821022-ae8e-4eff-a4fd-4908a3e3b5cb",
+    "queryId": "68454a08-90fa-44eb-afd2-43e8dd4c5b52",
+    "documentId": "579bf79b-4e81-47e0-85bf-b75c1cabf733",
+    "title": "高齡長者簡易居家運動",
+    "url": "https://ihealth.vghtc.gov.tw/media/1006",
+    "snippet": "高齡運動可從短時間日常走動開始，重點是安全與持續。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:23:29.554Z"
+  },
+  {
+    "id": "4d850565-6ce0-490b-84fa-2fa95f0357e5",
+    "queryId": "68454a08-90fa-44eb-afd2-43e8dd4c5b52",
+    "documentId": "98ed6e90-a467-47c7-b50d-301b52913d1d",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:23:29.554Z"
+  },
+  {
+    "id": "d435f564-de20-4a35-a2f5-cdfd97949f03",
+    "queryId": "9b9b54b7-fc01-4cca-9e4e-b49e72688c64",
+    "documentId": null,
+    "title": "Google announces upcoming security tools for Android, including enhanced protection against banking scam calls - Engadget",
+    "url": "https://www.engadget.com/2169750/google-announces-upcoming-security-tools-for-android/",
+    "snippet": "Google announces upcoming security tools for Android, including enhanced protection against banking scam calls. This gave us a peek at a bunch of new features coming to the Android operating system, and many of them focus on security. First up, the company is prepping enhanced protections against banking scam calls. There's a new spoofing protection feature that automatically ends calls from numbers impersonating any of the participating banks. This feature is rolling out in the coming weeks for",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:23:39.281Z"
+  },
+  {
+    "id": "64cc2970-9903-47e4-9d6b-b252f288c3df",
+    "queryId": "9b9b54b7-fc01-4cca-9e4e-b49e72688c64",
+    "documentId": null,
+    "title": "The FBI Is Now Tracking AI Scams, and the Losses Are Huge - govtech.com",
+    "url": "https://www.govtech.com/artificial-intelligence/the-fbi-is-now-tracking-ai-scams-and-the-losses-are-huge",
+    "snippet": "# The FBI Is Now Tracking AI Scams, and the Losses Are Huge. ## Americans reported nearly $21 billion in cyber crime losses in 2025, and within that, more than 22,000 complaints were tied to artificial intelligence, totaling about $893 million in losses. These familiar scams are now powered by artificial intelligence, and they're costing Americans billions, according to the latest FBI Internet Crime Complaint Center report. For the first time in more than two decades, the FBI has formally tracke",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:23:39.281Z"
+  },
+  {
+    "id": "0d3358e6-7639-4adc-a0c9-d802cb7e4fea",
+    "queryId": "9b9b54b7-fc01-4cca-9e4e-b49e72688c64",
+    "documentId": null,
+    "title": "Urgent consumer alert: Minnesota families targeted in bail scam - InsuranceNewsNet",
+    "url": "https://insurancenewsnet.com/oarticle/urgent-consumer-alert-minnesota-families-targeted-in-bail-scam",
+    "snippet": "# Urgent consumer alert: Minnesota families targeted in bail scam - Insurance News | InsuranceNewsNet. Property and Casualty News RSSGet our newsletter. A growing and highly deceptive scam is impacting families across Minnesota, with criminals impersonating bail bond agents, law enforcement, and court officials in an effort to steal money from unsuspecting victims. The Sheriff's Department, Jail, and Court staff will NOT call you directly to request bail or discuss payment arrangementsThese agen",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:23:39.281Z"
+  },
+  {
+    "id": "3a3a8832-d29e-4aac-9a00-06540d7193d3",
+    "queryId": "9b9b54b7-fc01-4cca-9e4e-b49e72688c64",
+    "documentId": null,
+    "title": "Minnesota Judicial Branch Warns Residents of Text Scam - govtech.com",
+    "url": "https://www.govtech.com/security/minnesota-judicial-branch-warns-residents-of-text-scam",
+    "snippet": "# Minnesota Judicial Branch Warns Residents of Text Scam. ## Neither the branch nor law enforcement, the former said, will ever text or call demanding money for a traffic fine. (TNS) — Has the Civil Enforcement Department of the Minnesota District Court issued you an official summons regarding your unpaid traffic violation — by text message? If you’re a victim of the latest text scam claiming you need to pay an overdue traffic fine, don’t click on any links or give out personal information, leas",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:23:39.281Z"
+  },
+  {
+    "id": "1d4fb599-0809-4d87-8437-e9a913044a16",
+    "queryId": "48ce572e-1d7e-43c8-8ef6-c56f62703c43",
+    "documentId": null,
+    "title": "Tech stocks today: Chipmaker Cerebras to stage blockbuster IPO, AI in focus for Trump-Xi meeting - Yahoo Finance",
+    "url": "https://finance.yahoo.com/sectors/technology/live/tech-stocks-today-chipmaker-cerebras-to-stage-blockbuster-ipo-ai-in-focus-for-trump-xi-meeting-100000457.html",
+    "snippet": "# Tech stocks today: Chipmaker Cerebras to stage blockbuster IPO, AI in focus for Trump-Xi meeting. Tech stocks started the trading week mixed on Monday, after chipmakers got a boost on Friday on a Wall Street Journal report that Apple (AAPL) and Intel (INTC) reached a deal that will have Intel supply the iPhone maker with chips. The company filed paperwork Monday increasing its initial public offering to 30 million shares with the goal of raising up to $4.8 billion, Bloomberg reported. Musk’s l",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:23:46.283Z"
+  },
+  {
+    "id": "ddca57a8-fa98-4e9a-ab53-a5968de53e35",
+    "queryId": "48ce572e-1d7e-43c8-8ef6-c56f62703c43",
+    "documentId": null,
+    "title": "Schools across U.S. disrupted after Canvas education platform hacked - NBC News",
+    "url": "https://www.nbcnews.com/video/canvas-cyberattack-incident-impacts-schools-across-the-country-263032389778",
+    "snippet": "* ## Jury selection begins in Elon Musk's trial against OpenAI's Sam Altman. * ## Spelman College students invent a way for plants to talk with the help of AI. * ## How This Recycling Facility is Giving New Life to Old Tech. * ## Tim Cook Steps Down as Apple CEO, Ending 15-year Run. * ## Apple announces Tim Cook to step aside as CEO. * ## Robots Race Against Humans in Half-Marathon in China. * ## Humanoid robots race runners at Beijing half marathon. * ## New trailer features AI-generated versio",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:23:46.283Z"
+  },
+  {
+    "id": "b5cd6d94-476d-4184-855b-23bbe394fe4a",
+    "queryId": "48ce572e-1d7e-43c8-8ef6-c56f62703c43",
+    "documentId": null,
+    "title": "Trump invited only 2 women executives on his first trip to China in nearly a decade — an increase from last time - Yahoo Finance",
+    "url": "https://finance.yahoo.com/economy/policy/articles/trump-invited-only-2-women-155500481.html",
+    "snippet": "*   Best gifts for sister-in-law. *   Best gifts for mother-in-law. 1.   News • 2 hours ago The tech-heavy Nasdaq sank to a session low as chip stocks sold off. 5.   News • 19 hours ago Elon Musk and Tim Cook are among the top executives the White House invited to join Trump for his summit with Xi this week. 7.   News • 22 hours ago The S&P 500 and Nasdaq eked out record highs as chip stocks extended gains and the Dow edged higher. 9.   News • yesterday President Trump travels to China this week",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:23:46.283Z"
+  },
+  {
+    "id": "5daa296d-03e7-437e-871c-264f6ce4b0b4",
+    "queryId": "48ce572e-1d7e-43c8-8ef6-c56f62703c43",
+    "documentId": null,
+    "title": "Intel’s Apple-Polished Comeback - WSJ",
+    "url": "https://www.wsj.com/tech/ai/intels-apple-polished-comeback-57ec72d6",
+    "snippet": "# Intel’s Comeback, Anthropic’s ‘Perfect Wingman’ and More | Technology for May 10 - WSJ. ## Plus, the hearing-walking correlation, Greg Brockman’s diary, Anthropic’s ‘Perfect Wingman’ and code-whispering. Image 1: Intel CEO Lip-Bu Tan giving a speech on stage in front of a screen displaying \"Building a New Intel\" and the Intel logo. _This is an edition of the WSJ Technology newsletter, a weekly digest of tech columns, big stories and personal tech advice. A weekly digest of tech columns, big st",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:23:46.283Z"
+  },
+  {
+    "id": "df2786b1-e7ac-4d5f-bf2c-0e510ff10683",
+    "queryId": "f58a7b3e-07b9-48d2-b518-dab0680ccc85",
+    "documentId": null,
+    "title": "East Turkistan Minister Urges UN, Western Leaders to Support Region’s Self-Determination as CCP Genocide Set to Enter 13th Year - NTD News",
+    "url": "https://www.ntd.com/ntdplus/east-turkistan-minister-urges-un-western-leaders-to-support-regions-self-determination-as-ccp-genocide-set-to-enter-13th-year_1143587.html",
+    "snippet": "What would you like to watch today? # East Turkistan Minister Urges UN, Western Leaders to Support Region’s Self-Determination as CCP Genocide Set to Enter 13th Year. ### NTD News Today Full Broadcast (May 8). ### NTD News Today Full Broadcast (April 30). ### Former US Ambassador Who Spied for Cuba Is Among 12 People Facing Loss of Citizenship. ### Rubio Weighs In on US–NATO Relations. ### US Military Strikes Suspected Drug-Trafficking Boat in Eastern Pacific. ### China Sends Warships to Pacific",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:23:54.503Z"
+  },
+  {
+    "id": "9c98ddf3-ae27-47fd-b6f5-27cc88b1ade5",
+    "queryId": "f58a7b3e-07b9-48d2-b518-dab0680ccc85",
+    "documentId": null,
+    "title": "California gubernatorial candidates weigh in on wealth tax - NBC News",
+    "url": "https://www.nbcnews.com/video/shorts/california-gubernatorial-candidates-weigh-in-on-wealth-tax-262894661817",
+    "snippet": "IE 11 is not supported. For an optimal experience visit our site on another browser. California gubernatorial candidates weigh in on wealth tax. Texas father shot and killed an attempted carjacker. Clavicular accused of illegally shooting alligator in Florida. Lawsuit accuses Cento of ‘tomato fraud’. FBI searches office of Virginia Democratic lawmaker. Possible Epstein suicide note released. Republicans propose $1 billion in taxpayer money for Trump's ballroom. Video appears to show United Airli",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:23:54.503Z"
+  },
+  {
+    "id": "e164ce81-fc87-41f4-a68b-59517023fda9",
+    "queryId": "f58a7b3e-07b9-48d2-b518-dab0680ccc85",
+    "documentId": null,
+    "title": "AI-generated ad stirs controversy in L.A. mayor race - NBC News",
+    "url": "https://www.nbcnews.com/video/shorts/ai-generated-ad-stirs-controversy-in-l-a-mayor-race-262895173914",
+    "snippet": "IE 11 is not supported. For an optimal experience visit our site on another browser. AI-generated ad stirs controversy in L.A. mayor race. California gubernatorial candidates weigh in on wealth tax. Texas father shot and killed an attempted carjacker. Clavicular accused of illegally shooting alligator in Florida. Lawsuit accuses Cento of ‘tomato fraud’. FBI searches office of Virginia Democratic lawmaker. Possible Epstein suicide note released. Republicans propose $1 billion in taxpayer money fo",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:23:54.503Z"
+  },
+  {
+    "id": "7a1396bd-c572-47b2-8f87-7c4d1eab5efc",
+    "queryId": "f58a7b3e-07b9-48d2-b518-dab0680ccc85",
+    "documentId": null,
+    "title": "The Late Morning Rundown: May 6, 2026 - CNBC",
+    "url": "https://www.cnbc.com/video/2026/05/06/the-late-morning-rundown-may-6-2026.html",
+    "snippet": "# News Update – Late Morning. CNBC brings you fast, accurate, and actionable business news and market updates. New Disney CEO lays out vision: Here's what to know. AMD CEO Lisa Su: Agents are driving tremendous demand in the AI cycle. Private payrolls rose by 109,000 in April, topping expectations, ADP says. Uber CEO Dara Khosrowshahi on Q1 results: We're building for the long term here. U.S., Iran closing in on memo to end war: Report.",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:23:54.503Z"
+  },
+  {
+    "id": "dc787928-e387-47ba-9dee-98595cbbc3ad",
+    "queryId": "d3f50642-7e2d-4ab8-9fe9-14df96e205d0",
+    "documentId": "98ed6e90-a467-47c7-b50d-301b52913d1d",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:31:02.041Z"
+  },
+  {
+    "id": "933bcc43-1fb1-442b-92ea-fbd8d49492e9",
+    "queryId": "d3f50642-7e2d-4ab8-9fe9-14df96e205d0",
+    "documentId": "39b5a287-ed28-4346-880f-54196f23c784",
+    "title": "認識睡眠醫學：失眠與睡眠檢查",
+    "url": "https://www.wanfang.gov.tw/departments/education/post/e97f58e393ea3e85",
+    "snippet": "長期睡眠困擾或疑似呼吸中止，適合請醫療專業評估。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:31:02.041Z"
+  },
+  {
+    "id": "fcd0999b-4901-4526-9c5a-9d155542d14e",
+    "queryId": "d3f50642-7e2d-4ab8-9fe9-14df96e205d0",
+    "documentId": "272c55ad-bcab-47d4-9fe8-f5823eb0e2e4",
+    "title": "認識失眠：睡不好時先找原因",
+    "url": "https://ihealth.vghtc.gov.tw/media/500",
+    "snippet": "失眠要先了解可能原因，藥物調整需配合醫師指示。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:31:02.041Z"
+  },
+  {
+    "id": "da34dd7a-97d3-45f1-8128-c489b05851e8",
+    "queryId": "d3f50642-7e2d-4ab8-9fe9-14df96e205d0",
+    "documentId": "a3447612-0f84-4f9f-ab3b-5eb0123de616",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:31:02.041Z"
+  },
+  {
+    "id": "ac8d367d-5953-4286-a3e2-a223da4f090e",
+    "queryId": "407264e8-56cd-4a79-b6e9-5ccf87527b7c",
+    "documentId": "98ed6e90-a467-47c7-b50d-301b52913d1d",
+    "title": "睡眠與精神健康：睡前放鬆小提醒",
+    "url": "https://health99.hpa.gov.tw/material/3246",
+    "snippet": "穩定作息與睡前放鬆有助睡眠；長期失眠或情緒困擾應尋求專業協助。",
+    "rank": 1,
+    "createdAt": "2026-05-13T15:32:25.360Z"
+  },
+  {
+    "id": "8f9addae-2148-4efc-8566-e14ea4d3da8b",
+    "queryId": "407264e8-56cd-4a79-b6e9-5ccf87527b7c",
+    "documentId": "39b5a287-ed28-4346-880f-54196f23c784",
+    "title": "認識睡眠醫學：失眠與睡眠檢查",
+    "url": "https://www.wanfang.gov.tw/departments/education/post/e97f58e393ea3e85",
+    "snippet": "長期睡眠困擾或疑似呼吸中止，適合請醫療專業評估。",
+    "rank": 2,
+    "createdAt": "2026-05-13T15:32:25.360Z"
+  },
+  {
+    "id": "edbf2a2a-c631-494b-b6aa-837566d170a1",
+    "queryId": "407264e8-56cd-4a79-b6e9-5ccf87527b7c",
+    "documentId": "272c55ad-bcab-47d4-9fe8-f5823eb0e2e4",
+    "title": "認識失眠：睡不好時先找原因",
+    "url": "https://ihealth.vghtc.gov.tw/media/500",
+    "snippet": "失眠要先了解可能原因，藥物調整需配合醫師指示。",
+    "rank": 3,
+    "createdAt": "2026-05-13T15:32:25.360Z"
+  },
+  {
+    "id": "4f3d87ad-0be8-493b-a2cc-8ce3d06f314c",
+    "queryId": "407264e8-56cd-4a79-b6e9-5ccf87527b7c",
+    "documentId": "a3447612-0f84-4f9f-ab3b-5eb0123de616",
+    "title": "睡眠與精神健康線上手冊：建立安心睡眠習慣",
+    "url": "https://health99.hpa.gov.tw/flipbook/3246",
+    "snippet": "白天活動、均衡飲食與社交互動，能幫助長輩維持規律生活。",
+    "rank": 4,
+    "createdAt": "2026-05-13T15:32:25.360Z"
+  }
+]

@@ -1,0 +1,50 @@
+[
+  {
+    "query": "說一個故事給我聽",
+    "expectedMode": "story",
+    "expectedProvider": "creative_story",
+    "expectsSources": false
+  },
+  {
+    "query": "說一個真實故事給我聽",
+    "expectedMode": "story",
+    "expectedProvider": "web_search",
+    "expectsSources": true
+  },
+  {
+    "query": "說一個最近發生的感人故事",
+    "expectedMode": "story",
+    "expectedProvider": "web_search",
+    "expectsSources": true
+  },
+  {
+    "query": "說一個台灣地方故事",
+    "expectedMode": "story",
+    "expectedProvider": "web_search",
+    "expectsSources": true
+  },
+  {
+    "query": "我今天有點孤單",
+    "expectedMode": "companion_chat",
+    "expectedProvider": "companion_reply",
+    "expectsSources": false
+  },
+  {
+    "query": "今天有什麼新聞？",
+    "expectedMode": "news",
+    "expectedProvider": "web_search",
+    "expectsSources": true
+  },
+  {
+    "query": "給我一個睡眠健康小知識",
+    "expectedMode": "health_tip",
+    "expectedProvider": "local_index",
+    "expectsSources": true
+  },
+  {
+    "query": "最近有什麼睡眠健康新知？",
+    "expectedMode": "health_tip",
+    "expectedProvider": "web_search",
+    "expectsSources": true
+  }
+]

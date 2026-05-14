@@ -1,0 +1,29 @@
+{
+  "name": "stt-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "db:migrate": "node db/migrate.js",
+    "check": "node --check server.js && node --check db/postgres.js && node --check services/tavilySearchService.js && node --check services/search/searchService.js && node --check services/search/crawlerService.js && node --check services/search/documentStore.js && node --check services/search/summarizer.js && node --check services/search/openAiWebSearchProvider.js && node --check services/memory/memoryStore.js && node --check services/memory/memoryExtractor.js && node --check services/memory/embeddingService.js && node --check services/memory/memoryContextService.js",
+    "test": "node --test services/tavilySearchService.test.js services/search/queryRouter.test.js services/memory/memoryStore.test.js",
+    "test:memory": "node --test services/memory/memoryStore.test.js",
+    "demo:search": "node tmp_demo_search_cases.js"
+  },
+  "dependencies": {
+    "ajv": "^8.12.0",
+    "axios": "^1.16.0",
+    "cheerio": "^1.2.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^6.7.0",
+    "multer": "^1.4.5-lts.1",
+    "openai": "^4.57.0",
+    "pg": "^8.13.1",
+    "pgvector": "^0.2.1",
+    "uuid": "^11.0.5"
+  }
+}

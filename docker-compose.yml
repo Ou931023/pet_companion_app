@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: love_companion
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d love_companion"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  stt_proxy:
+    image: node:18
+    restart: unless-stopped
+    working_dir: /usr/src/app
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend/stt_proxy:/usr/src/app:cached
+      - /usr/src/app/node_modules
+    environment:
+      PORT: 3001
+      DATABASE_URL: postgres://postgres:password@db:5432/love_companion
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      ALLOWED_ORIGINS: "http://localhost:5500"
+      REALTIME_RATE_LIMIT_WINDOW_MS: 60000
+      REALTIME_RATE_LIMIT_MAX: 6
+      RATE_LIMIT_WINDOW_MS: 60000
+      RATE_LIMIT_MAX_CALLS: 60
+    command: sh -c "npm install --silent && npm run db:migrate && npm start"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

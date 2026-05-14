@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>愛陪伴長照商城</title>
+    <link rel="stylesheet" href="./css/style.css" />
+  </head>
+  <body>
+    <header>
+      <a href="./index.html">首頁</a>
+      <a href="./cart.html">購物車</a>
+      <span>愛陪伴長照商城</span>
+    </header>
+    <main>
+      <h1>長照商城商品</h1>
+      <p>分類：營養補充、日常照護、安全輔具、健康監測、寵物互動商品</p>
+      <section id="product-list" class="grid"></section>
+    </main>
+    <script src="./js/products.js"></script>
+    <script src="./js/cart.js"></script>
+    <script src="./js/app.js"></script>
+    <script>
+      window.CARE_APP.renderProductList("product-list");
+    </script>
+  </body>
+</html>

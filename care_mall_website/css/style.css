@@ -1,0 +1,56 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f7f8fb;
+  color: #222;
+}
+
+header {
+  background: #3346d3;
+  color: #fff;
+  padding: 16px 24px;
+}
+
+header a {
+  color: #fff;
+  margin-right: 16px;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+main {
+  padding: 24px;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+button {
+  background: #3346d3;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.badge {
+  display: inline-block;
+  background: #eef1ff;
+  color: #3346d3;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+}
