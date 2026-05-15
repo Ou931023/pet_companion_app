@@ -60,6 +60,7 @@ class ConversationController extends ChangeNotifier {
   String _activeSessionId = _newSessionId();
   bool _isRecording = false;
   bool _isBusy = false;
+  bool _isAwaitingPetReply = false;
   String _latestUserText = '';
   String _latestReply = '';
   List<SourceReference> _latestSources = const [];
@@ -121,6 +122,7 @@ class ConversationController extends ChangeNotifier {
   }
 
   bool get isBusy => _isBusy;
+  bool get isAwaitingPetReply => _isAwaitingPetReply;
   String get activeSessionId => _activeSessionId;
   String get latestUserText => _latestUserText;
   String get latestReply => _latestReply;
@@ -228,6 +230,13 @@ class ConversationController extends ChangeNotifier {
     if (turn.userText.trim().isNotEmpty) {
       _latestUserText = turn.userText.trim();
     }
+    if (turn.petReply.trim().isEmpty && turn.userText.trim().isNotEmpty) {
+      _latestReply = '';
+      _isAwaitingPetReply = true;
+    } else if (turn.petReply.trim().isNotEmpty) {
+      _latestReply = turn.petReply.trim();
+      _isAwaitingPetReply = false;
+    }
     _latestReplyIsSearch = turn.toolName == 'verticalSearch';
     _latestSources = turn.sources;
     _latestSearchMode = turn.searchMode;
@@ -254,6 +263,7 @@ class ConversationController extends ChangeNotifier {
 
   Future<void> handleRealtimeAssistantReply(String message) async {
     _latestReply = message;
+    _isAwaitingPetReply = false;
     _latestSources = const [];
     _latestReplyIsSearch = false;
     _latestSearchMode = '';
@@ -419,6 +429,7 @@ class ConversationController extends ChangeNotifier {
     String? memoryProvider,
   }) async {
     _latestReply = message;
+    _isAwaitingPetReply = false;
     _latestSources = sources;
     _latestReplyIsSearch = toolName == 'verticalSearch';
     _latestSearchMode = searchMode;

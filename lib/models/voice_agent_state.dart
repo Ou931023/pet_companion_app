@@ -14,6 +14,7 @@ enum UserEmotion {
   anxious,
   tired,
   angry,
+  nostalgic,
   happy,
   neutral,
 }

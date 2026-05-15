@@ -3,10 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../config/app_config.dart';
+import '../models/companion_analysis_result.dart';
 import '../models/conversation_turn.dart';
 import '../models/pet_status.dart';
 import '../models/voice_agent_state.dart';
 import '../services/ai_navigation_service.dart';
+import '../services/companion_engine_service.dart';
 import '../services/realtime_voice_service.dart';
 import 'app_navigation_controller.dart';
 import 'conversation_controller.dart';
@@ -22,6 +24,7 @@ class VoiceAgentController extends ChangeNotifier {
     required this.petStatsController,
     required this.conversationController,
     required this.realtimeVoiceService,
+    required this.companionEngineService,
     required this.memoryController,
     required this.navigationService,
     required this.navigationController,
@@ -32,6 +35,7 @@ class VoiceAgentController extends ChangeNotifier {
   final PetStatsController petStatsController;
   final ConversationController conversationController;
   final RealtimeVoiceService realtimeVoiceService;
+  final CompanionEngineService companionEngineService;
   final MemoryController memoryController;
   final AiNavigationService navigationService;
   final AppNavigationController navigationController;
@@ -46,6 +50,9 @@ class VoiceAgentController extends ChangeNotifier {
   String _pendingRealtimeUserText = '';
   String _pendingRealtimeEmotion = 'neutral';
   String _pendingRealtimeTurnId = '';
+  String _latestCompanionTurnId = '';
+  String _lastAnalyzedTranscript = '';
+  CompanionAnalysisResult? _currentCompanionContext;
   bool _skipNextAssistantText = false;
 
   VoiceAgentState get state => _state;
@@ -54,6 +61,8 @@ class VoiceAgentController extends ChangeNotifier {
   String get petExpression => _petExpression;
   String get petAction => _petAction;
   String get lastError => _lastError;
+  CompanionAnalysisResult? get currentCompanionContext =>
+      _currentCompanionContext;
   bool get isRealtimeReady =>
       _state != VoiceAgentState.idle && _state != VoiceAgentState.error;
 
@@ -75,6 +84,7 @@ class VoiceAgentController extends ChangeNotifier {
             AppConfig.realtimeCallUrlForSttProxy(profileController.sttProxyUrl),
         petName: profileController.petName,
         userId: memoryController.userId,
+        companionContext: _companionContextPrompt(),
       );
       await realtimeVoiceService.startListening();
     } catch (error) {
@@ -95,14 +105,23 @@ class VoiceAgentController extends ChangeNotifier {
         _applyStateFromPayload(event.payload);
         break;
       case RealtimeEventType.userTranscript:
-        final navigationIntent = navigationService.detect(event.payload);
+        final transcript = event.payload.trim();
+        if (transcript.isEmpty) return;
+        final turnId = 'rt_${DateTime.now().microsecondsSinceEpoch}';
+        if (transcript != _lastAnalyzedTranscript) {
+          _lastAnalyzedTranscript = transcript;
+          _latestCompanionTurnId = turnId;
+          unawaited(_analyzeCompanionTranscript(transcript, turnId));
+        }
+
+        final navigationIntent = navigationService.detect(transcript);
         if (navigationIntent != null) {
           navigationController.navigateTo(navigationIntent.route);
           petController.setMessage(navigationIntent.reply);
           conversationController.appendExternalTurn(
             ConversationTurn(
               timestamp: DateTime.now(),
-              userText: event.payload,
+              userText: transcript,
               petReply: navigationIntent.reply,
               toolName: 'navigation',
               emotionTag: UserEmotion.neutral.name,
@@ -114,25 +133,24 @@ class VoiceAgentController extends ChangeNotifier {
           notifyListeners();
           return;
         }
-        if (conversationController.shouldHandleAsLocalCommand(event.payload)) {
+        if (conversationController.shouldHandleAsLocalCommand(transcript)) {
           _pendingRealtimeUserText = '';
           _pendingRealtimeTurnId = '';
           _skipNextAssistantText = true;
-          unawaited(_handleLocalRealtimeCommand(event.payload));
+          unawaited(_handleLocalRealtimeCommand(transcript));
           return;
         }
-        final renameResult = _tryHandleRenameIntent(event.payload);
-        _emotion = detectEmotion(event.payload);
-        debugPrint('[EMOTION] text=${event.payload} emotion=${_emotion.name}');
-        _pendingRealtimeUserText = event.payload.trim();
+        final renameResult = _tryHandleRenameIntent(transcript);
+        _emotion = detectEmotion(transcript);
+        debugPrint('[EMOTION] text=$transcript emotion=${_emotion.name}');
+        _pendingRealtimeUserText = transcript;
         _pendingRealtimeEmotion = _emotion.name;
-        _pendingRealtimeTurnId =
-            'rt_${DateTime.now().microsecondsSinceEpoch.toString()}';
+        _pendingRealtimeTurnId = turnId;
         _applyEmotionToPet();
         conversationController.appendExternalTurn(
           ConversationTurn(
             timestamp: DateTime.now(),
-            userText: event.payload,
+            userText: transcript,
             petReply: renameResult.reply ?? '',
             toolName: renameResult.handled ? 'renamePet' : 'realtime-user',
             emotionTag: _emotion.name,
@@ -200,6 +218,134 @@ class VoiceAgentController extends ChangeNotifier {
         _setState(VoiceAgentState.listening);
       }
     }
+  }
+
+  Future<void> _analyzeCompanionTranscript(
+    String transcript,
+    String turnId,
+  ) async {
+    try {
+      final result = await companionEngineService.analyze(
+        userId: memoryController.userId,
+        sessionId: conversationController.activeSessionId,
+        turnId: turnId,
+        petName: profileController.petName,
+        transcript: transcript,
+        petState: {
+          'mood': petController.mood,
+          'expression': petController.expression,
+          'intimacy': petStatsController.intimacy,
+          'hunger': petStatsController.fullness,
+          'energy': petStatsController.moodValue,
+        },
+        recentTurns: conversationController.history.take(4).map((turn) {
+          return {
+            'userText': turn.userText,
+            'petReply': turn.petReply,
+            'emotionTag': turn.emotionTag,
+          };
+        }).toList(),
+      );
+      if (result == null) {
+        _applyLocalCompanionFallback(transcript, turnId);
+        return;
+      }
+      if (result.turnId != _latestCompanionTurnId ||
+          turnId != _latestCompanionTurnId) {
+        return;
+      }
+      _currentCompanionContext = result;
+      _emotion = _emotionFromEngine(result.emotion);
+      _pendingRealtimeEmotion = result.emotion;
+      _applyCompanionPetState(result);
+      unawaited(realtimeVoiceService.updateCompanionContext(
+        _companionContextPrompt(result),
+      ));
+      if (result.memory.shouldSave &&
+          result.memory.candidate.trim().isNotEmpty) {
+        unawaited(
+          memoryController.extractMemory(
+            sessionId: conversationController.activeSessionId,
+            turnId: 'companion_$turnId',
+            userText: transcript,
+            aiReply: result.memory.candidate,
+            emotion: result.emotion,
+          ),
+        );
+      }
+      debugPrint(
+        '[COMPANION_ENGINE] turn=$turnId emotion=${result.emotion} need=${result.companionNeed} strategy=${result.replyStrategy}',
+      );
+      notifyListeners();
+    } catch (error) {
+      debugPrint('[COMPANION_ENGINE] fallback: $error');
+      _applyLocalCompanionFallback(transcript, turnId);
+    }
+  }
+
+  void _applyLocalCompanionFallback(String transcript, String turnId) {
+    if (turnId != _latestCompanionTurnId) return;
+    _emotion = detectEmotion(transcript);
+    _pendingRealtimeEmotion = _emotion.name;
+    _applyEmotionToPet();
+  }
+
+  void _applyCompanionPetState(CompanionAnalysisResult result) {
+    final expression = result.petExpression.trim();
+    final action = result.petAction.trim();
+    if (expression.isEmpty || action.isEmpty) return;
+    _petMood = result.emotion;
+    _petExpression = expression;
+    _petAction = action;
+    petController.updateEmotionState(
+      mood: _petMood,
+      expression: _petExpression,
+      action: _petAction,
+      mode: _petModeFromCompanion(result),
+    );
+  }
+
+  PetMode _petModeFromCompanion(CompanionAnalysisResult result) {
+    return switch (result.petExpression) {
+      'happy' => PetMode.happy,
+      'excited' => PetMode.excited,
+      'sad' => PetMode.sad,
+      'sleepy' => PetMode.sleepy,
+      'concerned' => PetMode.concerned,
+      'calm' => PetMode.caring,
+      _ => switch (result.emotion) {
+          'lonely' || 'sad' || 'anxious' => PetMode.caring,
+          'tired' => PetMode.sleepy,
+          'happy' => PetMode.happy,
+          _ => PetMode.listening,
+        },
+    };
+  }
+
+  UserEmotion _emotionFromEngine(String emotion) {
+    return switch (emotion) {
+      'lonely' => UserEmotion.lonely,
+      'sad' => UserEmotion.sad,
+      'anxious' => UserEmotion.anxious,
+      'tired' => UserEmotion.tired,
+      'happy' => UserEmotion.happy,
+      'nostalgic' => UserEmotion.nostalgic,
+      _ => UserEmotion.neutral,
+    };
+  }
+
+  String _companionContextPrompt([CompanionAnalysisResult? result]) {
+    final context = result ?? _currentCompanionContext;
+    if (context == null) return '';
+    return [
+      'emotion=${context.emotion}',
+      'companionNeed=${context.companionNeed}',
+      'replyStrategy=${context.replyStrategy}',
+      'petExpression=${context.petExpression}',
+      'petAction=${context.petAction}',
+      'nextStrategy.mode=${context.nextStrategy.mode}',
+      'nextStrategy.instruction=${context.nextStrategy.instruction}',
+    ].join('\n');
   }
 
   void _setState(VoiceAgentState newState) {
@@ -300,6 +446,17 @@ class VoiceAgentController extends ChangeNotifier {
           mode: PetMode.caring,
         );
         break;
+      case UserEmotion.nostalgic:
+        _petMood = 'nostalgic';
+        _petExpression = 'calm';
+        _petAction = 'nod';
+        petController.updateEmotionState(
+          mood: _petMood,
+          expression: _petExpression,
+          action: _petAction,
+          mode: PetMode.caring,
+        );
+        break;
       case UserEmotion.neutral:
         _petMood = 'neutral';
         _petExpression = 'listening';
@@ -341,6 +498,9 @@ class VoiceAgentController extends ChangeNotifier {
     }
     if (text.contains('生氣') || text.contains('火大') || text.contains('不爽')) {
       return UserEmotion.angry;
+    }
+    if (text.contains('以前') || text.contains('懷念') || text.contains('從前')) {
+      return UserEmotion.nostalgic;
     }
     if (text.contains('開心') || text.contains('很好') || text.contains('快樂')) {
       return UserEmotion.happy;

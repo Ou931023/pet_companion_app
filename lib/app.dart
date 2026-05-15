@@ -30,6 +30,7 @@ import 'services/ai_tool_router.dart';
 import 'services/ai_navigation_service.dart';
 import 'services/check_in_storage_service.dart';
 import 'services/companion_content_service.dart';
+import 'services/companion_engine_service.dart';
 import 'services/emotion_services.dart';
 import 'services/inventory_storage_service.dart';
 import 'services/local_storage_service.dart';
@@ -60,6 +61,7 @@ class PetCompanionApp extends StatelessWidget {
         Provider(create: (_) => InventoryStorageService()),
         Provider(create: (_) => const ShopService()),
         Provider(create: (_) => MemoryService()),
+        Provider(create: (_) => const CompanionEngineService()),
         Provider(create: (_) => const AiNavigationService()),
         Provider(create: (_) => ReminderService()),
         Provider(create: (_) => NotificationService()),
@@ -186,6 +188,7 @@ class PetCompanionApp extends StatelessWidget {
             petStatsController: context.read<PetStatsController>(),
             conversationController: context.read<ConversationController>(),
             realtimeVoiceService: context.read<RealtimeVoiceService>(),
+            companionEngineService: context.read<CompanionEngineService>(),
             memoryController: context.read<MemoryController>(),
             navigationService: context.read<AiNavigationService>(),
             navigationController: context.read<AppNavigationController>(),
@@ -199,6 +202,7 @@ class PetCompanionApp extends StatelessWidget {
                 petStatsController: petStats,
                 conversationController: conversation,
                 realtimeVoiceService: realtimeService,
+                companionEngineService: context.read<CompanionEngineService>(),
                 memoryController: context.read<MemoryController>(),
                 navigationService: context.read<AiNavigationService>(),
                 navigationController: navigation,

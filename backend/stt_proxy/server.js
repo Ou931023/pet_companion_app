@@ -36,6 +36,7 @@ const {
   buildMemoryContext,
   buildMemoryGreeting,
 } = require("./services/memory/memoryContextService");
+const { analyzeCompanionTurn } = require("../companion/companion_engine");
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -87,12 +88,16 @@ function logError(message, extra = {}) {
   console.error(`[realtime-broker] ${message}`, extra);
 }
 
-const REALTIME_INSTRUCTIONS = `你是一隻陪伴長者的 AI 寵物。
+const REALTIME_INSTRUCTIONS = `你是長者陪伴寵物，不是一般助理。
 請使用繁體中文。
-語氣要溫柔、簡短、口語。
-每次回覆 1 到 3 句。
-你的目標是陪伴長者，不是取代醫師或家人。
-當使用者難過、孤單、焦慮時，先安撫，再輕輕追問。
+你負責即時、自然、不中斷的口語陪伴回應。
+使用者不一定會直接說出「孤單、難過、焦慮」等字眼，你要從語意中理解可能的陪伴需求。
+當使用者提到安靜、一個人、大家都很忙、沒事做、以前很熱鬧、睡不好、算了沒關係等內容時，要用溫柔方式接住感受。
+不要武斷地說「你就是孤單」。
+回覆要簡短、自然、像陪在身邊的寵物。
+每次最多問一個問題。
+不要像客服，不要像老師，不要做醫療診斷。
+如果有 Companion Engine 提供的 nextStrategy，請優先遵守。
 當使用者提到胸痛、呼吸困難、跌倒、嚴重不適、自傷意念時，請提高安全提醒，建議聯絡家人或尋求醫療協助。`;
 
 function fallbackGreeting({ petName, localHour }) {
@@ -108,19 +113,26 @@ function fallbackGreeting({ petName, localHour }) {
   return `晚安，我是${petName}，這麼晚了，要不要準備休息了呢？`;
 }
 
-function buildRealtimeInstructions(petName, summaries = [], memoryContext = "") {
+function buildRealtimeInstructions(petName, summaries = [], memoryContext = "", companionContext = "") {
   const normalizedPetName = (petName || "").toString().trim() || "陪伴寶";
   const header = `你的名字是 ${normalizedPetName}。
 ${REALTIME_INSTRUCTIONS}`;
+  const companionBlock = companionContext
+    ? `
+
+Companion Engine 目前分析：
+${companionContext}
+請優先遵守這個 nextStrategy，但不要提到分析系統或欄位名稱。`
+    : "";
 
   if (memoryContext) {
     return `${header}
 
-${memoryContext}`;
+${memoryContext}${companionBlock}`;
   }
 
   if (!summaries.length) {
-    return header;
+    return `${header}${companionBlock}`;
   }
 
   const memoryBlock = summaries.map((item) => `- ${item}`).join("\n");
@@ -130,7 +142,7 @@ ${memoryContext}`;
 ${memoryBlock}
 
 請自然地關心使用者，不要說「根據紀錄」或「資料庫顯示」。
-如果使用者不想聊這件事，請溫柔轉換話題。`;
+如果使用者不想聊這件事，請溫柔轉換話題。${companionBlock}`;
 }
 
 async function loadRelevantMemorySummaries(userId, query, topK) {
@@ -161,6 +173,49 @@ function withTimeout(promise, timeoutMs, fallbackValue) {
 
 app.get("/health", (_, res) => {
   res.json({ status: "ok" });
+});
+
+app.post("/api/companion/analyze", (req, res) => {
+  try {
+    const result = analyzeCompanionTurn({
+      userId: req.body?.userId,
+      sessionId: req.body?.sessionId,
+      turnId: req.body?.turnId,
+      petName: req.body?.petName,
+      transcript: req.body?.transcript,
+      languageHint: req.body?.languageHint,
+      recentTurns: req.body?.recentTurns,
+      petState: req.body?.petState,
+      audioFeatures: req.body?.audioFeatures,
+    });
+    return res.json(result);
+  } catch (error) {
+    logError("companion analyze failed", { error: error?.message || error });
+    return res.status(500).json({
+      turnId: req.body?.turnId || "",
+      emotion: "neutral",
+      emotionConfidence: 0.5,
+      companionNeed: "unknown",
+      needConfidence: 0.5,
+      replyStrategy: "normal_chat",
+      implicitMeaning: "Companion Engine 暫時無法分析。",
+      petExpression: "idle",
+      petAction: "stay",
+      memory: {
+        shouldSave: false,
+        candidate: "",
+        type: "none",
+      },
+      safety: {
+        riskLevel: "normal",
+        needsHumanSupport: false,
+      },
+      nextStrategy: {
+        mode: "normal_chat",
+        instruction: "下一輪回應保持自然、簡短、陪伴感，每次最多問一個問題。",
+      },
+    });
+  }
 });
 
 app.post("/api/stt/transcribe", upload.single("audio"), async (req, res) => {
@@ -736,8 +791,10 @@ app.post(
     const realtimeModel = process.env.REALTIME_MODEL || "gpt-realtime";
     let petName = (req.query?.petName || "").toString().trim();
     let userId = (req.query?.userId || "").toString().trim();
+    let companionContext = (req.query?.companionContext || "").toString().trim();
     petName = petName.replace(/\r|\n/g, ' ').substring(0, 128) || "陪伴寶";
     userId = userId.replace(/\r|\n/g, ' ').substring(0, 128) || "local_user";
+    companionContext = companionContext.replace(/\r|\n/g, " ").substring(0, 900);
 
     const memoryTopK = Number(process.env.MEMORY_TOP_K || 5);
     const contextResult = await withTimeout(
@@ -761,6 +818,7 @@ app.post(
       userId,
       memoryCount: memorySummaries.length,
       memoryProvider: contextResult?.provider || "none",
+      hasCompanionContext: Boolean(companionContext),
     });
 
     const sessionConfig = {
@@ -775,6 +833,7 @@ app.post(
         petName,
         memorySummaries,
         contextResult?.memoryContext || "",
+        companionContext,
       ),
     };
 

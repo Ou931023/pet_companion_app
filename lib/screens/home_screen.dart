@@ -148,7 +148,13 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       SizedBox(height: compact ? 6 : 8),
                     ],
-                    SpeechBubble(text: petController.message),
+                    SpeechBubble(
+                      text: conversationController.latestReply.isNotEmpty
+                          ? conversationController.latestReply
+                          : petController.message,
+                      speaker: profileController.petName,
+                      isWaiting: conversationController.isAwaitingPetReply,
+                    ),
                     if (conversationController.latestReplyIsSearch) ...[
                       const SizedBox(height: 8),
                       _SearchMetaLine(
@@ -591,23 +597,43 @@ class _UserMessageBubble extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(
-                Icons.person_outline,
-                color: Colors.white,
-                size: 19,
-              ),
-              const SizedBox(width: 8),
               Flexible(
-                child: Text(
-                  text.trim(),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    height: 1.28,
-                    fontWeight: FontWeight.w700,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.person_outline,
+                          color: Colors.white70,
+                          size: 16,
+                        ),
+                        SizedBox(width: 5),
+                        Text(
+                          '你說',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      text.trim(),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        height: 1.28,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],

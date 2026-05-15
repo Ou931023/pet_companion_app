@@ -17,6 +17,7 @@ class AppConfig {
     'localhost',
     '10.0.2.2',
     '10.51.16.97',
+    '192.168.0.30',
   };
 
   static String realtimeCallUrlForSttProxy(String sttProxyUrl) {

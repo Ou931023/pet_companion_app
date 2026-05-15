@@ -42,6 +42,7 @@ class RealtimeVoiceService {
     required String realtimeCallUrl,
     required String petName,
     required String userId,
+    String companionContext = '',
   }) async {
     _isStopping = false;
     _emit(RealtimeEventType.state, 'connecting');
@@ -124,6 +125,8 @@ class RealtimeVoiceService {
                 ...Uri.parse(realtimeCallUrl).queryParameters,
                 'petName': petName.trim(),
                 'userId': userId.trim(),
+                if (companionContext.trim().isNotEmpty)
+                  'companionContext': companionContext.trim(),
               },
             ),
             headers: {'Content-Type': 'application/sdp'},
@@ -155,6 +158,27 @@ class RealtimeVoiceService {
     if (_peerConnection == null) return;
     _assistantBuffer = '';
     _emit(RealtimeEventType.state, 'listening');
+  }
+
+  Future<void> updateCompanionContext(String companionContext) async {
+    final channel = _eventsChannel;
+    final normalized = companionContext.trim();
+    if (channel == null || normalized.isEmpty) return;
+    try {
+      channel.send(
+        RTCDataChannelMessage(
+          jsonEncode({
+            'type': 'session.update',
+            'session': {
+              'instructions': _instructionsWithCompanionContext(normalized),
+            },
+          }),
+        ),
+      );
+      _log('Companion context sent to realtime session');
+    } catch (error) {
+      _log('Unable to update companion context: $error');
+    }
   }
 
   Future<void> stop() async {
@@ -368,6 +392,23 @@ class RealtimeVoiceService {
   void _emit(RealtimeEventType type, String payload) {
     if (_eventController.isClosed) return;
     _eventController.add(RealtimeVoiceEvent(type: type, payload: payload));
+  }
+
+  String _instructionsWithCompanionContext(String context) {
+    return '''
+你是長者陪伴寵物，不是一般助理。
+你負責即時、自然、不中斷的口語陪伴回應。
+使用者不一定會直接說出「孤單、難過、焦慮」等字眼，你要從語意中理解可能的陪伴需求。
+不要武斷地說「你就是孤單」。
+回覆要簡短、自然、像陪在身邊的寵物。
+每次最多問一個問題。
+不要像客服，不要像老師，不要做醫療診斷。
+
+Companion Engine 目前分析：
+$context
+
+請優先遵守 nextStrategy，但不要提到 Companion Engine、分析系統或欄位名稱。
+''';
   }
 
   void dispose() {
