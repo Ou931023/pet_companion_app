@@ -14,7 +14,6 @@ const {
   needsWebSearch,
   searchAndSummarize,
 } = require("./services/tavilySearchService");
-const { search: verticalSearch } = require("./services/search/searchService");
 const { refreshCrawler } = require("./services/search/crawlerService");
 const {
   searchMemories,
@@ -39,6 +38,8 @@ const {
 const { analyzeCompanionTurn } = require("../companion/companion_engine");
 const { retrieveRelevantMemories } = require("../memory/memory_retriever");
 const { storeCompanionMemoryCandidate } = require("../memory/memory_policy");
+const { classifySearchIntent } = require("../search/search_intent_classifier");
+const { searchKnowledge } = require("../search/search_service");
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -99,6 +100,8 @@ const REALTIME_INSTRUCTIONS = `你是長者陪伴寵物，不是一般助理。
 回覆要簡短、自然、像陪在身邊的寵物。
 每次最多問一個問題。
 不要像客服，不要像老師，不要做醫療診斷。
+如果 languageHint=taigi，可以用台灣長者自然聽得懂的語氣回應；不要硬翻成不自然台語。
+如果台語 transcript 不完整，請溫和追問，不要假裝完全聽懂。
 如果有 Companion Engine 提供的 nextStrategy，請優先遵守。
 當使用者提到胸痛、呼吸困難、跌倒、嚴重不適、自傷意念時，請提高安全提醒，建議聯絡家人或尋求醫療協助。`;
 
@@ -181,6 +184,10 @@ app.post("/api/companion/analyze", async (req, res) => {
   try {
     const userId = req.body?.userId || "default_user";
     const transcript = req.body?.transcript || "";
+    const searchIntent = classifySearchIntent(transcript);
+    const searchResult = searchIntent.needsSearch
+      ? await searchKnowledge({ query: transcript, topic: searchIntent.topic, userId })
+      : null;
     const retrieved = await retrieveRelevantMemories({
       userId,
       transcript,
@@ -197,6 +204,8 @@ app.post("/api/companion/analyze", async (req, res) => {
       petState: req.body?.petState,
       audioFeatures: req.body?.audioFeatures,
       retrievedMemories: retrieved.memories,
+      sourceReferences: searchResult?.sourceReferences || searchResult?.sources || [],
+      knowledgeAnswer: searchResult?.answer || "",
     });
     if (result.memory?.shouldSave && result.memory?.candidate?.trim()) {
       storeCompanionMemoryCandidate({
@@ -236,6 +245,25 @@ app.post("/api/companion/analyze", async (req, res) => {
         mode: "normal_chat",
         instruction: "下一輪回應保持自然、簡短、陪伴感，每次最多問一個問題。",
       },
+      voiceFeatures: {
+        volumeMean: null,
+        volumeVariance: null,
+        pauseDensity: null,
+        estimatedSpeechRate: null,
+        speechDuration: null,
+        silenceDuration: null,
+        confidence: 0,
+      },
+      fusion: {
+        textEmotion: "neutral",
+        finalEmotion: "neutral",
+        confidence: 0.5,
+        reason: "Companion Engine 暫時無法分析，以文字情緒推測為主。",
+      },
+      needsSearch: false,
+      searchTopic: "none",
+      sourceReferences: [],
+      knowledgeAnswer: "",
     });
   }
 });
@@ -692,16 +720,16 @@ app.post("/api/search", async (req, res) => {
         shouldShowSources: false,
       });
     }
-    const result = await verticalSearch({
+    const result = await searchKnowledge({
       query,
-      mode: (req.body?.mode || "auto").toString(),
-      userProfile: req.body?.userProfile || {},
+      topic: (req.body?.topic || "").toString(),
+      userId: (req.body?.userId || "default_user").toString(),
     });
     return res.json(result);
   } catch (error) {
     logError("vertical search failed", { error: error?.message || error });
     return res.status(500).json({
-      answer: "我現在查詢有點卡住了，先不亂說。我可以陪你聊聊，或等一下再幫你查。",
+      answer: "我現在查資料有點不順，我可以先陪你聊聊",
       summary: "search failed",
       sources: [],
       mode: "general_web_search",

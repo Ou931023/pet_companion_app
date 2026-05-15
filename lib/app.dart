@@ -28,12 +28,14 @@ import 'screens/settings_screen.dart';
 import 'screens/shop_screen.dart';
 import 'services/ai_tool_router.dart';
 import 'services/ai_navigation_service.dart';
+import 'services/asr_strategy_service.dart';
 import 'services/check_in_storage_service.dart';
 import 'services/companion_content_service.dart';
 import 'services/companion_engine_service.dart';
 import 'services/emotion_services.dart';
 import 'services/inventory_storage_service.dart';
 import 'services/local_storage_service.dart';
+import 'services/language_routing_service.dart';
 import 'services/memory_service.dart';
 import 'services/mock_ai_service.dart';
 import 'services/mock_shop_service.dart';
@@ -44,6 +46,7 @@ import 'services/realtime_voice_service.dart';
 import 'services/reminder_service.dart';
 import 'services/search_service.dart';
 import 'services/shop_service.dart';
+import 'services/taigi_asr_strategy.dart';
 import 'services/text_to_speech_service.dart';
 import 'services/web_search_service.dart';
 import 'utils/platform_liquid_glass.dart';
@@ -116,6 +119,17 @@ class PetCompanionApp extends StatelessWidget {
         Provider(create: (_) => SearchService()),
         Provider(create: (_) => TextToSpeechService()),
         Provider(create: (_) => RealtimeVoiceService()),
+        Provider(
+          create: (_) => AsrStrategyService(
+            strategies: const [
+              OpenAiRealtimeAsrStrategy(),
+              MockTaigiAsrStrategy(),
+            ],
+          ),
+        ),
+        ProxyProvider<AsrStrategyService, LanguageRoutingService>(
+          update: (_, strategies, __) => LanguageRoutingService(strategies),
+        ),
         Provider<AiToolRouter>(
           create: (context) => AiToolRouter(
             profileController: context.read<ProfileController>(),
@@ -189,6 +203,7 @@ class PetCompanionApp extends StatelessWidget {
             conversationController: context.read<ConversationController>(),
             realtimeVoiceService: context.read<RealtimeVoiceService>(),
             companionEngineService: context.read<CompanionEngineService>(),
+            languageRoutingService: context.read<LanguageRoutingService>(),
             memoryController: context.read<MemoryController>(),
             navigationService: context.read<AiNavigationService>(),
             navigationController: context.read<AppNavigationController>(),
@@ -203,6 +218,7 @@ class PetCompanionApp extends StatelessWidget {
                 conversationController: conversation,
                 realtimeVoiceService: realtimeService,
                 companionEngineService: context.read<CompanionEngineService>(),
+                languageRoutingService: context.read<LanguageRoutingService>(),
                 memoryController: context.read<MemoryController>(),
                 navigationService: context.read<AiNavigationService>(),
                 navigationController: navigation,

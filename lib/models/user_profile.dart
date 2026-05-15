@@ -17,6 +17,8 @@ class UserProfile {
     required this.petVolume,
     required this.speechStyle,
     required this.contentPreferences,
+    required this.voiceLanguageMode,
+    required this.manualAsrStrategy,
   });
 
   final bool hasCompletedOnboarding;
@@ -34,6 +36,8 @@ class UserProfile {
   final double petVolume;
   final String speechStyle;
   final List<String> contentPreferences;
+  final String voiceLanguageMode;
+  final String manualAsrStrategy;
 
   factory UserProfile.initial() {
     return const UserProfile(
@@ -58,6 +62,8 @@ class UserProfile {
       petVolume: 0.9,
       speechStyle: 'gentle',
       contentPreferences: ['story', 'healthTip', 'scamAlert'],
+      voiceLanguageMode: 'defaultOpenAiRealtime',
+      manualAsrStrategy: 'defaultOpenAiRealtime',
     );
   }
 
@@ -77,6 +83,8 @@ class UserProfile {
     double? petVolume,
     String? speechStyle,
     List<String>? contentPreferences,
+    String? voiceLanguageMode,
+    String? manualAsrStrategy,
   }) {
     return UserProfile(
       hasCompletedOnboarding:
@@ -95,6 +103,8 @@ class UserProfile {
       petVolume: petVolume ?? this.petVolume,
       speechStyle: speechStyle ?? this.speechStyle,
       contentPreferences: contentPreferences ?? this.contentPreferences,
+      voiceLanguageMode: voiceLanguageMode ?? this.voiceLanguageMode,
+      manualAsrStrategy: manualAsrStrategy ?? this.manualAsrStrategy,
     );
   }
 }

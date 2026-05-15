@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../controllers/conversation_controller.dart';
 import '../controllers/pet_controller.dart';
 import '../controllers/profile_controller.dart';
+import '../models/language_route.dart';
 import '../routes/app_routes.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -147,6 +148,60 @@ class _SettingsScreenState extends State<SettingsScreen> {
             selected: {profile.speechStyle},
             onSelectionChanged: (values) =>
                 profile.setSpeechStyle(values.first),
+          ),
+        ),
+        const SizedBox(height: 14),
+        _SettingsSection(
+          title: '語音辨識語言',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SegmentedButton<VoiceLanguageMode>(
+                segments: const [
+                  ButtonSegment(
+                    value: VoiceLanguageMode.defaultOpenAiRealtime,
+                    label: Text('預設'),
+                  ),
+                  ButtonSegment(
+                    value: VoiceLanguageMode.taigiPreferred,
+                    label: Text('台語優先'),
+                  ),
+                  ButtonSegment(
+                    value: VoiceLanguageMode.manualOverride,
+                    label: Text('手動'),
+                  ),
+                ],
+                selected: {profile.voiceLanguageMode},
+                onSelectionChanged: (values) =>
+                    profile.setVoiceLanguageMode(values.first),
+              ),
+              if (profile.voiceLanguageMode ==
+                  VoiceLanguageMode.manualOverride) ...[
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  initialValue: profile.manualAsrStrategy,
+                  decoration: const InputDecoration(
+                    labelText: '手動指定 ASR strategy',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'defaultOpenAiRealtime',
+                      child: Text('OpenAI Realtime'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'mockTaigiAsr',
+                      child: Text('台語 ASR adapter'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      profile.setManualAsrStrategy(value);
+                    }
+                  },
+                ),
+              ],
+            ],
           ),
         ),
         const SizedBox(height: 14),

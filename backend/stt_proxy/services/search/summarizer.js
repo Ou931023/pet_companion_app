@@ -14,9 +14,19 @@ function toSources(results) {
     .map((item) => ({
       title: item.title || "來源資料",
       url: item.url,
+      domain: item.domain || siteNameFromUrl(item.url || ""),
       siteName: item.siteName || item.site_name || item.domain || "",
       publishedAt: item.publishedAt || item.published_at || null,
+      summary: item.summary || item.snippet || item.content || "",
     }));
+}
+
+function siteNameFromUrl(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch (_) {
+    return "";
+  }
 }
 
 function fallbackSummary({ query, results, mode }) {

@@ -5,12 +5,14 @@ import 'package:flutter/material.dart';
 import '../config/app_config.dart';
 import '../models/companion_analysis_result.dart';
 import '../models/conversation_turn.dart';
+import '../models/language_route.dart';
 import '../models/pet_status.dart';
 import '../models/realtime_timeout.dart';
 import '../models/voice_agent_state.dart';
 import '../services/ai_navigation_service.dart';
 import '../services/companion_engine_service.dart';
 import '../services/emotion_services.dart';
+import '../services/language_routing_service.dart';
 import '../services/realtime_timeout_registry.dart';
 import '../services/realtime_turn_coordinator.dart';
 import '../services/realtime_voice_service.dart';
@@ -29,6 +31,7 @@ class VoiceAgentController extends ChangeNotifier {
     required this.conversationController,
     required this.realtimeVoiceService,
     required this.companionEngineService,
+    required this.languageRoutingService,
     required this.memoryController,
     required this.navigationService,
     required this.navigationController,
@@ -42,12 +45,14 @@ class VoiceAgentController extends ChangeNotifier {
   final ConversationController conversationController;
   final RealtimeVoiceService realtimeVoiceService;
   final CompanionEngineService companionEngineService;
+  final LanguageRoutingService languageRoutingService;
   final MemoryController memoryController;
   final AiNavigationService navigationService;
   final AppNavigationController navigationController;
   final RealtimeTimeoutConfig timeoutConfig;
   final RealtimeTimeoutPolicy timeoutPolicy;
   final TextEmotionService _textEmotionService = const TextEmotionService();
+  final VoiceFeatureService _voiceFeatureService = const VoiceFeatureService();
 
   VoiceAgentState _state = VoiceAgentState.idle;
   UserEmotion _emotion = UserEmotion.neutral;
@@ -63,9 +68,19 @@ class VoiceAgentController extends ChangeNotifier {
   String _responseTurnId = '';
   String _latestCompanionTurnId = '';
   String _partialTranscript = '';
+  DateTime? _speechStartedAt;
+  DateTime? _speechStoppedAt;
   CompanionAnalysisResult? _currentCompanionContext;
+  LanguageRouteResult _currentLanguageRoute = const LanguageRouteResult(
+    strategyName: 'defaultOpenAiRealtime',
+    languageHint: TranscriptLanguageHint.unknown,
+    routeReason: 'not_started',
+    isFallback: false,
+    transcript: '',
+  );
   bool _skipNextAssistantText = false;
   int _connectionAttemptId = 0;
+  int _transcriptRouteAttemptId = 0;
   final RealtimeTurnCoordinator _turnCoordinator = RealtimeTurnCoordinator();
   final RealtimeTimeoutRegistry _timeouts = RealtimeTimeoutRegistry();
 
@@ -77,6 +92,11 @@ class VoiceAgentController extends ChangeNotifier {
   String get lastError => _lastError;
   CompanionAnalysisResult? get currentCompanionContext =>
       _currentCompanionContext;
+  LanguageRouteResult get currentLanguageRoute => _currentLanguageRoute;
+  String get strategyName => _currentLanguageRoute.strategyName;
+  String get languageHint => _currentLanguageRoute.languageHint.value;
+  String get routeReason => _currentLanguageRoute.routeReason;
+  bool get isLanguageFallback => _currentLanguageRoute.isFallback;
   String get activeTurnId => _activeTurnId;
   String get partialTranscript => _partialTranscript;
   bool get isRealtimeReady =>
@@ -131,6 +151,8 @@ class VoiceAgentController extends ChangeNotifier {
     _activeTurnId = '';
     _responseTurnId = '';
     _partialTranscript = '';
+    _speechStartedAt = null;
+    _speechStoppedAt = null;
     _turnCoordinator.reset();
     _transition(VoiceAgentState.idle, 'manual_stop');
     petController.setMessage('我先在旁邊陪你。想不到要聊什麼也沒關係，要不要跟我說說今天最舒服的一刻？');
@@ -142,9 +164,12 @@ class VoiceAgentController extends ChangeNotifier {
         _applyStateFromPayload(event.payload);
         break;
       case RealtimeEventType.userSpeechStarted:
+        _speechStartedAt = DateTime.now();
+        _speechStoppedAt = null;
         _startTimeout(RealtimeTimeoutType.transcriptTimeout);
         break;
       case RealtimeEventType.userSpeechStopped:
+        _speechStoppedAt = DateTime.now();
         _startTimeout(RealtimeTimeoutType.transcriptTimeout);
         break;
       case RealtimeEventType.partialTranscript:
@@ -160,78 +185,7 @@ class VoiceAgentController extends ChangeNotifier {
         break;
       case RealtimeEventType.finalTranscript:
         _cancelTimeout(RealtimeTimeoutType.transcriptTimeout);
-        final decision = _turnCoordinator.acceptFinalTranscript(event.payload);
-        if (!decision.accepted) {
-          debugPrint(
-            '[VoiceAgentController] ignore transcript reason=${decision.reason}',
-          );
-          return;
-        }
-        final transcript = decision.transcript;
-        final turnId = decision.turnId;
-        _cancelTurnTimeouts();
-        _activeTurnId = turnId;
-        _partialTranscript = '';
-        _pendingRealtimeTurnId = turnId;
-        _latestCompanionTurnId = turnId;
-        _transition(
-          VoiceAgentState.thinking,
-          'final_transcript_received',
-          turnId: turnId,
-        );
-        _startTimeout(RealtimeTimeoutType.responseTimeout, turnId: turnId);
-        unawaited(_analyzeCompanionTranscript(transcript, turnId));
-
-        final navigationIntent = navigationService.detect(transcript);
-        if (navigationIntent != null) {
-          if (!_isActiveTurn(turnId)) return;
-          navigationController.navigateTo(navigationIntent.route);
-          petController.setMessage(navigationIntent.reply);
-          conversationController.appendExternalTurn(
-            ConversationTurn(
-              timestamp: DateTime.now(),
-              userText: transcript,
-              petReply: navigationIntent.reply,
-              toolName: 'navigation',
-              turnId: turnId,
-              emotionTag: UserEmotion.neutral.name,
-            ),
-          );
-          _pendingRealtimeUserText = '';
-          _skipNextAssistantText = true;
-          notifyListeners();
-          return;
-        }
-        if (conversationController.shouldHandleAsLocalCommand(transcript)) {
-          _pendingRealtimeUserText = '';
-          _skipNextAssistantText = true;
-          unawaited(_handleLocalRealtimeCommand(transcript, turnId));
-          return;
-        }
-        final renameResult = _tryHandleRenameIntent(transcript);
-        _emotion = detectEmotion(transcript);
-        debugPrint('[EMOTION] text=$transcript emotion=${_emotion.name}');
-        _pendingRealtimeUserText = transcript;
-        _pendingRealtimeEmotion = _emotion.name;
-        _applyEmotionToPet();
-        conversationController.appendExternalTurn(
-          ConversationTurn(
-            timestamp: DateTime.now(),
-            userText: transcript,
-            petReply: renameResult.reply ?? '',
-            toolName: renameResult.handled ? 'renamePet' : 'realtime-user',
-            turnId: turnId,
-            emotionTag: _emotion.name,
-          ),
-        );
-        if (renameResult.reply != null) {
-          unawaited(
-            conversationController.handleRealtimeAssistantReply(
-              renameResult.reply!,
-              turnId: turnId,
-            ),
-          );
-        }
+        unawaited(_handleFinalTranscript(event.payload));
         break;
       case RealtimeEventType.assistantResponseStart:
         _responseTurnId = _activeTurnId;
@@ -346,6 +300,106 @@ class VoiceAgentController extends ChangeNotifier {
     _transition(mapped, 'service_state_$value');
   }
 
+  Future<void> _handleFinalTranscript(String realtimeTranscript) async {
+    final routeAttemptId = ++_transcriptRouteAttemptId;
+    final route = await languageRoutingService.routeTranscript(
+      mode: profileController.voiceLanguageMode,
+      manualStrategyName: profileController.manualAsrStrategy,
+      realtimeTranscript: realtimeTranscript,
+    );
+    if (routeAttemptId != _transcriptRouteAttemptId) {
+      debugPrint(
+        '[LANGUAGE_ROUTE] ignore stale route attempt=$routeAttemptId active=$_transcriptRouteAttemptId',
+      );
+      return;
+    }
+    _currentLanguageRoute = route;
+    if (route.isFallback) {
+      debugPrint(
+        '[LANGUAGE_ROUTE] fallback strategy=${route.strategyName} reason=${route.routeReason}',
+      );
+    } else {
+      debugPrint(
+        '[LANGUAGE_ROUTE] strategy=${route.strategyName} language=${route.languageHint.value} reason=${route.routeReason}',
+      );
+    }
+
+    final decision = _turnCoordinator.acceptFinalTranscript(route.transcript);
+    if (!decision.accepted) {
+      debugPrint(
+        '[VoiceAgentController] ignore transcript reason=${decision.reason} route=${route.routeReason}',
+      );
+      notifyListeners();
+      return;
+    }
+    final transcript = decision.transcript;
+    final turnId = decision.turnId;
+    _cancelTurnTimeouts();
+    _activeTurnId = turnId;
+    _partialTranscript = '';
+    _pendingRealtimeTurnId = turnId;
+    _latestCompanionTurnId = turnId;
+    _transition(
+      VoiceAgentState.thinking,
+      'final_transcript_received',
+      turnId: turnId,
+    );
+    _startTimeout(RealtimeTimeoutType.responseTimeout, turnId: turnId);
+    unawaited(_analyzeCompanionTranscript(transcript, turnId));
+
+    final navigationIntent = navigationService.detect(transcript);
+    if (navigationIntent != null) {
+      if (!_isActiveTurn(turnId)) return;
+      navigationController.navigateTo(navigationIntent.route);
+      petController.setMessage(navigationIntent.reply);
+      conversationController.appendExternalTurn(
+        ConversationTurn(
+          timestamp: DateTime.now(),
+          userText: transcript,
+          petReply: navigationIntent.reply,
+          toolName: 'navigation',
+          turnId: turnId,
+          emotionTag: UserEmotion.neutral.name,
+        ),
+      );
+      _pendingRealtimeUserText = '';
+      _skipNextAssistantText = true;
+      notifyListeners();
+      return;
+    }
+    if (conversationController.shouldHandleAsLocalCommand(transcript)) {
+      _pendingRealtimeUserText = '';
+      _skipNextAssistantText = true;
+      unawaited(_handleLocalRealtimeCommand(transcript, turnId));
+      return;
+    }
+    final renameResult = _tryHandleRenameIntent(transcript);
+    _emotion = detectEmotion(transcript);
+    debugPrint('[EMOTION] text=$transcript emotion=${_emotion.name}');
+    _pendingRealtimeUserText = transcript;
+    _pendingRealtimeEmotion = _emotion.name;
+    _applyEmotionToPet();
+    conversationController.appendExternalTurn(
+      ConversationTurn(
+        timestamp: DateTime.now(),
+        userText: transcript,
+        petReply: renameResult.reply ?? '',
+        toolName: renameResult.handled ? 'renamePet' : 'realtime-user',
+        turnId: turnId,
+        emotionTag: _emotion.name,
+      ),
+    );
+    if (renameResult.reply != null) {
+      unawaited(
+        conversationController.handleRealtimeAssistantReply(
+          renameResult.reply!,
+          turnId: turnId,
+        ),
+      );
+    }
+    notifyListeners();
+  }
+
   Future<void> _handleLocalRealtimeCommand(String text, String turnId) async {
     if (!_isActiveTurn(turnId)) return;
     _transition(VoiceAgentState.thinking, 'local_command_started',
@@ -379,6 +433,8 @@ class VoiceAgentController extends ChangeNotifier {
         turnId: turnId,
         petName: profileController.petName,
         transcript: transcript,
+        languageHint: _currentLanguageRoute.languageHint.value,
+        audioFeatures: _estimateAudioFeatures(transcript),
         petState: {
           'mood': petController.mood,
           'expression': petController.expression,
@@ -442,6 +498,24 @@ class VoiceAgentController extends ChangeNotifier {
     );
   }
 
+  Map<String, dynamic> _estimateAudioFeatures(String transcript) {
+    final startedAt = _speechStartedAt;
+    final stoppedAt = _speechStoppedAt ?? DateTime.now();
+    final speechDuration = startedAt == null || stoppedAt.isBefore(startedAt)
+        ? null
+        : stoppedAt.difference(startedAt);
+    final silenceDuration = _speechStoppedAt == null
+        ? null
+        : DateTime.now().difference(_speechStoppedAt!);
+    return _voiceFeatureService
+        .estimate(
+          transcript: transcript,
+          speechDuration: speechDuration,
+          silenceDuration: silenceDuration,
+        )
+        .toJson();
+  }
+
   PetMode _petModeFromCompanion(CompanionAnalysisResult result) {
     return switch (result.petExpression) {
       'happy' => PetMode.happy,
@@ -473,7 +547,13 @@ class VoiceAgentController extends ChangeNotifier {
 
   String _companionContextPrompt([CompanionAnalysisResult? result]) {
     final context = result ?? _currentCompanionContext;
-    if (context == null) return '';
+    final languageLines = [
+      'languageHint=${_currentLanguageRoute.languageHint.value}',
+      'asrStrategy=${_currentLanguageRoute.strategyName}',
+      'asrRouteReason=${_currentLanguageRoute.routeReason}',
+      'asrFallback=${_currentLanguageRoute.isFallback}',
+    ];
+    if (context == null) return languageLines.join('\n');
     return [
       'emotion=${context.emotion}',
       'companionNeed=${context.companionNeed}',
@@ -482,6 +562,7 @@ class VoiceAgentController extends ChangeNotifier {
       'petAction=${context.petAction}',
       'nextStrategy.mode=${context.nextStrategy.mode}',
       'nextStrategy.instruction=${context.nextStrategy.instruction}',
+      ...languageLines,
     ].join('\n');
   }
 

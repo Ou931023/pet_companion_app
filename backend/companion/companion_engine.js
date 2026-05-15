@@ -5,6 +5,9 @@ const { mapPetState, mapReplyStrategy } = require("./pet_state_mapper");
 const { shouldSaveMemory } = require("./memory_policy");
 const { assessSafety } = require("./safety_guard");
 const { planNextStrategy } = require("./next_strategy_planner");
+const { estimateVoiceFeatures } = require("./voice_feature_service");
+const { fuseEmotion } = require("./emotion_fusion_service");
+const { classifySearchIntent } = require("../search/search_intent_classifier");
 
 function analyzeCompanionTurn(input = {}) {
   const transcript = (input.transcript || "").toString().trim();
@@ -26,46 +29,67 @@ function analyzeCompanionTurn(input = {}) {
         mode: "normal_chat",
         instruction: "下一輪回應保持自然、簡短、陪伴感，每次最多問一個問題。",
       },
+      voiceFeatures: estimateVoiceFeatures({ transcript, audioFeatures: input.audioFeatures }),
+      fusion: {
+        finalEmotion: "neutral",
+        confidence: 0.5,
+        reason: "沒有可分析的 transcript。",
+      },
     });
   }
 
   const emotionResult = classifyEmotion(input);
+  const voiceFeatures = estimateVoiceFeatures({
+    transcript,
+    audioFeatures: input.audioFeatures || {},
+  });
   const needResult = classifyCompanionNeed({
     transcript,
     emotion: emotionResult.emotion,
   });
+  const fusion = fuseEmotion({
+    textEmotion: emotionResult.emotion,
+    textConfidence: emotionResult.confidence,
+    voiceFeatures,
+    companionNeed: needResult.companionNeed,
+  });
+  fusion.textEmotion = emotionResult.emotion;
   const safety = assessSafety({ transcript });
+  const searchIntent = classifySearchIntent(transcript);
   const replyStrategy = mapReplyStrategy({
-    emotion: emotionResult.emotion,
+    emotion: fusion.finalEmotion,
     companionNeed: needResult.companionNeed,
   });
   const petState = mapPetState({
-    emotion: emotionResult.emotion,
+    emotion: fusion.finalEmotion,
     companionNeed: needResult.companionNeed,
     replyStrategy,
   });
   const implicitMeaning = analyzeImplicitMeaning({
     transcript,
-    emotion: emotionResult.emotion,
+    emotion: fusion.finalEmotion,
     companionNeed: needResult.companionNeed,
   });
   const memory = shouldSaveMemory({
     transcript,
-    emotion: emotionResult.emotion,
+    emotion: fusion.finalEmotion,
     companionNeed: needResult.companionNeed,
   });
   const nextStrategy = planNextStrategy({
-    emotion: emotionResult.emotion,
+    emotion: fusion.finalEmotion,
     companionNeed: needResult.companionNeed,
     replyStrategy,
     safety,
     retrievedMemories: input.retrievedMemories || [],
+    searchIntent,
+    sourceReferences: input.sourceReferences || [],
+    languageHint: input.languageHint || "zh",
   });
 
   return structuredResult({
     turnId,
-    emotion: emotionResult.emotion,
-    emotionConfidence: emotionResult.confidence,
+    emotion: fusion.finalEmotion,
+    emotionConfidence: fusion.confidence,
     companionNeed: needResult.companionNeed,
     needConfidence: needResult.confidence,
     replyStrategy,
@@ -75,6 +99,12 @@ function analyzeCompanionTurn(input = {}) {
     memory,
     safety,
     nextStrategy,
+    voiceFeatures,
+    fusion,
+    needsSearch: searchIntent.needsSearch,
+    searchTopic: searchIntent.topic,
+    sourceReferences: input.sourceReferences || [],
+    knowledgeAnswer: input.knowledgeAnswer || "",
   });
 }
 
@@ -102,7 +132,31 @@ function structuredResult(result) {
       mode: (result.nextStrategy?.mode || "normal_chat").toString(),
       instruction: (result.nextStrategy?.instruction || "").toString(),
     },
+    voiceFeatures: {
+      volumeMean: nullableNumber(result.voiceFeatures?.volumeMean),
+      volumeVariance: nullableNumber(result.voiceFeatures?.volumeVariance),
+      pauseDensity: nullableNumber(result.voiceFeatures?.pauseDensity),
+      estimatedSpeechRate: nullableNumber(result.voiceFeatures?.estimatedSpeechRate),
+      speechDuration: nullableNumber(result.voiceFeatures?.speechDuration),
+      silenceDuration: nullableNumber(result.voiceFeatures?.silenceDuration),
+      confidence: clampConfidence(result.voiceFeatures?.confidence),
+    },
+    fusion: {
+      textEmotion: enumValue(result.fusion?.textEmotion, EMOTIONS, enumValue(result.emotion, EMOTIONS, "neutral")),
+      finalEmotion: enumValue(result.fusion?.finalEmotion, EMOTIONS, enumValue(result.emotion, EMOTIONS, "neutral")),
+      confidence: clampConfidence(result.fusion?.confidence ?? result.emotionConfidence),
+      reason: (result.fusion?.reason || "").toString(),
+    },
+    needsSearch: Boolean(result.needsSearch),
+    searchTopic: (result.searchTopic || "none").toString(),
+    sourceReferences: Array.isArray(result.sourceReferences) ? result.sourceReferences : [],
+    knowledgeAnswer: (result.knowledgeAnswer || "").toString(),
   };
+}
+
+function nullableNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function enumValue(value, allowed, fallback) {

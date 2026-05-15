@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../config/app_config.dart';
+import '../models/language_route.dart';
 import '../models/user_profile.dart';
 import '../services/local_storage_service.dart';
 import '../services/speech_to_text_service.dart';
@@ -26,6 +27,9 @@ class ProfileController extends ChangeNotifier {
   double get fontScale => _profile.fontScale;
   double get petVolume => _profile.petVolume;
   String get speechStyle => _profile.speechStyle;
+  VoiceLanguageMode get voiceLanguageMode =>
+      VoiceLanguageModeLabel.fromStorage(_profile.voiceLanguageMode);
+  String get manualAsrStrategy => _profile.manualAsrStrategy;
   List<String> get contentPreferences =>
       List.unmodifiable(_profile.contentPreferences);
   String get sttProxyUrl => _profile.sttProxyUrl;
@@ -107,6 +111,19 @@ class ProfileController extends ChangeNotifier {
       _ => 'gentle',
     };
     _profile = _profile.copyWith(speechStyle: normalized);
+    await _persist();
+  }
+
+  Future<void> setVoiceLanguageMode(VoiceLanguageMode mode) async {
+    _profile = _profile.copyWith(voiceLanguageMode: mode.storageValue);
+    await _persist();
+  }
+
+  Future<void> setManualAsrStrategy(String strategyName) async {
+    final normalized = strategyName.trim().isEmpty
+        ? 'defaultOpenAiRealtime'
+        : strategyName.trim();
+    _profile = _profile.copyWith(manualAsrStrategy: normalized);
     await _persist();
   }
 

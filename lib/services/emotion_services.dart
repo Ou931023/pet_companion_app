@@ -3,16 +3,45 @@ import '../models/pet_status.dart';
 
 class VoiceFeatures {
   const VoiceFeatures({
-    this.lowVolume = false,
-    this.slowSpeech = false,
-    this.manyPauses = false,
-    this.largeVolumeChange = false,
+    this.volumeMean,
+    this.volumeVariance,
+    this.pauseDensity,
+    this.estimatedSpeechRate,
+    this.speechDuration,
+    this.silenceDuration,
+    this.confidence = 0,
   });
 
-  final bool lowVolume;
-  final bool slowSpeech;
-  final bool manyPauses;
-  final bool largeVolumeChange;
+  final double? volumeMean;
+  final double? volumeVariance;
+  final double? pauseDensity;
+  final double? estimatedSpeechRate;
+  final double? speechDuration;
+  final double? silenceDuration;
+  final double confidence;
+
+  bool get lowVolume => volumeMean != null && volumeMean! <= 0.28;
+  bool get slowSpeech =>
+      estimatedSpeechRate != null &&
+      estimatedSpeechRate! > 0 &&
+      estimatedSpeechRate! <= 1.6;
+  bool get fastSpeech =>
+      estimatedSpeechRate != null && estimatedSpeechRate! >= 4.0;
+  bool get manyPauses => pauseDensity != null && pauseDensity! >= 0.45;
+  bool get largeVolumeChange =>
+      volumeVariance != null && volumeVariance! >= 0.35;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'volumeMean': volumeMean,
+      'volumeVariance': volumeVariance,
+      'pauseDensity': pauseDensity,
+      'estimatedSpeechRate': estimatedSpeechRate,
+      'speechDuration': speechDuration,
+      'silenceDuration': silenceDuration,
+      'confidence': confidence.clamp(0.0, 1.0),
+    };
+  }
 }
 
 class TextEmotionService {
@@ -79,6 +108,39 @@ class TextEmotionService {
 class VoiceFeatureService {
   const VoiceFeatureService();
 
+  VoiceFeatures estimate({
+    required String transcript,
+    Duration? speechDuration,
+    Duration? silenceDuration,
+    double? volumeMean,
+    double? volumeVariance,
+  }) {
+    final normalized = transcript.trim();
+    final speechSeconds = _seconds(speechDuration);
+    final silenceSeconds = _seconds(silenceDuration);
+    final estimatedSpeechRate = speechSeconds != null && speechSeconds > 0
+        ? normalized.length / speechSeconds
+        : null;
+    final pauseDensity =
+        speechSeconds != null && speechSeconds > 0 && silenceSeconds != null
+            ? (silenceSeconds / speechSeconds).clamp(0.0, 1.0)
+            : _punctuationPauseDensity(normalized);
+    final hasSignals = normalized.isNotEmpty ||
+        speechSeconds != null ||
+        silenceSeconds != null ||
+        volumeMean != null ||
+        volumeVariance != null;
+    return VoiceFeatures(
+      volumeMean: volumeMean,
+      volumeVariance: volumeVariance,
+      pauseDensity: pauseDensity,
+      estimatedSpeechRate: estimatedSpeechRate,
+      speechDuration: speechSeconds,
+      silenceDuration: silenceSeconds,
+      confidence: hasSignals ? 0.55 : 0,
+    );
+  }
+
   EmotionResult analyze(VoiceFeatures? features) {
     if (features == null) return EmotionResult.neutral;
     if (features.lowVolume && features.slowSpeech) {
@@ -107,6 +169,18 @@ class VoiceFeatureService {
     }
     return EmotionResult.neutral;
   }
+
+  double? _seconds(Duration? duration) {
+    if (duration == null) return null;
+    final seconds = duration.inMilliseconds / 1000;
+    return seconds <= 0 ? null : seconds;
+  }
+
+  double? _punctuationPauseDensity(String text) {
+    if (text.isEmpty) return null;
+    final pauses = RegExp(r'[，、。,.…\s]').allMatches(text).length;
+    return (pauses / text.length).clamp(0.0, 1.0);
+  }
 }
 
 class EmotionFusionService {
@@ -121,21 +195,38 @@ class EmotionFusionService {
   EmotionResult analyze({
     required String text,
     VoiceFeatures? voiceFeatures,
+    String companionNeed = 'unknown',
   }) {
     try {
       final textResult = textEmotionService.analyze(text);
       final voiceResult = voiceFeatureService.analyze(voiceFeatures);
+      final highPause = voiceFeatures?.manyPauses ?? false;
+      final slowSpeech = voiceFeatures?.slowSpeech ?? false;
+      final fastSpeech = voiceFeatures?.fastSpeech ?? false;
+      final unstableVolume = voiceFeatures?.largeVolumeChange ?? false;
       if (textResult.emotion != 'neutral') {
-        final confidence = voiceResult.emotion == textResult.emotion
+        final aligned = voiceResult.emotion == textResult.emotion ||
+            (textResult.emotion == 'lonely' && highPause) ||
+            (textResult.emotion == 'anxious' &&
+                (fastSpeech || unstableVolume)) ||
+            (textResult.emotion == 'happy' && fastSpeech);
+        final confidence = aligned
             ? (textResult.confidence + 0.08).clamp(0.0, 1.0)
             : textResult.confidence;
         return EmotionResult(
           emotion: textResult.emotion,
           confidence: confidence,
-          reason: voiceResult.emotion == textResult.emotion
-              ? '${textResult.reason}，語音特徵也接近'
-              : textResult.reason,
-          source: voiceResult.emotion == textResult.emotion ? 'fusion' : 'text',
+          reason:
+              aligned ? '${textResult.reason}，語音特徵輔助判斷也接近' : textResult.reason,
+          source: aligned ? 'fusion' : 'text',
+        );
+      }
+      if (slowSpeech && highPause) {
+        return EmotionResult(
+          emotion: companionNeed == 'companionship' ? 'sad' : 'tired',
+          confidence: 0.62,
+          reason: '文字情緒不明顯，但語速較慢且停頓較多',
+          source: 'fusion',
         );
       }
       if (voiceResult.emotion != 'neutral') return voiceResult;

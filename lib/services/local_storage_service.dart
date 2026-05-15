@@ -21,6 +21,8 @@ class LocalStorageService {
   static const _keyPetVolume = 'petVolume';
   static const _keySpeechStyle = 'speechStyle';
   static const _keyContentPreferences = 'contentPreferences';
+  static const _keyVoiceLanguageMode = 'voiceLanguageMode';
+  static const _keyManualAsrStrategy = 'manualAsrStrategy';
   static const _keyConversationHistory = 'conversationHistory';
 
   Future<UserProfile> loadProfile() async {
@@ -49,6 +51,10 @@ class LocalStorageService {
       speechStyle: prefs.getString(_keySpeechStyle) ?? initial.speechStyle,
       contentPreferences: prefs.getStringList(_keyContentPreferences) ??
           initial.contentPreferences,
+      voiceLanguageMode:
+          prefs.getString(_keyVoiceLanguageMode) ?? initial.voiceLanguageMode,
+      manualAsrStrategy:
+          prefs.getString(_keyManualAsrStrategy) ?? initial.manualAsrStrategy,
     );
   }
 
@@ -78,6 +84,8 @@ class LocalStorageService {
     await prefs.setDouble(_keyFontScale, profile.fontScale);
     await prefs.setDouble(_keyPetVolume, profile.petVolume);
     await prefs.setString(_keySpeechStyle, profile.speechStyle);
+    await prefs.setString(_keyVoiceLanguageMode, profile.voiceLanguageMode);
+    await prefs.setString(_keyManualAsrStrategy, profile.manualAsrStrategy);
     await prefs.setStringList(
       _keyContentPreferences,
       profile.contentPreferences,

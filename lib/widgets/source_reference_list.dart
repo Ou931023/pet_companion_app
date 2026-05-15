@@ -55,6 +55,7 @@ class _SourceRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final siteName = source.siteName.isEmpty ? '來源網站' : source.siteName;
     final date = source.publishedAt?.trim();
+    final summary = source.summary.trim();
     return InkWell(
       onTap: () => _open(source.url),
       borderRadius: BorderRadius.circular(6),
@@ -78,6 +79,17 @@ class _SourceRow extends StatelessWidget {
                       color: Colors.indigo,
                     ),
                   ),
+                  if (summary.isNotEmpty)
+                    Text(
+                      summary,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.black54,
+                        height: 1.25,
+                      ),
+                    ),
                   if (date != null && date.isNotEmpty)
                     Text(
                       '發布日期：$date',

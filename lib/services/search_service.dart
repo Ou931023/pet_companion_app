@@ -23,6 +23,7 @@ class SearchService {
       '幫我查',
       '搜尋',
       '健康',
+      '健康小知識',
       '睡眠',
       '運動',
       '喝水',
@@ -30,10 +31,11 @@ class SearchService {
       '長輩',
       '老人',
       '天氣',
-      '孤單',
-      '難過',
-      '心情不好',
-      '故事',
+      '防詐',
+      '詐騙',
+      '真實故事',
+      '防詐故事',
+      '新聞故事',
     ].any(normalized.contains);
   }
 
@@ -45,7 +47,8 @@ class SearchService {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'query': query,
-          'mode': 'auto',
+          'topic': '',
+          'userId': 'default_user',
           'userProfile': {
             'ageGroup': 'elderly',
             'language': 'zh-TW',
@@ -57,7 +60,7 @@ class SearchService {
         jsonDecode(response.body) as Map<String, dynamic>,
       );
     } on SocketException {
-      return _fallback(message: '現在好像連不上搜尋服務，我先陪你聊聊，晚點再幫你查。');
+      return _fallback();
     } catch (_) {
       return _fallback();
     }
@@ -65,7 +68,7 @@ class SearchService {
 
   SearchResponse _fallback({String? message}) {
     return SearchResponse(
-      answer: message ?? '目前沒有取得可靠來源，我先不亂說，我可以先陪你聊聊或稍後再幫你查。',
+      answer: message ?? '我現在查資料有點不順，我可以先陪你聊聊',
       summary: '搜尋失敗 fallback',
       sources: const [],
       mode: 'general_web_search',

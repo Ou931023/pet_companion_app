@@ -22,7 +22,8 @@ class SearchResponse {
   final bool shouldShowSources;
 
   factory SearchResponse.fromJson(Map<String, dynamic> json) {
-    final rawSources = json['sources'] as List<dynamic>? ?? [];
+    final rawSources =
+        (json['sourceReferences'] ?? json['sources']) as List<dynamic>? ?? [];
     return SearchResponse(
       answer: json['answer']?.toString() ?? '',
       summary: json['summary']?.toString() ?? '',

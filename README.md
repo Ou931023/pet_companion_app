@@ -15,6 +15,26 @@
 - 即時 transcript / 即時回覆文字事件 / 即時語音回覆狀態
 - 寵物狀態在 listening / thinking / speaking 間切換
 
+## 專案狀態
+
+已完成第一版整合
+- OpenAI Realtime WebRTC 語音對話穩定性優化
+- 語音中斷、連線異常與 timeout fallback
+- Companion Engine 結構化理解層
+- 隱含情緒與陪伴需求分析
+- pgvector 長期記憶檢索
+- 知識搜尋與可信資料來源整合
+- 台語語音模型路由與 fallback 架構
+- 語音情緒輔助判斷
+
+持續優化中
+- Realtime 多輪對話穩定性壓力測試
+- 台語 ASR 模型準確度提升
+- 語音音量特徵接入
+- 長期記憶品質與去重規則優化
+- 搜尋來源篩選與回答品質提升
+- 陪伴回覆語氣微調
+
 ## Flutter App 啟動方式
 
 1. 安裝 Flutter SDK 並確認 `flutter` 指令可用。

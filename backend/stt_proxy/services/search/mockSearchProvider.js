@@ -25,7 +25,7 @@ function fallback(mode) {
   const message =
     mode === "weather"
       ? "我現在暫時查不到天氣，出門前可以再看一下氣象資訊，也記得帶水和外套。"
-      : "目前沒有取得可靠來源，我先不亂說，我可以先陪你聊聊或稍後再幫你查。";
+      : "我現在查資料有點不順，我可以先陪你聊聊。";
   return {
     answer: message,
     summary: message,

@@ -101,9 +101,101 @@ test("returns fixed structured schema", () => {
     "memory",
     "safety",
     "nextStrategy",
+    "voiceFeatures",
+    "fusion",
+    "needsSearch",
+    "searchTopic",
+    "sourceReferences",
+    "knowledgeAnswer",
   ]);
   assert.deepEqual(Object.keys(result.memory), ["shouldSave", "candidate", "type"]);
   assert.deepEqual(Object.keys(result.safety), ["riskLevel", "needsHumanSupport"]);
   assert.deepEqual(Object.keys(result.nextStrategy), ["mode", "instruction"]);
+  assert.deepEqual(Object.keys(result.fusion), ["textEmotion", "finalEmotion", "confidence", "reason"]);
   assert.equal(result.turnId, "turn-今天家裡好安靜");
+});
+
+test("marks knowledge search intent", () => {
+  const result = analyze("跟我說健康小知識");
+  assert.equal(result.needsSearch, true);
+  assert.equal(result.nextStrategy.mode, "knowledge_response");
+});
+
+test("adds taigi guidance when languageHint is taigi", () => {
+  const result = analyzeCompanionTurn({
+    userId: "demo-user",
+    sessionId: "session-001",
+    turnId: "turn-taigi",
+    petName: "陪伴寶",
+    transcript: "睡不太著",
+    languageHint: "taigi",
+    recentTurns: [],
+    petState: {
+      mood: "neutral",
+      expression: "idle",
+      intimacy: 50,
+      hunger: 70,
+      energy: 60,
+    },
+  });
+
+  assert.match(result.nextStrategy.instruction, /台灣長者自然聽得懂/);
+  assert.match(result.nextStrategy.instruction, /溫和追問/);
+});
+
+test("fusion boosts lonely when pause density is high", () => {
+  const result = analyzeCompanionTurn({
+    transcript: "今天家裡好安靜",
+    turnId: "turn-lonely-pause",
+    audioFeatures: { pauseDensity: 0.7, estimatedSpeechRate: 1.8, confidence: 0.8 },
+  });
+
+  assert.equal(result.fusion.textEmotion, "lonely");
+  assert.equal(result.fusion.finalEmotion, "lonely");
+  assert.ok(result.fusion.confidence > 0.78);
+});
+
+test("fusion uses slow speech and high pause for neutral text", () => {
+  const result = analyzeCompanionTurn({
+    transcript: "今天下午在客廳坐了一下",
+    turnId: "turn-slow-neutral",
+    audioFeatures: { pauseDensity: 0.65, estimatedSpeechRate: 1.1, confidence: 0.8 },
+  });
+
+  assert.equal(result.fusion.textEmotion, "neutral");
+  assert.ok(["tired", "sad"].includes(result.fusion.finalEmotion));
+});
+
+test("fusion boosts anxious when speech is fast", () => {
+  const result = analyzeCompanionTurn({
+    transcript: "我有點擔心",
+    turnId: "turn-anxious-fast",
+    audioFeatures: { estimatedSpeechRate: 4.8, volumeVariance: 0.2, confidence: 0.8 },
+  });
+
+  assert.equal(result.fusion.finalEmotion, "anxious");
+  assert.ok(result.fusion.confidence > 0.72);
+});
+
+test("fusion falls back to text emotion when voice features are missing", () => {
+  const result = analyzeCompanionTurn({
+    transcript: "我有點孤單",
+    turnId: "turn-no-audio",
+  });
+
+  assert.equal(result.fusion.textEmotion, "lonely");
+  assert.equal(result.fusion.finalEmotion, "lonely");
+  assert.match(result.fusion.reason, /文字情緒推測/);
+});
+
+test("fusion never returns unsupported emotion", () => {
+  const result = analyzeCompanionTurn({
+    transcript: "我有點擔心",
+    turnId: "turn-supported-emotion",
+    audioFeatures: { pauseDensity: 0.2, estimatedSpeechRate: 4.5, confidence: 0.8 },
+  });
+  const supported = ["happy", "neutral", "sad", "lonely", "anxious", "tired", "nostalgic"];
+
+  assert.ok(supported.includes(result.fusion.finalEmotion));
+  assert.ok(supported.includes(result.emotion));
 });

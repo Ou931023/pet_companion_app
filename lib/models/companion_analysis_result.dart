@@ -12,6 +12,12 @@ class CompanionAnalysisResult {
     required this.memory,
     required this.safety,
     required this.nextStrategy,
+    required this.voiceFeatures,
+    required this.fusion,
+    this.needsSearch = false,
+    this.searchTopic = 'none',
+    this.knowledgeAnswer = '',
+    this.sourceReferences = const [],
   });
 
   final String turnId;
@@ -26,6 +32,12 @@ class CompanionAnalysisResult {
   final CompanionMemoryCandidate memory;
   final CompanionSafetyResult safety;
   final CompanionNextStrategy nextStrategy;
+  final CompanionVoiceFeatures voiceFeatures;
+  final CompanionEmotionFusion fusion;
+  final bool needsSearch;
+  final String searchTopic;
+  final String knowledgeAnswer;
+  final List<Map<String, dynamic>> sourceReferences;
 
   factory CompanionAnalysisResult.fromJson(Map<String, dynamic> json) {
     return CompanionAnalysisResult(
@@ -47,6 +59,20 @@ class CompanionAnalysisResult {
       nextStrategy: CompanionNextStrategy.fromJson(
         Map<String, dynamic>.from((json['nextStrategy'] as Map?) ?? const {}),
       ),
+      voiceFeatures: CompanionVoiceFeatures.fromJson(
+        Map<String, dynamic>.from((json['voiceFeatures'] as Map?) ?? const {}),
+      ),
+      fusion: CompanionEmotionFusion.fromJson(
+        Map<String, dynamic>.from((json['fusion'] as Map?) ?? const {}),
+      ),
+      needsSearch: json['needsSearch'] == true,
+      searchTopic: json['searchTopic']?.toString() ?? 'none',
+      knowledgeAnswer: json['knowledgeAnswer']?.toString() ?? '',
+      sourceReferences:
+          ((json['sourceReferences'] as List<dynamic>?) ?? const [])
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList(),
     );
   }
 
@@ -61,12 +87,96 @@ class CompanionAnalysisResult {
         'mode': nextStrategy.mode,
         'instruction': nextStrategy.instruction,
       },
+      'voiceFeatures': voiceFeatures.toJson(),
+      'fusion': fusion.toJson(),
     };
   }
 
   static double _doubleValue(Object? value, double fallback) {
     if (value is num) return value.toDouble();
     return double.tryParse(value?.toString() ?? '') ?? fallback;
+  }
+}
+
+class CompanionVoiceFeatures {
+  const CompanionVoiceFeatures({
+    this.volumeMean,
+    this.volumeVariance,
+    this.pauseDensity,
+    this.estimatedSpeechRate,
+    this.speechDuration,
+    this.silenceDuration,
+    this.confidence = 0,
+  });
+
+  final double? volumeMean;
+  final double? volumeVariance;
+  final double? pauseDensity;
+  final double? estimatedSpeechRate;
+  final double? speechDuration;
+  final double? silenceDuration;
+  final double confidence;
+
+  factory CompanionVoiceFeatures.fromJson(Map<String, dynamic> json) {
+    return CompanionVoiceFeatures(
+      volumeMean: _nullableDouble(json['volumeMean']),
+      volumeVariance: _nullableDouble(json['volumeVariance']),
+      pauseDensity: _nullableDouble(json['pauseDensity']),
+      estimatedSpeechRate: _nullableDouble(json['estimatedSpeechRate']),
+      speechDuration: _nullableDouble(json['speechDuration']),
+      silenceDuration: _nullableDouble(json['silenceDuration']),
+      confidence: CompanionAnalysisResult._doubleValue(json['confidence'], 0),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'volumeMean': volumeMean,
+      'volumeVariance': volumeVariance,
+      'pauseDensity': pauseDensity,
+      'estimatedSpeechRate': estimatedSpeechRate,
+      'speechDuration': speechDuration,
+      'silenceDuration': silenceDuration,
+      'confidence': confidence,
+    };
+  }
+
+  static double? _nullableDouble(Object? value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString());
+  }
+}
+
+class CompanionEmotionFusion {
+  const CompanionEmotionFusion({
+    required this.textEmotion,
+    required this.finalEmotion,
+    required this.confidence,
+    required this.reason,
+  });
+
+  final String textEmotion;
+  final String finalEmotion;
+  final double confidence;
+  final String reason;
+
+  factory CompanionEmotionFusion.fromJson(Map<String, dynamic> json) {
+    return CompanionEmotionFusion(
+      textEmotion: json['textEmotion']?.toString() ?? 'neutral',
+      finalEmotion: json['finalEmotion']?.toString() ?? 'neutral',
+      confidence: CompanionAnalysisResult._doubleValue(json['confidence'], 0.5),
+      reason: json['reason']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'finalEmotion': finalEmotion,
+      'textEmotion': textEmotion,
+      'confidence': confidence,
+      'reason': reason,
+    };
   }
 }
 

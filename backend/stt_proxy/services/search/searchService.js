@@ -4,6 +4,7 @@ const { searchWeb } = require("./openAiWebSearchProvider");
 const mock = require("./mockSearchProvider");
 const { summarizeWithAi, toSources } = require("./summarizer");
 const { logSearchQuery } = require("./documentStore");
+const { filterTrustedSources } = require("../../../search/trusted_source_filter");
 
 function responseShape({
   answer,
@@ -101,6 +102,13 @@ async function search({ query, mode = "auto", userProfile = {} }) {
   if (!results.length && !webAnswer) {
     const fallback = mock.fallback(resolvedMode);
     await logSearchQuery({ userQuery: query, queryMode: resolvedMode, usedProvider: fallback.provider });
+    return responseShape({ ...fallback, mode: resolvedMode, shouldShowSources: false });
+  }
+
+  results = filterTrustedSources(results);
+  if (!results.length) {
+    const fallback = mock.fallback(resolvedMode);
+    await logSearchQuery({ userQuery: query, queryMode: resolvedMode, usedProvider: "untrusted_filtered" });
     return responseShape({ ...fallback, mode: resolvedMode, shouldShowSources: false });
   }
 

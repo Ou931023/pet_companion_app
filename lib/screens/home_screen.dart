@@ -13,6 +13,7 @@ import '../controllers/wallet_controller.dart';
 import '../models/inventory_item.dart';
 import '../models/pet_status.dart';
 import '../models/pet_stats.dart';
+import '../models/source_reference.dart';
 import '../models/voice_agent_state.dart';
 import '../routes/app_routes.dart';
 import '../widgets/bag_icon_button.dart';
@@ -96,6 +97,9 @@ class _HomeScreenState extends State<HomeScreen> {
       VoiceAgentState.listening => Icons.graphic_eq,
       _ => Icons.mic,
     };
+    final companionSources = _companionSourceReferences(
+      voiceAgentController.currentCompanionContext?.sourceReferences,
+    );
 
     return SafeArea(
       bottom: false,
@@ -167,6 +171,40 @@ class _HomeScreenState extends State<HomeScreen> {
                         const SizedBox(height: 8),
                         SourceReferenceList(
                           sources: conversationController.latestSources,
+                        ),
+                      ],
+                    ],
+                    if (!conversationController.latestReplyIsSearch &&
+                        companionSources.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      SourceReferenceList(sources: companionSources),
+                    ],
+                    if (voiceAgentController.state != VoiceAgentState.idle) ...[
+                      const SizedBox(height: 6),
+                      _VoiceRouteLine(
+                        strategyName: voiceAgentController.strategyName,
+                        languageHint: voiceAgentController.languageHint,
+                        routeReason: voiceAgentController.routeReason,
+                        isFallback: voiceAgentController.isLanguageFallback,
+                      ),
+                      if (voiceAgentController.currentCompanionContext !=
+                          null) ...[
+                        const SizedBox(height: 4),
+                        _EmotionFusionLine(
+                          textEmotion: voiceAgentController
+                              .currentCompanionContext!.fusion.textEmotion,
+                          finalEmotion: voiceAgentController
+                              .currentCompanionContext!.fusion.finalEmotion,
+                          fusionReason: voiceAgentController
+                              .currentCompanionContext!.fusion.reason,
+                          pauseDensity: voiceAgentController
+                              .currentCompanionContext!
+                              .voiceFeatures
+                              .pauseDensity,
+                          estimatedSpeechRate: voiceAgentController
+                              .currentCompanionContext!
+                              .voiceFeatures
+                              .estimatedSpeechRate,
                         ),
                       ],
                     ],
@@ -398,6 +436,16 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  List<SourceReference> _companionSourceReferences(
+    List<Map<String, dynamic>>? references,
+  ) {
+    if (references == null || references.isEmpty) return const [];
+    return references
+        .map(SourceReference.fromJson)
+        .where((source) => source.title.isNotEmpty && source.url.isNotEmpty)
+        .toList(growable: false);
+  }
+
   Future<void> _applyInventoryItem({
     required BuildContext context,
     required InventoryItem item,
@@ -548,6 +596,82 @@ class _SearchMetaLine extends StatelessWidget {
       if (toolUsed.isNotEmpty) 'toolUsed: $toolUsed',
     ];
     if (parts.isEmpty) return const SizedBox.shrink();
+    return Text(
+      parts.join('  |  '),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        color: Colors.black.withValues(alpha: 0.48),
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+  }
+}
+
+class _VoiceRouteLine extends StatelessWidget {
+  const _VoiceRouteLine({
+    required this.strategyName,
+    required this.languageHint,
+    required this.routeReason,
+    required this.isFallback,
+  });
+
+  final String strategyName;
+  final String languageHint;
+  final String routeReason;
+  final bool isFallback;
+
+  @override
+  Widget build(BuildContext context) {
+    final parts = [
+      'ASR: $strategyName',
+      'lang: $languageHint',
+      if (isFallback) 'fallback',
+      if (routeReason.isNotEmpty) routeReason,
+    ];
+    return Text(
+      parts.join('  |  '),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        color: (isFallback ? Colors.orange.shade800 : Colors.black)
+            .withValues(alpha: 0.52),
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+  }
+}
+
+class _EmotionFusionLine extends StatelessWidget {
+  const _EmotionFusionLine({
+    required this.textEmotion,
+    required this.finalEmotion,
+    required this.fusionReason,
+    required this.pauseDensity,
+    required this.estimatedSpeechRate,
+  });
+
+  final String textEmotion;
+  final String finalEmotion;
+  final String fusionReason;
+  final double? pauseDensity;
+  final double? estimatedSpeechRate;
+
+  @override
+  Widget build(BuildContext context) {
+    final pauseText =
+        pauseDensity == null ? '-' : pauseDensity!.toStringAsFixed(2);
+    final rateText = estimatedSpeechRate == null
+        ? '-'
+        : estimatedSpeechRate!.toStringAsFixed(2);
+    final parts = [
+      '情緒推測: $textEmotion -> $finalEmotion',
+      'pause: $pauseText',
+      'rate: $rateText',
+      if (fusionReason.isNotEmpty) fusionReason,
+    ];
     return Text(
       parts.join('  |  '),
       maxLines: 1,
