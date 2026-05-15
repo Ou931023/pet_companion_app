@@ -85,3 +85,25 @@ test("detects eating alone as companionship cue", () => {
   assert.equal(result.companionNeed, "companionship");
   assert.equal(result.replyStrategy, "soft_companion");
 });
+
+test("returns fixed structured schema", () => {
+  const result = analyze("今天家裡好安靜");
+  assert.deepEqual(Object.keys(result), [
+    "turnId",
+    "emotion",
+    "emotionConfidence",
+    "companionNeed",
+    "needConfidence",
+    "replyStrategy",
+    "implicitMeaning",
+    "petExpression",
+    "petAction",
+    "memory",
+    "safety",
+    "nextStrategy",
+  ]);
+  assert.deepEqual(Object.keys(result.memory), ["shouldSave", "candidate", "type"]);
+  assert.deepEqual(Object.keys(result.safety), ["riskLevel", "needsHumanSupport"]);
+  assert.deepEqual(Object.keys(result.nextStrategy), ["mode", "instruction"]);
+  assert.equal(result.turnId, "turn-今天家裡好安靜");
+});

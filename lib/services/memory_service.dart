@@ -83,7 +83,7 @@ class MemoryService {
     required Object memoryId,
   }) async {
     final url = Uri.parse('$_baseApi/memories/$memoryId/archive');
-    final resp = await http.post(
+    final resp = await http.patch(
       url,
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'userId': userId}),

@@ -26,10 +26,10 @@ async function createEmbedding(text) {
   const openai = getClient();
   if (!openai) {
     return {
-      embedding: null,
-      provider: "none",
+      embedding: mockEmbedding(input),
+      provider: "mock",
       model,
-      error: "OPENAI_API_KEY missing",
+      error: "OPENAI_API_KEY missing; using deterministic mock embedding",
     };
   }
 
@@ -55,14 +55,28 @@ async function createEmbedding(text) {
   } catch (error) {
     console.warn("[memory-embedding] embedding failed", error?.message || error);
     return {
-      embedding: null,
-      provider: "none",
+      embedding: mockEmbedding(input),
+      provider: "mock",
       model,
-      error: error?.message || "embedding failed",
+      error: error?.message || "embedding failed; using deterministic mock embedding",
     };
   }
 }
 
+function mockEmbedding(text) {
+  const input = (text || "").toString();
+  const vector = new Array(1536).fill(0);
+  for (let i = 0; i < input.length; i += 1) {
+    const code = input.charCodeAt(i);
+    const index = (code * 31 + i * 17) % vector.length;
+    vector[index] += ((code % 97) + 1) / 100;
+  }
+  let norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+  if (!norm) norm = 1;
+  return vector.map((value) => Number((value / norm).toFixed(8)));
+}
+
 module.exports = {
   createEmbedding,
+  mockEmbedding,
 };

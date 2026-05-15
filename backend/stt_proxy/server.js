@@ -37,6 +37,8 @@ const {
   buildMemoryGreeting,
 } = require("./services/memory/memoryContextService");
 const { analyzeCompanionTurn } = require("../companion/companion_engine");
+const { retrieveRelevantMemories } = require("../memory/memory_retriever");
+const { storeCompanionMemoryCandidate } = require("../memory/memory_policy");
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -175,19 +177,39 @@ app.get("/health", (_, res) => {
   res.json({ status: "ok" });
 });
 
-app.post("/api/companion/analyze", (req, res) => {
+app.post("/api/companion/analyze", async (req, res) => {
   try {
+    const userId = req.body?.userId || "default_user";
+    const transcript = req.body?.transcript || "";
+    const retrieved = await retrieveRelevantMemories({
+      userId,
+      transcript,
+      topK: req.body?.topK || process.env.MEMORY_TOP_K || 5,
+    });
     const result = analyzeCompanionTurn({
-      userId: req.body?.userId,
+      userId,
       sessionId: req.body?.sessionId,
       turnId: req.body?.turnId,
       petName: req.body?.petName,
-      transcript: req.body?.transcript,
+      transcript,
       languageHint: req.body?.languageHint,
       recentTurns: req.body?.recentTurns,
       petState: req.body?.petState,
       audioFeatures: req.body?.audioFeatures,
+      retrievedMemories: retrieved.memories,
     });
+    if (result.memory?.shouldSave && result.memory?.candidate?.trim()) {
+      storeCompanionMemoryCandidate({
+        userId,
+        sessionId: req.body?.sessionId,
+        turnId: req.body?.turnId,
+        emotion: result.emotion,
+        memory: result.memory,
+        safety: result.safety,
+      }).catch((error) => {
+        logError("companion memory store failed", { error: error?.message || error });
+      });
+    }
     return res.json(result);
   } catch (error) {
     logError("companion analyze failed", { error: error?.message || error });
@@ -406,17 +428,20 @@ app.get("/api/memories", async (req, res) => {
 
 app.post("/api/memories", async (req, res) => {
   try {
+    const content = (req.body?.content || req.body?.memorySummary || req.body?.memoryText || "").toString().trim();
+    const type = (req.body?.type || req.body?.memoryType || "other").toString().trim();
+    const embedding = req.body?.embedding || (await createMemoryEmbedding(content)).embedding;
     const result = await createMemory({
       userId: req.body?.userId || "default_user",
-      memoryType: req.body?.memoryType,
-      memoryText: req.body?.memoryText,
-      memorySummary: req.body?.memorySummary,
+      memoryType: type,
+      memoryText: req.body?.memoryText || content,
+      memorySummary: req.body?.memorySummary || content,
       emotionLabel: req.body?.emotionLabel,
       importance: req.body?.importance,
       confidence: req.body?.confidence,
-      sourceTurnId: req.body?.sourceTurnId,
-      sourceSessionId: req.body?.sourceSessionId,
-      embedding: req.body?.embedding,
+      sourceTurnId: req.body?.sourceTurnId || req.body?.source_turn_id,
+      sourceSessionId: req.body?.sourceSessionId || req.body?.sessionId,
+      embedding,
     });
     return res.status(result.duplicate ? 200 : 201).json(result);
   } catch (error) {
@@ -576,6 +601,20 @@ app.post("/api/memories/extract", async (req, res) => {
 app.post("/api/memories/:id/archive", async (req, res) => {
   try {
     const userId = (req.body?.userId || "default_user").toString();
+    const result = await archiveMemory(req.params.id, userId);
+    return res.json(result);
+  } catch (error) {
+    logError("archive companion memory failed", { error: error?.message || error });
+    return res.status(500).json({
+      success: false,
+      error: error?.message || "archive memory failed",
+    });
+  }
+});
+
+app.patch("/api/memories/:id/archive", async (req, res) => {
+  try {
+    const userId = (req.body?.userId || req.query?.userId || "default_user").toString();
     const result = await archiveMemory(req.params.id, userId);
     return res.json(result);
   } catch (error) {

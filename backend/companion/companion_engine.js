@@ -59,6 +59,7 @@ function analyzeCompanionTurn(input = {}) {
     companionNeed: needResult.companionNeed,
     replyStrategy,
     safety,
+    retrievedMemories: input.retrievedMemories || [],
   });
 
   return structuredResult({

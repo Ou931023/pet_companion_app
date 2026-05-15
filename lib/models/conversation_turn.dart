@@ -6,6 +6,7 @@ class ConversationTurn {
     required this.userText,
     required this.petReply,
     required this.toolName,
+    this.turnId = '',
     this.sessionId = '',
     this.emotionTag = 'neutral',
     this.petMood = 'neutral',
@@ -27,6 +28,7 @@ class ConversationTurn {
   final String userText;
   final String petReply;
   final String toolName;
+  final String turnId;
   final String sessionId;
   final String emotionTag;
   final String petMood;
@@ -50,6 +52,7 @@ class ConversationTurn {
       'petReply': petReply,
       'toolName': toolName,
       'toolUsed': toolUsed.isEmpty ? toolName : toolUsed,
+      'turnId': turnId,
       'sessionId': sessionId,
       'emotionTag': emotionTag,
       'petMood': petMood,
@@ -78,6 +81,7 @@ class ConversationTurn {
       toolName: json['toolName']?.toString() ??
           json['toolUsed']?.toString() ??
           'chat',
+      turnId: json['turnId']?.toString() ?? '',
       sessionId: json['sessionId']?.toString() ?? '',
       emotionTag: json['emotionTag']?.toString() ??
           json['emotion']?.toString() ??

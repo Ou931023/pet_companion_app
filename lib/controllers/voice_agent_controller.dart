@@ -6,9 +6,13 @@ import '../config/app_config.dart';
 import '../models/companion_analysis_result.dart';
 import '../models/conversation_turn.dart';
 import '../models/pet_status.dart';
+import '../models/realtime_timeout.dart';
 import '../models/voice_agent_state.dart';
 import '../services/ai_navigation_service.dart';
 import '../services/companion_engine_service.dart';
+import '../services/emotion_services.dart';
+import '../services/realtime_timeout_registry.dart';
+import '../services/realtime_turn_coordinator.dart';
 import '../services/realtime_voice_service.dart';
 import 'app_navigation_controller.dart';
 import 'conversation_controller.dart';
@@ -28,6 +32,8 @@ class VoiceAgentController extends ChangeNotifier {
     required this.memoryController,
     required this.navigationService,
     required this.navigationController,
+    this.timeoutConfig = const RealtimeTimeoutConfig(),
+    this.timeoutPolicy = const RealtimeTimeoutPolicy(),
   });
 
   final ProfileController profileController;
@@ -39,6 +45,9 @@ class VoiceAgentController extends ChangeNotifier {
   final MemoryController memoryController;
   final AiNavigationService navigationService;
   final AppNavigationController navigationController;
+  final RealtimeTimeoutConfig timeoutConfig;
+  final RealtimeTimeoutPolicy timeoutPolicy;
+  final TextEmotionService _textEmotionService = const TextEmotionService();
 
   VoiceAgentState _state = VoiceAgentState.idle;
   UserEmotion _emotion = UserEmotion.neutral;
@@ -50,10 +59,15 @@ class VoiceAgentController extends ChangeNotifier {
   String _pendingRealtimeUserText = '';
   String _pendingRealtimeEmotion = 'neutral';
   String _pendingRealtimeTurnId = '';
+  String _activeTurnId = '';
+  String _responseTurnId = '';
   String _latestCompanionTurnId = '';
-  String _lastAnalyzedTranscript = '';
+  String _partialTranscript = '';
   CompanionAnalysisResult? _currentCompanionContext;
   bool _skipNextAssistantText = false;
+  int _connectionAttemptId = 0;
+  final RealtimeTurnCoordinator _turnCoordinator = RealtimeTurnCoordinator();
+  final RealtimeTimeoutRegistry _timeouts = RealtimeTimeoutRegistry();
 
   VoiceAgentState get state => _state;
   UserEmotion get emotion => _emotion;
@@ -63,15 +77,24 @@ class VoiceAgentController extends ChangeNotifier {
   String get lastError => _lastError;
   CompanionAnalysisResult? get currentCompanionContext =>
       _currentCompanionContext;
+  String get activeTurnId => _activeTurnId;
+  String get partialTranscript => _partialTranscript;
   bool get isRealtimeReady =>
-      _state != VoiceAgentState.idle && _state != VoiceAgentState.error;
+      _state != VoiceAgentState.idle &&
+      _state != VoiceAgentState.error &&
+      _state != VoiceAgentState.recovering;
 
   Future<void> startRealtimeConversation() async {
     if (_state == VoiceAgentState.connecting ||
-        _state == VoiceAgentState.connected) {
+        _state == VoiceAgentState.ready ||
+        _state == VoiceAgentState.listening ||
+        _state == VoiceAgentState.thinking ||
+        _state == VoiceAgentState.speaking) {
       return;
     }
-    _setState(VoiceAgentState.connecting);
+    final attemptId = ++_connectionAttemptId;
+    _transition(VoiceAgentState.connecting, 'connect_started');
+    _startTimeout(RealtimeTimeoutType.connectionTimeout);
     _lastError = '';
     petController.setMessage('我在聽，慢慢說。');
     notifyListeners();
@@ -86,16 +109,30 @@ class VoiceAgentController extends ChangeNotifier {
         userId: memoryController.userId,
         companionContext: _companionContextPrompt(),
       );
+      if (attemptId != _connectionAttemptId ||
+          _state == VoiceAgentState.idle ||
+          _state == VoiceAgentState.recovering) {
+        debugPrint(
+          '[VoiceAgentController] ignore stale connect completion attempt=$attemptId active=$_connectionAttemptId',
+        );
+        return;
+      }
       await realtimeVoiceService.startListening();
+      _cancelTimeout(RealtimeTimeoutType.connectionTimeout);
     } catch (error) {
       _handleRealtimeFailureSilently(error);
     }
   }
 
   Future<void> stopRealtimeConversation() async {
+    _cancelAllTimeouts();
     await realtimeVoiceService.stop();
     _lastError = '';
-    _setState(VoiceAgentState.idle);
+    _activeTurnId = '';
+    _responseTurnId = '';
+    _partialTranscript = '';
+    _turnCoordinator.reset();
+    _transition(VoiceAgentState.idle, 'manual_stop');
     petController.setMessage('我先在旁邊陪你。想不到要聊什麼也沒關係，要不要跟我說說今天最舒服的一刻？');
   }
 
@@ -104,18 +141,50 @@ class VoiceAgentController extends ChangeNotifier {
       case RealtimeEventType.state:
         _applyStateFromPayload(event.payload);
         break;
-      case RealtimeEventType.userTranscript:
-        final transcript = event.payload.trim();
-        if (transcript.isEmpty) return;
-        final turnId = 'rt_${DateTime.now().microsecondsSinceEpoch}';
-        if (transcript != _lastAnalyzedTranscript) {
-          _lastAnalyzedTranscript = transcript;
-          _latestCompanionTurnId = turnId;
-          unawaited(_analyzeCompanionTranscript(transcript, turnId));
+      case RealtimeEventType.userSpeechStarted:
+        _startTimeout(RealtimeTimeoutType.transcriptTimeout);
+        break;
+      case RealtimeEventType.userSpeechStopped:
+        _startTimeout(RealtimeTimeoutType.transcriptTimeout);
+        break;
+      case RealtimeEventType.partialTranscript:
+        _partialTranscript = event.payload.trim();
+        if (_partialTranscript.isNotEmpty) {
+          _transition(
+            VoiceAgentState.transcribing,
+            'partial_transcript_received',
+            notify: false,
+          );
+          notifyListeners();
         }
+        break;
+      case RealtimeEventType.finalTranscript:
+        _cancelTimeout(RealtimeTimeoutType.transcriptTimeout);
+        final decision = _turnCoordinator.acceptFinalTranscript(event.payload);
+        if (!decision.accepted) {
+          debugPrint(
+            '[VoiceAgentController] ignore transcript reason=${decision.reason}',
+          );
+          return;
+        }
+        final transcript = decision.transcript;
+        final turnId = decision.turnId;
+        _cancelTurnTimeouts();
+        _activeTurnId = turnId;
+        _partialTranscript = '';
+        _pendingRealtimeTurnId = turnId;
+        _latestCompanionTurnId = turnId;
+        _transition(
+          VoiceAgentState.thinking,
+          'final_transcript_received',
+          turnId: turnId,
+        );
+        _startTimeout(RealtimeTimeoutType.responseTimeout, turnId: turnId);
+        unawaited(_analyzeCompanionTranscript(transcript, turnId));
 
         final navigationIntent = navigationService.detect(transcript);
         if (navigationIntent != null) {
+          if (!_isActiveTurn(turnId)) return;
           navigationController.navigateTo(navigationIntent.route);
           petController.setMessage(navigationIntent.reply);
           conversationController.appendExternalTurn(
@@ -124,20 +193,19 @@ class VoiceAgentController extends ChangeNotifier {
               userText: transcript,
               petReply: navigationIntent.reply,
               toolName: 'navigation',
+              turnId: turnId,
               emotionTag: UserEmotion.neutral.name,
             ),
           );
           _pendingRealtimeUserText = '';
-          _pendingRealtimeTurnId = '';
           _skipNextAssistantText = true;
           notifyListeners();
           return;
         }
         if (conversationController.shouldHandleAsLocalCommand(transcript)) {
           _pendingRealtimeUserText = '';
-          _pendingRealtimeTurnId = '';
           _skipNextAssistantText = true;
-          unawaited(_handleLocalRealtimeCommand(transcript));
+          unawaited(_handleLocalRealtimeCommand(transcript, turnId));
           return;
         }
         final renameResult = _tryHandleRenameIntent(transcript);
@@ -145,7 +213,6 @@ class VoiceAgentController extends ChangeNotifier {
         debugPrint('[EMOTION] text=$transcript emotion=${_emotion.name}');
         _pendingRealtimeUserText = transcript;
         _pendingRealtimeEmotion = _emotion.name;
-        _pendingRealtimeTurnId = turnId;
         _applyEmotionToPet();
         conversationController.appendExternalTurn(
           ConversationTurn(
@@ -153,21 +220,66 @@ class VoiceAgentController extends ChangeNotifier {
             userText: transcript,
             petReply: renameResult.reply ?? '',
             toolName: renameResult.handled ? 'renamePet' : 'realtime-user',
+            turnId: turnId,
             emotionTag: _emotion.name,
           ),
         );
         if (renameResult.reply != null) {
-          unawaited(conversationController
-              .handleRealtimeAssistantReply(renameResult.reply!));
+          unawaited(
+            conversationController.handleRealtimeAssistantReply(
+              renameResult.reply!,
+              turnId: turnId,
+            ),
+          );
         }
+        break;
+      case RealtimeEventType.assistantResponseStart:
+        _responseTurnId = _activeTurnId;
+        _startTimeout(
+          RealtimeTimeoutType.responseTimeout,
+          turnId: _responseTurnId,
+        );
+        _transition(
+          VoiceAgentState.thinking,
+          'realtime_response_started',
+          turnId: _responseTurnId,
+        );
+        break;
+      case RealtimeEventType.assistantResponseDone:
+        _cancelTimeout(RealtimeTimeoutType.responseTimeout);
+        if (_responseTurnId.isNotEmpty && !_isActiveTurn(_responseTurnId)) {
+          debugPrint(
+            '[VoiceAgentController] drop stale response.done turn=$_responseTurnId active=$_activeTurnId',
+          );
+          return;
+        }
+        _transition(
+          VoiceAgentState.listening,
+          'realtime_response_done',
+          turnId: _responseTurnId,
+        );
+        _turnCoordinator.clearActiveTurn(_responseTurnId);
+        _activeTurnId = '';
+        _responseTurnId = '';
         break;
       case RealtimeEventType.assistantText:
         if (_skipNextAssistantText) {
           _skipNextAssistantText = false;
           return;
         }
+        final responseTurnId =
+            _responseTurnId.isEmpty ? _pendingRealtimeTurnId : _responseTurnId;
+        if (responseTurnId.isNotEmpty && !_isActiveTurn(responseTurnId)) {
+          debugPrint(
+            '[VoiceAgentController] drop stale assistant text turn=$responseTurnId active=$_activeTurnId',
+          );
+          return;
+        }
         unawaited(petStatsController.markRealtimeConversationCompleted());
-        conversationController.handleRealtimeAssistantReply(event.payload);
+        conversationController.handleRealtimeAssistantReply(
+          event.payload,
+          turnId: responseTurnId,
+        );
         if (_pendingRealtimeUserText.isNotEmpty &&
             _pendingRealtimeTurnId.isNotEmpty) {
           unawaited(
@@ -182,10 +294,32 @@ class VoiceAgentController extends ChangeNotifier {
         }
         break;
       case RealtimeEventType.assistantAudioStart:
-        _setState(VoiceAgentState.speaking);
+        _responseTurnId =
+            _responseTurnId.isEmpty ? _activeTurnId : _responseTurnId;
+        _transition(
+          VoiceAgentState.speaking,
+          'speaking_started',
+          turnId: _responseTurnId,
+        );
         break;
       case RealtimeEventType.assistantAudioEnd:
-        _setState(VoiceAgentState.listening);
+        _cancelTimeout(RealtimeTimeoutType.responseTimeout);
+        _transition(
+          VoiceAgentState.listening,
+          'speaking_completed',
+          turnId: _responseTurnId,
+        );
+        break;
+      case RealtimeEventType.dataChannelOpen:
+        _cancelTimeout(RealtimeTimeoutType.connectionTimeout);
+        _cancelTimeout(RealtimeTimeoutType.reconnectTimeout);
+        _transition(VoiceAgentState.ready, 'data_channel_open');
+        break;
+      case RealtimeEventType.dataChannelClosed:
+        _handleRealtimeRecoverableFailure('data_channel_closed');
+        break;
+      case RealtimeEventType.peerConnectionFailed:
+        _handleRealtimeRecoverableFailure('peer_connection_failed');
         break;
       case RealtimeEventType.error:
         _handleRealtimeFailureSilently(event.payload);
@@ -196,17 +330,26 @@ class VoiceAgentController extends ChangeNotifier {
   void _applyStateFromPayload(String value) {
     final mapped = switch (value) {
       'connecting' => VoiceAgentState.connecting,
-      'connected' => VoiceAgentState.connected,
+      'connected' || 'ready' => VoiceAgentState.ready,
       'listening' => VoiceAgentState.listening,
+      'transcribing' => VoiceAgentState.transcribing,
       'thinking' => VoiceAgentState.thinking,
       'speaking' => VoiceAgentState.speaking,
+      'recovering' => VoiceAgentState.recovering,
       _ => VoiceAgentState.idle,
     };
-    _setState(mapped);
+    if (mapped == VoiceAgentState.ready ||
+        mapped == VoiceAgentState.listening) {
+      _cancelTimeout(RealtimeTimeoutType.connectionTimeout);
+      _cancelTimeout(RealtimeTimeoutType.reconnectTimeout);
+    }
+    _transition(mapped, 'service_state_$value');
   }
 
-  Future<void> _handleLocalRealtimeCommand(String text) async {
-    _setState(VoiceAgentState.thinking);
+  Future<void> _handleLocalRealtimeCommand(String text, String turnId) async {
+    if (!_isActiveTurn(turnId)) return;
+    _transition(VoiceAgentState.thinking, 'local_command_started',
+        turnId: turnId);
     try {
       await conversationController.quickAction(text);
     } catch (error) {
@@ -215,7 +358,11 @@ class VoiceAgentController extends ChangeNotifier {
       );
     } finally {
       if (_state != VoiceAgentState.error && _state != VoiceAgentState.idle) {
-        _setState(VoiceAgentState.listening);
+        _transition(
+          VoiceAgentState.listening,
+          'local_command_completed',
+          turnId: turnId,
+        );
       }
     }
   }
@@ -226,6 +373,7 @@ class VoiceAgentController extends ChangeNotifier {
   ) async {
     try {
       final result = await companionEngineService.analyze(
+        sttProxyUrl: profileController.sttProxyUrl,
         userId: memoryController.userId,
         sessionId: conversationController.activeSessionId,
         turnId: turnId,
@@ -261,18 +409,6 @@ class VoiceAgentController extends ChangeNotifier {
       unawaited(realtimeVoiceService.updateCompanionContext(
         _companionContextPrompt(result),
       ));
-      if (result.memory.shouldSave &&
-          result.memory.candidate.trim().isNotEmpty) {
-        unawaited(
-          memoryController.extractMemory(
-            sessionId: conversationController.activeSessionId,
-            turnId: 'companion_$turnId',
-            userText: transcript,
-            aiReply: result.memory.candidate,
-            emotion: result.emotion,
-          ),
-        );
-      }
       debugPrint(
         '[COMPANION_ENGINE] turn=$turnId emotion=${result.emotion} need=${result.companionNeed} strategy=${result.replyStrategy}',
       );
@@ -285,7 +421,8 @@ class VoiceAgentController extends ChangeNotifier {
 
   void _applyLocalCompanionFallback(String transcript, String turnId) {
     if (turnId != _latestCompanionTurnId) return;
-    _emotion = detectEmotion(transcript);
+    final localEmotion = _textEmotionService.analyze(transcript);
+    _emotion = _emotionFromEngine(localEmotion.emotion);
     _pendingRealtimeEmotion = _emotion.name;
     _applyEmotionToPet();
   }
@@ -348,8 +485,125 @@ class VoiceAgentController extends ChangeNotifier {
     ].join('\n');
   }
 
-  void _setState(VoiceAgentState newState) {
+  void _startTimeout(RealtimeTimeoutType type, {String turnId = ''}) {
+    _cancelTimeout(type);
+    final duration = timeoutConfig.durationFor(type);
+    debugPrint(
+      '[VOICE_TIMEOUT] start type=${type.name} duration=${duration.inSeconds}s turn=${turnId.isEmpty ? '-' : turnId}',
+    );
+    if (type == RealtimeTimeoutType.ttsTimeout) return;
+    _timeouts.start(
+      type,
+      duration,
+      () => _handleTimeout(type, turnId: turnId),
+    );
+  }
+
+  void _cancelTimeout(RealtimeTimeoutType type) {
+    _timeouts.cancel(type);
+  }
+
+  void _cancelTurnTimeouts() {
+    _cancelTimeout(RealtimeTimeoutType.transcriptTimeout);
+    _cancelTimeout(RealtimeTimeoutType.responseTimeout);
+  }
+
+  void _cancelAllTimeouts() {
+    _timeouts.cancelAll();
+  }
+
+  void _handleTimeout(RealtimeTimeoutType type, {String turnId = ''}) {
+    final plan = timeoutPolicy.planFor(type);
+    debugPrint(
+      '[VOICE_TIMEOUT] fired type=${type.name} reason=${plan.reason} turn=${turnId.isEmpty ? '-' : turnId}',
+    );
+    if (turnId.isNotEmpty && !_isActiveTurn(turnId)) {
+      debugPrint(
+        '[VOICE_TIMEOUT] ignore stale timeout type=${type.name} turn=$turnId active=$_activeTurnId',
+      );
+      return;
+    }
+    switch (type) {
+      case RealtimeTimeoutType.connectionTimeout:
+        unawaited(_recoverToIdleAfterError(
+          reason: plan.reason,
+          message: plan.fallbackReply,
+          stopConnection: plan.stopConnection,
+        ));
+        break;
+      case RealtimeTimeoutType.transcriptTimeout:
+        _clearCurrentTurn();
+        petController.setModeAndMessage(PetMode.listening, plan.fallbackReply);
+        _transition(plan.targetState, plan.reason);
+        break;
+      case RealtimeTimeoutType.responseTimeout:
+        unawaited(_handleResponseTimeout(plan, turnId));
+        break;
+      case RealtimeTimeoutType.ttsTimeout:
+        petController.setModeAndMessage(PetMode.listening, plan.fallbackReply);
+        _transition(plan.targetState, plan.reason, turnId: turnId);
+        break;
+      case RealtimeTimeoutType.reconnectTimeout:
+        unawaited(_recoverToIdleAfterError(
+          reason: plan.reason,
+          message: plan.fallbackReply,
+          stopConnection: plan.stopConnection,
+        ));
+        break;
+    }
+  }
+
+  Future<void> _handleResponseTimeout(
+    RealtimeTimeoutRecoveryPlan plan,
+    String turnId,
+  ) async {
+    if (turnId.isNotEmpty && !_isActiveTurn(turnId)) return;
+    _cancelTimeout(RealtimeTimeoutType.responseTimeout);
+    final fallback = plan.fallbackReply;
+    if (_pendingRealtimeUserText.isNotEmpty) {
+      await conversationController.handleRealtimeAssistantReply(
+        fallback,
+        turnId: turnId,
+      );
+    } else {
+      petController.setModeAndMessage(PetMode.listening, fallback);
+    }
+    _clearCurrentTurn();
+    _transition(plan.targetState, plan.reason);
+  }
+
+  void _clearCurrentTurn() {
+    _activeTurnId = '';
+    _responseTurnId = '';
+    _pendingRealtimeTurnId = '';
+    _pendingRealtimeUserText = '';
+    _partialTranscript = '';
+    _latestCompanionTurnId = '';
+    _turnCoordinator.reset();
+    _cancelTurnTimeouts();
+  }
+
+  bool _isActiveTurn(String turnId) {
+    return turnId.isEmpty || turnId == _activeTurnId;
+  }
+
+  void _transition(
+    VoiceAgentState newState,
+    String reason, {
+    String turnId = '',
+    bool notify = true,
+  }) {
+    if (turnId.isNotEmpty && !_isActiveTurn(turnId)) {
+      debugPrint(
+        '[VOICE_STATE] drop stale transition reason=$reason turn=$turnId active=$_activeTurnId',
+      );
+      return;
+    }
+    final previous = _state;
     _state = newState;
+    debugPrint(
+      '[VOICE_STATE] ${previous.name} -> ${newState.name} reason=$reason turn=${turnId.isEmpty ? '-' : turnId}',
+    );
     switch (newState) {
       case VoiceAgentState.listening:
         _petExpression = 'listening';
@@ -361,21 +615,31 @@ class VoiceAgentController extends ChangeNotifier {
         _petAction = 'idle';
         petController.setMode(PetMode.thinking);
         break;
+      case VoiceAgentState.transcribing:
+        _petExpression = 'listening';
+        _petAction = 'listen';
+        petController.setMode(PetMode.listening);
+        break;
       case VoiceAgentState.speaking:
         _petExpression = 'speaking';
         _petAction = 'speak';
         petController.setMode(PetMode.talking, isSpeaking: true);
+        break;
+      case VoiceAgentState.recovering:
+        petController.setMode(PetMode.thinking);
         break;
       case VoiceAgentState.error:
         petController.setMode(PetMode.sad);
         break;
       case VoiceAgentState.idle:
       case VoiceAgentState.connecting:
-      case VoiceAgentState.connected:
+      case VoiceAgentState.ready:
         // Keep current pet state during transition.
         break;
     }
-    notifyListeners();
+    if (notify) {
+      notifyListeners();
+    }
   }
 
   void _applyEmotionToPet() {
@@ -545,16 +809,74 @@ class VoiceAgentController extends ChangeNotifier {
   void _handleRealtimeFailureSilently(Object error) {
     debugPrint('[VoiceAgentController] realtime unavailable: $error');
     _lastError = '';
+    _transition(VoiceAgentState.recovering, 'connection_failed');
     unawaited(_recoverToIdleAfterError(
+      reason: 'connection_failed',
       message: '目前連不到即時語音服務。你還是可以先用文字跟我聊天，或確認手機和電腦在同一個 Wi-Fi。',
+      stopConnection: true,
     ));
   }
 
-  Future<void> _recoverToIdleAfterError({String? message}) async {
+  void _handleRealtimeRecoverableFailure(String reason) {
+    debugPrint('[VoiceAgentController] realtime recovering reason=$reason');
+    _lastError = '';
+    _transition(VoiceAgentState.recovering, reason);
+    unawaited(_recoverAndReconnect(
+      reason: reason,
+      message: '剛剛連線有點不穩，我們再試一次。',
+    ));
+  }
+
+  Future<void> _recoverAndReconnect({
+    required String reason,
+    required String message,
+  }) async {
+    _connectionAttemptId += 1;
+    _cancelAllTimeouts();
+    _clearCurrentTurn();
     await realtimeVoiceService.stop();
-    if (_state != VoiceAgentState.speaking) {
-      _setState(VoiceAgentState.idle);
+    petController.setModeAndMessage(PetMode.listening, message);
+    final attemptId = ++_connectionAttemptId;
+    _transition(VoiceAgentState.connecting, '${reason}_reconnect_started');
+    _startTimeout(RealtimeTimeoutType.reconnectTimeout);
+    try {
+      await realtimeVoiceService.connect(
+        realtimeCallUrl:
+            AppConfig.realtimeCallUrlForSttProxy(profileController.sttProxyUrl),
+        petName: profileController.petName,
+        userId: memoryController.userId,
+        companionContext: _companionContextPrompt(),
+      );
+      if (attemptId != _connectionAttemptId) {
+        debugPrint(
+          '[VoiceAgentController] ignore stale reconnect completion attempt=$attemptId active=$_connectionAttemptId',
+        );
+        return;
+      }
+      await realtimeVoiceService.startListening();
+      _cancelTimeout(RealtimeTimeoutType.reconnectTimeout);
+    } catch (error) {
+      debugPrint('[VoiceAgentController] reconnect failed: $error');
+      await _recoverToIdleAfterError(
+        reason: 'reconnect_failed',
+        message: message,
+        stopConnection: true,
+      );
     }
+  }
+
+  Future<void> _recoverToIdleAfterError({
+    required String reason,
+    String? message,
+    bool stopConnection = false,
+  }) async {
+    _connectionAttemptId += 1;
+    _cancelAllTimeouts();
+    _clearCurrentTurn();
+    if (stopConnection) {
+      await realtimeVoiceService.stop();
+    }
+    _transition(VoiceAgentState.idle, reason);
     if (message != null && message.isNotEmpty) {
       petController.setModeAndMessage(PetMode.listening, message);
     }
@@ -562,6 +884,8 @@ class VoiceAgentController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _cancelAllTimeouts();
+    _timeouts.dispose();
     _sub?.cancel();
     realtimeVoiceService.dispose();
     super.dispose();

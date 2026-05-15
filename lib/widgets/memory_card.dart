@@ -14,9 +14,11 @@ class MemoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final summary = _text(memory['memorySummary'] ?? memory['memory_summary']);
-    final type =
-        _memoryTypeLabel(_text(memory['memoryType'] ?? memory['memory_type']));
+    final summary = _text(
+      memory['content'] ?? memory['memorySummary'] ?? memory['memory_summary'],
+    );
+    final type = _memoryTypeLabel(
+        _text(memory['type'] ?? memory['memoryType'] ?? memory['memory_type']));
     final importance = _text(memory['importance']);
     final createdAt =
         _formatDate(_text(memory['createdAt'] ?? memory['created_at']));
@@ -81,6 +83,12 @@ class MemoryCard extends StatelessWidget {
     return switch (value) {
       'preference' => '偏好',
       'routine' => '生活習慣',
+      'emotion_event' => '情緒事件',
+      'family' => '家人',
+      'health_note' => '健康紀錄',
+      'reminder_context' => '提醒脈絡',
+      'personal_story' => '個人故事',
+      'reminiscence' => '懷舊記憶',
       'emotion' => '情緒狀態',
       'reminder' => '提醒事項',
       'care_need' => '照護需求',

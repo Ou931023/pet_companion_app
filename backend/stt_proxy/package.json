@@ -7,8 +7,8 @@
     "start": "node server.js",
     "dev": "node server.js",
     "db:migrate": "node db/migrate.js",
-    "check": "node --check server.js && node --check db/postgres.js && node --check services/tavilySearchService.js && node --check services/search/searchService.js && node --check services/search/crawlerService.js && node --check services/search/documentStore.js && node --check services/search/summarizer.js && node --check services/search/openAiWebSearchProvider.js && node --check services/memory/memoryStore.js && node --check services/memory/memoryExtractor.js && node --check services/memory/embeddingService.js && node --check services/memory/memoryContextService.js && node --check ../companion/companion_engine.js",
-    "test": "node --test services/tavilySearchService.test.js services/search/queryRouter.test.js services/memory/memoryStore.test.js ../companion/companion_engine.test.js",
+    "check": "node --check server.js && node --check db/postgres.js && node --check services/tavilySearchService.js && node --check services/search/searchService.js && node --check services/search/crawlerService.js && node --check services/search/documentStore.js && node --check services/search/summarizer.js && node --check services/search/openAiWebSearchProvider.js && node --check services/memory/memoryStore.js && node --check services/memory/memoryExtractor.js && node --check services/memory/embeddingService.js && node --check services/memory/memoryContextService.js && node --check ../companion/companion_engine.js && node --check ../memory/memory_repository.js && node --check ../memory/memory_embedding_service.js && node --check ../memory/memory_retriever.js && node --check ../memory/memory_policy.js",
+    "test": "node --test services/tavilySearchService.test.js services/search/queryRouter.test.js services/memory/memoryStore.test.js ../companion/companion_engine.test.js ../memory/memory_retriever.test.js",
     "test:memory": "node --test services/memory/memoryStore.test.js",
     "demo:search": "node tmp_demo_search_cases.js"
   },

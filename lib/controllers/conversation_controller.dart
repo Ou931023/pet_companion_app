@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../models/conversation_session_summary.dart';
 import '../models/conversation_turn.dart';
 import '../models/pet_status.dart';
+import '../models/realtime_timeout.dart';
 import '../models/source_reference.dart';
 import '../services/ai_navigation_service.dart';
 import '../services/ai_tool_router.dart';
@@ -39,6 +40,7 @@ class ConversationController extends ChangeNotifier {
     required this.emotionFusionService,
     required this.petEmotionMapper,
     required this.memoryController,
+    this.timeoutConfig = const RealtimeTimeoutConfig(),
   });
 
   final ProfileController profileController;
@@ -55,6 +57,7 @@ class ConversationController extends ChangeNotifier {
   final EmotionFusionService emotionFusionService;
   final PetEmotionMapper petEmotionMapper;
   final MemoryController memoryController;
+  final RealtimeTimeoutConfig timeoutConfig;
 
   final List<ConversationTurn> _history = [];
   String _activeSessionId = _newSessionId();
@@ -68,6 +71,7 @@ class ConversationController extends ChangeNotifier {
   String _latestSearchMode = '';
   String _latestSearchProvider = '';
   String _latestToolUsed = '';
+  Timer? _ttsTimeoutTimer;
 
   List<ConversationTurn> get history => List.unmodifiable(_history.reversed);
   List<ConversationSessionSummary> get sessionSummaries {
@@ -248,6 +252,7 @@ class ConversationController extends ChangeNotifier {
         userText: turn.userText,
         petReply: turn.petReply,
         toolName: turn.toolName,
+        turnId: turn.turnId,
         sessionId: turn.sessionId.isEmpty ? _activeSessionId : turn.sessionId,
         emotionTag: turn.emotionTag,
         petMood: turn.petMood,
@@ -261,7 +266,10 @@ class ConversationController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> handleRealtimeAssistantReply(String message) async {
+  Future<void> handleRealtimeAssistantReply(
+    String message, {
+    String turnId = '',
+  }) async {
     _latestReply = message;
     _isAwaitingPetReply = false;
     _latestSources = const [];
@@ -276,6 +284,7 @@ class ConversationController extends ChangeNotifier {
         userText: _latestUserText,
         petReply: message,
         toolName: 'realtimeVoice',
+        turnId: turnId,
         sessionId: _activeSessionId,
         petMood: petController.mood,
       ),
@@ -445,6 +454,7 @@ class ConversationController extends ChangeNotifier {
           userText: userText,
           petReply: message,
           toolName: toolName,
+          turnId: turnId,
           sessionId: _activeSessionId,
           emotionTag: emotionTag,
           petMood: petController.mood,
@@ -467,18 +477,38 @@ class ConversationController extends ChangeNotifier {
       );
     }
     notifyListeners();
+    final ttsTimeout = _estimatedTtsTimeout(message);
+    var ttsTimedOut = false;
+    if (profileController.ttsEnabled) {
+      _startTtsTimeout(ttsTimeout, () async {
+        ttsTimedOut = true;
+        await ttsService.stop();
+        petController.setMode(PetMode.listening, isSpeaking: false);
+        notifyListeners();
+      });
+    }
     await ttsService.speak(
       message,
       enabled: profileController.ttsEnabled,
       volume: profileController.petVolume,
       speechStyle: profileController.speechStyle,
       onStart: () async {
+        _startTtsTimeout(ttsTimeout, () async {
+          ttsTimedOut = true;
+          await ttsService.stop();
+          petController.setMode(PetMode.listening, isSpeaking: false);
+          notifyListeners();
+        });
         petController.setMode(PetMode.talking, isSpeaking: true);
       },
       onComplete: () async {
+        _cancelTtsTimeout();
+        if (ttsTimedOut) return;
         petController.setMode(petMode, isSpeaking: false);
       },
       onError: () async {
+        _cancelTtsTimeout();
+        if (ttsTimedOut) return;
         petController.setMode(petMode, isSpeaking: false);
       },
     );
@@ -529,6 +559,32 @@ class ConversationController extends ChangeNotifier {
     );
   }
 
+  Duration _estimatedTtsTimeout(String message) {
+    final estimated = Duration(
+      milliseconds: 2500 + (message.runes.length * 260),
+    );
+    final minimum = timeoutConfig.ttsTimeout;
+    return estimated > minimum ? estimated : minimum;
+  }
+
+  void _startTtsTimeout(
+    Duration duration,
+    Future<void> Function() onTimeout,
+  ) {
+    _cancelTtsTimeout();
+    _ttsTimeoutTimer = Timer(duration, () {
+      debugPrint(
+        '[TTS_TIMEOUT] fired duration=${duration.inSeconds}s',
+      );
+      unawaited(onTimeout());
+    });
+  }
+
+  void _cancelTtsTimeout() {
+    _ttsTimeoutTimer?.cancel();
+    _ttsTimeoutTimer = null;
+  }
+
   void _applyPetEmotionState(String emotion, PetMode mode) {
     final state = switch (emotion) {
       'happy' => (mood: 'happy', expression: 'smile', action: 'celebrate'),
@@ -549,6 +605,12 @@ class ConversationController extends ChangeNotifier {
       action: state.action,
       mode: mode,
     );
+  }
+
+  @override
+  void dispose() {
+    _cancelTtsTimeout();
+    super.dispose();
   }
 }
 

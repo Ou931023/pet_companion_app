@@ -9,6 +9,7 @@ class CompanionEngineService {
   const CompanionEngineService();
 
   Future<CompanionAnalysisResult?> analyze({
+    required String sttProxyUrl,
     required String userId,
     required String sessionId,
     required String turnId,
@@ -26,7 +27,7 @@ class CompanionEngineService {
     final normalized = transcript.trim();
     if (normalized.isEmpty) return null;
     final uri = Uri.parse(
-      '${AppConfig.apiBaseUrlForSttProxy(AppConfig.defaultSttProxyUrl)}/companion/analyze',
+      '${AppConfig.apiBaseUrlForSttProxy(sttProxyUrl)}/companion/analyze',
     );
     final response = await http
         .post(

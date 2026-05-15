@@ -244,8 +244,9 @@ test("extractor rejects one-off weather chat", async (t) => {
 test("missing OPENAI_API_KEY uses non-crashing embedding fallback", async (t) => {
   await withJsonFallback(t, async () => {
     const result = await createEmbedding("使用者喜歡台灣地方故事");
-    assert.equal(result.embedding, null);
-    assert.equal(result.provider, "none");
+    assert.equal(Array.isArray(result.embedding), true);
+    assert.equal(result.embedding.length, 1536);
+    assert.equal(result.provider, "mock");
     assert.match(result.error, /OPENAI_API_KEY/);
   });
 });

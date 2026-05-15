@@ -24,8 +24,8 @@ void main() {
     final service = _FakeMemoryService(memories: [
       {
         'id': 1,
-        'memorySummary': '使用者喜歡聽台灣地方故事。',
-        'memoryType': 'story_preference',
+        'content': '使用者喜歡聽台灣地方故事。',
+        'type': 'personal_story',
         'importance': 4,
         'createdAt': '2026-05-14T00:00:00.000Z',
         'useCount': 2,
@@ -36,7 +36,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('使用者喜歡聽台灣地方故事。'), findsOneWidget);
-    expect(find.text('故事偏好'), findsOneWidget);
+    expect(find.text('個人故事'), findsOneWidget);
 
     await tester.tap(find.text('忘記這筆'));
     await tester.pumpAndSettle();

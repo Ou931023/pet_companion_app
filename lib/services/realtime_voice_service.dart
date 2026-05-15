@@ -7,10 +7,18 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 enum RealtimeEventType {
   state,
-  userTranscript,
+  partialTranscript,
+  finalTranscript,
   assistantText,
+  assistantResponseStart,
+  assistantResponseDone,
   assistantAudioStart,
   assistantAudioEnd,
+  dataChannelOpen,
+  dataChannelClosed,
+  peerConnectionFailed,
+  userSpeechStarted,
+  userSpeechStopped,
   error,
 }
 
@@ -34,7 +42,8 @@ class RealtimeVoiceService {
   bool _isSpeaking = false;
   bool _isStopping = false;
   String _assistantBuffer = '';
-  String _lastUserTranscript = '';
+  String _lastFinalUserTranscript = '';
+  DateTime? _lastFinalTranscriptAt;
 
   Stream<RealtimeVoiceEvent> get events => _eventController.stream;
 
@@ -57,7 +66,7 @@ class RealtimeVoiceService {
         _log('RTCPeerConnection connectionState: $state');
         final raw = state.toString().toLowerCase();
         if (raw.contains('connected')) {
-          _emit(RealtimeEventType.state, 'connected');
+          _emit(RealtimeEventType.state, 'ready');
           _emit(RealtimeEventType.state, 'listening');
           return;
         }
@@ -68,10 +77,7 @@ class RealtimeVoiceService {
             _log('Ignore connection close event during manual stop');
             return;
           }
-          _emit(
-            RealtimeEventType.error,
-            'Realtime 連線已中斷 (connectionState: $state)',
-          );
+          _emit(RealtimeEventType.peerConnectionFailed, state.toString());
         }
       };
       _peerConnection!.onIceConnectionState = (state) {
@@ -98,6 +104,7 @@ class RealtimeVoiceService {
       };
       _eventsChannel!.onDataChannelState = (state) {
         _log('oai-events channel state: $state');
+        _handleDataChannelState(state.toString());
       };
 
       _localStream = await navigator.mediaDevices.getUserMedia({
@@ -146,7 +153,7 @@ class RealtimeVoiceService {
       await _peerConnection!.setRemoteDescription(
         RTCSessionDescription(answerSdp, 'answer'),
       );
-      _emit(RealtimeEventType.state, 'connected');
+      _emit(RealtimeEventType.state, 'ready');
       _emit(RealtimeEventType.state, 'listening');
     } catch (error) {
       _emit(RealtimeEventType.error, '無法建立 Realtime 連線：$error');
@@ -199,11 +206,23 @@ class RealtimeVoiceService {
       _localStream = null;
       _remoteAudioRenderer.srcObject = null;
       _assistantBuffer = '';
+      _lastFinalUserTranscript = '';
+      _lastFinalTranscriptAt = null;
       _isSpeaking = false;
       _emit(RealtimeEventType.state, 'idle');
     } finally {
       _isStopping = false;
     }
+  }
+
+  @visibleForTesting
+  void handleDataChannelEventForTest(String payload) {
+    _handleDataChannelEvent(payload);
+  }
+
+  @visibleForTesting
+  void handleDataChannelStateForTest(String state) {
+    _handleDataChannelState(state);
   }
 
   void _handleDataChannelEvent(String payload) {
@@ -222,33 +241,40 @@ class RealtimeVoiceService {
       return;
     }
 
+    if (type == 'conversation.item.input_audio_transcription.delta' ||
+        type == 'conversation.item.input_audio_transcription.partial' ||
+        type == 'input_audio_buffer.transcription.delta') {
+      _emitUserTranscriptFromEvent(map, isFinal: false);
+      return;
+    }
+
     if (type == 'conversation.item.input_audio_transcription.completed') {
-      _emitUserTranscriptFromEvent(map);
+      _emitUserTranscriptFromEvent(map, isFinal: true);
       return;
     }
 
     if (type == 'conversation.item.added' || type == 'conversation.item.done') {
       // Fallback for sessions where transcript appears on conversation item events.
-      _emitUserTranscriptFromEvent(map);
+      _emitUserTranscriptFromEvent(map, isFinal: true);
       return;
     }
 
     if (type == 'input_audio_buffer.speech_started') {
+      _emit(RealtimeEventType.userSpeechStarted, '');
       _emit(RealtimeEventType.state, 'listening');
       return;
     }
 
     if (type == 'input_audio_buffer.speech_stopped') {
+      _emit(RealtimeEventType.userSpeechStopped, '');
+      _emit(RealtimeEventType.state, 'transcribing');
       _emit(RealtimeEventType.state, 'thinking');
       return;
     }
 
     if (type == 'response.created') {
-      if (!_isSpeaking) {
-        _isSpeaking = true;
-        _emit(RealtimeEventType.assistantAudioStart, '');
-        _emit(RealtimeEventType.state, 'speaking');
-      }
+      _emit(RealtimeEventType.assistantResponseStart, '');
+      _emit(RealtimeEventType.state, 'thinking');
       return;
     }
 
@@ -264,11 +290,17 @@ class RealtimeVoiceService {
 
     if (type == 'response.output_audio_transcript.delta' ||
         type == 'response.audio_transcript.delta') {
+      if (!_isSpeaking) {
+        _isSpeaking = true;
+        _emit(RealtimeEventType.assistantAudioStart, '');
+        _emit(RealtimeEventType.state, 'speaking');
+      }
       _assistantBuffer += map['delta'] as String? ?? '';
       return;
     }
 
-    if (type == 'response.output_audio.delta' ||
+    if (type == 'output_audio_buffer.started' ||
+        type == 'response.output_audio.delta' ||
         type == 'response.audio.delta') {
       if (!_isSpeaking) {
         _isSpeaking = true;
@@ -287,6 +319,7 @@ class RealtimeVoiceService {
       }
       _assistantBuffer = '';
       _isSpeaking = false;
+      _emit(RealtimeEventType.assistantResponseDone, '');
       _emit(RealtimeEventType.assistantAudioEnd, '');
       _log(
           'response.done received; keep realtime connection and return to listening');
@@ -306,6 +339,23 @@ class RealtimeVoiceService {
       final errorType = errorMap?['type'] as String?;
       _log('Realtime error event: type=$errorType code=$code message=$message');
       _emit(RealtimeEventType.error, message);
+    }
+  }
+
+  void _handleDataChannelState(String state) {
+    final raw = state.toLowerCase();
+    if (raw.contains('open')) {
+      _emit(RealtimeEventType.dataChannelOpen, '');
+      _emit(RealtimeEventType.state, 'ready');
+      return;
+    }
+    if (raw.contains('closed') || raw.contains('closing')) {
+      if (_isStopping) {
+        _log('Ignore data channel close event during manual stop');
+        return;
+      }
+      _isSpeaking = false;
+      _emit(RealtimeEventType.dataChannelClosed, state);
     }
   }
 
@@ -345,17 +395,32 @@ class RealtimeVoiceService {
     }
   }
 
-  void _emitUserTranscriptFromEvent(Map<String, dynamic> event) {
+  void _emitUserTranscriptFromEvent(
+    Map<String, dynamic> event, {
+    required bool isFinal,
+  }) {
     final transcript = _extractUserTranscript(event);
     if (transcript.isEmpty) {
       return;
     }
-    if (transcript == _lastUserTranscript) {
-      return;
+    if (isFinal) {
+      final now = DateTime.now();
+      final previousAt = _lastFinalTranscriptAt;
+      if (transcript == _lastFinalUserTranscript &&
+          previousAt != null &&
+          now.difference(previousAt).abs() <= const Duration(seconds: 2)) {
+        return;
+      }
+      _lastFinalUserTranscript = transcript;
+      _lastFinalTranscriptAt = now;
     }
-    _lastUserTranscript = transcript;
-    debugPrint('[TRANSCRIPT] userText=$transcript');
-    _emit(RealtimeEventType.userTranscript, transcript);
+    debugPrint('[TRANSCRIPT] ${isFinal ? 'final' : 'partial'}=$transcript');
+    _emit(
+      isFinal
+          ? RealtimeEventType.finalTranscript
+          : RealtimeEventType.partialTranscript,
+      transcript,
+    );
   }
 
   String _extractUserTranscript(Map<String, dynamic> event) {

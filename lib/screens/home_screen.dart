@@ -84,8 +84,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final isDead = petStatsController.lifeState == PetLifeState.dead;
     final showVoiceAura = switch (voiceAgentController.state) {
       VoiceAgentState.connecting ||
-      VoiceAgentState.connected ||
+      VoiceAgentState.ready ||
       VoiceAgentState.listening ||
+      VoiceAgentState.transcribing ||
       VoiceAgentState.thinking =>
         true,
       _ => false,

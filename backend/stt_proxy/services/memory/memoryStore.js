@@ -8,12 +8,18 @@ const PROVIDER_JSON = "json_fallback";
 
 const MEMORY_TYPES = new Set([
   "preference",
+  "emotion_event",
   "routine",
+  "family",
+  "health_note",
+  "reminder_context",
+  "personal_story",
   "emotion",
   "reminder",
   "care_need",
   "story_preference",
   "health_lifestyle",
+  "reminiscence",
   "other",
 ]);
 
@@ -160,8 +166,10 @@ function rowToMemory(row, provider, extra = {}) {
     id: row.id,
     userId: row.user_id ?? row.userId,
     memoryType: row.memory_type ?? row.memoryType,
+    type: row.memory_type ?? row.memoryType,
     memoryText: row.memory_text ?? row.memoryText,
     memorySummary: row.memory_summary ?? row.memorySummary,
+    content: row.memory_summary ?? row.memorySummary ?? row.memory_text ?? row.memoryText,
     emotionLabel: row.emotion_label ?? row.emotionLabel ?? null,
     importance: Number(row.importance ?? 3),
     confidence: Number(row.confidence ?? 0.8),
@@ -172,6 +180,7 @@ function rowToMemory(row, provider, extra = {}) {
     lastUsedAt: row.last_used_at ?? row.lastUsedAt ?? null,
     useCount: Number(row.use_count ?? row.useCount ?? 0),
     isActive: row.is_active ?? row.isActive ?? true,
+    archived: !(row.is_active ?? row.isActive ?? true),
     provider,
     ...extra,
   };

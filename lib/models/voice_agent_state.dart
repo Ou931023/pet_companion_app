@@ -1,10 +1,12 @@
 enum VoiceAgentState {
   idle,
   connecting,
-  connected,
+  ready,
   listening,
+  transcribing,
   thinking,
   speaking,
+  recovering,
   error,
 }
 
