@@ -14,7 +14,21 @@ function classifySearchIntent(input = "") {
   if (includesAny(text, ["防詐", "詐騙", "165", "假投資", "假冒"])) {
     return { needsSearch: true, topic: "fraud_prevention", reason: "fraud_prevention" };
   }
-  if (includesAny(text, ["健康小知識", "睡不好", "睡不著", "運動", "長輩", "老人", "高齡", "生活建議", "衛教"])) {
+  const asksForGuidance = includesAny(text, [
+    "可以怎麼",
+    "怎麼調整",
+    "怎麼做",
+    "有沒有適合",
+    "建議",
+    "小知識",
+    "提醒",
+    "衛教",
+    "生活建議",
+  ]);
+  if (
+    includesAny(text, ["健康小知識"]) ||
+    (asksForGuidance && includesAny(text, ["睡不好", "睡不著", "運動", "長輩", "老人", "高齡", "健康"]))
+  ) {
     return { needsSearch: true, topic: "elder_life_health", reason: "elder_health_education" };
   }
   if (includesAny(text, ["真實故事", "防詐故事", "新聞故事", "有來源的故事", "地方故事"])) {

@@ -5,11 +5,14 @@ import 'package:flutter/material.dart';
 
 import '../models/conversation_session_summary.dart';
 import '../models/conversation_turn.dart';
+import '../models/companion_reply.dart';
+import '../models/emotion_result.dart';
 import '../models/pet_status.dart';
 import '../models/realtime_timeout.dart';
 import '../models/source_reference.dart';
 import '../services/ai_navigation_service.dart';
 import '../services/ai_tool_router.dart';
+import '../services/companion_reply_strategy_service.dart';
 import '../services/emotion_services.dart';
 import '../services/local_storage_service.dart';
 import '../services/mock_speech_to_text_service.dart';
@@ -40,6 +43,7 @@ class ConversationController extends ChangeNotifier {
     required this.emotionFusionService,
     required this.petEmotionMapper,
     required this.memoryController,
+    required this.companionReplyStrategy,
     this.timeoutConfig = const RealtimeTimeoutConfig(),
   });
 
@@ -57,6 +61,7 @@ class ConversationController extends ChangeNotifier {
   final EmotionFusionService emotionFusionService;
   final PetEmotionMapper petEmotionMapper;
   final MemoryController memoryController;
+  final CompanionReplyStrategyService companionReplyStrategy;
   final RealtimeTimeoutConfig timeoutConfig;
 
   final List<ConversationTurn> _history = [];
@@ -71,6 +76,7 @@ class ConversationController extends ChangeNotifier {
   String _latestSearchMode = '';
   String _latestSearchProvider = '';
   String _latestToolUsed = '';
+  CompanionReplyDebugInfo? _latestCompanionDebugInfo;
   Timer? _ttsTimeoutTimer;
 
   List<ConversationTurn> get history => List.unmodifiable(_history.reversed);
@@ -135,6 +141,8 @@ class ConversationController extends ChangeNotifier {
   String get latestSearchMode => _latestSearchMode;
   String get latestSearchProvider => _latestSearchProvider;
   String get latestToolUsed => _latestToolUsed;
+  CompanionReplyDebugInfo? get latestCompanionDebugInfo =>
+      _latestCompanionDebugInfo;
 
   Future<void> loadHistory() async {
     final turns = await storageService.loadConversationHistory();
@@ -222,6 +230,39 @@ class ConversationController extends ChangeNotifier {
 
   Future<void> quickAction(String text) async {
     await _handleUserText(text);
+  }
+
+  void showUserBubbleMessage(
+    String text, {
+    bool awaitingPetReply = false,
+    bool clearPetReply = true,
+  }) {
+    final normalized = text.trim();
+    if (normalized.isEmpty) return;
+    _latestUserText = normalized;
+    if (clearPetReply) {
+      _latestReply = '';
+      _latestSources = const [];
+      _latestReplyIsSearch = false;
+      _latestSearchMode = '';
+      _latestSearchProvider = '';
+      _latestToolUsed = '';
+    }
+    _isAwaitingPetReply = awaitingPetReply;
+    notifyListeners();
+  }
+
+  void showPetBubbleMessage(String message) {
+    final normalized = message.trim();
+    if (normalized.isEmpty) return;
+    _latestReply = normalized;
+    _isAwaitingPetReply = false;
+    _latestSources = const [];
+    _latestReplyIsSearch = false;
+    _latestSearchMode = '';
+    _latestSearchProvider = '';
+    _latestToolUsed = '';
+    notifyListeners();
   }
 
   bool shouldHandleAsLocalCommand(String text) {
@@ -324,14 +365,20 @@ class ConversationController extends ChangeNotifier {
   Future<void> _handleUserText(String text) async {
     if (_isBusy) return;
     _isBusy = true;
-    _latestUserText = text;
-    notifyListeners();
+    showUserBubbleMessage(text, awaitingPetReply: true);
     try {
       final navigationIntent = navigationService.detect(text);
       if (navigationIntent != null) {
         navigationController.navigateTo(navigationIntent.route);
+        final reply = _buildCompanionReply(
+          userText: text,
+          emotion: emotionFusionService.analyze(text: text),
+          suggestedAction: 'route',
+          optionalSuggestion: navigationIntent.reply,
+          routeInfo: navigationIntent.route,
+        );
         await _deliverPetReply(
-          navigationIntent.reply,
+          reply,
           petMode: PetMode.listening,
           toolName: 'navigation',
           userText: text,
@@ -345,10 +392,16 @@ class ConversationController extends ChangeNotifier {
 
       if (reminderController.isCreateReminderCommand(text)) {
         final reminder = await reminderController.createFromVoice(text);
+        final rawReply = reminder == null
+            ? '我還沒聽清楚提醒時間，可以說「提醒我晚上八點吃藥」。'
+            : '好，我會在${reminder.repeatLabel}${reminder.timeLabel}提醒你${reminder.title}。';
         await _deliverPetReply(
-          reminder == null
-              ? '我還沒聽清楚提醒時間，可以說「提醒我晚上八點吃藥」。'
-              : '好，我會在${reminder.repeatLabel}${reminder.timeLabel}提醒你${reminder.title}。',
+          _buildCompanionReply(
+            userText: text,
+            emotion: emotion,
+            suggestedAction: 'reminder',
+            optionalSuggestion: rawReply,
+          ),
           petMode: emotionMode,
           toolName: 'createReminder',
           userText: text,
@@ -358,7 +411,12 @@ class ConversationController extends ChangeNotifier {
       }
       if (reminderController.isListReminderCommand(text)) {
         await _deliverPetReply(
-          reminderController.listSummary(),
+          _buildCompanionReply(
+            userText: text,
+            emotion: emotion,
+            suggestedAction: 'reminder',
+            optionalSuggestion: reminderController.listSummary(),
+          ),
           petMode: emotionMode,
           toolName: 'listReminders',
           userText: text,
@@ -373,7 +431,16 @@ class ConversationController extends ChangeNotifier {
             ? '目前沒有取得可靠來源，我先不亂說，我可以先陪你聊聊或稍後再幫你查。'
             : searchResult.answer.trim();
         await _deliverPetReply(
-          reply,
+          _buildCompanionReply(
+            userText: text,
+            emotion: emotion,
+            suggestedAction: _searchActionLabel(text),
+            optionalSuggestion: reply,
+            memoryHints: [
+              if (memoryContext.memoryContextSummary?.trim().isNotEmpty == true)
+                memoryContext.memoryContextSummary!.trim(),
+            ],
+          ),
           petMode: emotionMode,
           toolName: 'verticalSearch',
           userText: text,
@@ -396,9 +463,17 @@ class ConversationController extends ChangeNotifier {
       );
       final petMode =
           emotion.emotion == 'neutral' ? toolResult.petMode : emotionMode;
-      final comfort = petEmotionMapper.comfortPrefix(emotion.emotion);
       await _deliverPetReply(
-        comfort.isEmpty ? toolResult.message : '$comfort ${toolResult.message}',
+        _buildCompanionReply(
+          userText: text,
+          emotion: emotion,
+          suggestedAction: _toolActionLabel(toolResult.toolName),
+          optionalSuggestion: toolResult.message,
+          memoryHints: [
+            if (memoryContext.memoryContextSummary?.trim().isNotEmpty == true)
+              memoryContext.memoryContextSummary!.trim(),
+          ],
+        ),
         petMode: petMode,
         toolName: toolResult.toolName,
         userText: text,
@@ -512,6 +587,69 @@ class ConversationController extends ChangeNotifier {
         petController.setMode(petMode, isSpeaking: false);
       },
     );
+  }
+
+  String _buildCompanionReply({
+    required String userText,
+    required EmotionResult emotion,
+    required String suggestedAction,
+    required String optionalSuggestion,
+    String routeInfo = '',
+    List<String> memoryHints = const [],
+  }) {
+    final context = CompanionContext(
+      userText: userText,
+      detectedEmotion: emotion.emotion,
+      fusedEmotion: emotion.emotion,
+      memoryHints: memoryHints,
+      routeInfo: routeInfo,
+      userStateHints: _userStateHintsFor(userText),
+      suggestedAction: suggestedAction,
+      optionalSuggestion: optionalSuggestion,
+      petName: profileController.petName,
+      conversationHistory: history.take(6).toList(),
+    );
+    final plan = companionReplyStrategy.buildPlan(context);
+    _latestCompanionDebugInfo = companionReplyStrategy.debugInfo(context);
+    return companionReplyStrategy.compose(plan);
+  }
+
+  String _toolActionLabel(String toolName) {
+    return switch (toolName) {
+      'companionContent' => 'story',
+      'webSearch' => 'search',
+      'dailyCheckIn' ||
+      'buyShopItem' ||
+      'changeSettings' ||
+      'completeCareTask' ||
+      'getUserStatus' ||
+      'getDailyTasks' =>
+        'task',
+      _ => '',
+    };
+  }
+
+  String _searchActionLabel(String text) {
+    if (text.contains('新聞')) return 'news';
+    return 'search';
+  }
+
+  UserStateHints _userStateHintsFor(String userText) {
+    final recent = history.take(3).map((turn) => turn.userText).join(' ');
+    final combined = '$recent $userText';
+    return UserStateHints(
+      mentionedLonely: _containsAny(combined, ['孤單', '沒有人陪', '沒人陪', '家裡好安靜']),
+      mentionedTired: _containsAny(combined, ['累', '疲倦', '沒精神', '想睡']),
+      mentionedPoorSleep: _containsAny(combined, ['睡不好', '睡不著', '失眠', '睡不太著']),
+      mentionedLowAppetite: _containsAny(combined, ['不太想吃飯', '沒胃口', '吃不下']),
+      mentionedPainOrDiscomfort:
+          _containsAny(combined, ['不舒服', '痛', '疼', '頭暈']),
+      lastConcernAt: DateTime.now(),
+    );
+  }
+
+  bool _containsAny(String text, List<String> terms) {
+    return terms.any(text.contains);
   }
 
   static String _newSessionId() =>

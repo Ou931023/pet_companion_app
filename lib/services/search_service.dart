@@ -14,29 +14,43 @@ class SearchService {
   static bool shouldHandle(String text) {
     final normalized = text.trim();
     if (normalized.isEmpty) return false;
-    return [
-      '今天',
-      '最近',
+    if ([
       '新聞',
       '最新',
       '查一下',
       '幫我查',
       '搜尋',
-      '健康',
       '健康小知識',
-      '睡眠',
-      '運動',
-      '喝水',
-      '吃藥',
-      '長輩',
-      '老人',
-      '天氣',
       '防詐',
       '詐騙',
       '真實故事',
       '防詐故事',
       '新聞故事',
+    ].any(normalized.contains)) {
+      return true;
+    }
+    final asksForGuidance = [
+      '可以怎麼',
+      '怎麼調整',
+      '怎麼做',
+      '有沒有適合',
+      '建議',
+      '小知識',
+      '提醒',
     ].any(normalized.contains);
+    final hasKnowledgeTopic = [
+      '睡眠',
+      '睡不好',
+      '睡不著',
+      '運動',
+      '喝水',
+      '吃藥',
+      '長輩',
+      '老人',
+      '健康',
+      '天氣',
+    ].any(normalized.contains);
+    return asksForGuidance && hasKnowledgeTopic;
   }
 
   Future<SearchResponse> search(String query) async {

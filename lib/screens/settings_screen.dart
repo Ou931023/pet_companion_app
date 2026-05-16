@@ -6,6 +6,7 @@ import '../controllers/pet_controller.dart';
 import '../controllers/profile_controller.dart';
 import '../models/language_route.dart';
 import '../routes/app_routes.dart';
+import '../widgets/companion_debug_panel.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -292,6 +293,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 command: '說話慢一點',
               ),
             ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _SettingsSection(
+          title: 'Companion Debug Panel',
+          child: Consumer<ConversationController>(
+            builder: (context, conversation, _) {
+              return CompanionDebugPanel(
+                info: conversation.latestCompanionDebugInfo,
+              );
+            },
           ),
         ),
       ],

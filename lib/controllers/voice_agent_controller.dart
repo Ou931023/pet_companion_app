@@ -117,6 +117,7 @@ class VoiceAgentController extends ChangeNotifier {
     _startTimeout(RealtimeTimeoutType.connectionTimeout);
     _lastError = '';
     petController.setMessage('我在聽，慢慢說。');
+    conversationController.showPetBubbleMessage('我在聽，慢慢說。');
     notifyListeners();
     _sub?.cancel();
     _sub = realtimeVoiceService.events.listen(_handleRealtimeEvent);
@@ -166,6 +167,7 @@ class VoiceAgentController extends ChangeNotifier {
       case RealtimeEventType.userSpeechStarted:
         _speechStartedAt = DateTime.now();
         _speechStoppedAt = null;
+        conversationController.showPetBubbleMessage('我在聽，慢慢說。');
         _startTimeout(RealtimeTimeoutType.transcriptTimeout);
         break;
       case RealtimeEventType.userSpeechStopped:
@@ -175,6 +177,11 @@ class VoiceAgentController extends ChangeNotifier {
       case RealtimeEventType.partialTranscript:
         _partialTranscript = event.payload.trim();
         if (_partialTranscript.isNotEmpty) {
+          conversationController.showUserBubbleMessage(
+            _partialTranscript,
+            awaitingPetReply: false,
+            clearPetReply: true,
+          );
           _transition(
             VoiceAgentState.transcribing,
             'partial_transcript_received',
@@ -267,7 +274,7 @@ class VoiceAgentController extends ChangeNotifier {
       case RealtimeEventType.dataChannelOpen:
         _cancelTimeout(RealtimeTimeoutType.connectionTimeout);
         _cancelTimeout(RealtimeTimeoutType.reconnectTimeout);
-        _transition(VoiceAgentState.ready, 'data_channel_open');
+        _transition(VoiceAgentState.listening, 'data_channel_open');
         break;
       case RealtimeEventType.dataChannelClosed:
         _handleRealtimeRecoverableFailure('data_channel_closed');
@@ -335,6 +342,11 @@ class VoiceAgentController extends ChangeNotifier {
     final transcript = decision.transcript;
     final turnId = decision.turnId;
     _cancelTurnTimeouts();
+    conversationController.showUserBubbleMessage(
+      transcript,
+      awaitingPetReply: true,
+      clearPetReply: true,
+    );
     _activeTurnId = turnId;
     _partialTranscript = '';
     _pendingRealtimeTurnId = turnId;
@@ -615,6 +627,7 @@ class VoiceAgentController extends ChangeNotifier {
       case RealtimeTimeoutType.transcriptTimeout:
         _clearCurrentTurn();
         petController.setModeAndMessage(PetMode.listening, plan.fallbackReply);
+        conversationController.showPetBubbleMessage(plan.fallbackReply);
         _transition(plan.targetState, plan.reason);
         break;
       case RealtimeTimeoutType.responseTimeout:
@@ -622,6 +635,7 @@ class VoiceAgentController extends ChangeNotifier {
         break;
       case RealtimeTimeoutType.ttsTimeout:
         petController.setModeAndMessage(PetMode.listening, plan.fallbackReply);
+        conversationController.showPetBubbleMessage(plan.fallbackReply);
         _transition(plan.targetState, plan.reason, turnId: turnId);
         break;
       case RealtimeTimeoutType.reconnectTimeout:
@@ -648,6 +662,7 @@ class VoiceAgentController extends ChangeNotifier {
       );
     } else {
       petController.setModeAndMessage(PetMode.listening, fallback);
+      conversationController.showPetBubbleMessage(fallback);
     }
     _clearCurrentTurn();
     _transition(plan.targetState, plan.reason);
@@ -917,6 +932,7 @@ class VoiceAgentController extends ChangeNotifier {
     _clearCurrentTurn();
     await realtimeVoiceService.stop();
     petController.setModeAndMessage(PetMode.listening, message);
+    conversationController.showPetBubbleMessage(message);
     final attemptId = ++_connectionAttemptId;
     _transition(VoiceAgentState.connecting, '${reason}_reconnect_started');
     _startTimeout(RealtimeTimeoutType.reconnectTimeout);
@@ -960,6 +976,7 @@ class VoiceAgentController extends ChangeNotifier {
     _transition(VoiceAgentState.idle, reason);
     if (message != null && message.isNotEmpty) {
       petController.setModeAndMessage(PetMode.listening, message);
+      conversationController.showPetBubbleMessage(message);
     }
   }
 

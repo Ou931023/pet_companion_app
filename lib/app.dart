@@ -32,6 +32,7 @@ import 'services/asr_strategy_service.dart';
 import 'services/check_in_storage_service.dart';
 import 'services/companion_content_service.dart';
 import 'services/companion_engine_service.dart';
+import 'services/companion_reply_strategy_service.dart';
 import 'services/emotion_services.dart';
 import 'services/inventory_storage_service.dart';
 import 'services/local_storage_service.dart';
@@ -65,6 +66,7 @@ class PetCompanionApp extends StatelessWidget {
         Provider(create: (_) => const ShopService()),
         Provider(create: (_) => MemoryService()),
         Provider(create: (_) => const CompanionEngineService()),
+        Provider(create: (_) => const CompanionReplyStrategyService()),
         Provider(create: (_) => const AiNavigationService()),
         Provider(create: (_) => ReminderService()),
         Provider(create: (_) => NotificationService()),
@@ -167,6 +169,8 @@ class PetCompanionApp extends StatelessWidget {
             emotionFusionService: context.read<EmotionFusionService>(),
             petEmotionMapper: context.read<PetEmotionMapper>(),
             memoryController: context.read<MemoryController>(),
+            companionReplyStrategy:
+                context.read<CompanionReplyStrategyService>(),
           ),
           update: (context, profile, pet, router, tts, mockStt, search,
                   controller) =>
@@ -186,6 +190,8 @@ class PetCompanionApp extends StatelessWidget {
                 emotionFusionService: context.read<EmotionFusionService>(),
                 petEmotionMapper: context.read<PetEmotionMapper>(),
                 memoryController: context.read<MemoryController>(),
+                companionReplyStrategy:
+                    context.read<CompanionReplyStrategyService>(),
               ),
         ),
         ChangeNotifierProxyProvider6<
