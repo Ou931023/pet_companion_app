@@ -59,6 +59,22 @@ void main() {
     expect(find.text('謝謝你陪我'), findsOneWidget);
   });
 
+  testWidgets('speech partial and draft do not become two formal messages',
+      (tester) async {
+    await tester.pumpWidget(_bubbleHost(
+      userText: '正式訊息',
+      temporaryUserText: '語音 partial',
+      temporaryUserStatus: '聆聽中',
+    ));
+
+    expect(find.byKey(const ValueKey('latest-user-message-bubble')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('temporary-user-message-bubble')),
+        findsOneWidget);
+    expect(find.text('正式訊息'), findsOneWidget);
+    expect(find.text('語音 partial'), findsOneWidget);
+  });
+
   testWidgets('empty final transcript does not create a formal user bubble',
       (tester) async {
     await tester.pumpWidget(_bubbleHost());

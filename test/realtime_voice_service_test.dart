@@ -91,6 +91,72 @@ void main() {
       service.dispose();
     });
 
+    test(
+        'response audio transcript delta can update user partial before response',
+        () async {
+      final service = RealtimeVoiceService();
+      final events = <RealtimeVoiceEvent>[];
+      final sub = service.events.listen(events.add);
+
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.audio_transcript.delta',
+        'delta': '我今天',
+      }));
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.audio_transcript.delta',
+        'delta': '有點累',
+      }));
+      await pumpEventQueue();
+
+      final partials = events
+          .where((event) => event.type == RealtimeEventType.partialTranscript)
+          .map((event) => event.payload)
+          .toList();
+      expect(partials, ['我今天', '我今天有點累']);
+      expect(
+        events.where((event) => event.type == RealtimeEventType.assistantText),
+        isEmpty,
+      );
+
+      await sub.cancel();
+      service.dispose();
+    });
+
+    test(
+        'response audio transcript delta remains assistant text after response',
+        () async {
+      final service = RealtimeVoiceService();
+      final events = <RealtimeVoiceEvent>[];
+      final sub = service.events.listen(events.add);
+
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.created',
+      }));
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.audio_transcript.delta',
+        'delta': '我在這裡陪你。',
+      }));
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.done',
+      }));
+      await pumpEventQueue();
+
+      expect(
+        events.where(
+            (event) => event.type == RealtimeEventType.partialTranscript),
+        isEmpty,
+      );
+      expect(
+        events.any((event) =>
+            event.type == RealtimeEventType.assistantText &&
+            event.payload == '我在這裡陪你。'),
+        isTrue,
+      );
+
+      await sub.cancel();
+      service.dispose();
+    });
+
     test('response done emits assistant text and returns to listening',
         () async {
       final service = RealtimeVoiceService();
@@ -179,6 +245,27 @@ void main() {
       service.dispose();
     });
 
+    test('ice completed is treated as a connected peer state', () async {
+      final service = RealtimeVoiceService();
+      final events = <RealtimeVoiceEvent>[];
+      final sub = service.events.listen(events.add);
+
+      service.handleIceStateForTest('RTCIceConnectionStateCompleted');
+      await pumpEventQueue();
+
+      expect(
+        events.where(
+          (event) =>
+              event.type == RealtimeEventType.state &&
+              event.payload == 'connected',
+        ),
+        isNotEmpty,
+      );
+
+      await sub.cancel();
+      service.dispose();
+    });
+
     test('connect called concurrently only starts one attempt', () async {
       final connectCompleter = Completer<void>();
       var attempts = 0;
@@ -227,6 +314,26 @@ void main() {
       expect(sentPayloads, hasLength(1));
       expect(sentPayloads.single, contains('session.update'));
       expect(service.pendingEventCountForTest, 0);
+
+      service.dispose();
+    });
+
+    test('closed peer state prevents sending on an old open data channel',
+        () async {
+      final sentPayloads = <String>[];
+      final service = RealtimeVoiceService(
+        eventSenderForTesting: (payload) async {
+          sentPayloads.add(payload);
+        },
+      );
+
+      service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
+      service.handlePeerStateForTest('RTCPeerConnectionStateClosed');
+      await service.sendEventPayloadForTest('{"type":"session.update"}');
+      await pumpEventQueue();
+
+      expect(sentPayloads, isEmpty);
+      expect(service.pendingEventCountForTest, 1);
 
       service.dispose();
     });

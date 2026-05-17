@@ -77,6 +77,7 @@ class RealtimeVoiceService {
   int _connectGeneration = 0;
   bool _rendererReady = false;
   bool _isSpeaking = false;
+  bool _hasActiveAssistantResponse = false;
   bool _isStopping = false;
   bool _isDisposed = false;
   bool _dataChannelOpen = false;
@@ -93,8 +94,9 @@ class RealtimeVoiceService {
   bool get isConnectionUsable =>
       _peerConnection != null &&
       _dataChannelOpen &&
-      !_isClosedOrFailedState(_lastConnectionState) &&
-      !_isClosedOrFailedState(_lastIceConnectionState);
+      _isUsablePeerState(_lastConnectionState) &&
+      (_lastIceConnectionState.isEmpty ||
+          _isUsablePeerState(_lastIceConnectionState));
   String get lastConnectionState => _lastConnectionState;
   String get lastIceConnectionState => _lastIceConnectionState;
 
@@ -354,6 +356,12 @@ class RealtimeVoiceService {
   }
 
   @visibleForTesting
+  void handleIceStateForTest(String state) {
+    _lastIceConnectionState = state;
+    _handlePeerState(state);
+  }
+
+  @visibleForTesting
   Future<void> sendEventPayloadForTest(String payload) {
     return _sendEventPayload(payload);
   }
@@ -379,7 +387,9 @@ class RealtimeVoiceService {
 
     if (type == 'conversation.item.input_audio_transcription.delta' ||
         type == 'conversation.item.input_audio_transcription.partial' ||
-        type == 'input_audio_buffer.transcription.delta') {
+        type == 'input_audio_buffer.transcription.delta' ||
+        (type == 'response.audio_transcript.delta' &&
+            !_hasActiveAssistantResponse)) {
       _emitUserTranscriptFromEvent(map, isFinal: false);
       return;
     }
@@ -409,6 +419,7 @@ class RealtimeVoiceService {
     }
 
     if (type == 'response.created') {
+      _hasActiveAssistantResponse = true;
       _emit(RealtimeEventType.assistantResponseStart, '');
       _emit(RealtimeEventType.state, 'thinking');
       return;
@@ -455,6 +466,7 @@ class RealtimeVoiceService {
       }
       _assistantBuffer = '';
       _isSpeaking = false;
+      _hasActiveAssistantResponse = false;
       _emit(RealtimeEventType.assistantResponseDone, '');
       _emit(RealtimeEventType.assistantAudioEnd, '');
       _log(
@@ -510,7 +522,7 @@ class RealtimeVoiceService {
       _emit(RealtimeEventType.peerConnectionFailed, state);
       return;
     }
-    if (raw.contains('connected') && !_dataChannelOpen) {
+    if (_isUsablePeerState(raw) && !_dataChannelOpen) {
       _emit(RealtimeEventType.state, 'connected');
     }
   }
@@ -522,11 +534,23 @@ class RealtimeVoiceService {
         raw.contains('closed');
   }
 
+  static bool _isUsablePeerState(String state) {
+    final raw = state.toLowerCase();
+    return raw.contains('connected') || raw.contains('completed');
+  }
+
   Future<void> _sendEventPayload(String payload) async {
     if (!_dataChannelOpen) {
       _pendingEventPayloads.add(payload);
       _log(
           'Data channel is not open; queued event (${_pendingEventPayloads.length})');
+      return;
+    }
+    if (_isClosedOrFailedState(_lastConnectionState) ||
+        _isClosedOrFailedState(_lastIceConnectionState)) {
+      _dataChannelOpen = false;
+      _pendingEventPayloads.add(payload);
+      _log('Peer connection is closed or failed; queued event for reconnect');
       return;
     }
     final sender = eventSenderForTesting;
@@ -610,6 +634,7 @@ class RealtimeVoiceService {
     _lastFinalUserTranscript = '';
     _lastFinalTranscriptAt = null;
     _isSpeaking = false;
+    _hasActiveAssistantResponse = false;
     if (emitIdle) {
       _emit(RealtimeEventType.state, 'idle');
     }

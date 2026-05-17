@@ -84,6 +84,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   int _connectionAttemptId = 0;
   int _transcriptRouteAttemptId = 0;
   bool _wasRealtimeActiveBeforeBackground = false;
+  bool _isHandlingRealtimeFailure = false;
   final RealtimeTurnCoordinator _turnCoordinator = RealtimeTurnCoordinator();
   final RealtimeTimeoutRegistry _timeouts = RealtimeTimeoutRegistry();
 
@@ -108,11 +109,16 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       _state != VoiceAgentState.recovering;
 
   Future<void> startRealtimeConversation() async {
-    if (_state == VoiceAgentState.connecting ||
-        _state == VoiceAgentState.ready ||
+    if (_state == VoiceAgentState.connecting) {
+      return;
+    }
+    if (_state == VoiceAgentState.ready ||
         _state == VoiceAgentState.listening ||
         _state == VoiceAgentState.thinking ||
         _state == VoiceAgentState.speaking) {
+      if (!realtimeVoiceService.isConnectionUsable) {
+        _handleRealtimeRecoverableFailure('active_connection_unusable');
+      }
       return;
     }
     final attemptId = ++_connectionAttemptId;
@@ -928,19 +934,33 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _handleRealtimeFailure(Object error) async {
-    if (_state == VoiceAgentState.error || _state == VoiceAgentState.idle) {
+    if (_isHandlingRealtimeFailure ||
+        _state == VoiceAgentState.error ||
+        _state == VoiceAgentState.idle) {
       return;
     }
-    debugPrint('[VoiceAgentController] realtime unavailable: $error');
-    _lastError = error.toString();
-    await _recoverToErrorAfterFailure(
-      reason: 'connection_failed',
-      message: '連線失敗，點我重試',
-      stopConnection: true,
-    );
+    _isHandlingRealtimeFailure = true;
+    try {
+      debugPrint('[VoiceAgentController] realtime unavailable: $error');
+      _lastError = error.toString();
+      await _recoverToErrorAfterFailure(
+        reason: 'connection_failed',
+        message: '連線失敗，點我重試',
+        stopConnection: true,
+      );
+    } finally {
+      _isHandlingRealtimeFailure = false;
+    }
   }
 
   void _handleRealtimeRecoverableFailure(String reason) {
+    if (_state == VoiceAgentState.connecting ||
+        _state == VoiceAgentState.recovering) {
+      debugPrint(
+        '[VoiceAgentController] realtime recovery already running reason=$reason',
+      );
+      return;
+    }
     debugPrint('[VoiceAgentController] realtime recovering reason=$reason');
     _lastError = '';
     _transition(VoiceAgentState.recovering, reason);
