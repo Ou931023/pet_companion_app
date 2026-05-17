@@ -26,6 +26,26 @@ void main() {
       expect(route.routeReason, 'default_openai_realtime');
       expect(route.isFallback, isFalse);
       expect(route.transcript, '今天家裡好安靜');
+      expect(route.replyLanguage, ReplyLanguage.zhTw);
+    });
+
+    test('taigi cue in default mode selects mixed reply language', () async {
+      final service = LanguageRoutingService(
+        AsrStrategyService(
+          strategies: const [
+            OpenAiRealtimeAsrStrategy(),
+            MockTaigiAsrStrategy(),
+          ],
+        ),
+      );
+
+      final route = await service.routeTranscript(
+        mode: VoiceLanguageMode.defaultOpenAiRealtime,
+        realtimeTranscript: '今仔日厝內足安靜',
+      );
+
+      expect(route.languageHint, TranscriptLanguageHint.mixed);
+      expect(route.replyLanguage, ReplyLanguage.mixedZhTaigi);
     });
 
     test('taigiPreferred selects Taigi strategy first', () async {
@@ -47,6 +67,26 @@ void main() {
       expect(route.languageHint, TranscriptLanguageHint.taigi);
       expect(route.routeReason, 'taigi_preferred_strategy_selected');
       expect(route.isFallback, isFalse);
+      expect(route.replyLanguage, ReplyLanguage.mixedZhTaigi);
+    });
+
+    test('taigiPreferred prefers mixed reply language for Mandarin input',
+        () async {
+      final service = LanguageRoutingService(
+        AsrStrategyService(
+          strategies: const [
+            OpenAiRealtimeAsrStrategy(),
+            MockTaigiAsrStrategy(),
+          ],
+        ),
+      );
+
+      final route = await service.routeTranscript(
+        mode: VoiceLanguageMode.taigiPreferred,
+        realtimeTranscript: '今天家裡好安靜',
+      );
+
+      expect(route.replyLanguage, ReplyLanguage.mixedZhTaigi);
     });
 
     test('taigi strategy failure falls back to OpenAI Realtime', () async {
@@ -91,6 +131,7 @@ void main() {
       expect(route.languageHint, TranscriptLanguageHint.taigi);
       expect(route.routeReason, 'manual_override_strategy_selected');
       expect(route.isFallback, isFalse);
+      expect(route.replyLanguage, ReplyLanguage.mixedZhTaigi);
     });
 
     test('fallback keeps transcript so voice flow can continue', () async {

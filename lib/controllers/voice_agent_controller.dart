@@ -23,7 +23,7 @@ import 'pet_controller.dart';
 import 'pet_stats_controller.dart';
 import 'profile_controller.dart';
 
-class VoiceAgentController extends ChangeNotifier {
+class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   VoiceAgentController({
     required this.profileController,
     required this.petController,
@@ -37,7 +37,9 @@ class VoiceAgentController extends ChangeNotifier {
     required this.navigationController,
     this.timeoutConfig = const RealtimeTimeoutConfig(),
     this.timeoutPolicy = const RealtimeTimeoutPolicy(),
-  });
+  }) {
+    WidgetsBinding.instance.addObserver(this);
+  }
 
   final ProfileController profileController;
   final PetController petController;
@@ -81,6 +83,7 @@ class VoiceAgentController extends ChangeNotifier {
   bool _skipNextAssistantText = false;
   int _connectionAttemptId = 0;
   int _transcriptRouteAttemptId = 0;
+  bool _wasRealtimeActiveBeforeBackground = false;
   final RealtimeTurnCoordinator _turnCoordinator = RealtimeTurnCoordinator();
   final RealtimeTimeoutRegistry _timeouts = RealtimeTimeoutRegistry();
 
@@ -116,8 +119,8 @@ class VoiceAgentController extends ChangeNotifier {
     _transition(VoiceAgentState.connecting, 'connect_started');
     _startTimeout(RealtimeTimeoutType.connectionTimeout);
     _lastError = '';
-    petController.setMessage('我在聽，慢慢說。');
-    conversationController.showPetBubbleMessage('我在聽，慢慢說。');
+    petController.setMessage('正在連線陪伴寵物');
+    conversationController.showPetBubbleMessage('正在連線陪伴寵物');
     notifyListeners();
     _sub?.cancel();
     _sub = realtimeVoiceService.events.listen(_handleRealtimeEvent);
@@ -129,6 +132,8 @@ class VoiceAgentController extends ChangeNotifier {
         petName: profileController.petName,
         userId: memoryController.userId,
         companionContext: _companionContextPrompt(),
+        languageHint: _currentLanguageRoute.languageHint.value,
+        replyLanguage: _currentLanguageRoute.replyLanguage.value,
       );
       if (attemptId != _connectionAttemptId ||
           _state == VoiceAgentState.idle ||
@@ -141,7 +146,7 @@ class VoiceAgentController extends ChangeNotifier {
       await realtimeVoiceService.startListening();
       _cancelTimeout(RealtimeTimeoutType.connectionTimeout);
     } catch (error) {
-      _handleRealtimeFailureSilently(error);
+      await _handleRealtimeFailure(error);
     }
   }
 
@@ -167,28 +172,27 @@ class VoiceAgentController extends ChangeNotifier {
       case RealtimeEventType.userSpeechStarted:
         _speechStartedAt = DateTime.now();
         _speechStoppedAt = null;
+        _partialTranscript = '';
+        conversationController.beginRealtimeUserSpeech();
         conversationController.showPetBubbleMessage('我在聽，慢慢說。');
         _startTimeout(RealtimeTimeoutType.transcriptTimeout);
         break;
       case RealtimeEventType.userSpeechStopped:
         _speechStoppedAt = DateTime.now();
+        conversationController.markAwaitingFinalTranscript();
         _startTimeout(RealtimeTimeoutType.transcriptTimeout);
         break;
       case RealtimeEventType.partialTranscript:
         _partialTranscript = event.payload.trim();
-        if (_partialTranscript.isNotEmpty) {
-          conversationController.showUserBubbleMessage(
-            _partialTranscript,
-            awaitingPetReply: false,
-            clearPetReply: true,
-          );
-          _transition(
-            VoiceAgentState.transcribing,
-            'partial_transcript_received',
-            notify: false,
-          );
-          notifyListeners();
-        }
+        conversationController.updateRealtimePartialTranscript(
+          _partialTranscript,
+        );
+        _transition(
+          VoiceAgentState.transcribing,
+          'partial_transcript_received',
+          notify: false,
+        );
+        notifyListeners();
         break;
       case RealtimeEventType.finalTranscript:
         _cancelTimeout(RealtimeTimeoutType.transcriptTimeout);
@@ -283,7 +287,7 @@ class VoiceAgentController extends ChangeNotifier {
         _handleRealtimeRecoverableFailure('peer_connection_failed');
         break;
       case RealtimeEventType.error:
-        _handleRealtimeFailureSilently(event.payload);
+        unawaited(_handleRealtimeFailure(event.payload));
         break;
     }
   }
@@ -308,11 +312,17 @@ class VoiceAgentController extends ChangeNotifier {
   }
 
   Future<void> _handleFinalTranscript(String realtimeTranscript) async {
+    final normalizedRealtimeTranscript = realtimeTranscript.trim();
+    if (normalizedRealtimeTranscript.isEmpty) {
+      _partialTranscript = '';
+      conversationController.clearRealtimeTranscriptState();
+      return;
+    }
     final routeAttemptId = ++_transcriptRouteAttemptId;
     final route = await languageRoutingService.routeTranscript(
       mode: profileController.voiceLanguageMode,
       manualStrategyName: profileController.manualAsrStrategy,
-      realtimeTranscript: realtimeTranscript,
+      realtimeTranscript: normalizedRealtimeTranscript,
     );
     if (routeAttemptId != _transcriptRouteAttemptId) {
       debugPrint(
@@ -333,6 +343,7 @@ class VoiceAgentController extends ChangeNotifier {
 
     final decision = _turnCoordinator.acceptFinalTranscript(route.transcript);
     if (!decision.accepted) {
+      conversationController.clearRealtimeTranscriptState();
       debugPrint(
         '[VoiceAgentController] ignore transcript reason=${decision.reason} route=${route.routeReason}',
       );
@@ -342,10 +353,9 @@ class VoiceAgentController extends ChangeNotifier {
     final transcript = decision.transcript;
     final turnId = decision.turnId;
     _cancelTurnTimeouts();
-    conversationController.showUserBubbleMessage(
+    conversationController.commitRealtimeFinalTranscript(
       transcript,
       awaitingPetReply: true,
-      clearPetReply: true,
     );
     _activeTurnId = turnId;
     _partialTranscript = '';
@@ -372,6 +382,10 @@ class VoiceAgentController extends ChangeNotifier {
           toolName: 'navigation',
           turnId: turnId,
           emotionTag: UserEmotion.neutral.name,
+          asrSource: _currentLanguageRoute.strategyName,
+          languageHint: _currentLanguageRoute.languageHint.value,
+          routeReason: _currentLanguageRoute.routeReason,
+          replyLanguage: _currentLanguageRoute.replyLanguage.value,
         ),
       );
       _pendingRealtimeUserText = '';
@@ -399,6 +413,10 @@ class VoiceAgentController extends ChangeNotifier {
         toolName: renameResult.handled ? 'renamePet' : 'realtime-user',
         turnId: turnId,
         emotionTag: _emotion.name,
+        asrSource: _currentLanguageRoute.strategyName,
+        languageHint: _currentLanguageRoute.languageHint.value,
+        routeReason: _currentLanguageRoute.routeReason,
+        replyLanguage: _currentLanguageRoute.replyLanguage.value,
       ),
     );
     if (renameResult.reply != null) {
@@ -561,6 +579,7 @@ class VoiceAgentController extends ChangeNotifier {
     final context = result ?? _currentCompanionContext;
     final languageLines = [
       'languageHint=${_currentLanguageRoute.languageHint.value}',
+      'replyLanguage=${_currentLanguageRoute.replyLanguage.value}',
       'asrStrategy=${_currentLanguageRoute.strategyName}',
       'asrRouteReason=${_currentLanguageRoute.routeReason}',
       'asrFallback=${_currentLanguageRoute.isFallback}',
@@ -841,19 +860,25 @@ class VoiceAgentController extends ChangeNotifier {
         text.contains('無聊') ||
         text.contains('沒人陪') ||
         text.contains('一個人') ||
-        text.contains('沒有人陪')) {
+        text.contains('沒有人陪') ||
+        text.contains('足安靜') ||
+        text.contains('厝內')) {
       return UserEmotion.lonely;
     }
     if (text.contains('難過') ||
         text.contains('想哭') ||
         text.contains('累') ||
+        text.contains('足累') ||
         text.contains('心情不好')) {
       return UserEmotion.sad;
     }
     if (text.contains('擔心') || text.contains('害怕') || text.contains('緊張')) {
       return UserEmotion.anxious;
     }
-    if (text.contains('累') || text.contains('沒力') || text.contains('疲倦')) {
+    if (text.contains('累') ||
+        text.contains('沒力') ||
+        text.contains('疲倦') ||
+        text.contains('袂好睏')) {
       return UserEmotion.tired;
     }
     if (text.contains('生氣') || text.contains('火大') || text.contains('不爽')) {
@@ -902,15 +927,17 @@ class VoiceAgentController extends ChangeNotifier {
     return const _RenameResult(handled: false);
   }
 
-  void _handleRealtimeFailureSilently(Object error) {
+  Future<void> _handleRealtimeFailure(Object error) async {
+    if (_state == VoiceAgentState.error || _state == VoiceAgentState.idle) {
+      return;
+    }
     debugPrint('[VoiceAgentController] realtime unavailable: $error');
-    _lastError = '';
-    _transition(VoiceAgentState.recovering, 'connection_failed');
-    unawaited(_recoverToIdleAfterError(
+    _lastError = error.toString();
+    await _recoverToErrorAfterFailure(
       reason: 'connection_failed',
-      message: '目前連不到即時語音服務。你還是可以先用文字跟我聊天，或確認手機和電腦在同一個 Wi-Fi。',
+      message: '連線失敗，點我重試',
       stopConnection: true,
-    ));
+    );
   }
 
   void _handleRealtimeRecoverableFailure(String reason) {
@@ -943,6 +970,8 @@ class VoiceAgentController extends ChangeNotifier {
         petName: profileController.petName,
         userId: memoryController.userId,
         companionContext: _companionContextPrompt(),
+        languageHint: _currentLanguageRoute.languageHint.value,
+        replyLanguage: _currentLanguageRoute.replyLanguage.value,
       );
       if (attemptId != _connectionAttemptId) {
         debugPrint(
@@ -954,9 +983,9 @@ class VoiceAgentController extends ChangeNotifier {
       _cancelTimeout(RealtimeTimeoutType.reconnectTimeout);
     } catch (error) {
       debugPrint('[VoiceAgentController] reconnect failed: $error');
-      await _recoverToIdleAfterError(
+      await _recoverToErrorAfterFailure(
         reason: 'reconnect_failed',
-        message: message,
+        message: '連線失敗，點我重試',
         stopConnection: true,
       );
     }
@@ -980,8 +1009,60 @@ class VoiceAgentController extends ChangeNotifier {
     }
   }
 
+  Future<void> _recoverToErrorAfterFailure({
+    required String reason,
+    String? message,
+    bool stopConnection = false,
+  }) async {
+    _connectionAttemptId += 1;
+    _cancelAllTimeouts();
+    _clearCurrentTurn();
+    if (stopConnection) {
+      await realtimeVoiceService.stop();
+    }
+    _transition(VoiceAgentState.error, reason);
+    if (message != null && message.isNotEmpty) {
+      petController.setModeAndMessage(PetMode.sad, message);
+      conversationController.showPetBubbleMessage(message);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.resumed:
+        if (_wasRealtimeActiveBeforeBackground &&
+            !realtimeVoiceService.isConnectionUsable) {
+          _wasRealtimeActiveBeforeBackground = false;
+          _handleRealtimeRecoverableFailure('app_resumed_reconnect');
+          return;
+        }
+        if (_wasRealtimeActiveBeforeBackground &&
+            realtimeVoiceService.isConnectionUsable &&
+            _state == VoiceAgentState.recovering) {
+          _wasRealtimeActiveBeforeBackground = false;
+          _transition(VoiceAgentState.listening, 'app_resumed_connection_ok');
+        }
+        break;
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        if (_state == VoiceAgentState.ready ||
+            _state == VoiceAgentState.listening ||
+            _state == VoiceAgentState.transcribing ||
+            _state == VoiceAgentState.thinking ||
+            _state == VoiceAgentState.speaking) {
+          _wasRealtimeActiveBeforeBackground = true;
+          _transition(VoiceAgentState.recovering, 'app_backgrounded');
+        }
+        break;
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _cancelAllTimeouts();
     _timeouts.dispose();
     _sub?.cancel();

@@ -1,4 +1,5 @@
 import 'conversation_turn.dart';
+import 'language_route.dart';
 
 class CompanionContext {
   const CompanionContext({
@@ -12,6 +13,7 @@ class CompanionContext {
     this.suggestedAction = '',
     this.optionalSuggestion = '',
     this.conversationHistory = const [],
+    this.replyLanguage = ReplyLanguage.zhTw,
   });
 
   final String userText;
@@ -24,6 +26,7 @@ class CompanionContext {
   final String optionalSuggestion;
   final String petName;
   final List<ConversationTurn> conversationHistory;
+  final ReplyLanguage replyLanguage;
 }
 
 class UserStateHints {

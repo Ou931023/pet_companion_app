@@ -22,6 +22,10 @@ class ConversationTurn {
     this.usedMemoryIds = const [],
     this.memoryContextSummary,
     this.memoryProvider,
+    this.asrSource = '',
+    this.languageHint = '',
+    this.routeReason = '',
+    this.replyLanguage = 'zh-TW',
   });
 
   final DateTime timestamp;
@@ -44,6 +48,10 @@ class ConversationTurn {
   final List<dynamic> usedMemoryIds;
   final String? memoryContextSummary;
   final String? memoryProvider;
+  final String asrSource;
+  final String languageHint;
+  final String routeReason;
+  final String replyLanguage;
 
   Map<String, dynamic> toJson() {
     return {
@@ -67,6 +75,10 @@ class ConversationTurn {
       'usedMemoryIds': usedMemoryIds,
       'memoryContextSummary': memoryContextSummary,
       'memoryProvider': memoryProvider,
+      'asrSource': asrSource,
+      'languageHint': languageHint,
+      'routeReason': routeReason,
+      'replyLanguage': replyLanguage,
     };
   }
 
@@ -104,6 +116,10 @@ class ConversationTurn {
       usedMemoryIds: json['usedMemoryIds'] as List<dynamic>? ?? const [],
       memoryContextSummary: json['memoryContextSummary']?.toString(),
       memoryProvider: json['memoryProvider']?.toString(),
+      asrSource: json['asrSource']?.toString() ?? '',
+      languageHint: json['languageHint']?.toString() ?? '',
+      routeReason: json['routeReason']?.toString() ?? '',
+      replyLanguage: json['replyLanguage']?.toString() ?? 'zh-TW',
     );
   }
 }

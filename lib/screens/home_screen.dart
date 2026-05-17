@@ -18,12 +18,13 @@ import '../models/voice_agent_state.dart';
 import '../routes/app_routes.dart';
 import '../widgets/bag_icon_button.dart';
 import '../widgets/coin_badge.dart';
+import '../widgets/conversation_bubble_stack.dart';
 import '../widgets/home_date_checkin_card.dart';
 import '../widgets/inventory_item_card.dart';
 import '../widgets/pet_avatar.dart';
 import '../widgets/pet_status_panel.dart';
 import '../widgets/source_reference_list.dart';
-import '../widgets/speech_bubble.dart';
+import '../widgets/text_conversation_bar.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -94,8 +95,19 @@ class _HomeScreenState extends State<HomeScreen> {
     };
     final voiceIcon = switch (voiceAgentController.state) {
       VoiceAgentState.speaking => Icons.volume_up,
+      VoiceAgentState.recovering => Icons.sync,
       VoiceAgentState.listening => Icons.graphic_eq,
       _ => Icons.mic,
+    };
+    final voiceLabel = switch (voiceAgentController.state) {
+      VoiceAgentState.connecting => '正在連線陪伴寵物',
+      VoiceAgentState.ready || VoiceAgentState.listening => '可以開始說話',
+      VoiceAgentState.recovering => '重新連線中',
+      VoiceAgentState.error => '連線失敗，點我重試',
+      VoiceAgentState.transcribing => '正在聽你說話',
+      VoiceAgentState.thinking => '正在想回應',
+      VoiceAgentState.speaking => '正在陪你說話',
+      VoiceAgentState.idle => '開始語音陪伴',
     };
     final companionSources = _companionSourceReferences(
       voiceAgentController.currentCompanionContext?.sourceReferences,
@@ -145,20 +157,18 @@ class _HomeScreenState extends State<HomeScreen> {
                       ],
                     ),
                     SizedBox(height: compact ? 8 : 10),
-                    if (conversationController.latestUserText
-                        .trim()
-                        .isNotEmpty) ...[
-                      _UserMessageBubble(
-                        text: conversationController.latestUserText,
-                      ),
-                      SizedBox(height: compact ? 6 : 8),
-                    ],
-                    SpeechBubble(
-                      text: conversationController.latestReply.isNotEmpty
+                    ConversationBubbleStack(
+                      userText: conversationController.latestUserText,
+                      temporaryUserText:
+                          conversationController.temporaryUserBubbleText,
+                      temporaryUserStatus:
+                          conversationController.temporaryUserBubbleStatus,
+                      petText: conversationController.latestReply.isNotEmpty
                           ? conversationController.latestReply
                           : petController.message,
-                      speaker: profileController.petName,
+                      petName: profileController.petName,
                       isWaiting: conversationController.isAwaitingPetReply,
+                      compact: compact,
                     ),
                     if (conversationController.latestReplyIsSearch) ...[
                       const SizedBox(height: 8),
@@ -302,10 +312,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       isDead: isDead,
                     ),
                     SizedBox(height: compact ? 8 : 10),
-                    _TextConversationBar(
+                    TextConversationBar(
                       controller: _messageController,
                       enabled: !isDead && !conversationController.isBusy,
                       isBusy: conversationController.isBusy,
+                      onChanged: conversationController.updateDraftText,
                       onSend: (text) => _sendTextMessage(
                         text,
                         conversationController,
@@ -331,7 +342,21 @@ class _HomeScreenState extends State<HomeScreen> {
                                       .stopRealtimeConversation();
                                 }
                               },
-                        child: Icon(voiceIcon, size: 30),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(voiceIcon, size: 26),
+                            const SizedBox(width: 10),
+                            Flexible(
+                              child: Text(
+                                voiceLabel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -490,6 +515,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (normalized.isEmpty) return;
     FocusScope.of(context).unfocus();
     _messageController.clear();
+    conversationController.clearDraftText();
     await conversationController.quickAction(normalized);
   }
 
@@ -506,72 +532,6 @@ class _HomeScreenState extends State<HomeScreen> {
         content: Text(
           '$petName 使用了 ${item.name}${effects.isEmpty ? '' : '（${effects.join('、')}）'}',
         ),
-      ),
-    );
-  }
-}
-
-class _TextConversationBar extends StatelessWidget {
-  const _TextConversationBar({
-    required this.controller,
-    required this.enabled,
-    required this.isBusy,
-    required this.onSend,
-  });
-
-  final TextEditingController controller;
-  final bool enabled;
-  final bool isBusy;
-  final ValueChanged<String> onSend;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(minHeight: 52),
-      padding: const EdgeInsets.fromLTRB(12, 4, 6, 4),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.black12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.edit_outlined, color: Colors.black45),
-          const SizedBox(width: 8),
-          Expanded(
-            child: TextField(
-              controller: controller,
-              enabled: enabled,
-              minLines: 1,
-              maxLines: 2,
-              textInputAction: TextInputAction.send,
-              decoration: const InputDecoration(
-                hintText: '跟寵物說一句話',
-                border: InputBorder.none,
-                isDense: true,
-              ),
-              onSubmitted: enabled ? onSend : null,
-            ),
-          ),
-          IconButton.filled(
-            tooltip: '送出',
-            onPressed: enabled ? () => onSend(controller.text) : null,
-            icon: isBusy
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.send),
-          ),
-        ],
       ),
     );
   }
@@ -680,90 +640,6 @@ class _EmotionFusionLine extends StatelessWidget {
         color: Colors.black.withValues(alpha: 0.48),
         fontSize: 11,
         fontWeight: FontWeight.w700,
-      ),
-    );
-  }
-}
-
-class _UserMessageBubble extends StatelessWidget {
-  const _UserMessageBubble({
-    required this.text,
-  });
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerRight,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.sizeOf(context).width * 0.78,
-        ),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: Colors.indigo,
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(14),
-              topRight: Radius.circular(14),
-              bottomLeft: Radius.circular(14),
-              bottomRight: Radius.circular(4),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.08),
-                blurRadius: 7,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Flexible(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.person_outline,
-                          color: Colors.white70,
-                          size: 16,
-                        ),
-                        SizedBox(width: 5),
-                        Text(
-                          '你說',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      text.trim(),
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.right,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        height: 1.28,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

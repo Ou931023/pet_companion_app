@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -47,6 +48,44 @@ void main() {
       expect(events[0].payload, '今天家裡');
       expect(events[1].type, RealtimeEventType.finalTranscript);
       expect(events[1].payload, '今天家裡好安靜');
+
+      await sub.cancel();
+      service.dispose();
+    });
+
+    test('appends incremental transcript deltas before final transcript',
+        () async {
+      final service = RealtimeVoiceService();
+      final events = <RealtimeVoiceEvent>[];
+      final sub = service.events.listen(events.add);
+
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'conversation.item.input_audio_transcription.delta',
+        'delta': '今天',
+      }));
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'conversation.item.input_audio_transcription.delta',
+        'delta': '家裡',
+      }));
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'conversation.item.input_audio_transcription.completed',
+        'transcript': '今天家裡好安靜',
+      }));
+      await pumpEventQueue();
+
+      final partials = events
+          .where((event) => event.type == RealtimeEventType.partialTranscript)
+          .map((event) => event.payload)
+          .toList();
+      expect(partials, ['今天', '今天家裡']);
+      expect(
+        events
+            .lastWhere(
+              (event) => event.type == RealtimeEventType.finalTranscript,
+            )
+            .payload,
+        '今天家裡好安靜',
+      );
 
       await sub.cancel();
       service.dispose();
@@ -109,6 +148,128 @@ void main() {
       );
 
       await sub.cancel();
+      service.dispose();
+    });
+
+    test('peer disconnected emits failure instead of connected state',
+        () async {
+      final service = RealtimeVoiceService();
+      final events = <RealtimeVoiceEvent>[];
+      final sub = service.events.listen(events.add);
+
+      service.handlePeerStateForTest('RTCPeerConnectionStateDisconnected');
+      await pumpEventQueue();
+
+      expect(
+        events.where(
+          (event) => event.type == RealtimeEventType.peerConnectionFailed,
+        ),
+        isNotEmpty,
+      );
+      expect(
+        events.where(
+          (event) =>
+              event.type == RealtimeEventType.state &&
+              event.payload == 'connected',
+        ),
+        isEmpty,
+      );
+
+      await sub.cancel();
+      service.dispose();
+    });
+
+    test('connect called concurrently only starts one attempt', () async {
+      final connectCompleter = Completer<void>();
+      var attempts = 0;
+      final service = RealtimeVoiceService(
+        connectImplementationForTesting: (_) async {
+          attempts += 1;
+          await connectCompleter.future;
+        },
+      );
+
+      final first = service.connect(
+        realtimeCallUrl: 'http://localhost:3001/api/realtime/call',
+        petName: 'Momo',
+        userId: 'user-1',
+      );
+      final second = service.connect(
+        realtimeCallUrl: 'http://localhost:3001/api/realtime/call',
+        petName: 'Momo',
+        userId: 'user-1',
+      );
+      await pumpEventQueue();
+
+      expect(attempts, 1);
+      connectCompleter.complete();
+      await Future.wait([first, second]);
+
+      service.dispose();
+    });
+
+    test('queues event until data channel opens', () async {
+      final sentPayloads = <String>[];
+      final service = RealtimeVoiceService(
+        eventSenderForTesting: (payload) async {
+          sentPayloads.add(payload);
+        },
+      );
+
+      await service.updateCompanionContext('陪伴脈絡');
+
+      expect(sentPayloads, isEmpty);
+      expect(service.pendingEventCountForTest, 1);
+
+      service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
+      await pumpEventQueue();
+
+      expect(sentPayloads, hasLength(1));
+      expect(sentPayloads.single, contains('session.update'));
+      expect(service.pendingEventCountForTest, 0);
+
+      service.dispose();
+    });
+
+    test('failed connect can be retried with a new connect call', () async {
+      var attempts = 0;
+      final service = RealtimeVoiceService(
+        connectImplementationForTesting: (_) async {
+          attempts += 1;
+          if (attempts <= 3) {
+            throw Exception('temporary call failure');
+          }
+        },
+      );
+
+      await expectLater(
+        service.connect(
+          realtimeCallUrl: 'http://localhost:3001/api/realtime/call',
+          petName: 'Momo',
+          userId: 'user-1',
+        ),
+        throwsException,
+      );
+      expect(attempts, 3);
+
+      await service.connect(
+        realtimeCallUrl: 'http://localhost:3001/api/realtime/call',
+        petName: 'Momo',
+        userId: 'user-1',
+      );
+      expect(attempts, 4);
+
+      service.dispose();
+    });
+
+    test('disconnect can be called repeatedly without crashing', () async {
+      final service = RealtimeVoiceService();
+
+      await service.disconnect();
+      await service.disconnect();
+      await service.stop();
+
+      service.dispose();
       service.dispose();
     });
   });

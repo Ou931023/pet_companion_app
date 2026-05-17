@@ -11,6 +11,12 @@ enum TranscriptLanguageHint {
   unknown,
 }
 
+enum ReplyLanguage {
+  zhTw,
+  taigi,
+  mixedZhTaigi,
+}
+
 extension VoiceLanguageModeLabel on VoiceLanguageMode {
   String get storageValue {
     return switch (this) {
@@ -40,6 +46,24 @@ extension TranscriptLanguageHintLabel on TranscriptLanguageHint {
   }
 }
 
+extension ReplyLanguageLabel on ReplyLanguage {
+  String get value {
+    return switch (this) {
+      ReplyLanguage.zhTw => 'zh-TW',
+      ReplyLanguage.taigi => 'taigi',
+      ReplyLanguage.mixedZhTaigi => 'mixed-zh-taigi',
+    };
+  }
+
+  static ReplyLanguage fromValue(String value) {
+    return switch (value.trim()) {
+      'taigi' => ReplyLanguage.taigi,
+      'mixed-zh-taigi' => ReplyLanguage.mixedZhTaigi,
+      _ => ReplyLanguage.zhTw,
+    };
+  }
+}
+
 class LanguageRouteResult {
   const LanguageRouteResult({
     required this.strategyName,
@@ -47,6 +71,7 @@ class LanguageRouteResult {
     required this.routeReason,
     required this.isFallback,
     required this.transcript,
+    this.replyLanguage = ReplyLanguage.zhTw,
   });
 
   final String strategyName;
@@ -54,4 +79,5 @@ class LanguageRouteResult {
   final String routeReason;
   final bool isFallback;
   final String transcript;
+  final ReplyLanguage replyLanguage;
 }

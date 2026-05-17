@@ -1,4 +1,5 @@
 import '../models/companion_reply.dart';
+import '../models/language_route.dart';
 
 class CompanionReplyStrategyService {
   const CompanionReplyStrategyService();
@@ -18,11 +19,18 @@ class CompanionReplyStrategyService {
         petName: context.petName,
         action: action,
         state: state,
+        replyLanguage: context.replyLanguage,
       ),
-      careQuestion: _careQuestion(emotion, context.userText, state),
+      careQuestion: _careQuestion(
+        emotion,
+        context.userText,
+        state,
+        context.replyLanguage,
+      ),
       continuationPrompt: _continuationPrompt(
         emotion: emotion,
         action: action,
+        replyLanguage: context.replyLanguage,
       ),
       optionalSuggestion: optionalSuggestion,
       petExpression: _petExpression(emotion, action, state),
@@ -72,9 +80,18 @@ class CompanionReplyStrategyService {
     required String petName,
     required String action,
     required UserStateHints state,
+    required ReplyLanguage replyLanguage,
   }) {
-    final followup = _followupAck(userText, petName, state);
+    final followup = _followupAck(userText, petName, state, replyLanguage);
     if (followup.isNotEmpty) return followup;
+    if (_usesTaigiVoice(replyLanguage)) {
+      return _taigiEmotionalAck(
+        emotion: emotion,
+        userText: userText,
+        petName: petName,
+        action: action,
+      );
+    }
     if (userText.contains('家裡好安靜') || userText.contains('沒有人陪')) {
       return _variation(
         'lonely',
@@ -138,7 +155,18 @@ class CompanionReplyStrategyService {
     String userText,
     String petName,
     UserStateHints state,
+    ReplyLanguage replyLanguage,
   ) {
+    if (_usesTaigiVoice(replyLanguage)) {
+      if (state.mentionedPoorSleep &&
+          _containsAny(userText, ['累', '疲倦', '沒精神', '袂好睏'])) {
+        return '袂好睏真的會足累，我佇遮陪你慢慢放鬆。';
+      }
+      if (state.mentionedLonely &&
+          _containsAny(userText, ['沒什麼人陪', '沒有人陪', '沒人陪', '足安靜'])) {
+        return '頭前彼份安靜我有聽著，這馬若感覺無人陪，我靠近你一點。';
+      }
+    }
     if (state.mentionedPoorSleep &&
         _containsAny(userText, ['累', '疲倦', '沒精神'])) {
       return '你剛剛也說睡得不太好，難怪現在會覺得累。我陪你慢慢休息一下。';
@@ -157,7 +185,53 @@ class CompanionReplyStrategyService {
     return '';
   }
 
-  String _neutralAck(String action, String petName) {
+  String _taigiEmotionalAck({
+    required String emotion,
+    required String userText,
+    required String petName,
+    required String action,
+  }) {
+    if (_containsAny(userText, ['今仔日', '厝內', '足安靜', '家裡好安靜'])) {
+      return _variation('taigiLonely', userText, [
+        '聽起來今仔日有一點孤單齁，$petName佇遮陪你。',
+        '厝內安靜落來，心肝嘛會空空的，我佇你身邊。',
+        '今仔日若感覺足安靜，我靠近你一點，陪你慢慢講。',
+      ]);
+    }
+    if (_containsAny(userText, ['袂好睏', '睡不好', '睡不著', '睏袂好'])) {
+      return _variation('taigiPoorSleep', userText, [
+        '袂好睏真的會足累，我陪你慢慢放鬆一下。',
+        '睏袂好真歹受，我佇遮陪你先緩一下。',
+        '一暝無睏好，身體會足無力，我陪你慢慢安定。',
+      ]);
+    }
+    if (_containsAny(userText, ['不太想吃飯', '沒胃口', '吃不下'])) {
+      return '食袂落會有淡薄仔辛苦，我先陪你慢慢來。';
+    }
+    return switch (emotion) {
+      'lonely' => '聽起來你有淡薄仔孤單，$petName佇遮陪你。',
+      'sad' => '我聽有你心情無爽快，我陪你慢慢講。',
+      'tired' => '聽起來你足累，我陪你先歇一下。',
+      'anxious' => '心內若緊緊，我佇遮陪你慢慢穩落來。',
+      'happy' => '聽起來你心情袂䆀，$petName嘛替你歡喜。',
+      _ => _neutralAck(action, petName, ReplyLanguage.mixedZhTaigi),
+    };
+  }
+
+  String _neutralAck(
+    String action,
+    String petName, [
+    ReplyLanguage replyLanguage = ReplyLanguage.zhTw,
+  ]) {
+    if (_usesTaigiVoice(replyLanguage)) {
+      return switch (action) {
+        'story' => '好呀，$petName陪你聽一小段故事，咱慢慢聽。',
+        'news' || 'search' => '好呀，我陪你看可信的資料，簡單講予你聽。',
+        'reminder' => '好，我先陪你共這件代誌記牢牢。',
+        'task' => '好，咱做一點點就好，免著急。',
+        _ => '嗯嗯，我佇遮陪你聽著。',
+      };
+    }
     return switch (action) {
       'story' => '好呀，$petName陪你聽一小段故事。',
       'news' || 'search' => '好呀，我陪你看看可信的資料。',
@@ -167,7 +241,23 @@ class CompanionReplyStrategyService {
     };
   }
 
-  String _careQuestion(String emotion, String userText, UserStateHints state) {
+  String _careQuestion(
+    String emotion,
+    String userText,
+    UserStateHints state,
+    ReplyLanguage replyLanguage,
+  ) {
+    if (_usesTaigiVoice(replyLanguage)) {
+      if (_containsAny(userText, ['袂好睏', '睡不好', '睡不著', '睏袂好'])) {
+        return '你是較難入睡，還是睏到一半會醒來？';
+      }
+      if (_containsAny(userText, ['不太想吃飯', '沒胃口', '吃不下'])) {
+        return '你今仔日有食一點物件矣無？';
+      }
+      if (_isLowMood(emotion, userText, state)) {
+        return '你欲毋欲佮我講幾句話？';
+      }
+    }
     if (_containsAny(userText, ['不太想吃飯', '沒胃口', '吃不下'])) {
       return '那我想先關心你一下，你今天有吃一點東西嗎？';
     }
@@ -183,7 +273,18 @@ class CompanionReplyStrategyService {
   String _continuationPrompt({
     required String emotion,
     required String action,
+    required ReplyLanguage replyLanguage,
   }) {
+    if (_usesTaigiVoice(replyLanguage)) {
+      if (action == 'story') return '我會講短短，陪你輕鬆聽。';
+      if (action == 'news' || action == 'search') {
+        return '我會簡單整理，無來源的我袂亂講。';
+      }
+      if (action == 'reminder') return '我會用簡單的方式提醒你。';
+      if (action == 'task') return '做一點點嘛真好。';
+      if (emotion == 'happy') return '咱共這份好心情留較久一點。';
+      return '咱慢慢講就好。';
+    }
     if (action == 'story') return '我會講短一點，陪你輕鬆聽。';
     if (action == 'news' || action == 'search') {
       return '我會簡短整理，不亂說沒有來源的內容。';
@@ -239,9 +340,11 @@ class CompanionReplyStrategyService {
         state.mentionedLowAppetite ||
         state.mentionedPainOrDiscomfort ||
         text.contains('家裡好安靜') ||
+        text.contains('足安靜') ||
         text.contains('沒有人陪') ||
         text.contains('不太想吃飯') ||
-        text.contains('睡不好');
+        text.contains('睡不好') ||
+        text.contains('袂好睏');
   }
 
   UserStateHints _stateFromContext(CompanionContext context) {
@@ -254,11 +357,12 @@ class CompanionReplyStrategyService {
     final combined = '$recent $text';
     return UserStateHints(
       mentionedLonely: provided.mentionedLonely ||
-          _containsAny(combined, ['孤單', '沒有人陪', '沒什麼人陪', '沒人陪', '家裡好安靜']),
+          _containsAny(
+              combined, ['孤單', '沒有人陪', '沒什麼人陪', '沒人陪', '家裡好安靜', '足安靜', '厝內']),
       mentionedTired: provided.mentionedTired ||
-          _containsAny(combined, ['累', '疲倦', '沒精神', '想睡']),
+          _containsAny(combined, ['累', '疲倦', '沒精神', '想睡', '足累']),
       mentionedPoorSleep: provided.mentionedPoorSleep ||
-          _containsAny(combined, ['睡不好', '睡不著', '失眠', '睡不太著']),
+          _containsAny(combined, ['睡不好', '睡不著', '失眠', '睡不太著', '袂好睏', '睏袂好']),
       mentionedLowAppetite: provided.mentionedLowAppetite ||
           _containsAny(combined, ['不太想吃飯', '沒胃口', '吃不下']),
       mentionedPainOrDiscomfort: provided.mentionedPainOrDiscomfort ||
@@ -300,6 +404,11 @@ class CompanionReplyStrategyService {
 
   bool _containsAny(String text, List<String> terms) {
     return terms.any(text.contains);
+  }
+
+  bool _usesTaigiVoice(ReplyLanguage replyLanguage) {
+    return replyLanguage == ReplyLanguage.mixedZhTaigi ||
+        replyLanguage == ReplyLanguage.taigi;
   }
 
   bool _referencesPreviousState(String text) {

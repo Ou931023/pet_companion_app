@@ -118,10 +118,29 @@ function fallbackGreeting({ petName, localHour }) {
   return `晚安，我是${petName}，這麼晚了，要不要準備休息了呢？`;
 }
 
-function buildRealtimeInstructions(petName, summaries = [], memoryContext = "", companionContext = "") {
+function outputLanguageInstruction({ languageHint = "", replyLanguage = "" } = {}) {
+  const normalizedReplyLanguage = (replyLanguage || "").toString().trim();
+  const normalizedLanguageHint = (languageHint || "").toString().trim();
+  if (normalizedReplyLanguage === "mixed-zh-taigi") {
+    return "輸出語言：請使用台語口吻搭配繁體中文漢字回覆，不要使用大量羅馬拼音；語氣自然，讓台灣長輩聽得懂。";
+  }
+  if (normalizedReplyLanguage === "taigi" || normalizedLanguageHint === "taigi") {
+    return "輸出語言：請盡量使用自然台語口吻回覆，必要時混合繁體中文讓長輩聽得懂；避免艱深台語字與大量羅馬拼音。";
+  }
+  return "輸出語言：請用繁體中文自然回覆。";
+}
+
+function buildRealtimeInstructions(
+  petName,
+  summaries = [],
+  memoryContext = "",
+  companionContext = "",
+  languageOptions = {},
+) {
   const normalizedPetName = (petName || "").toString().trim() || "陪伴寶";
   const header = `你的名字是 ${normalizedPetName}。
-${REALTIME_INSTRUCTIONS}`;
+${REALTIME_INSTRUCTIONS}
+${outputLanguageInstruction(languageOptions)}`;
   const companionBlock = companionContext
     ? `
 
@@ -859,9 +878,13 @@ app.post(
     let petName = (req.query?.petName || "").toString().trim();
     let userId = (req.query?.userId || "").toString().trim();
     let companionContext = (req.query?.companionContext || "").toString().trim();
+    let languageHint = (req.query?.languageHint || "").toString().trim();
+    let replyLanguage = (req.query?.replyLanguage || "").toString().trim();
     petName = petName.replace(/\r|\n/g, ' ').substring(0, 128) || "陪伴寶";
     userId = userId.replace(/\r|\n/g, ' ').substring(0, 128) || "local_user";
     companionContext = companionContext.replace(/\r|\n/g, " ").substring(0, 900);
+    languageHint = languageHint.replace(/\r|\n/g, " ").substring(0, 32);
+    replyLanguage = replyLanguage.replace(/\r|\n/g, " ").substring(0, 32);
 
     const memoryTopK = Number(process.env.MEMORY_TOP_K || 5);
     const contextResult = await withTimeout(
@@ -886,6 +909,8 @@ app.post(
       memoryCount: memorySummaries.length,
       memoryProvider: contextResult?.provider || "none",
       hasCompanionContext: Boolean(companionContext),
+      languageHint,
+      replyLanguage,
     });
 
     const sessionConfig = {
@@ -901,6 +926,7 @@ app.post(
         memorySummaries,
         contextResult?.memoryContext || "",
         companionContext,
+        { languageHint, replyLanguage },
       ),
     };
 

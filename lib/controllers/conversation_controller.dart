@@ -7,6 +7,7 @@ import '../models/conversation_session_summary.dart';
 import '../models/conversation_turn.dart';
 import '../models/companion_reply.dart';
 import '../models/emotion_result.dart';
+import '../models/language_route.dart';
 import '../models/pet_status.dart';
 import '../models/realtime_timeout.dart';
 import '../models/source_reference.dart';
@@ -15,6 +16,7 @@ import '../services/ai_tool_router.dart';
 import '../services/companion_reply_strategy_service.dart';
 import '../services/emotion_services.dart';
 import '../services/local_storage_service.dart';
+import '../services/language_routing_service.dart';
 import '../services/mock_speech_to_text_service.dart';
 import '../services/openai_speech_to_text_service.dart';
 import '../services/search_service.dart';
@@ -71,6 +73,11 @@ class ConversationController extends ChangeNotifier {
   bool _isAwaitingPetReply = false;
   String _latestUserText = '';
   String _latestReply = '';
+  String _currentPartialTranscript = '';
+  String _currentFinalTranscript = '';
+  String _currentDraftText = '';
+  bool _isUserSpeaking = false;
+  bool _isAwaitingFinalTranscript = false;
   List<SourceReference> _latestSources = const [];
   bool _latestReplyIsSearch = false;
   String _latestSearchMode = '';
@@ -136,6 +143,29 @@ class ConversationController extends ChangeNotifier {
   String get activeSessionId => _activeSessionId;
   String get latestUserText => _latestUserText;
   String get latestReply => _latestReply;
+  String get currentPartialTranscript => _currentPartialTranscript;
+  String get currentFinalTranscript => _currentFinalTranscript;
+  String get currentDraftText => _currentDraftText;
+  bool get isUserSpeaking => _isUserSpeaking;
+  bool get isAwaitingFinalTranscript => _isAwaitingFinalTranscript;
+  bool get hasTemporaryUserBubble =>
+      temporaryUserBubbleText.trim().isNotEmpty ||
+      temporaryUserBubbleStatus.isNotEmpty;
+  String get temporaryUserBubbleText {
+    if (_isUserSpeaking || _isAwaitingFinalTranscript) {
+      final partial = _currentPartialTranscript.trim();
+      return partial.isEmpty ? '正在聽你說話…' : partial;
+    }
+    return _currentDraftText.trim();
+  }
+
+  String get temporaryUserBubbleStatus {
+    if (_isUserSpeaking) return '聆聽中';
+    if (_isAwaitingFinalTranscript) return '辨識中';
+    if (_currentDraftText.trim().isNotEmpty) return '輸入中';
+    return '';
+  }
+
   List<SourceReference> get latestSources => List.unmodifiable(_latestSources);
   bool get latestReplyIsSearch => _latestReplyIsSearch;
   String get latestSearchMode => _latestSearchMode;
@@ -232,6 +262,72 @@ class ConversationController extends ChangeNotifier {
     await _handleUserText(text);
   }
 
+  void updateDraftText(String text) {
+    final normalized = text.trim();
+    if (_currentDraftText == normalized) return;
+    _currentDraftText = normalized;
+    notifyListeners();
+  }
+
+  void clearDraftText() {
+    if (_currentDraftText.isEmpty) return;
+    _currentDraftText = '';
+    notifyListeners();
+  }
+
+  void beginRealtimeUserSpeech() {
+    _isUserSpeaking = true;
+    _isAwaitingFinalTranscript = true;
+    _currentPartialTranscript = '';
+    _currentDraftText = '';
+    notifyListeners();
+  }
+
+  void markAwaitingFinalTranscript() {
+    _isUserSpeaking = false;
+    _isAwaitingFinalTranscript = true;
+    notifyListeners();
+  }
+
+  void updateRealtimePartialTranscript(String text) {
+    final normalized = text.trim();
+    _isUserSpeaking = true;
+    _isAwaitingFinalTranscript = true;
+    if (_currentPartialTranscript == normalized) {
+      notifyListeners();
+      return;
+    }
+    _currentPartialTranscript = normalized;
+    notifyListeners();
+  }
+
+  void commitRealtimeFinalTranscript(
+    String text, {
+    bool awaitingPetReply = true,
+  }) {
+    final normalized = text.trim();
+    clearRealtimeTranscriptState(notify: false);
+    if (normalized.isEmpty) {
+      notifyListeners();
+      return;
+    }
+    _currentFinalTranscript = normalized;
+    showUserBubbleMessage(
+      normalized,
+      awaitingPetReply: awaitingPetReply,
+      clearPetReply: true,
+    );
+  }
+
+  void clearRealtimeTranscriptState({bool notify = true}) {
+    _currentPartialTranscript = '';
+    _isUserSpeaking = false;
+    _isAwaitingFinalTranscript = false;
+    if (notify) {
+      notifyListeners();
+    }
+  }
+
   void showUserBubbleMessage(
     String text, {
     bool awaitingPetReply = false,
@@ -239,6 +335,8 @@ class ConversationController extends ChangeNotifier {
   }) {
     final normalized = text.trim();
     if (normalized.isEmpty) return;
+    clearRealtimeTranscriptState(notify: false);
+    _currentDraftText = '';
     _latestUserText = normalized;
     if (clearPetReply) {
       _latestReply = '';
@@ -301,6 +399,10 @@ class ConversationController extends ChangeNotifier {
         searchMode: turn.searchMode,
         searchProvider: turn.searchProvider,
         sources: turn.sources,
+        asrSource: turn.asrSource,
+        languageHint: turn.languageHint,
+        routeReason: turn.routeReason,
+        replyLanguage: turn.replyLanguage,
       ),
     );
     unawaited(_persistHistory());
@@ -328,6 +430,7 @@ class ConversationController extends ChangeNotifier {
         turnId: turnId,
         sessionId: _activeSessionId,
         petMood: petController.mood,
+        replyLanguage: _replyLanguageForText(_latestUserText).value,
       ),
     );
     unawaited(_persistHistory());
@@ -365,6 +468,7 @@ class ConversationController extends ChangeNotifier {
   Future<void> _handleUserText(String text) async {
     if (_isBusy) return;
     _isBusy = true;
+    clearDraftText();
     showUserBubbleMessage(text, awaitingPetReply: true);
     try {
       final navigationIntent = navigationService.detect(text);
@@ -541,6 +645,7 @@ class ConversationController extends ChangeNotifier {
           usedMemoryIds: usedMemoryIds,
           memoryContextSummary: memoryContextSummary,
           memoryProvider: memoryProvider,
+          replyLanguage: _replyLanguageForText(userText).value,
         ),
       );
       await _persistHistory();
@@ -608,6 +713,7 @@ class ConversationController extends ChangeNotifier {
       optionalSuggestion: optionalSuggestion,
       petName: profileController.petName,
       conversationHistory: history.take(6).toList(),
+      replyLanguage: _replyLanguageForText(userText),
     );
     final plan = companionReplyStrategy.buildPlan(context);
     _latestCompanionDebugInfo = companionReplyStrategy.debugInfo(context);
@@ -638,9 +744,11 @@ class ConversationController extends ChangeNotifier {
     final recent = history.take(3).map((turn) => turn.userText).join(' ');
     final combined = '$recent $userText';
     return UserStateHints(
-      mentionedLonely: _containsAny(combined, ['孤單', '沒有人陪', '沒人陪', '家裡好安靜']),
-      mentionedTired: _containsAny(combined, ['累', '疲倦', '沒精神', '想睡']),
-      mentionedPoorSleep: _containsAny(combined, ['睡不好', '睡不著', '失眠', '睡不太著']),
+      mentionedLonely:
+          _containsAny(combined, ['孤單', '沒有人陪', '沒人陪', '家裡好安靜', '足安靜', '厝內']),
+      mentionedTired: _containsAny(combined, ['累', '疲倦', '沒精神', '想睡', '足累']),
+      mentionedPoorSleep:
+          _containsAny(combined, ['睡不好', '睡不著', '失眠', '睡不太著', '袂好睏', '睏袂好']),
       mentionedLowAppetite: _containsAny(combined, ['不太想吃飯', '沒胃口', '吃不下']),
       mentionedPainOrDiscomfort:
           _containsAny(combined, ['不舒服', '痛', '疼', '頭暈']),
@@ -650,6 +758,14 @@ class ConversationController extends ChangeNotifier {
 
   bool _containsAny(String text, List<String> terms) {
     return terms.any(text.contains);
+  }
+
+  ReplyLanguage _replyLanguageForText(String userText) {
+    return LanguageRoutingService.replyLanguageForTranscript(
+      userText,
+      profileController.voiceLanguageMode,
+      profileController.manualAsrStrategy,
+    );
   }
 
   static String _newSessionId() =>

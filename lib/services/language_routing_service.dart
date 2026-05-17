@@ -19,6 +19,8 @@ class LanguageRoutingService {
   }) async {
     final normalizedRealtime =
         _asrStrategies.defaultRealtime.normalizeTranscript(realtimeTranscript);
+    final detectedReplyLanguage = replyLanguageForTranscript(
+        normalizedRealtime, mode, manualStrategyName);
     if (normalizedRealtime.isEmpty) {
       return const LanguageRouteResult(
         strategyName: 'defaultOpenAiRealtime',
@@ -40,13 +42,52 @@ class LanguageRoutingService {
       VoiceLanguageMode.defaultOpenAiRealtime => Future.value(
           LanguageRouteResult(
             strategyName: _asrStrategies.defaultRealtime.strategyName,
-            languageHint: TranscriptLanguageHint.zh,
+            languageHint: detectedReplyLanguage == ReplyLanguage.mixedZhTaigi
+                ? TranscriptLanguageHint.mixed
+                : TranscriptLanguageHint.zh,
             routeReason: 'default_openai_realtime',
             isFallback: false,
             transcript: normalizedRealtime,
+            replyLanguage: detectedReplyLanguage,
           ),
         ),
     };
+  }
+
+  static ReplyLanguage replyLanguageForTranscript(
+    String transcript,
+    VoiceLanguageMode mode, [
+    String manualStrategyName = 'defaultOpenAiRealtime',
+  ]) {
+    if (mode == VoiceLanguageMode.taigiPreferred) {
+      return ReplyLanguage.mixedZhTaigi;
+    }
+    if (mode == VoiceLanguageMode.manualOverride &&
+        manualStrategyName.toLowerCase().contains('taigi')) {
+      return ReplyLanguage.mixedZhTaigi;
+    }
+    if (containsTaigiCue(transcript)) {
+      return ReplyLanguage.mixedZhTaigi;
+    }
+    return ReplyLanguage.zhTw;
+  }
+
+  static bool containsTaigiCue(String transcript) {
+    final normalized = transcript.trim();
+    if (normalized.isEmpty) return false;
+    return const [
+      '今仔日',
+      '足',
+      '毋',
+      '袂',
+      '無',
+      '欲',
+      '佇',
+      '阮',
+      '恁',
+      '歹勢',
+      '拍謝',
+    ].any(normalized.contains);
   }
 
   Future<LanguageRouteResult> _routeTaigiPreferred(
@@ -60,6 +101,7 @@ class LanguageRoutingService {
         routeReason: 'taigi_strategy_unavailable_fallback_openai_realtime',
         isFallback: true,
         transcript: realtimeTranscript,
+        replyLanguage: ReplyLanguage.mixedZhTaigi,
       );
     }
 
@@ -78,6 +120,7 @@ class LanguageRoutingService {
         routeReason: 'taigi_preferred_strategy_selected',
         isFallback: false,
         transcript: transcript,
+        replyLanguage: ReplyLanguage.mixedZhTaigi,
       );
     } catch (error) {
       final reason = error is TimeoutException
@@ -89,6 +132,7 @@ class LanguageRoutingService {
         routeReason: reason,
         isFallback: true,
         transcript: realtimeTranscript,
+        replyLanguage: ReplyLanguage.mixedZhTaigi,
       );
     }
   }
@@ -115,6 +159,10 @@ class LanguageRoutingService {
         routeReason: 'manual_override_strategy_selected',
         isFallback: false,
         transcript: transcript,
+        replyLanguage: strategy.supportsTaigi
+            ? ReplyLanguage.mixedZhTaigi
+            : replyLanguageForTranscript(
+                transcript, VoiceLanguageMode.defaultOpenAiRealtime),
       );
     } catch (error) {
       final reason = error is TimeoutException
@@ -126,6 +174,11 @@ class LanguageRoutingService {
         routeReason: reason,
         isFallback: true,
         transcript: realtimeTranscript,
+        replyLanguage: replyLanguageForTranscript(
+          realtimeTranscript,
+          VoiceLanguageMode.manualOverride,
+          manualStrategyName,
+        ),
       );
     }
   }

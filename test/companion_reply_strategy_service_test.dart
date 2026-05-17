@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pet_companion_app/models/companion_reply.dart';
+import 'package:pet_companion_app/models/language_route.dart';
 import 'package:pet_companion_app/services/companion_reply_strategy_service.dart';
 
 void main() {
@@ -128,6 +129,54 @@ void main() {
       expect(plan.companionMode, 'emotional_companion');
       expect(_questionCount(reply), lessThanOrEqualTo(1));
     });
+
+    test('taigi cue reply uses mixed zh taigi voice', () {
+      final reply = strategy.buildReply(
+        const CompanionContext(
+          userText: '今仔日厝內足安靜',
+          detectedEmotion: 'lonely',
+          fusedEmotion: 'lonely',
+          petName: '陪伴寶',
+          replyLanguage: ReplyLanguage.mixedZhTaigi,
+        ),
+      );
+
+      expect(_hasTaigiVoice(reply), isTrue);
+      expect(_questionCount(reply), lessThanOrEqualTo(1));
+    });
+
+    test('poor sleep taigi reply keeps companion-first tone', () {
+      final reply = strategy.buildReply(
+        const CompanionContext(
+          userText: '我袂好睏',
+          detectedEmotion: 'tired',
+          fusedEmotion: 'tired',
+          petName: '陪伴寶',
+          replyLanguage: ReplyLanguage.mixedZhTaigi,
+        ),
+      );
+
+      expect(_hasTaigiVoice(reply), isTrue);
+      expect(reply, contains('袂好睏'));
+      expect(reply, contains('陪'));
+      expect(_questionCount(reply), lessThanOrEqualTo(1));
+    });
+
+    test('zh-TW reply keeps Mandarin voice', () {
+      final reply = strategy.buildReply(
+        const CompanionContext(
+          userText: '今天家裡好安靜',
+          detectedEmotion: 'lonely',
+          fusedEmotion: 'lonely',
+          petName: '陪伴寶',
+          replyLanguage: ReplyLanguage.zhTw,
+        ),
+      );
+
+      expect(_hasTaigiVoice(reply), isFalse);
+      expect(reply, contains('陪'));
+      expect(_questionCount(reply), lessThanOrEqualTo(1));
+    });
   });
 }
 
@@ -147,4 +196,18 @@ bool _hasEmotionalCare(String reply) {
 
 int _questionCount(String value) {
   return RegExp(r'[？?]').allMatches(value).length;
+}
+
+bool _hasTaigiVoice(String reply) {
+  return [
+    '今仔日',
+    '佇',
+    '袂',
+    '足',
+    '欲',
+    '毋',
+    '咱',
+    '齁',
+    '厝',
+  ].any(reply.contains);
 }
