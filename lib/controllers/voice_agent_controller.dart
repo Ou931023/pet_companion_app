@@ -17,6 +17,7 @@ import '../services/realtime_timeout_registry.dart';
 import '../services/realtime_turn_coordinator.dart';
 import '../services/realtime_voice_service.dart';
 import 'app_navigation_controller.dart';
+import 'agent_tool_controller.dart';
 import 'conversation_controller.dart';
 import 'memory_controller.dart';
 import 'pet_controller.dart';
@@ -35,6 +36,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     required this.memoryController,
     required this.navigationService,
     required this.navigationController,
+    this.agentToolController,
     this.timeoutConfig = const RealtimeTimeoutConfig(),
     this.timeoutPolicy = const RealtimeTimeoutPolicy(),
   }) {
@@ -51,6 +53,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   final MemoryController memoryController;
   final AiNavigationService navigationService;
   final AppNavigationController navigationController;
+  final AgentToolController? agentToolController;
   final RealtimeTimeoutConfig timeoutConfig;
   final RealtimeTimeoutPolicy timeoutPolicy;
   final TextEmotionService _textEmotionService = const TextEmotionService();
@@ -415,6 +418,30 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       turnId: turnId,
     );
     _startTimeout(RealtimeTimeoutType.responseTimeout, turnId: turnId);
+    unawaited(
+      agentToolController?.routeFromUserText(
+        transcript,
+        sessionId: conversationController.activeSessionId,
+        turnId: turnId,
+        petName: profileController.petName,
+        emotion: _pendingRealtimeEmotion,
+        languageHint: _currentLanguageRoute.languageHint.value,
+        petState: {
+          'mood': petController.mood,
+          'expression': petController.expression,
+          'intimacy': petStatsController.intimacy,
+          'hunger': petStatsController.fullness,
+          'energy': petStatsController.moodValue,
+        },
+        recentTurns: conversationController.history.take(4).map((turn) {
+          return {
+            'userText': turn.userText,
+            'petReply': turn.petReply,
+            'emotionTag': turn.emotionTag,
+          };
+        }).toList(),
+      ),
+    );
     unawaited(_analyzeCompanionTranscript(transcript, turnId));
 
     final navigationIntent = navigationService.detect(transcript);

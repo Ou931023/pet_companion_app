@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../controllers/check_in_controller.dart';
+import '../controllers/agent_tool_controller.dart';
 import '../controllers/conversation_controller.dart';
 import '../controllers/inventory_controller.dart';
 import '../controllers/memory_controller.dart';
@@ -25,6 +26,8 @@ import '../widgets/pet_avatar.dart';
 import '../widgets/pet_status_panel.dart';
 import '../widgets/source_reference_list.dart';
 import '../widgets/text_conversation_bar.dart';
+import '../widgets/agent/agent_tool_card.dart';
+import '../widgets/agent/agent_tool_result_card.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -83,6 +86,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final walletController = context.watch<WalletController>();
     final inventoryController = context.watch<InventoryController>();
     final petStatsController = context.watch<PetStatsController>();
+    final agentToolController = _maybeWatchAgentToolController(context);
     final isDead = petStatsController.lifeState == PetLifeState.dead;
     final showVoiceAura = switch (voiceAgentController.state) {
       VoiceAgentState.connecting ||
@@ -160,6 +164,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   child: _ConversationDetailPanel(
                                     conversationController:
                                         conversationController,
+                                    agentToolController: agentToolController,
                                     companionSources: companionSources,
                                     petText: conversationController
                                             .latestReply.isNotEmpty
@@ -442,6 +447,14 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  AgentToolController? _maybeWatchAgentToolController(BuildContext context) {
+    try {
+      return context.watch<AgentToolController>();
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
 }
 
 class _HomeHeader extends StatelessWidget {
@@ -495,6 +508,7 @@ class _HomeHeader extends StatelessWidget {
 class _ConversationDetailPanel extends StatelessWidget {
   const _ConversationDetailPanel({
     required this.conversationController,
+    required this.agentToolController,
     required this.companionSources,
     required this.petText,
     required this.petName,
@@ -502,6 +516,7 @@ class _ConversationDetailPanel extends StatelessWidget {
   });
 
   final ConversationController conversationController;
+  final AgentToolController? agentToolController;
   final List<SourceReference> companionSources;
   final String petText;
   final String petName;
@@ -533,6 +548,22 @@ class _ConversationDetailPanel extends StatelessWidget {
             companionSources.isNotEmpty) ...[
           const SizedBox(height: 8),
           SourceReferenceList(sources: companionSources),
+        ],
+        if (agentToolController?.pendingIntent != null) ...[
+          const SizedBox(height: 8),
+          AgentToolCard(
+            intent: agentToolController!.pendingIntent!,
+            isExecuting: agentToolController!.isExecuting,
+            onConfirm: agentToolController!.confirmAndExecute,
+            onCancel: agentToolController!.cancelIntent,
+          ),
+        ],
+        if (agentToolController?.executionResult != null) ...[
+          const SizedBox(height: 8),
+          AgentToolResultCard(
+            result: agentToolController!.executionResult!,
+            onDismiss: agentToolController!.clear,
+          ),
         ],
       ],
     );

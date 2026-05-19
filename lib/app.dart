@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'controllers/app_navigation_controller.dart';
+import 'controllers/agent_tool_controller.dart';
 import 'controllers/conversation_controller.dart';
 import 'controllers/check_in_controller.dart';
 import 'controllers/inventory_controller.dart';
@@ -16,6 +17,7 @@ import 'controllers/voice_agent_controller.dart';
 import 'controllers/wallet_controller.dart';
 import 'routes/app_routes.dart';
 import 'screens/album_screen.dart';
+import 'screens/agent_tool_demo_screen.dart';
 import 'screens/conversation_detail_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/home_screen.dart';
@@ -27,6 +29,7 @@ import 'screens/reminder_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/shop_screen.dart';
 import 'services/ai_tool_router.dart';
+import 'services/agent_router_service.dart';
 import 'services/ai_navigation_service.dart';
 import 'services/asr_strategy_service.dart';
 import 'services/check_in_storage_service.dart';
@@ -41,6 +44,7 @@ import 'services/memory_service.dart';
 import 'services/mock_ai_service.dart';
 import 'services/mock_shop_service.dart';
 import 'services/mock_speech_to_text_service.dart';
+import 'services/native_tool_executor_service.dart';
 import 'services/notification_service.dart';
 import 'services/pet_stats_storage_service.dart';
 import 'services/realtime_voice_service.dart';
@@ -72,6 +76,8 @@ class PetCompanionApp extends StatelessWidget {
         Provider(create: (_) => NotificationService()),
         Provider(create: (_) => const EmotionFusionService()),
         Provider(create: (_) => const PetEmotionMapper()),
+        Provider(create: (_) => AgentRouterService()),
+        Provider(create: (_) => NativeToolExecutorService()),
         ChangeNotifierProvider(create: (_) => AppNavigationController()),
         ChangeNotifierProvider(
           create: (context) =>
@@ -146,6 +152,17 @@ class PetCompanionApp extends StatelessWidget {
             companionContentService: context.read<CompanionContentService>(),
           ),
         ),
+        ChangeNotifierProvider(
+          create: (context) => AgentToolController(
+            profileController: context.read<ProfileController>(),
+            routerService: context.read<AgentRouterService>(),
+            executorService: context.read<NativeToolExecutorService>(),
+            reminderController: context.read<ReminderController>(),
+            searchService: context.read<SearchService>(),
+            navigationController: context.read<AppNavigationController>(),
+            memoryController: context.read<MemoryController>(),
+          ),
+        ),
         ChangeNotifierProxyProvider6<
             ProfileController,
             PetController,
@@ -213,6 +230,7 @@ class PetCompanionApp extends StatelessWidget {
             memoryController: context.read<MemoryController>(),
             navigationService: context.read<AiNavigationService>(),
             navigationController: context.read<AppNavigationController>(),
+            agentToolController: context.read<AgentToolController>(),
           ),
           update: (context, profile, pet, petStats, conversation,
                   realtimeService, navigation, controller) =>
@@ -228,6 +246,7 @@ class PetCompanionApp extends StatelessWidget {
                 memoryController: context.read<MemoryController>(),
                 navigationService: context.read<AiNavigationService>(),
                 navigationController: navigation,
+                agentToolController: context.read<AgentToolController>(),
               ),
         ),
       ],
@@ -267,6 +286,7 @@ class PetCompanionApp extends StatelessWidget {
         return switch (settings.name) {
           AppRoute.album => const AlbumScreen(),
           AppRoute.notification => const NotificationScreen(),
+          AppRoute.agentToolDemo => const AgentToolDemoScreen(),
           AppRoute.reminders => const ReminderScreen(),
           AppRoute.memories => const MemoryManagementScreen(),
           AppRoute.puzzle => const PuzzleGameScreen(),

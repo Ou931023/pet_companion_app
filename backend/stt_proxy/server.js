@@ -40,6 +40,10 @@ const { retrieveRelevantMemories } = require("../memory/memory_retriever");
 const { storeCompanionMemoryCandidate } = require("../memory/memory_policy");
 const { classifySearchIntent } = require("../search/search_intent_classifier");
 const { searchKnowledge } = require("../search/search_service");
+const {
+  routeAgentTool,
+  listTools: listAgentTools,
+} = require("../agent/agent_orchestrator");
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -202,6 +206,27 @@ app.get("/health", (_, res) => {
     realtimeModel: process.env.REALTIME_MODEL || "gpt-realtime",
     time: new Date().toISOString(),
   });
+});
+
+app.get("/api/agent/tools", (_, res) => {
+  res.json({
+    tools: listAgentTools(),
+    openAiToolCallingAvailable: Boolean(process.env.OPENAI_API_KEY),
+  });
+});
+
+app.post("/api/agent/route", (req, res) => {
+  try {
+    return res.json(routeAgentTool(req.body || {}));
+  } catch (error) {
+    logError("agent route failed", { error: error?.message || error });
+    return res.status(500).json({
+      hasToolIntent: false,
+      assistantMessage: "工具判斷暫時失敗，但語音陪伴可以繼續。",
+      intent: null,
+      error: "agent_route_failed",
+    });
+  }
 });
 
 app.post("/api/companion/analyze", async (req, res) => {

@@ -269,6 +269,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
         const SizedBox(height: 14),
+        _SettingsSection(
+          title: 'AI Agent',
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () =>
+                  Navigator.of(context).pushNamed(AppRoute.agentToolDemo),
+              icon: const Icon(Icons.auto_awesome),
+              label: const Text('AI Agent 工具測試'),
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
         const _SettingsSection(
           title: '寵物代辦',
           child: Wrap(
