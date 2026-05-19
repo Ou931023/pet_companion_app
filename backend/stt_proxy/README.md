@@ -85,12 +85,43 @@ npm start
 
 - `GET /health`
 - `POST /api/stt/transcribe`
+- `POST /api/asr/taigi`
 - `POST /api/realtime/session`
 - `POST /api/realtime/call?petName=小白&userId=local_user`
 - `POST /api/memory/extract`
 - `POST /api/memory/search`
 - `GET /api/memory/greeting?userId=local_user&petName=小白&localHour=14`
 - `POST /api/memory/forget-recent`
+
+### Taigi ASR Phase 2
+
+`POST /api/asr/taigi` accepts short audio uploads as `multipart/form-data`
+with field name `audio`. The backend normalizes audio to 16 kHz mono WAV
+with `ffmpeg`, then calls the configured Taigi ASR provider. Phase 2 supports
+short recording transcription only; it is not streaming ASR.
+
+Enable it with:
+
+```env
+TAIGI_ASR_ENABLED=true
+TAIGI_ASR_PROVIDER=python
+TAIGI_ASR_MODEL=NUTN-KWS/Whisper-Taiwanese-model-v0.5
+TAIGI_ASR_PYTHON=python3
+```
+
+Install system and Python dependencies on the backend host:
+
+```bash
+# system
+ffmpeg
+
+# python
+pip install transformers torch torchaudio librosa soundfile
+```
+
+If the model, Python packages, or `ffmpeg` are missing, the endpoint returns a
+clear JSON error such as `TAIGI_ASR_UNAVAILABLE`; the Flutter app shows a
+friendly message and does not fall back to fake transcripts.
 
 ## 6) Test memory API quickly
 

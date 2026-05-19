@@ -2,15 +2,81 @@ import 'dart:async';
 
 import '../models/language_route.dart';
 import 'asr_strategy_service.dart';
+import 'taigi_text_detection_service.dart';
 
 class LanguageRoutingService {
   const LanguageRoutingService(
     this._asrStrategies, {
     this.strategyTimeout = const Duration(milliseconds: 1200),
+    this.taigiTextDetectionService = const TaigiTextDetectionService(),
   });
 
   final AsrStrategyService _asrStrategies;
   final Duration strategyTimeout;
+  final TaigiTextDetectionService taigiTextDetectionService;
+
+  LanguageRouteResult previewRouteFromText({
+    required VoiceLanguageMode mode,
+    required String text,
+    String manualStrategyName = 'defaultOpenAiRealtime',
+  }) {
+    final normalizedText = text.trim();
+    if (normalizedText.isEmpty) {
+      return const LanguageRouteResult(
+        strategyName: 'textInput',
+        languageHint: TranscriptLanguageHint.unknown,
+        routeReason: 'empty_text',
+        isFallback: false,
+        transcript: '',
+      );
+    }
+
+    if (mode == VoiceLanguageMode.taigiPreferred) {
+      return LanguageRouteResult(
+        strategyName: 'textInput',
+        languageHint: TranscriptLanguageHint.taigi,
+        routeReason: 'taigi_manual_mode',
+        isFallback: false,
+        transcript: normalizedText,
+        replyLanguage: ReplyLanguage.mixedZhTaigi,
+      );
+    }
+    if (mode == VoiceLanguageMode.manualOverride &&
+        manualStrategyName.toLowerCase().contains('taigi')) {
+      return LanguageRouteResult(
+        strategyName: 'textInput',
+        languageHint: TranscriptLanguageHint.taigi,
+        routeReason: 'taigi_manual_mode',
+        isFallback: false,
+        transcript: normalizedText,
+        replyLanguage: ReplyLanguage.mixedZhTaigi,
+      );
+    }
+
+    final detected = taigiTextDetectionService.detect(normalizedText);
+    if (detected.isLikelyTaigi) {
+      final reason = detected.reason == 'matched_taigi_mixed_zh_keywords'
+          ? 'taigi_mixed_zh_detected'
+          : 'taigi_text_keywords_detected';
+      return LanguageRouteResult(
+        strategyName: 'textInput',
+        languageHint: TranscriptLanguageHint.taigi,
+        routeReason: reason,
+        isFallback: false,
+        transcript: normalizedText,
+        replyLanguage: ReplyLanguage.mixedZhTaigi,
+      );
+    }
+
+    return LanguageRouteResult(
+      strategyName: 'textInput',
+      languageHint: TranscriptLanguageHint.zh,
+      routeReason: 'zh_text_default',
+      isFallback: false,
+      transcript: normalizedText,
+      replyLanguage: ReplyLanguage.zhTw,
+    );
+  }
 
   Future<LanguageRouteResult> routeTranscript({
     required VoiceLanguageMode mode,
@@ -66,28 +132,14 @@ class LanguageRoutingService {
         manualStrategyName.toLowerCase().contains('taigi')) {
       return ReplyLanguage.mixedZhTaigi;
     }
-    if (containsTaigiCue(transcript)) {
+    if (const TaigiTextDetectionService().detect(transcript).isLikelyTaigi) {
       return ReplyLanguage.mixedZhTaigi;
     }
     return ReplyLanguage.zhTw;
   }
 
   static bool containsTaigiCue(String transcript) {
-    final normalized = transcript.trim();
-    if (normalized.isEmpty) return false;
-    return const [
-      '今仔日',
-      '足',
-      '毋',
-      '袂',
-      '無',
-      '欲',
-      '佇',
-      '阮',
-      '恁',
-      '歹勢',
-      '拍謝',
-    ].any(normalized.contains);
+    return const TaigiTextDetectionService().detect(transcript).isLikelyTaigi;
   }
 
   Future<LanguageRouteResult> _routeTaigiPreferred(

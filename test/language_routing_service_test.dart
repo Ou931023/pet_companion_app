@@ -48,6 +48,69 @@ void main() {
       expect(route.replyLanguage, ReplyLanguage.mixedZhTaigi);
     });
 
+    test('text preview keeps plain Mandarin in zh context', () {
+      final service = LanguageRoutingService(
+        AsrStrategyService(
+          strategies: const [
+            OpenAiRealtimeAsrStrategy(),
+            MockTaigiAsrStrategy(),
+          ],
+        ),
+      );
+
+      final route = service.previewRouteFromText(
+        mode: VoiceLanguageMode.defaultOpenAiRealtime,
+        text: '今天心情不太好',
+      );
+
+      expect(route.strategyName, 'textInput');
+      expect(route.languageHint, TranscriptLanguageHint.zh);
+      expect(route.routeReason, 'zh_text_default');
+      expect(route.replyLanguage, ReplyLanguage.zhTw);
+    });
+
+    test('text preview marks mixed Taigi Mandarin as taigi context', () {
+      final service = LanguageRoutingService(
+        AsrStrategyService(
+          strategies: const [
+            OpenAiRealtimeAsrStrategy(),
+            MockTaigiAsrStrategy(),
+          ],
+        ),
+      );
+
+      final route = service.previewRouteFromText(
+        mode: VoiceLanguageMode.defaultOpenAiRealtime,
+        text: '今仔日心情無好',
+      );
+
+      expect(route.languageHint, TranscriptLanguageHint.taigi);
+      expect(route.routeReason, 'taigi_mixed_zh_detected');
+      expect(route.replyLanguage, ReplyLanguage.mixedZhTaigi);
+    });
+
+    test('text preview honors taigi preferred mode without changing ASR route',
+        () {
+      final service = LanguageRoutingService(
+        AsrStrategyService(
+          strategies: const [
+            OpenAiRealtimeAsrStrategy(),
+            MockTaigiAsrStrategy(),
+          ],
+        ),
+      );
+
+      final route = service.previewRouteFromText(
+        mode: VoiceLanguageMode.taigiPreferred,
+        text: '今天心情不太好',
+      );
+
+      expect(route.strategyName, 'textInput');
+      expect(route.languageHint, TranscriptLanguageHint.taigi);
+      expect(route.routeReason, 'taigi_manual_mode');
+      expect(route.replyLanguage, ReplyLanguage.mixedZhTaigi);
+    });
+
     test('taigiPreferred selects Taigi strategy first', () async {
       final service = LanguageRoutingService(
         AsrStrategyService(

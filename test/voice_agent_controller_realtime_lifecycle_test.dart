@@ -38,6 +38,7 @@ import 'package:pet_companion_app/services/reminder_service.dart';
 import 'package:pet_companion_app/services/search_service.dart';
 import 'package:pet_companion_app/services/shop_service.dart';
 import 'package:pet_companion_app/services/taigi_asr_strategy.dart';
+import 'package:pet_companion_app/services/taigi_asr_service.dart';
 import 'package:pet_companion_app/services/text_to_speech_service.dart';
 import 'package:pet_companion_app/services/web_search_service.dart';
 
@@ -262,6 +263,15 @@ class _VoiceControllerHarness {
       petEmotionMapper: const PetEmotionMapper(),
       memoryController: memoryController,
       companionReplyStrategy: const CompanionReplyStrategyService(),
+      languageRoutingService: LanguageRoutingService(
+        AsrStrategyService(
+          strategies: const [
+            OpenAiRealtimeAsrStrategy(),
+            MockTaigiAsrStrategy(),
+          ],
+        ),
+      ),
+      taigiAsrService: TaigiAsrService(),
     );
     final controller = VoiceAgentController(
       profileController: profile,

@@ -10,8 +10,11 @@ class MockAiService {
 
     if (userText.contains('孤單') ||
         userText.contains('無聊') ||
-        userText.contains('沒人陪')) {
-      return '我在這裡陪你喔，今天是不是有點安靜？我們可以一起聊聊天。';
+        userText.contains('沒人陪') ||
+        userText.contains('攏無人')) {
+      return userText.contains('今仔日') || userText.contains('攏無人')
+          ? '今仔日感覺有點安靜齁，我在這裡陪你，咱慢慢講幾句就好。'
+          : '我在這裡陪你喔，今天是不是有點安靜？我們可以一起聊聊天。';
     }
     if (userText.contains('難過') ||
         userText.contains('想哭') ||

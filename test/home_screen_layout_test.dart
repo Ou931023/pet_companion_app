@@ -40,6 +40,7 @@ import 'package:pet_companion_app/services/reminder_service.dart';
 import 'package:pet_companion_app/services/search_service.dart';
 import 'package:pet_companion_app/services/shop_service.dart';
 import 'package:pet_companion_app/services/taigi_asr_strategy.dart';
+import 'package:pet_companion_app/services/taigi_asr_service.dart';
 import 'package:pet_companion_app/services/text_to_speech_service.dart';
 import 'package:pet_companion_app/services/web_search_service.dart';
 import 'package:pet_companion_app/widgets/source_reference_list.dart';
@@ -212,8 +213,12 @@ void main() {
 
     await tester.pumpWidget(_settingsHost(harness));
     await tester.pump();
-    await tester.drag(find.byType(ListView), const Offset(0, -1200));
-    await tester.pump();
+    await tester.scrollUntilVisible(
+      find.text('Realtime Diagnostics'),
+      500,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
     expect(find.text('Realtime Diagnostics'), findsOneWidget);
@@ -402,6 +407,14 @@ class _HomeHarness {
       reminderService: ReminderService(),
       notificationService: NotificationService(),
     );
+    final languageRoutingService = LanguageRoutingService(
+      AsrStrategyService(
+        strategies: const [
+          OpenAiRealtimeAsrStrategy(),
+          MockTaigiAsrStrategy(),
+        ],
+      ),
+    );
     final conversationController = ConversationController(
       profileController: profileController,
       petController: petController,
@@ -418,16 +431,10 @@ class _HomeHarness {
       petEmotionMapper: const PetEmotionMapper(),
       memoryController: memoryController,
       companionReplyStrategy: const CompanionReplyStrategyService(),
+      languageRoutingService: languageRoutingService,
+      taigiAsrService: TaigiAsrService(),
     );
     final realtimeVoiceService = RealtimeVoiceService();
-    final languageRoutingService = LanguageRoutingService(
-      AsrStrategyService(
-        strategies: const [
-          OpenAiRealtimeAsrStrategy(),
-          MockTaigiAsrStrategy(),
-        ],
-      ),
-    );
     final voiceAgentController = VoiceAgentController(
       profileController: profileController,
       petController: petController,

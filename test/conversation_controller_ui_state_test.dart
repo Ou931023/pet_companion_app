@@ -14,10 +14,12 @@ import 'package:pet_companion_app/controllers/task_controller.dart';
 import 'package:pet_companion_app/controllers/wallet_controller.dart';
 import 'package:pet_companion_app/services/ai_navigation_service.dart';
 import 'package:pet_companion_app/services/ai_tool_router.dart';
+import 'package:pet_companion_app/services/asr_strategy_service.dart';
 import 'package:pet_companion_app/services/check_in_storage_service.dart';
 import 'package:pet_companion_app/services/companion_content_service.dart';
 import 'package:pet_companion_app/services/companion_reply_strategy_service.dart';
 import 'package:pet_companion_app/services/emotion_services.dart';
+import 'package:pet_companion_app/services/language_routing_service.dart';
 import 'package:pet_companion_app/services/inventory_storage_service.dart';
 import 'package:pet_companion_app/services/local_storage_service.dart';
 import 'package:pet_companion_app/services/memory_service.dart';
@@ -28,6 +30,8 @@ import 'package:pet_companion_app/services/pet_stats_storage_service.dart';
 import 'package:pet_companion_app/services/reminder_service.dart';
 import 'package:pet_companion_app/services/search_service.dart';
 import 'package:pet_companion_app/services/shop_service.dart';
+import 'package:pet_companion_app/services/taigi_asr_strategy.dart';
+import 'package:pet_companion_app/services/taigi_asr_service.dart';
 import 'package:pet_companion_app/services/text_to_speech_service.dart';
 import 'package:pet_companion_app/services/web_search_service.dart';
 
@@ -83,6 +87,50 @@ void main() {
       expect(controller.latestUserText, isEmpty);
       expect(controller.temporaryUserBubbleText, isEmpty);
     });
+
+    test('text input stores Taigi language context in history', () async {
+      await controller.profileController.setTtsEnabled(false);
+
+      await controller.quickAction('今仔日家裡攏無人，我感覺足孤單');
+
+      expect(controller.history.first.userText, contains('今仔日'));
+      expect(controller.history.first.languageHint, 'taigi');
+      expect(controller.history.first.routeReason, 'taigi_mixed_zh_detected');
+      expect(controller.history.first.asrSource, 'text_input');
+      expect(controller.history.first.replyLanguage, 'mixed-zh-taigi');
+      expect(controller.history.first.emotionTag, isNot('neutral'));
+    });
+
+    test('plain Mandarin text input remains zh context', () async {
+      await controller.profileController.setTtsEnabled(false);
+
+      await controller.quickAction('我今天想去買東西');
+
+      expect(controller.history.first.languageHint, 'zh');
+      expect(controller.history.first.routeReason, 'zh_text_default');
+      expect(controller.history.first.replyLanguage, 'zh-TW');
+    });
+
+    test('empty Taigi ASR transcript does not add a conversation turn',
+        () async {
+      await controller.profileController.setTtsEnabled(false);
+
+      await controller.handleTaigiAsrTranscript('   ');
+
+      expect(controller.history, isEmpty);
+    });
+
+    test('Taigi ASR transcript stores source and route metadata', () async {
+      await controller.profileController.setTtsEnabled(false);
+
+      await controller.handleTaigiAsrTranscript('今仔日心情無好');
+
+      expect(controller.history.first.userText, '今仔日心情無好');
+      expect(controller.history.first.languageHint, 'taigi');
+      expect(controller.history.first.asrSource, 'taigi-asr');
+      expect(controller.history.first.routeReason, 'taigi_asr_transcript');
+      expect(controller.history.first.replyLanguage, 'mixed-zh-taigi');
+    });
   });
 }
 
@@ -130,5 +178,14 @@ ConversationController _createConversationController() {
     petEmotionMapper: const PetEmotionMapper(),
     memoryController: memoryController,
     companionReplyStrategy: const CompanionReplyStrategyService(),
+    languageRoutingService: LanguageRoutingService(
+      AsrStrategyService(
+        strategies: const [
+          OpenAiRealtimeAsrStrategy(),
+          MockTaigiAsrStrategy(),
+        ],
+      ),
+    ),
+    taigiAsrService: TaigiAsrService(),
   );
 }

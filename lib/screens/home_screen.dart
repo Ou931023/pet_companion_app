@@ -12,6 +12,7 @@ import '../controllers/profile_controller.dart';
 import '../controllers/voice_agent_controller.dart';
 import '../controllers/wallet_controller.dart';
 import '../models/inventory_item.dart';
+import '../models/language_route.dart';
 import '../models/pet_status.dart';
 import '../models/pet_stats.dart';
 import '../models/source_reference.dart';
@@ -87,6 +88,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final inventoryController = context.watch<InventoryController>();
     final petStatsController = context.watch<PetStatsController>();
     final agentToolController = _maybeWatchAgentToolController(context);
+    final useTaigiShortRecording =
+        profileController.voiceLanguageMode == VoiceLanguageMode.taigiPreferred;
     final isDead = petStatsController.lifeState == PetLifeState.dead;
     final showVoiceAura = switch (voiceAgentController.state) {
       VoiceAgentState.connecting ||
@@ -97,22 +100,32 @@ class _HomeScreenState extends State<HomeScreen> {
         true,
       _ => false,
     };
-    final voiceIcon = switch (voiceAgentController.state) {
-      VoiceAgentState.speaking => Icons.volume_up,
-      VoiceAgentState.recovering => Icons.sync,
-      VoiceAgentState.listening => Icons.graphic_eq,
-      _ => Icons.mic,
-    };
-    final voiceLabel = switch (voiceAgentController.state) {
-      VoiceAgentState.connecting => '正在連線陪伴寵物',
-      VoiceAgentState.ready || VoiceAgentState.listening => '可以開始說話',
-      VoiceAgentState.recovering => '重新連線中',
-      VoiceAgentState.error => '連線失敗，點我重試',
-      VoiceAgentState.transcribing => '正在聽你說話',
-      VoiceAgentState.thinking => '正在想回應',
-      VoiceAgentState.speaking => '正在陪你說話',
-      VoiceAgentState.idle => '開始語音陪伴',
-    };
+    final voiceIcon = useTaigiShortRecording
+        ? conversationController.isTaigiAsrRecording
+            ? Icons.stop_circle
+            : Icons.mic
+        : switch (voiceAgentController.state) {
+            VoiceAgentState.speaking => Icons.volume_up,
+            VoiceAgentState.recovering => Icons.sync,
+            VoiceAgentState.listening => Icons.graphic_eq,
+            _ => Icons.mic,
+          };
+    final voiceLabel = useTaigiShortRecording
+        ? conversationController.isTaigiAsrRecording
+            ? '結束台語錄音'
+            : conversationController.isTaigiAsrProcessing
+                ? '台語辨識中'
+                : '開始台語短錄音'
+        : switch (voiceAgentController.state) {
+            VoiceAgentState.connecting => '正在連線陪伴寵物',
+            VoiceAgentState.ready || VoiceAgentState.listening => '可以開始說話',
+            VoiceAgentState.recovering => '重新連線中',
+            VoiceAgentState.error => '連線失敗，點我重試',
+            VoiceAgentState.transcribing => '正在聽你說話',
+            VoiceAgentState.thinking => '正在想回應',
+            VoiceAgentState.speaking => '正在陪你說話',
+            VoiceAgentState.idle => '開始語音陪伴',
+          };
     final companionSources = _companionSourceReferences(
       voiceAgentController.currentCompanionContext?.sourceReferences,
     );
@@ -242,6 +255,29 @@ class _HomeScreenState extends State<HomeScreen> {
                         onPressed: isDead
                             ? null
                             : () async {
+                                if (useTaigiShortRecording) {
+                                  if (voiceAgentController.state !=
+                                          VoiceAgentState.idle &&
+                                      voiceAgentController.state !=
+                                          VoiceAgentState.error) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('請先結束目前語音對話。'),
+                                      ),
+                                    );
+                                    return;
+                                  }
+                                  if (conversationController
+                                      .isTaigiAsrRecording) {
+                                    await conversationController
+                                        .stopTaigiShortRecordingAndTranscribe();
+                                  } else {
+                                    conversationController.startNewSession();
+                                    await conversationController
+                                        .startTaigiShortRecording();
+                                  }
+                                  return;
+                                }
                                 if (voiceAgentController.state ==
                                         VoiceAgentState.idle ||
                                     voiceAgentController.state ==
@@ -271,6 +307,20 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                     ),
+                    if (conversationController
+                        .taigiAsrStatusMessage.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        conversationController.taigiAsrStatusMessage,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.black.withValues(alpha: 0.56),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -536,6 +586,15 @@ class _ConversationDetailPanel extends StatelessWidget {
           isWaiting: conversationController.isAwaitingPetReply,
           compact: compact,
         ),
+        if (conversationController.latestLanguageContextLabel.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerRight,
+            child: _LanguageContextChip(
+              label: conversationController.latestLanguageContextLabel,
+            ),
+          ),
+        ],
         if (conversationController.latestReplyIsSearch) ...[
           if (conversationController.latestSources.isNotEmpty) ...[
             const SizedBox(height: 8),
@@ -566,6 +625,35 @@ class _ConversationDetailPanel extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+class _LanguageContextChip extends StatelessWidget {
+  const _LanguageContextChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.045),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: Colors.black.withValues(alpha: 0.56),
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
     );
   }
 }

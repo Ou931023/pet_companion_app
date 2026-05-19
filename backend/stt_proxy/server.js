@@ -3,6 +3,8 @@ const cors = require("cors");
 const multer = require("multer");
 const dotenv = require("dotenv");
 const fs = require("fs");
+const os = require("os");
+const path = require("path");
 const rateLimit = require('express-rate-limit');
 const OpenAI = require("openai");
 
@@ -44,10 +46,44 @@ const {
   routeAgentTool,
   listTools: listAgentTools,
 } = require("../agent/agent_orchestrator");
+const {
+  TaigiAsrError,
+  transcribeTaigiAudio,
+} = require("./services/taigiAsrService");
 
 const app = express();
 const port = process.env.PORT || 3001;
 const upload = multer({ dest: "uploads/" });
+const taigiAsrUploadDir = path.join(os.tmpdir(), "pet_companion_taigi_asr");
+fs.mkdirSync(taigiAsrUploadDir, { recursive: true });
+const taigiAsrUpload = multer({
+  dest: taigiAsrUploadDir,
+  limits: {
+    fileSize: Number(process.env.TAIGI_ASR_MAX_UPLOAD_BYTES) || 10 * 1024 * 1024,
+  },
+  fileFilter: (req, file, callback) => {
+    const allowedMimeTypes = new Set([
+      "audio/wav",
+      "audio/x-wav",
+      "audio/wave",
+      "audio/mpeg",
+      "audio/mp4",
+      "audio/m4a",
+      "audio/aac",
+      "audio/x-caf",
+      "audio/caf",
+    ]);
+    const ext = path.extname(file.originalname || "").toLowerCase();
+    const allowedExtensions = new Set([".wav", ".m4a", ".caf", ".mp3", ".aac"]);
+    const isOctetAudio =
+      file.mimetype === "application/octet-stream" && allowedExtensions.has(ext);
+    if (allowedMimeTypes.has(file.mimetype) || isOctetAudio) {
+      callback(null, true);
+      return;
+    }
+    callback(new TaigiAsrError("TAIGI_ASR_INVALID_AUDIO", "Unsupported audio file", 400));
+  },
+});
 const host = process.env.HOST || "127.0.0.1";
 
 // Configure CORS: allow origins from ALLOWED_ORIGINS env (comma separated), default allow none
@@ -104,7 +140,8 @@ const REALTIME_INSTRUCTIONS = `你是長者陪伴寵物，不是一般助理。
 回覆要簡短、自然、像陪在身邊的寵物。
 每次最多問一個問題。
 不要像客服，不要像老師，不要做醫療診斷。
-如果 languageHint=taigi，可以用台灣長者自然聽得懂的語氣回應；不要硬翻成不自然台語。
+如果使用者輸入呈現台語、台語混中文、或台灣長輩常用口語，請先理解語意與情緒，再用台灣長輩容易理解的溫暖中文回覆；可以自然穿插少量台語詞，例如「今仔日」「有我陪你」「慢慢來」「食飽未」，但不要整段使用難懂台語文字。回覆要像陪伴寵物，不要像客服或醫生。
+如果 languageHint=taigi，可以用台灣長者自然聽得懂的溫暖中文與少量台語詞回應；不要硬翻成不自然台語，不要使用大量羅馬拼音。
 如果台語 transcript 不完整，請溫和追問，不要假裝完全聽懂。
 如果有 Companion Engine 提供的 nextStrategy，請優先遵守。
 當使用者提到胸痛、呼吸困難、跌倒、嚴重不適、自傷意念時，請提高安全提醒，建議聯絡家人或尋求醫療協助。`;
@@ -126,10 +163,10 @@ function outputLanguageInstruction({ languageHint = "", replyLanguage = "" } = {
   const normalizedReplyLanguage = (replyLanguage || "").toString().trim();
   const normalizedLanguageHint = (languageHint || "").toString().trim();
   if (normalizedReplyLanguage === "mixed-zh-taigi") {
-    return "輸出語言：請使用台語口吻搭配繁體中文漢字回覆，不要使用大量羅馬拼音；語氣自然，讓台灣長輩聽得懂。";
+    return "輸出語言：請用台灣長輩容易理解的溫暖中文回覆，可以自然穿插少量台語詞；不要整段使用難懂台語文字，也不要使用大量羅馬拼音。";
   }
   if (normalizedReplyLanguage === "taigi" || normalizedLanguageHint === "taigi") {
-    return "輸出語言：請盡量使用自然台語口吻回覆，必要時混合繁體中文讓長輩聽得懂；避免艱深台語字與大量羅馬拼音。";
+    return "輸出語言：請理解台語或台語混中文語意，用溫暖、簡短、像陪伴寵物的繁體中文回覆，少量自然台語詞即可；避免艱深台語字與大量羅馬拼音。";
   }
   return "輸出語言：請用繁體中文自然回覆。";
 }
@@ -358,6 +395,59 @@ app.post("/api/stt/transcribe", upload.single("audio"), async (req, res) => {
   } finally {
     fs.unlink(req.file.path, () => {});
   }
+});
+
+app.post("/api/asr/taigi", (req, res) => {
+  taigiAsrUpload.single("audio")(req, res, async (uploadError) => {
+    const startedAt = Date.now();
+    if (uploadError) {
+      const code = uploadError.code === "LIMIT_FILE_SIZE"
+        ? "TAIGI_ASR_FILE_TOO_LARGE"
+        : uploadError.code || "TAIGI_ASR_INVALID_AUDIO";
+      return res.status(uploadError.status || 400).json({
+        error: code,
+        message: uploadError.message || "Invalid audio upload",
+      });
+    }
+    if (!req.file) {
+      return res.status(400).json({
+        error: "TAIGI_ASR_AUDIO_REQUIRED",
+        message: "audio file is required",
+      });
+    }
+
+    try {
+      const result = await transcribeTaigiAudio({
+        audioPath: req.file.path,
+        originalFilename: req.file.originalname,
+        mimeType: req.file.mimetype,
+      });
+      return res.json({
+        language: "taigi",
+        transcript: (result.transcript || "").trim(),
+        confidence: Number(result.confidence || 0),
+        source: "taigi-asr",
+        durationMs: Date.now() - startedAt,
+      });
+    } catch (error) {
+      const status = error instanceof TaigiAsrError ? error.status : 500;
+      const code = error instanceof TaigiAsrError
+        ? error.code
+        : "TAIGI_ASR_FAILED";
+      logError("Taigi ASR failed", {
+        code,
+        message: error?.message || "Unknown error",
+      });
+      return res.status(status || 500).json({
+        error: code,
+        message: error instanceof TaigiAsrError
+          ? error.message
+          : "Taigi ASR failed",
+      });
+    } finally {
+      fs.unlink(req.file.path, () => {});
+    }
+  });
 });
 
 app.post("/api/memory/extract", async (req, res) => {
@@ -1031,6 +1121,10 @@ app.post(
   },
 );
 
-app.listen(port, host, () => {
-  console.log(`STT Proxy listening on http://${host}:${port}`);
-});
+if (require.main === module) {
+  app.listen(port, host, () => {
+    console.log(`STT Proxy listening on http://${host}:${port}`);
+  });
+}
+
+module.exports = app;

@@ -156,7 +156,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         const SizedBox(height: 14),
         _SettingsSection(
-          title: '語音辨識語言',
+          title: '語音輸入方式',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -164,11 +164,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 segments: const [
                   ButtonSegment(
                     value: VoiceLanguageMode.defaultOpenAiRealtime,
-                    label: Text('預設'),
+                    label: Text('即時語音對話'),
                   ),
                   ButtonSegment(
                     value: VoiceLanguageMode.taigiPreferred,
-                    label: Text('台語優先'),
+                    label: Text('台語短錄音'),
                   ),
                   ButtonSegment(
                     value: VoiceLanguageMode.manualOverride,
@@ -178,6 +178,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 selected: {profile.voiceLanguageMode},
                 onSelectionChanged: (values) =>
                     profile.setVoiceLanguageMode(values.first),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                profile.voiceLanguageMode == VoiceLanguageMode.taigiPreferred
+                    ? '台語短錄音會先錄下語音，再辨識成文字讓寵物回覆。'
+                    : '即時語音對話會使用原本的 Realtime 連線。台語短錄音不會影響即時語音功能。',
+                style: TextStyle(
+                  color: Colors.black.withValues(alpha: 0.58),
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               if (profile.voiceLanguageMode ==
                   VoiceLanguageMode.manualOverride) ...[

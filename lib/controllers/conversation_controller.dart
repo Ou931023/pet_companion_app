@@ -21,6 +21,7 @@ import '../services/mock_speech_to_text_service.dart';
 import '../services/openai_speech_to_text_service.dart';
 import '../services/search_service.dart';
 import '../services/speech_to_text_service.dart';
+import '../services/taigi_asr_service.dart';
 import '../services/text_to_speech_service.dart';
 import 'app_navigation_controller.dart';
 import 'memory_controller.dart';
@@ -46,6 +47,8 @@ class ConversationController extends ChangeNotifier {
     required this.petEmotionMapper,
     required this.memoryController,
     required this.companionReplyStrategy,
+    required this.languageRoutingService,
+    required this.taigiAsrService,
     this.timeoutConfig = const RealtimeTimeoutConfig(),
   });
 
@@ -64,6 +67,8 @@ class ConversationController extends ChangeNotifier {
   final PetEmotionMapper petEmotionMapper;
   final MemoryController memoryController;
   final CompanionReplyStrategyService companionReplyStrategy;
+  final LanguageRoutingService languageRoutingService;
+  final TaigiAsrService taigiAsrService;
   final RealtimeTimeoutConfig timeoutConfig;
 
   final List<ConversationTurn> _history = [];
@@ -78,6 +83,9 @@ class ConversationController extends ChangeNotifier {
   String _currentDraftText = '';
   bool _isUserSpeaking = false;
   bool _isAwaitingFinalTranscript = false;
+  bool _isTaigiAsrRecording = false;
+  bool _isTaigiAsrProcessing = false;
+  String _taigiAsrStatusMessage = '';
   List<SourceReference> _latestSources = const [];
   bool _latestReplyIsSearch = false;
   String _latestSearchMode = '';
@@ -148,6 +156,9 @@ class ConversationController extends ChangeNotifier {
   String get currentDraftText => _currentDraftText;
   bool get isUserSpeaking => _isUserSpeaking;
   bool get isAwaitingFinalTranscript => _isAwaitingFinalTranscript;
+  bool get isTaigiAsrRecording => _isTaigiAsrRecording;
+  bool get isTaigiAsrProcessing => _isTaigiAsrProcessing;
+  String get taigiAsrStatusMessage => _taigiAsrStatusMessage;
   bool get hasTemporaryUserBubble =>
       temporaryUserBubbleText.trim().isNotEmpty ||
       temporaryUserBubbleStatus.isNotEmpty;
@@ -173,6 +184,21 @@ class ConversationController extends ChangeNotifier {
   String get latestToolUsed => _latestToolUsed;
   CompanionReplyDebugInfo? get latestCompanionDebugInfo =>
       _latestCompanionDebugInfo;
+  String get latestLanguageHint {
+    final userTurn = _latestUserTurnWithLanguage();
+    return userTurn.languageHint;
+  }
+
+  String get latestLanguageContextLabel {
+    final routeReason = _latestUserTurnWithLanguage().routeReason;
+    final hint = latestLanguageHint;
+    if (hint == TranscriptLanguageHint.taigi.value) {
+      return routeReason == 'taigi_mixed_zh_detected' ? '台語混中文' : '台語語境';
+    }
+    if (hint == TranscriptLanguageHint.mixed.value) return '台語混中文';
+    if (hint == TranscriptLanguageHint.zh.value) return '中文語境';
+    return '';
+  }
 
   Future<void> loadHistory() async {
     final turns = await storageService.loadConversationHistory();
@@ -260,6 +286,74 @@ class ConversationController extends ChangeNotifier {
 
   Future<void> quickAction(String text) async {
     await _handleUserText(text);
+  }
+
+  Future<void> handleTaigiAsrTranscript(String text) async {
+    final normalized = text.trim();
+    if (normalized.isEmpty) return;
+    await _handleUserText(
+      normalized,
+      languageRoute: LanguageRouteResult(
+        strategyName: 'taigiShortRecording',
+        languageHint: TranscriptLanguageHint.taigi,
+        routeReason: 'taigi_asr_transcript',
+        isFallback: false,
+        transcript: normalized,
+        replyLanguage: ReplyLanguage.mixedZhTaigi,
+      ),
+      asrSource: 'taigi-asr',
+    );
+  }
+
+  Future<void> startTaigiShortRecording() async {
+    if (_isBusy || _isTaigiAsrRecording || _isTaigiAsrProcessing) return;
+    _taigiAsrStatusMessage = '';
+    try {
+      await taigiAsrService.startRecording();
+      _isTaigiAsrRecording = true;
+      _taigiAsrStatusMessage = '台語錄音中';
+      notifyListeners();
+    } catch (_) {
+      _taigiAsrStatusMessage = '請先開啟麥克風權限，再試一次。';
+      notifyListeners();
+    }
+  }
+
+  Future<void> stopTaigiShortRecordingAndTranscribe() async {
+    if (!_isTaigiAsrRecording || _isTaigiAsrProcessing) return;
+    _isTaigiAsrRecording = false;
+    _isTaigiAsrProcessing = true;
+    _taigiAsrStatusMessage = '台語辨識中';
+    notifyListeners();
+    File? audioFile;
+    try {
+      audioFile = await taigiAsrService.stopRecording();
+      if (audioFile == null) {
+        _taigiAsrStatusMessage = '我剛剛沒有聽清楚，可以再說一次嗎？';
+        return;
+      }
+      final result = await taigiAsrService.transcribeAudio(
+        audioFile: audioFile,
+        sttProxyUrl: profileController.sttProxyUrl,
+      );
+      if (!result.success) {
+        _taigiAsrStatusMessage = result.message;
+        return;
+      }
+      final transcript = result.transcript.trim();
+      if (transcript.isEmpty) {
+        _taigiAsrStatusMessage = '我剛剛沒有聽清楚，可以再說一次嗎？';
+        return;
+      }
+      _taigiAsrStatusMessage = '已辨識台語內容';
+      await handleTaigiAsrTranscript(transcript);
+    } finally {
+      _isTaigiAsrProcessing = false;
+      if (audioFile != null) {
+        unawaited(audioFile.delete().catchError((_) => audioFile!));
+      }
+      notifyListeners();
+    }
   }
 
   void updateDraftText(String text) {
@@ -465,9 +559,19 @@ class ConversationController extends ChangeNotifier {
     await _handleUserText(result.transcript);
   }
 
-  Future<void> _handleUserText(String text) async {
+  Future<void> _handleUserText(
+    String text, {
+    LanguageRouteResult? languageRoute,
+    String asrSource = 'text_input',
+  }) async {
     if (_isBusy) return;
     _isBusy = true;
+    final resolvedLanguageRoute = languageRoute ??
+        languageRoutingService.previewRouteFromText(
+          mode: profileController.voiceLanguageMode,
+          text: text,
+          manualStrategyName: profileController.manualAsrStrategy,
+        );
     clearDraftText();
     showUserBubbleMessage(text, awaitingPetReply: true);
     try {
@@ -480,12 +584,15 @@ class ConversationController extends ChangeNotifier {
           suggestedAction: 'route',
           optionalSuggestion: navigationIntent.reply,
           routeInfo: navigationIntent.route,
+          languageRoute: resolvedLanguageRoute,
         );
         await _deliverPetReply(
           reply,
           petMode: PetMode.listening,
           toolName: 'navigation',
           userText: text,
+          languageRoute: resolvedLanguageRoute,
+          asrSource: asrSource,
         );
         return;
       }
@@ -505,11 +612,14 @@ class ConversationController extends ChangeNotifier {
             emotion: emotion,
             suggestedAction: 'reminder',
             optionalSuggestion: rawReply,
+            languageRoute: resolvedLanguageRoute,
           ),
           petMode: emotionMode,
           toolName: 'createReminder',
           userText: text,
           emotionTag: emotion.emotion,
+          languageRoute: resolvedLanguageRoute,
+          asrSource: asrSource,
         );
         return;
       }
@@ -520,11 +630,14 @@ class ConversationController extends ChangeNotifier {
             emotion: emotion,
             suggestedAction: 'reminder',
             optionalSuggestion: reminderController.listSummary(),
+            languageRoute: resolvedLanguageRoute,
           ),
           petMode: emotionMode,
           toolName: 'listReminders',
           userText: text,
           emotionTag: emotion.emotion,
+          languageRoute: resolvedLanguageRoute,
+          asrSource: asrSource,
         );
         return;
       }
@@ -544,6 +657,7 @@ class ConversationController extends ChangeNotifier {
               if (memoryContext.memoryContextSummary?.trim().isNotEmpty == true)
                 memoryContext.memoryContextSummary!.trim(),
             ],
+            languageRoute: resolvedLanguageRoute,
           ),
           petMode: emotionMode,
           toolName: 'verticalSearch',
@@ -557,6 +671,8 @@ class ConversationController extends ChangeNotifier {
           usedMemoryIds: memoryContext.usedMemoryIds,
           memoryContextSummary: memoryContext.memoryContextSummary,
           memoryProvider: memoryContext.memoryProvider,
+          languageRoute: resolvedLanguageRoute,
+          asrSource: asrSource,
         );
         return;
       }
@@ -577,6 +693,7 @@ class ConversationController extends ChangeNotifier {
             if (memoryContext.memoryContextSummary?.trim().isNotEmpty == true)
               memoryContext.memoryContextSummary!.trim(),
           ],
+          languageRoute: resolvedLanguageRoute,
         ),
         petMode: petMode,
         toolName: toolResult.toolName,
@@ -586,6 +703,8 @@ class ConversationController extends ChangeNotifier {
         usedMemoryIds: memoryContext.usedMemoryIds,
         memoryContextSummary: memoryContext.memoryContextSummary,
         memoryProvider: memoryContext.memoryProvider,
+        languageRoute: resolvedLanguageRoute,
+        asrSource: asrSource,
       );
     } catch (_) {
       await _deliverPetReply(
@@ -593,6 +712,8 @@ class ConversationController extends ChangeNotifier {
         petMode: PetMode.caring,
         toolName: 'chatFallback',
         userText: text,
+        languageRoute: resolvedLanguageRoute,
+        asrSource: asrSource,
       );
     } finally {
       _isBusy = false;
@@ -615,6 +736,8 @@ class ConversationController extends ChangeNotifier {
     List<dynamic> usedMemoryIds = const [],
     String? memoryContextSummary,
     String? memoryProvider,
+    LanguageRouteResult? languageRoute,
+    String asrSource = '',
   }) async {
     _latestReply = message;
     _isAwaitingPetReply = false;
@@ -645,7 +768,11 @@ class ConversationController extends ChangeNotifier {
           usedMemoryIds: usedMemoryIds,
           memoryContextSummary: memoryContextSummary,
           memoryProvider: memoryProvider,
-          replyLanguage: _replyLanguageForText(userText).value,
+          asrSource: userText.trim().isEmpty ? '' : asrSource,
+          languageHint: languageRoute?.languageHint.value ?? '',
+          routeReason: languageRoute?.routeReason ?? '',
+          replyLanguage: languageRoute?.replyLanguage.value ??
+              _replyLanguageForText(userText).value,
         ),
       );
       await _persistHistory();
@@ -701,6 +828,7 @@ class ConversationController extends ChangeNotifier {
     required String optionalSuggestion,
     String routeInfo = '',
     List<String> memoryHints = const [],
+    LanguageRouteResult? languageRoute,
   }) {
     final context = CompanionContext(
       userText: userText,
@@ -713,7 +841,8 @@ class ConversationController extends ChangeNotifier {
       optionalSuggestion: optionalSuggestion,
       petName: profileController.petName,
       conversationHistory: history.take(6).toList(),
-      replyLanguage: _replyLanguageForText(userText),
+      replyLanguage:
+          languageRoute?.replyLanguage ?? _replyLanguageForText(userText),
     );
     final plan = companionReplyStrategy.buildPlan(context);
     _latestCompanionDebugInfo = companionReplyStrategy.debugInfo(context);
@@ -765,6 +894,18 @@ class ConversationController extends ChangeNotifier {
       userText,
       profileController.voiceLanguageMode,
       profileController.manualAsrStrategy,
+    );
+  }
+
+  ConversationTurn _latestUserTurnWithLanguage() {
+    for (final turn in _history.reversed) {
+      if (turn.userText.trim().isNotEmpty) return turn;
+    }
+    return ConversationTurn(
+      timestamp: DateTime.fromMillisecondsSinceEpoch(0),
+      userText: '',
+      petReply: '',
+      toolName: '',
     );
   }
 

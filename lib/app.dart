@@ -52,6 +52,7 @@ import 'services/reminder_service.dart';
 import 'services/search_service.dart';
 import 'services/shop_service.dart';
 import 'services/taigi_asr_strategy.dart';
+import 'services/taigi_asr_service.dart';
 import 'services/text_to_speech_service.dart';
 import 'services/web_search_service.dart';
 import 'utils/platform_liquid_glass.dart';
@@ -126,6 +127,7 @@ class PetCompanionApp extends StatelessWidget {
         Provider(create: (_) => MockSpeechToTextService()),
         Provider(create: (_) => SearchService()),
         Provider(create: (_) => TextToSpeechService()),
+        Provider(create: (_) => TaigiAsrService()),
         Provider(create: (_) => RealtimeVoiceService()),
         Provider(
           create: (_) => AsrStrategyService(
@@ -188,6 +190,8 @@ class PetCompanionApp extends StatelessWidget {
             memoryController: context.read<MemoryController>(),
             companionReplyStrategy:
                 context.read<CompanionReplyStrategyService>(),
+            languageRoutingService: context.read<LanguageRoutingService>(),
+            taigiAsrService: context.read<TaigiAsrService>(),
           ),
           update: (context, profile, pet, router, tts, mockStt, search,
                   controller) =>
@@ -209,6 +213,8 @@ class PetCompanionApp extends StatelessWidget {
                 memoryController: context.read<MemoryController>(),
                 companionReplyStrategy:
                     context.read<CompanionReplyStrategyService>(),
+                languageRoutingService: context.read<LanguageRoutingService>(),
+                taigiAsrService: context.read<TaigiAsrService>(),
               ),
         ),
         ChangeNotifierProxyProvider6<
