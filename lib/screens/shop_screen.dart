@@ -39,40 +39,25 @@ class ShopScreen extends StatelessWidget {
               ),
         ),
         const SizedBox(height: 8),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final columns = constraints.maxWidth >= 720 ? 3 : 2;
-            return GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: items.length,
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: columns,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
-                childAspectRatio: columns == 2 ? 0.72 : 0.86,
-              ),
-              itemBuilder: (context, index) {
-                final item = items[index];
-                return ShopItemCard(
-                  item: item,
-                  canBuy: wallet.coins >= item.price &&
-                      (!item.onlyWhenDead || petStats.isDead),
-                  onBuy: () async {
-                    final ok = await wallet.spendCoins(item.price);
-                    if (!ok || !context.mounted) return;
-                    await inventory.addFromShop(item);
+        for (final item in items) ...[
+          ShopItemCard(
+            key: ValueKey('shop-item-${item.id}'),
+            item: item,
+            canBuy: wallet.coins >= item.price &&
+                (!item.onlyWhenDead || petStats.isDead),
+            onBuy: () async {
+              final ok = await wallet.spendCoins(item.price);
+              if (!ok || !context.mounted) return;
+              await inventory.addFromShop(item);
 
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('已放入背包：${item.name}')),
-                    );
-                  },
-                );
-              },
-            );
-          },
-        ),
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('已放入背包：${item.name}')),
+              );
+            },
+          ),
+          const SizedBox(height: 10),
+        ],
       ],
     );
   }

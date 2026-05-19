@@ -44,8 +44,8 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('外部長照用品商城'), findsOneWidget);
     expect(find.text('寵物用品'), findsOneWidget);
-    expect(find.text('鮭魚餐'), findsOneWidget);
-    expect(find.text('梳毛刷'), findsOneWidget);
+    expect(find.text('小餅乾'), findsOneWidget);
+    expect(find.text('飯糰'), findsOneWidget);
 
     await tester.tap(find.text('外部長照用品商城'));
     await tester.pumpAndSettle();
@@ -56,6 +56,26 @@ void main() {
     await tester.tap(find.text('先不要'));
     await tester.pumpAndSettle();
     expect(find.text('開啟外部長照商城？'), findsNothing);
+  });
+
+  testWidgets('ShopScreen lays pet items out as one full-width row per item',
+      (tester) async {
+    await binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => binding.setSurfaceSize(null));
+    final harness = await _ShopHarness.create();
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(_shopHost(harness));
+    await tester.pump();
+
+    final firstCard = find.byKey(const ValueKey('shop-item-cookie'));
+    final secondCard = find.byKey(const ValueKey('shop-item-rice_ball'));
+
+    expect(firstCard, findsOneWidget);
+    expect(secondCard, findsOneWidget);
+    expect(tester.getTopLeft(firstCard).dx, tester.getTopLeft(secondCard).dx);
+    expect(tester.getTopLeft(secondCard).dy, greaterThan(tester.getTopLeft(firstCard).dy));
+    expect(tester.getSize(firstCard).width, greaterThan(320));
   });
 }
 
