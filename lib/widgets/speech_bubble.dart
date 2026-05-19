@@ -6,11 +6,13 @@ class SpeechBubble extends StatelessWidget {
     required this.text,
     this.speaker = '寵物',
     this.isWaiting = false,
+    this.compact = false,
   });
 
   final String text;
   final String speaker;
   final bool isWaiting;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -43,6 +45,8 @@ class SpeechBubble extends StatelessWidget {
               children: [
                 Text(
                   speaker,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: Colors.indigo.shade500,
                     fontSize: 12,
@@ -52,10 +56,10 @@ class SpeechBubble extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(
                   isWaiting ? '我聽到了，正在想怎麼陪你說。' : text,
-                  maxLines: 3,
+                  maxLines: isWaiting ? 2 : (compact ? 4 : 6),
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 19,
+                    fontSize: compact ? 17 : 18,
                     height: 1.3,
                     fontWeight: FontWeight.w600,
                     color: isWaiting ? Colors.black54 : Colors.black87,

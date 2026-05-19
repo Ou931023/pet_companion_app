@@ -84,12 +84,59 @@ void main() {
     expect(
         find.byKey(const ValueKey('latest-user-message-bubble')), findsNothing);
   });
+
+  testWidgets('petText over 80 Chinese chars does not overflow',
+      (tester) async {
+    final longPetText = List.filled(
+      7,
+      '我在這裡陪你慢慢說，先不用急著把所有事情一次講完。',
+    ).join();
+
+    await tester.pumpWidget(_bubbleHost(petText: longPetText));
+
+    expect(tester.takeException(), isNull);
+    final petTextWidget = tester.widget<Text>(find.text(longPetText));
+    expect(petTextWidget.maxLines, 6);
+  });
+
+  testWidgets('userText over 60 Chinese chars does not overflow',
+      (tester) async {
+    final longUserText = List.filled(
+      5,
+      '今仔日厝內足安靜我想慢慢講予你聽但是心內有真濟話。',
+    ).join();
+
+    await tester.pumpWidget(_bubbleHost(userText: longUserText));
+
+    expect(tester.takeException(), isNull);
+    final userTextWidget = tester.widget<Text>(find.text(longUserText));
+    expect(userTextWidget.maxLines, 6);
+  });
+
+  testWidgets('temporaryUserText stays short while transcribing',
+      (tester) async {
+    final longPartialText = List.filled(
+      5,
+      '我正在講一段很長的語音辨識內容還沒有完成。',
+    ).join();
+
+    await tester.pumpWidget(_bubbleHost(
+      temporaryUserText: longPartialText,
+      temporaryUserStatus: '辨識中',
+    ));
+
+    expect(tester.takeException(), isNull);
+    final partialTextWidget = tester.widget<Text>(find.text(longPartialText));
+    expect(partialTextWidget.maxLines, 3);
+  });
 }
 
 Widget _bubbleHost({
   String userText = '',
   String temporaryUserText = '',
   String temporaryUserStatus = '',
+  String petText = '我在這裡陪你。',
+  bool compact = false,
 }) {
   return MaterialApp(
     home: Scaffold(
@@ -99,10 +146,10 @@ Widget _bubbleHost({
           userText: userText,
           temporaryUserText: temporaryUserText,
           temporaryUserStatus: temporaryUserStatus,
-          petText: '我在這裡陪你。',
+          petText: petText,
           petName: '小伴',
           isWaiting: false,
-          compact: false,
+          compact: compact,
         ),
       ),
     ),

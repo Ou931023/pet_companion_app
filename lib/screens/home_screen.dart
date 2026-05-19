@@ -125,191 +125,98 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            profileController.petName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                        BagIconButton(
-                          totalItems: inventoryController.totalQuantity,
-                          onTap: () => setState(() {
-                            _showInventoryPanel = !_showInventoryPanel;
-                            _inventoryTrayLowered = false;
-                          }),
-                        ),
-                        const SizedBox(width: 8),
-                        CoinBadge(coins: walletController.coins),
-                        const SizedBox(width: 8),
-                        HomeDateCheckinCard(
-                          hasCheckedInToday:
-                              checkInController.hasCheckedInToday,
-                          onOpenCalendarTap: () =>
-                              _openCalendarDialog(context, checkInController),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: compact ? 8 : 10),
-                    ConversationBubbleStack(
-                      userText: conversationController.latestUserText,
-                      temporaryUserText:
-                          conversationController.temporaryUserBubbleText,
-                      temporaryUserStatus:
-                          conversationController.temporaryUserBubbleStatus,
-                      petText: conversationController.latestReply.isNotEmpty
-                          ? conversationController.latestReply
-                          : petController.message,
+                    _HomeHeader(
                       petName: profileController.petName,
-                      isWaiting: conversationController.isAwaitingPetReply,
-                      compact: compact,
+                      totalItems: inventoryController.totalQuantity,
+                      coins: walletController.coins,
+                      hasCheckedInToday: checkInController.hasCheckedInToday,
+                      onBagTap: () => setState(() {
+                        _showInventoryPanel = !_showInventoryPanel;
+                        _inventoryTrayLowered = false;
+                      }),
+                      onOpenCalendarTap: () =>
+                          _openCalendarDialog(context, checkInController),
                     ),
-                    if (conversationController.latestReplyIsSearch) ...[
-                      const SizedBox(height: 8),
-                      _SearchMetaLine(
-                        mode: conversationController.latestSearchMode,
-                        provider: conversationController.latestSearchProvider,
-                        toolUsed: conversationController.latestToolUsed,
-                      ),
-                      if (conversationController.latestSources.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        SourceReferenceList(
-                          sources: conversationController.latestSources,
-                        ),
-                      ],
-                    ],
-                    if (!conversationController.latestReplyIsSearch &&
-                        companionSources.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      SourceReferenceList(sources: companionSources),
-                    ],
-                    if (voiceAgentController.state != VoiceAgentState.idle) ...[
-                      const SizedBox(height: 6),
-                      _VoiceRouteLine(
-                        strategyName: voiceAgentController.strategyName,
-                        languageHint: voiceAgentController.languageHint,
-                        routeReason: voiceAgentController.routeReason,
-                        isFallback: voiceAgentController.isLanguageFallback,
-                      ),
-                      if (voiceAgentController.currentCompanionContext !=
-                          null) ...[
-                        const SizedBox(height: 4),
-                        _EmotionFusionLine(
-                          textEmotion: voiceAgentController
-                              .currentCompanionContext!.fusion.textEmotion,
-                          finalEmotion: voiceAgentController
-                              .currentCompanionContext!.fusion.finalEmotion,
-                          fusionReason: voiceAgentController
-                              .currentCompanionContext!.fusion.reason,
-                          pauseDensity: voiceAgentController
-                              .currentCompanionContext!
-                              .voiceFeatures
-                              .pauseDensity,
-                          estimatedSpeechRate: voiceAgentController
-                              .currentCompanionContext!
-                              .voiceFeatures
-                              .estimatedSpeechRate,
-                        ),
-                      ],
-                    ],
                     SizedBox(height: compact ? 8 : 10),
                     Expanded(
                       child: LayoutBuilder(
-                        builder: (context, petConstraints) {
-                          final avatarSize =
-                              (petConstraints.biggest.shortestSide *
-                                      (compact ? 0.96 : 1.0))
-                                  .clamp(188.0, 430.0);
-                          final auraSize =
-                              (avatarSize - 54).clamp(150.0, avatarSize);
-
-                          return Center(
-                            child: DragTarget<InventoryItem>(
-                              onWillAcceptWithDetails: (_) {
-                                setState(() => _isPetDragHovering = true);
-                                return true;
-                              },
-                              onLeave: (_) =>
-                                  setState(() => _isPetDragHovering = false),
-                              onAcceptWithDetails: (details) async {
-                                setState(() => _isPetDragHovering = false);
-                                await _applyInventoryItem(
-                                  context: context,
-                                  item: details.data,
-                                  inventoryController: inventoryController,
-                                  petStatsController: petStatsController,
-                                );
-                              },
-                              builder: (_, __, ___) => GestureDetector(
-                                onTap: () {
-                                  if (isDead) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('寵物需要復活後才能一起玩'),
-                                      ),
-                                    );
-                                    return;
-                                  }
-                                  Navigator.of(context)
-                                      .pushNamed(AppRoute.puzzle);
-                                },
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 150),
-                                  width: petConstraints.maxWidth,
-                                  height: petConstraints.maxHeight,
-                                  alignment: Alignment.center,
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(16),
-                                    border: _isPetDragHovering
-                                        ? Border.all(
-                                            color: Colors.green,
-                                            width: 3,
-                                          )
-                                        : null,
+                        builder: (context, contentConstraints) {
+                          final detailsMaxHeight =
+                              (contentConstraints.maxHeight *
+                                      (compact ? 0.36 : 0.32))
+                                  .clamp(86.0, compact ? 170.0 : 230.0);
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxHeight: detailsMaxHeight,
+                                ),
+                                child: SingleChildScrollView(
+                                  key: const ValueKey(
+                                    'home-conversation-detail-scroll',
                                   ),
-                                  child: ColorFiltered(
-                                    colorFilter: isDead
-                                        ? const ColorFilter.mode(
-                                            Colors.grey,
-                                            BlendMode.saturation,
-                                          )
-                                        : const ColorFilter.mode(
-                                            Colors.transparent,
-                                            BlendMode.srcOver,
-                                          ),
-                                    child: Stack(
-                                      alignment: Alignment.center,
-                                      clipBehavior: Clip.none,
-                                      children: [
-                                        if (showVoiceAura)
-                                          _VoiceListeningBubbles(
-                                            size: auraSize,
-                                          ),
-                                        PetAvatar(
-                                          mode: petController.mode,
-                                          size: avatarSize,
-                                        ),
-                                      ],
-                                    ),
+                                  padding: const EdgeInsets.only(bottom: 2),
+                                  child: _ConversationDetailPanel(
+                                    conversationController:
+                                        conversationController,
+                                    companionSources: companionSources,
+                                    petText: conversationController
+                                            .latestReply.isNotEmpty
+                                        ? conversationController.latestReply
+                                        : petController.message,
+                                    petName: profileController.petName,
+                                    compact: compact,
                                   ),
                                 ),
                               ),
-                            ),
+                              SizedBox(height: compact ? 6 : 8),
+                              Expanded(
+                                child: _PetStage(
+                                  isDead: isDead,
+                                  isPetDragHovering: _isPetDragHovering,
+                                  showVoiceAura: showVoiceAura,
+                                  petMode: petController.mode,
+                                  onPetTap: () {
+                                    if (isDead) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        const SnackBar(
+                                          content: Text('寵物需要復活後才能一起玩'),
+                                        ),
+                                      );
+                                      return;
+                                    }
+                                    Navigator.of(context)
+                                        .pushNamed(AppRoute.puzzle);
+                                  },
+                                  onDragHoverChanged: (hovering) => setState(
+                                    () => _isPetDragHovering = hovering,
+                                  ),
+                                  onAcceptItem: (item) async {
+                                    setState(
+                                      () => _isPetDragHovering = false,
+                                    );
+                                    await _applyInventoryItem(
+                                      context: context,
+                                      item: item,
+                                      inventoryController: inventoryController,
+                                      petStatsController: petStatsController,
+                                    );
+                                  },
+                                ),
+                              ),
+                              SizedBox(height: compact ? 6 : 8),
+                              PetStatusPanel(
+                                intimacy: petStatsController.intimacy,
+                                fullness: petStatsController.fullness,
+                                moodValue: petStatsController.moodValue,
+                                isDead: isDead,
+                              ),
+                            ],
                           );
                         },
                       ),
-                    ),
-                    PetStatusPanel(
-                      intimacy: petStatsController.intimacy,
-                      fullness: petStatsController.fullness,
-                      moodValue: petStatsController.moodValue,
-                      isDead: isDead,
                     ),
                     SizedBox(height: compact ? 8 : 10),
                     TextConversationBar(
@@ -537,110 +444,185 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-class _SearchMetaLine extends StatelessWidget {
-  const _SearchMetaLine({
-    required this.mode,
-    required this.provider,
-    required this.toolUsed,
+class _HomeHeader extends StatelessWidget {
+  const _HomeHeader({
+    required this.petName,
+    required this.totalItems,
+    required this.coins,
+    required this.hasCheckedInToday,
+    required this.onBagTap,
+    required this.onOpenCalendarTap,
   });
 
-  final String mode;
-  final String provider;
-  final String toolUsed;
+  final String petName;
+  final int totalItems;
+  final int coins;
+  final bool hasCheckedInToday;
+  final VoidCallback onBagTap;
+  final VoidCallback onOpenCalendarTap;
 
   @override
   Widget build(BuildContext context) {
-    final parts = [
-      if (mode.isNotEmpty) 'mode: $mode',
-      if (provider.isNotEmpty) 'provider: $provider',
-      if (toolUsed.isNotEmpty) 'toolUsed: $toolUsed',
-    ];
-    if (parts.isEmpty) return const SizedBox.shrink();
-    return Text(
-      parts.join('  |  '),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(
-        color: Colors.black.withValues(alpha: 0.48),
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-      ),
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            petName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        BagIconButton(
+          totalItems: totalItems,
+          onTap: onBagTap,
+        ),
+        const SizedBox(width: 8),
+        CoinBadge(coins: coins),
+        const SizedBox(width: 8),
+        HomeDateCheckinCard(
+          hasCheckedInToday: hasCheckedInToday,
+          onOpenCalendarTap: onOpenCalendarTap,
+        ),
+      ],
     );
   }
 }
 
-class _VoiceRouteLine extends StatelessWidget {
-  const _VoiceRouteLine({
-    required this.strategyName,
-    required this.languageHint,
-    required this.routeReason,
-    required this.isFallback,
+class _ConversationDetailPanel extends StatelessWidget {
+  const _ConversationDetailPanel({
+    required this.conversationController,
+    required this.companionSources,
+    required this.petText,
+    required this.petName,
+    required this.compact,
   });
 
-  final String strategyName;
-  final String languageHint;
-  final String routeReason;
-  final bool isFallback;
+  final ConversationController conversationController;
+  final List<SourceReference> companionSources;
+  final String petText;
+  final String petName;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
-    final parts = [
-      'ASR: $strategyName',
-      'lang: $languageHint',
-      if (isFallback) 'fallback',
-      if (routeReason.isNotEmpty) routeReason,
-    ];
-    return Text(
-      parts.join('  |  '),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(
-        color: (isFallback ? Colors.orange.shade800 : Colors.black)
-            .withValues(alpha: 0.52),
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ConversationBubbleStack(
+          userText: conversationController.latestUserText,
+          temporaryUserText: conversationController.temporaryUserBubbleText,
+          temporaryUserStatus: conversationController.temporaryUserBubbleStatus,
+          petText: petText,
+          petName: petName,
+          isWaiting: conversationController.isAwaitingPetReply,
+          compact: compact,
+        ),
+        if (conversationController.latestReplyIsSearch) ...[
+          if (conversationController.latestSources.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            SourceReferenceList(
+              sources: conversationController.latestSources,
+            ),
+          ],
+        ],
+        if (!conversationController.latestReplyIsSearch &&
+            companionSources.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          SourceReferenceList(sources: companionSources),
+        ],
+      ],
     );
   }
 }
 
-class _EmotionFusionLine extends StatelessWidget {
-  const _EmotionFusionLine({
-    required this.textEmotion,
-    required this.finalEmotion,
-    required this.fusionReason,
-    required this.pauseDensity,
-    required this.estimatedSpeechRate,
+class _PetStage extends StatelessWidget {
+  const _PetStage({
+    required this.isDead,
+    required this.isPetDragHovering,
+    required this.showVoiceAura,
+    required this.petMode,
+    required this.onPetTap,
+    required this.onDragHoverChanged,
+    required this.onAcceptItem,
   });
 
-  final String textEmotion;
-  final String finalEmotion;
-  final String fusionReason;
-  final double? pauseDensity;
-  final double? estimatedSpeechRate;
+  final bool isDead;
+  final bool isPetDragHovering;
+  final bool showVoiceAura;
+  final PetMode petMode;
+  final VoidCallback onPetTap;
+  final ValueChanged<bool> onDragHoverChanged;
+  final ValueChanged<InventoryItem> onAcceptItem;
 
   @override
   Widget build(BuildContext context) {
-    final pauseText =
-        pauseDensity == null ? '-' : pauseDensity!.toStringAsFixed(2);
-    final rateText = estimatedSpeechRate == null
-        ? '-'
-        : estimatedSpeechRate!.toStringAsFixed(2);
-    final parts = [
-      '情緒推測: $textEmotion -> $finalEmotion',
-      'pause: $pauseText',
-      'rate: $rateText',
-      if (fusionReason.isNotEmpty) fusionReason,
-    ];
-    return Text(
-      parts.join('  |  '),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(
-        color: Colors.black.withValues(alpha: 0.48),
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-      ),
+    return LayoutBuilder(
+      builder: (context, petConstraints) {
+        final maxAvailable = petConstraints.biggest.shortestSide;
+        if (maxAvailable <= 0) return const SizedBox.shrink();
+        final maxAvatarSize = maxAvailable.clamp(0.0, 430.0);
+        final avatarSize = maxAvailable < 72
+            ? maxAvailable
+            : (maxAvailable * 0.92).clamp(72.0, maxAvatarSize);
+        final auraSize = maxAvailable.clamp(0.0, avatarSize + 54);
+
+        return Center(
+          child: DragTarget<InventoryItem>(
+            onWillAcceptWithDetails: (_) {
+              onDragHoverChanged(true);
+              return true;
+            },
+            onLeave: (_) => onDragHoverChanged(false),
+            onAcceptWithDetails: (details) => onAcceptItem(details.data),
+            builder: (_, __, ___) => GestureDetector(
+              onTap: onPetTap,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: petConstraints.maxWidth,
+                height: petConstraints.maxHeight,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  border: isPetDragHovering
+                      ? Border.all(
+                          color: Colors.green,
+                          width: 3,
+                        )
+                      : null,
+                ),
+                child: ColorFiltered(
+                  colorFilter: isDead
+                      ? const ColorFilter.mode(
+                          Colors.grey,
+                          BlendMode.saturation,
+                        )
+                      : const ColorFilter.mode(
+                          Colors.transparent,
+                          BlendMode.srcOver,
+                        ),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      if (showVoiceAura)
+                        _VoiceListeningBubbles(
+                          size: auraSize,
+                        ),
+                      PetAvatar(
+                        mode: petMode,
+                        size: avatarSize,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -679,8 +661,8 @@ class _VoiceListeningBubblesState extends State<_VoiceListeningBubbles>
   Widget build(BuildContext context) {
     return IgnorePointer(
       child: SizedBox(
-        width: widget.size + 54,
-        height: widget.size + 54,
+        width: widget.size,
+        height: widget.size,
         child: AnimatedBuilder(
           animation: _controller,
           builder: (context, _) {
@@ -694,7 +676,7 @@ class _VoiceListeningBubblesState extends State<_VoiceListeningBubbles>
                     size: widget.size,
                   ),
                 Positioned(
-                  bottom: 10,
+                  bottom: (widget.size * 0.08).clamp(2.0, 10.0),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [

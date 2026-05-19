@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../config/app_config.dart';
 import '../controllers/conversation_controller.dart';
 import '../controllers/pet_controller.dart';
 import '../controllers/profile_controller.dart';
+import '../controllers/voice_agent_controller.dart';
 import '../models/language_route.dart';
 import '../routes/app_routes.dart';
+import '../services/realtime_voice_service.dart';
 import '../widgets/companion_debug_panel.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -297,6 +300,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         const SizedBox(height: 14),
         _SettingsSection(
+          title: 'Realtime Diagnostics',
+          child: Consumer3<VoiceAgentController, RealtimeVoiceService,
+              ConversationController>(
+            builder: (context, voice, realtime, conversation, _) {
+              return _RealtimeDiagnosticsPanel(
+                voiceController: voice,
+                realtimeService: realtime,
+                conversationController: conversation,
+                profile: profile,
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 14),
+        _SettingsSection(
           title: 'Companion Debug Panel',
           child: Consumer<ConversationController>(
             builder: (context, conversation, _) {
@@ -362,6 +380,171 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (value >= 1.1) return '文字：較大';
     if (value < 1.0) return '文字：較小';
     return '文字：標準';
+  }
+}
+
+class _RealtimeDiagnosticsPanel extends StatefulWidget {
+  const _RealtimeDiagnosticsPanel({
+    required this.voiceController,
+    required this.realtimeService,
+    required this.conversationController,
+    required this.profile,
+  });
+
+  final VoiceAgentController voiceController;
+  final RealtimeVoiceService realtimeService;
+  final ConversationController conversationController;
+  final ProfileController profile;
+
+  @override
+  State<_RealtimeDiagnosticsPanel> createState() =>
+      _RealtimeDiagnosticsPanelState();
+}
+
+class _RealtimeDiagnosticsPanelState extends State<_RealtimeDiagnosticsPanel> {
+  bool _isChecking = false;
+  String _healthMessage = '尚未檢查';
+
+  @override
+  Widget build(BuildContext context) {
+    final health = widget.realtimeService.lastHealthStatus;
+    final lastFailure = widget.realtimeService.lastFailureType;
+    final companionContext = widget.voiceController.currentCompanionContext;
+    final fusion = companionContext?.fusion;
+    final voiceFeatures = companionContext?.voiceFeatures;
+    final searchParts = [
+      if (widget.conversationController.latestSearchMode.isNotEmpty)
+        'mode=${widget.conversationController.latestSearchMode}',
+      if (widget.conversationController.latestSearchProvider.isNotEmpty)
+        'provider=${widget.conversationController.latestSearchProvider}',
+      if (widget.conversationController.latestToolUsed.isNotEmpty)
+        'tool=${widget.conversationController.latestToolUsed}',
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _DiagnosticLine(
+          label: 'Backend health',
+          value: health == null
+              ? _healthMessage
+              : '${health.ok ? 'OK' : '失敗'} / OpenAI Key: ${health.hasOpenAiKey ? '已設定' : '未設定'}',
+        ),
+        _DiagnosticLine(
+          label: 'Realtime model',
+          value: health?.realtimeModel.isNotEmpty == true
+              ? health!.realtimeModel
+              : '尚未取得',
+        ),
+        const _DiagnosticLine(
+          label: 'Microphone permission',
+          value: '啟動語音時由系統確認',
+        ),
+        _DiagnosticLine(
+          label: '最近 ASR strategy',
+          value: widget.voiceController.strategyName.isEmpty
+              ? '-'
+              : widget.voiceController.strategyName,
+        ),
+        _DiagnosticLine(
+          label: '最近 languageHint',
+          value: widget.voiceController.languageHint.isEmpty
+              ? '-'
+              : widget.voiceController.languageHint,
+        ),
+        _DiagnosticLine(
+          label: '最近 routeReason',
+          value: widget.voiceController.routeReason.isEmpty
+              ? '-'
+              : widget.voiceController.routeReason,
+        ),
+        _DiagnosticLine(
+          label: '最近 emotion fusion',
+          value: fusion == null
+              ? '-'
+              : '${fusion.textEmotion} -> ${fusion.finalEmotion}'
+                  '${fusion.reason.isEmpty ? '' : ' / ${fusion.reason}'}',
+        ),
+        _DiagnosticLine(
+          label: '最近 voice features',
+          value: voiceFeatures == null
+              ? '-'
+              : 'pauseDensity=${_formatNumber(voiceFeatures.pauseDensity)}, '
+                  'speechRate=${_formatNumber(voiceFeatures.estimatedSpeechRate)}',
+        ),
+        _DiagnosticLine(
+          label: '最近 search metadata',
+          value: searchParts.isEmpty ? '-' : searchParts.join(' / '),
+        ),
+        _DiagnosticLine(
+          label: '最近錯誤',
+          value: lastFailure == RealtimeFailureType.none
+              ? '無'
+              : '${lastFailure.name}：${widget.realtimeService.lastFailureMessage}',
+        ),
+        _DiagnosticLine(
+          label: 'WebRTC',
+          value:
+              'peer=${widget.realtimeService.lastConnectionState.isEmpty ? '-' : widget.realtimeService.lastConnectionState}, '
+              'ice=${widget.realtimeService.lastIceConnectionState.isEmpty ? '-' : widget.realtimeService.lastIceConnectionState}, '
+              'data=${widget.realtimeService.dataChannelState}',
+        ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: _isChecking ? null : _checkRealtimeHealth,
+          icon: _isChecking
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.network_check),
+          label: const Text('測試 Realtime 連線'),
+        ),
+      ],
+    );
+  }
+
+  String _formatNumber(double? value) {
+    if (value == null) return '-';
+    return value.toStringAsFixed(2);
+  }
+
+  Future<void> _checkRealtimeHealth() async {
+    setState(() {
+      _isChecking = true;
+      _healthMessage = '檢查中';
+    });
+    final health = await widget.realtimeService.checkBackendHealth(
+      AppConfig.healthUrlForSttProxy(widget.profile.sttProxyUrl),
+    );
+    if (!mounted) return;
+    setState(() {
+      _isChecking = false;
+      _healthMessage = health.ok ? 'OK' : health.message;
+    });
+  }
+}
+
+class _DiagnosticLine extends StatelessWidget {
+  const _DiagnosticLine({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Text(
+        '$label：$value',
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontWeight: FontWeight.w700),
+      ),
+    );
   }
 }
 

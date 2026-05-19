@@ -196,7 +196,12 @@ function withTimeout(promise, timeoutMs, fallbackValue) {
 }
 
 app.get("/health", (_, res) => {
-  res.json({ status: "ok" });
+  res.json({
+    status: "ok",
+    hasOpenAiKey: Boolean(process.env.OPENAI_API_KEY),
+    realtimeModel: process.env.REALTIME_MODEL || "gpt-realtime",
+    time: new Date().toISOString(),
+  });
 });
 
 app.post("/api/companion/analyze", async (req, res) => {
@@ -291,6 +296,7 @@ app.post("/api/stt/transcribe", upload.single("audio"), async (req, res) => {
   if (!process.env.OPENAI_API_KEY) {
     return res.status(500).json({
       success: false,
+      code: "missing_api_key",
       message: "Missing OPENAI_API_KEY",
     });
   }
@@ -826,6 +832,8 @@ app.post("/api/realtime/session", realtimeLimiter, async (req, res) => {
       });
       return res.status(response.status).json({
         success: false,
+        code: "session_create_failed",
+        status: response.status,
         message: "Failed to create realtime session",
         error: data?.error?.message || "Unknown error",
       });
@@ -848,6 +856,7 @@ app.post("/api/realtime/session", realtimeLimiter, async (req, res) => {
     logError("Realtime session creation exception", { error: error?.message || error });
     return res.status(500).json({
       success: false,
+      code: "session_create_failed",
       message: "Realtime session creation failed",
       error: error?.message || "Unknown error",
     });
@@ -863,15 +872,27 @@ app.post(
     logInfo("OPENAI_API_KEY exists", { hasApiKey: Boolean(process.env.OPENAI_API_KEY) });
     if (!process.env.OPENAI_API_KEY) {
       logError("OPENAI_API_KEY missing");
-      return res.status(500).send("Missing OPENAI_API_KEY");
+      return res.status(500).json({
+        success: false,
+        code: "missing_api_key",
+        message: "Missing OPENAI_API_KEY",
+      });
     }
     const offerSdp = (req.body || "").toString();
     if (!offerSdp.trim()) {
-      return res.status(400).send("Missing SDP offer");
+      return res.status(400).json({
+        success: false,
+        code: "missing_sdp_offer",
+        message: "Missing SDP offer",
+      });
     }
     // Basic size check to prevent extremely large payloads
     if (offerSdp.length > 200000) {
-      return res.status(413).send("SDP offer too large");
+      return res.status(413).json({
+        success: false,
+        code: "sdp_offer_too_large",
+        message: "SDP offer too large",
+      });
     }
 
     const realtimeModel = process.env.REALTIME_MODEL || "gpt-realtime";
@@ -954,18 +975,33 @@ app.post(
         try {
           errorBody = JSON.parse(responseText);
         } catch (_) {}
+        const errorSummary =
+          typeof errorBody === "string"
+            ? errorBody.substring(0, 500)
+            : (errorBody?.error?.message || JSON.stringify(errorBody)).substring(0, 500);
         logError("Realtime call failed", {
           status: response.status,
-          errorBody,
+          errorSummary,
         });
-        return res.status(502).send("Realtime call failed");
+        return res.status(502).json({
+          success: false,
+          code: "sdp_exchange_failed",
+          upstreamStatus: response.status,
+          message: "Realtime call failed",
+          error: errorSummary,
+        });
       }
 
       res.setHeader("Content-Type", "application/sdp");
       return res.status(200).send(responseText);
     } catch (error) {
       logError("Realtime call exception", { error: error?.message || error });
-      return res.status(500).send("Realtime call failed");
+      return res.status(500).json({
+        success: false,
+        code: "sdp_exchange_failed",
+        message: "Realtime call failed",
+        error: error?.message || "Unknown error",
+      });
     }
   },
 );

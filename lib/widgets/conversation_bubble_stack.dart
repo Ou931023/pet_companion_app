@@ -52,6 +52,7 @@ class ConversationBubbleStack extends StatelessWidget {
           text: petText,
           speaker: petName,
           isWaiting: isWaiting,
+          compact: compact,
         ),
       ],
     );
@@ -115,14 +116,18 @@ class UserMessageBubble extends StatelessWidget {
                           size: 16,
                         ),
                         const SizedBox(width: 5),
-                        Text(
-                          isTemporary && status.trim().isNotEmpty
-                              ? '你說・${status.trim()}'
-                              : '你說',
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
+                        Flexible(
+                          child: Text(
+                            isTemporary && status.trim().isNotEmpty
+                                ? '你說・${status.trim()}'
+                                : '你說',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
                         ),
                       ],
@@ -130,12 +135,12 @@ class UserMessageBubble extends StatelessWidget {
                     const SizedBox(height: 3),
                     Text(
                       text.trim(),
-                      maxLines: 3,
+                      maxLines: isTemporary ? 3 : 6,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.right,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Colors.white,
-                        fontSize: 16,
+                        fontSize: isTemporary ? 15 : 16,
                         height: 1.28,
                         fontWeight: FontWeight.w700,
                       ),

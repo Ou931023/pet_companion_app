@@ -338,6 +338,27 @@ void main() {
       service.dispose();
     });
 
+    test('data channel open timeout emits dataChannelFailed', () async {
+      final service = RealtimeVoiceService(
+        dataChannelOpenTimeout: const Duration(milliseconds: 10),
+      );
+      final events = <RealtimeVoiceEvent>[];
+      final sub = service.events.listen(events.add);
+
+      service.startDataChannelOpenTimerForTest();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await pumpEventQueue();
+
+      expect(service.lastFailureType, RealtimeFailureType.dataChannelFailed);
+      expect(
+        events.where((event) => event.type == RealtimeEventType.error),
+        isNotEmpty,
+      );
+
+      await sub.cancel();
+      service.dispose();
+    });
+
     test('failed connect can be retried with a new connect call', () async {
       var attempts = 0;
       final service = RealtimeVoiceService(

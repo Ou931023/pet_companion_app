@@ -13,6 +13,8 @@ class SourceReferenceList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (sources.isEmpty) return const SizedBox.shrink();
+    final visibleSources = sources.take(2).toList(growable: false);
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -25,17 +27,13 @@ class SourceReferenceList extends StatelessWidget {
         children: [
           const Text(
             '資料來源：',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
           ),
           const SizedBox(height: 6),
-          if (sources.isEmpty)
-            const Text(
-              '目前沒有取得可靠來源，我先不亂說，我可以先陪你聊聊或稍後再幫你查。',
-              style: TextStyle(fontSize: 13, color: Colors.black54),
-            )
-          else
-            for (var i = 0; i < sources.length; i++)
-              _SourceRow(index: i + 1, source: sources[i]),
+          for (var i = 0; i < visibleSources.length; i++)
+            _SourceRow(index: i + 1, source: visibleSources[i]),
         ],
       ),
     );
@@ -54,7 +52,6 @@ class _SourceRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final siteName = source.siteName.isEmpty ? '來源網站' : source.siteName;
-    final date = source.publishedAt?.trim();
     final summary = source.summary.trim();
     return InkWell(
       onTap: () => _open(source.url),
@@ -64,19 +61,37 @@ class _SourceRow extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('$index. ', style: const TextStyle(fontSize: 13)),
+            SizedBox(
+              width: 24,
+              child: Text(
+                '$index.',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '$siteName｜${source.title}',
+                    source.title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
                       color: Colors.indigo,
+                    ),
+                  ),
+                  Text(
+                    siteName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.black54,
+                      height: 1.25,
                     ),
                   ),
                   if (summary.isNotEmpty)
@@ -90,17 +105,10 @@ class _SourceRow extends StatelessWidget {
                         height: 1.25,
                       ),
                     ),
-                  if (date != null && date.isNotEmpty)
-                    Text(
-                      '發布日期：$date',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.black54,
-                      ),
-                    ),
                 ],
               ),
             ),
+            const SizedBox(width: 6),
             const Icon(Icons.open_in_new, size: 15, color: Colors.indigo),
           ],
         ),

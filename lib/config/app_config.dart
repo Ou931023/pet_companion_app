@@ -24,6 +24,10 @@ class AppConfig {
     return _apiUrlFrom(sttProxyUrl, '/api/realtime/call');
   }
 
+  static String healthUrlForSttProxy(String sttProxyUrl) {
+    return _apiUrlFrom(sttProxyUrl, '/health');
+  }
+
   static String apiBaseUrlForSttProxy(String sttProxyUrl) {
     return _apiUrlFrom(sttProxyUrl, '/api');
   }

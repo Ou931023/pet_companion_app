@@ -83,8 +83,11 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   bool _skipNextAssistantText = false;
   int _connectionAttemptId = 0;
   int _transcriptRouteAttemptId = 0;
-  bool _wasRealtimeActiveBeforeBackground = false;
   bool _isHandlingRealtimeFailure = false;
+  bool _isConnecting = false;
+  bool _userRequestedRealtime = false;
+  int _reconnectAttempts = 0;
+  static const int _maxReconnectAttempts = 1;
   final RealtimeTurnCoordinator _turnCoordinator = RealtimeTurnCoordinator();
   final RealtimeTimeoutRegistry _timeouts = RealtimeTimeoutRegistry();
 
@@ -107,9 +110,19 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       _state != VoiceAgentState.idle &&
       _state != VoiceAgentState.error &&
       _state != VoiceAgentState.recovering;
+  RealtimeFailureType get lastFailureType =>
+      realtimeVoiceService.lastFailureType;
+  String get backendHealthMessage {
+    final health = realtimeVoiceService.lastHealthStatus;
+    if (health == null) return '尚未檢查';
+    if (!health.ok) return health.message.isEmpty ? '後端未啟動' : health.message;
+    if (!health.hasOpenAiKey) return 'OpenAI API Key 未設定';
+    return 'OK';
+  }
 
   Future<void> startRealtimeConversation() async {
-    if (_state == VoiceAgentState.connecting) {
+    _userRequestedRealtime = true;
+    if (_isConnecting || realtimeVoiceService.isConnecting) {
       return;
     }
     if (_state == VoiceAgentState.ready ||
@@ -122,15 +135,32 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     final attemptId = ++_connectionAttemptId;
-    _transition(VoiceAgentState.connecting, 'connect_started');
-    _startTimeout(RealtimeTimeoutType.connectionTimeout);
+    _isConnecting = true;
+    _reconnectAttempts = 0;
     _lastError = '';
-    petController.setMessage('正在連線陪伴寵物');
-    conversationController.showPetBubbleMessage('正在連線陪伴寵物');
-    notifyListeners();
     _sub?.cancel();
     _sub = realtimeVoiceService.events.listen(_handleRealtimeEvent);
     try {
+      final health = await realtimeVoiceService.checkBackendHealth(
+        AppConfig.healthUrlForSttProxy(profileController.sttProxyUrl),
+      );
+      if (attemptId != _connectionAttemptId) return;
+      if (!health.ok || !health.hasOpenAiKey) {
+        final type = !health.ok
+            ? RealtimeFailureType.backendUnavailable
+            : RealtimeFailureType.missingApiKey;
+        _lastError = type.message;
+        _transition(VoiceAgentState.error, type.name);
+        petController.setModeAndMessage(PetMode.sad, type.message);
+        conversationController.showPetBubbleMessage(type.message);
+        return;
+      }
+
+      _transition(VoiceAgentState.connecting, 'connect_started');
+      _startTimeout(RealtimeTimeoutType.connectionTimeout);
+      petController.setMessage('正在連線陪伴寵物');
+      conversationController.showPetBubbleMessage('正在連線陪伴寵物');
+      notifyListeners();
       debugPrint('[PET_NAME] current=${profileController.petName}');
       await realtimeVoiceService.connect(
         realtimeCallUrl:
@@ -153,10 +183,17 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       _cancelTimeout(RealtimeTimeoutType.connectionTimeout);
     } catch (error) {
       await _handleRealtimeFailure(error);
+    } finally {
+      if (attemptId == _connectionAttemptId) {
+        _isConnecting = false;
+      }
     }
   }
 
   Future<void> stopRealtimeConversation() async {
+    _userRequestedRealtime = false;
+    _isConnecting = false;
+    _reconnectAttempts = 0;
     _cancelAllTimeouts();
     await realtimeVoiceService.stop();
     _lastError = '';
@@ -166,6 +203,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     _speechStartedAt = null;
     _speechStoppedAt = null;
     _turnCoordinator.reset();
+    conversationController.clearRealtimeTranscriptState();
     _transition(VoiceAgentState.idle, 'manual_stop');
     petController.setMessage('我先在旁邊陪你。想不到要聊什麼也沒關係，要不要跟我說說今天最舒服的一刻？');
   }
@@ -284,6 +322,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       case RealtimeEventType.dataChannelOpen:
         _cancelTimeout(RealtimeTimeoutType.connectionTimeout);
         _cancelTimeout(RealtimeTimeoutType.reconnectTimeout);
+        _isConnecting = false;
         _transition(VoiceAgentState.listening, 'data_channel_open');
         break;
       case RealtimeEventType.dataChannelClosed:
@@ -299,6 +338,9 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _applyStateFromPayload(String value) {
+    if (value == 'idle' && _state == VoiceAgentState.error) {
+      return;
+    }
     final mapped = switch (value) {
       'connecting' => VoiceAgentState.connecting,
       'connected' || 'ready' => VoiceAgentState.ready,
@@ -679,6 +721,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   ) async {
     if (turnId.isNotEmpty && !_isActiveTurn(turnId)) return;
     _cancelTimeout(RealtimeTimeoutType.responseTimeout);
+    _lastError = RealtimeFailureType.responseTimeout.message;
     final fallback = plan.fallbackReply;
     if (_pendingRealtimeUserText.isNotEmpty) {
       await conversationController.handleRealtimeAssistantReply(
@@ -702,6 +745,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     _latestCompanionTurnId = '';
     _turnCoordinator.reset();
     _cancelTurnTimeouts();
+    conversationController.clearRealtimeTranscriptState();
   }
 
   bool _isActiveTurn(String turnId) {
@@ -942,10 +986,17 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     _isHandlingRealtimeFailure = true;
     try {
       debugPrint('[VoiceAgentController] realtime unavailable: $error');
-      _lastError = error.toString();
+      final failureType = error is RealtimeFailure
+          ? error.type
+          : realtimeVoiceService.lastFailureType;
+      _lastError = failureType == RealtimeFailureType.none
+          ? error.toString()
+          : failureType.message;
       await _recoverToErrorAfterFailure(
-        reason: 'connection_failed',
-        message: '連線失敗，點我重試',
+        reason: failureType == RealtimeFailureType.none
+            ? 'connection_failed'
+            : failureType.name,
+        message: _lastError.isEmpty ? '連線失敗，點我重試' : _lastError,
         stopConnection: true,
       );
     } finally {
@@ -954,6 +1005,12 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _handleRealtimeRecoverableFailure(String reason) {
+    if (!_userRequestedRealtime) {
+      debugPrint(
+        '[VoiceAgentController] ignore recoverable failure without user request reason=$reason',
+      );
+      return;
+    }
     if (_state == VoiceAgentState.connecting ||
         _state == VoiceAgentState.recovering) {
       debugPrint(
@@ -961,12 +1018,21 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       );
       return;
     }
+    if (_reconnectAttempts >= _maxReconnectAttempts) {
+      unawaited(_recoverToErrorAfterFailure(
+        reason: '${reason}_max_reconnect_reached',
+        message: '語音連線中斷，請點重新連線。',
+        stopConnection: true,
+      ));
+      return;
+    }
+    _reconnectAttempts += 1;
     debugPrint('[VoiceAgentController] realtime recovering reason=$reason');
     _lastError = '';
     _transition(VoiceAgentState.recovering, reason);
     unawaited(_recoverAndReconnect(
       reason: reason,
-      message: '剛剛連線有點不穩，我們再試一次。',
+      message: '語音連線重新建立中',
     ));
   }
 
@@ -974,7 +1040,9 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     required String reason,
     required String message,
   }) async {
+    if (!_userRequestedRealtime) return;
     _connectionAttemptId += 1;
+    _isConnecting = true;
     _cancelAllTimeouts();
     _clearCurrentTurn();
     await realtimeVoiceService.stop();
@@ -984,6 +1052,15 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     _transition(VoiceAgentState.connecting, '${reason}_reconnect_started');
     _startTimeout(RealtimeTimeoutType.reconnectTimeout);
     try {
+      final health = await realtimeVoiceService.checkBackendHealth(
+        AppConfig.healthUrlForSttProxy(profileController.sttProxyUrl),
+      );
+      if (!health.ok || !health.hasOpenAiKey) {
+        final type = !health.ok
+            ? RealtimeFailureType.backendUnavailable
+            : RealtimeFailureType.missingApiKey;
+        throw RealtimeFailure(type, type.message);
+      }
       await realtimeVoiceService.connect(
         realtimeCallUrl:
             AppConfig.realtimeCallUrlForSttProxy(profileController.sttProxyUrl),
@@ -1003,11 +1080,20 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       _cancelTimeout(RealtimeTimeoutType.reconnectTimeout);
     } catch (error) {
       debugPrint('[VoiceAgentController] reconnect failed: $error');
+      final failureType = error is RealtimeFailure
+          ? error.type
+          : realtimeVoiceService.lastFailureType;
       await _recoverToErrorAfterFailure(
-        reason: 'reconnect_failed',
-        message: '連線失敗，點我重試',
+        reason: failureType == RealtimeFailureType.none
+            ? 'reconnect_failed'
+            : failureType.name,
+        message: failureType == RealtimeFailureType.none
+            ? '連線失敗，點我重試'
+            : failureType.message,
         stopConnection: true,
       );
+    } finally {
+      _isConnecting = false;
     }
   }
 
@@ -1017,6 +1103,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     bool stopConnection = false,
   }) async {
     _connectionAttemptId += 1;
+    _isConnecting = false;
     _cancelAllTimeouts();
     _clearCurrentTurn();
     if (stopConnection) {
@@ -1035,6 +1122,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     bool stopConnection = false,
   }) async {
     _connectionAttemptId += 1;
+    _isConnecting = false;
     _cancelAllTimeouts();
     _clearCurrentTurn();
     if (stopConnection) {
@@ -1051,18 +1139,6 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     switch (state) {
       case AppLifecycleState.resumed:
-        if (_wasRealtimeActiveBeforeBackground &&
-            !realtimeVoiceService.isConnectionUsable) {
-          _wasRealtimeActiveBeforeBackground = false;
-          _handleRealtimeRecoverableFailure('app_resumed_reconnect');
-          return;
-        }
-        if (_wasRealtimeActiveBeforeBackground &&
-            realtimeVoiceService.isConnectionUsable &&
-            _state == VoiceAgentState.recovering) {
-          _wasRealtimeActiveBeforeBackground = false;
-          _transition(VoiceAgentState.listening, 'app_resumed_connection_ok');
-        }
         break;
       case AppLifecycleState.inactive:
       case AppLifecycleState.paused:
@@ -1073,8 +1149,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
             _state == VoiceAgentState.transcribing ||
             _state == VoiceAgentState.thinking ||
             _state == VoiceAgentState.speaking) {
-          _wasRealtimeActiveBeforeBackground = true;
-          _transition(VoiceAgentState.recovering, 'app_backgrounded');
+          unawaited(stopRealtimeConversation());
         }
         break;
     }

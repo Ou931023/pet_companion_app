@@ -6,6 +6,73 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+enum RealtimeFailureType {
+  none,
+  backendUnavailable,
+  missingApiKey,
+  sessionCreateFailed,
+  sdpExchangeFailed,
+  peerConnectionFailed,
+  dataChannelFailed,
+  responseTimeout,
+  microphonePermissionDenied,
+  unknown,
+}
+
+extension RealtimeFailureTypeLabel on RealtimeFailureType {
+  String get message {
+    return switch (this) {
+      RealtimeFailureType.none => '',
+      RealtimeFailureType.backendUnavailable => '後端未啟動，請先啟動 Realtime backend。',
+      RealtimeFailureType.missingApiKey =>
+        'OpenAI API Key 未設定，請檢查 backend .env。',
+      RealtimeFailureType.sessionCreateFailed => 'Realtime session 建立失敗。',
+      RealtimeFailureType.sdpExchangeFailed => 'WebRTC SDP 交換失敗。',
+      RealtimeFailureType.peerConnectionFailed => 'WebRTC peer connection 失敗。',
+      RealtimeFailureType.dataChannelFailed => 'Realtime data channel 未開啟。',
+      RealtimeFailureType.responseTimeout => 'Realtime 回應逾時，已回到聆聽狀態。',
+      RealtimeFailureType.microphonePermissionDenied => '麥克風權限被拒絕，請到系統設定開啟權限。',
+      RealtimeFailureType.unknown => 'Realtime 連線發生未知錯誤。',
+    };
+  }
+}
+
+class RealtimeFailure implements Exception {
+  const RealtimeFailure(this.type, this.message);
+
+  final RealtimeFailureType type;
+  final String message;
+
+  @override
+  String toString() => '${type.name}: $message';
+}
+
+class RealtimeHealthStatus {
+  const RealtimeHealthStatus({
+    required this.ok,
+    required this.hasOpenAiKey,
+    required this.realtimeModel,
+    required this.checkedAt,
+    this.message = '',
+  });
+
+  final bool ok;
+  final bool hasOpenAiKey;
+  final String realtimeModel;
+  final DateTime checkedAt;
+  final String message;
+
+  factory RealtimeHealthStatus.unavailable(String message) {
+    return RealtimeHealthStatus(
+      ok: false,
+      hasOpenAiKey: false,
+      realtimeModel: '',
+      checkedAt: DateTime.now(),
+      message: message,
+    );
+  }
+}
+
 enum RealtimeEventType {
   state,
   partialTranscript,
@@ -57,6 +124,8 @@ class RealtimeVoiceService {
   RealtimeVoiceService({
     @visibleForTesting this.connectImplementationForTesting,
     @visibleForTesting this.eventSenderForTesting,
+    @visibleForTesting this.healthCheckImplementationForTesting,
+    this.dataChannelOpenTimeout = const Duration(seconds: 5),
   });
 
   @visibleForTesting
@@ -66,6 +135,11 @@ class RealtimeVoiceService {
   @visibleForTesting
   final Future<void> Function(String payload)? eventSenderForTesting;
 
+  @visibleForTesting
+  final Future<RealtimeHealthStatus> Function(String healthUrl)?
+      healthCheckImplementationForTesting;
+
+  final Duration dataChannelOpenTimeout;
   final _eventController = StreamController<RealtimeVoiceEvent>.broadcast();
   RTCPeerConnection? _peerConnection;
   RTCDataChannel? _eventsChannel;
@@ -87,6 +161,10 @@ class RealtimeVoiceService {
   String _partialUserTranscriptBuffer = '';
   String _lastFinalUserTranscript = '';
   DateTime? _lastFinalTranscriptAt;
+  Timer? _dataChannelOpenTimer;
+  RealtimeFailureType _lastFailureType = RealtimeFailureType.none;
+  String _lastFailureMessage = '';
+  RealtimeHealthStatus? _lastHealthStatus;
 
   Stream<RealtimeVoiceEvent> get events => _eventController.stream;
   bool get isConnecting => _connectInFlight != null;
@@ -99,6 +177,58 @@ class RealtimeVoiceService {
           _isUsablePeerState(_lastIceConnectionState));
   String get lastConnectionState => _lastConnectionState;
   String get lastIceConnectionState => _lastIceConnectionState;
+  String get dataChannelState => _dataChannelOpen
+      ? 'open'
+      : (_eventsChannel == null ? 'missing' : 'closed');
+  RealtimeFailureType get lastFailureType => _lastFailureType;
+  String get lastFailureMessage => _lastFailureMessage;
+  RealtimeHealthStatus? get lastHealthStatus => _lastHealthStatus;
+
+  Future<RealtimeHealthStatus> checkBackendHealth(String healthUrl) async {
+    final tester = healthCheckImplementationForTesting;
+    if (tester != null) {
+      _lastHealthStatus = await tester(healthUrl);
+      return _lastHealthStatus!;
+    }
+    try {
+      final response = await http
+          .get(Uri.parse(healthUrl))
+          .timeout(const Duration(seconds: 3));
+      if (response.statusCode >= 500) {
+        _recordFailure(
+          RealtimeFailureType.backendUnavailable,
+          'Health check failed: ${response.statusCode}',
+        );
+        return _lastHealthStatus =
+            RealtimeHealthStatus.unavailable('後端未啟動或 health check 失敗');
+      }
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final status = RealtimeHealthStatus(
+        ok: body['status'] == 'ok',
+        hasOpenAiKey: body['hasOpenAiKey'] == true,
+        realtimeModel: body['realtimeModel']?.toString() ?? '',
+        checkedAt:
+            DateTime.tryParse(body['time']?.toString() ?? '') ?? DateTime.now(),
+        message: body['message']?.toString() ?? '',
+      );
+      _lastHealthStatus = status;
+      if (!status.ok) {
+        _recordFailure(RealtimeFailureType.backendUnavailable, status.message);
+      } else if (!status.hasOpenAiKey) {
+        _recordFailure(
+          RealtimeFailureType.missingApiKey,
+          RealtimeFailureType.missingApiKey.message,
+        );
+      }
+      return status;
+    } catch (error) {
+      _recordFailure(
+        RealtimeFailureType.backendUnavailable,
+        'Backend health check failed: $error',
+      );
+      return _lastHealthStatus = RealtimeHealthStatus.unavailable('後端未啟動或無法連線');
+    }
+  }
 
   Future<void> connect({
     required String realtimeCallUrl,
@@ -196,8 +326,17 @@ class RealtimeVoiceService {
       }
     }
     await _resetConnectionResources(emitIdle: false);
-    _emit(RealtimeEventType.error, '無法建立 Realtime 連線：$lastError');
-    throw Exception('Unable to establish realtime connection: $lastError');
+    final failure = lastError is RealtimeFailure
+        ? lastError
+        : RealtimeFailure(
+            _lastFailureType == RealtimeFailureType.none
+                ? RealtimeFailureType.sdpExchangeFailed
+                : _lastFailureType,
+            'Unable to establish realtime connection: $lastError',
+          );
+    _recordFailure(failure.type, failure.message);
+    _emit(RealtimeEventType.error, failure.message);
+    throw failure;
   }
 
   Future<void> _openConnectionOnce({
@@ -250,11 +389,19 @@ class RealtimeVoiceService {
       _log('oai-events channel state: $state');
       _handleDataChannelState(state.toString());
     };
+    _startDataChannelOpenTimer();
 
-    _localStream = await navigator.mediaDevices.getUserMedia({
-      'audio': true,
-      'video': false,
-    });
+    try {
+      _localStream = await navigator.mediaDevices.getUserMedia({
+        'audio': true,
+        'video': false,
+      });
+    } catch (error) {
+      throw RealtimeFailure(
+        RealtimeFailureType.microphonePermissionDenied,
+        'Microphone permission denied or unavailable: $error',
+      );
+    }
     _throwIfStaleConnect(generation);
     for (final track in _localStream!.getAudioTracks()) {
       await _peerConnection!.addTrack(track, _localStream!);
@@ -291,13 +438,22 @@ class RealtimeVoiceService {
     _throwIfStaleConnect(generation);
     _log('Realtime call status: ${response.statusCode}');
     if (response.statusCode >= 400) {
-      throw Exception(
-          'Realtime call failed: ${response.statusCode} ${response.body}');
+      final type =
+          response.statusCode == 401 || response.body.contains('API Key')
+              ? RealtimeFailureType.missingApiKey
+              : RealtimeFailureType.sdpExchangeFailed;
+      throw RealtimeFailure(
+        type,
+        'Realtime call failed: ${response.statusCode} ${response.body}',
+      );
     }
 
     final answerSdp = response.body;
     if (answerSdp.trim().isEmpty) {
-      throw Exception('OpenAI returned empty SDP answer');
+      throw const RealtimeFailure(
+        RealtimeFailureType.sdpExchangeFailed,
+        'OpenAI returned empty SDP answer',
+      );
     }
     await _peerConnection!.setRemoteDescription(
       RTCSessionDescription(answerSdp, 'answer'),
@@ -368,6 +524,11 @@ class RealtimeVoiceService {
 
   @visibleForTesting
   int get pendingEventCountForTest => _pendingEventPayloads.length;
+
+  @visibleForTesting
+  void startDataChannelOpenTimerForTest() {
+    _startDataChannelOpenTimer();
+  }
 
   void _handleDataChannelEvent(String payload) {
     if (payload.trim().isEmpty) return;
@@ -494,6 +655,7 @@ class RealtimeVoiceService {
     final raw = state.toLowerCase();
     if (raw.contains('open')) {
       _dataChannelOpen = true;
+      _cancelDataChannelOpenTimer();
       _emit(RealtimeEventType.dataChannelOpen, '');
       _emit(RealtimeEventType.state, 'ready');
       unawaited(_flushPendingEvents());
@@ -506,6 +668,7 @@ class RealtimeVoiceService {
         return;
       }
       _isSpeaking = false;
+      _recordFailure(RealtimeFailureType.dataChannelFailed, state);
       _emit(RealtimeEventType.dataChannelClosed, state);
     }
   }
@@ -519,6 +682,7 @@ class RealtimeVoiceService {
         return;
       }
       _isSpeaking = false;
+      _recordFailure(RealtimeFailureType.peerConnectionFailed, state);
       _emit(RealtimeEventType.peerConnectionFailed, state);
       return;
     }
@@ -565,6 +729,17 @@ class RealtimeVoiceService {
       _log('Data channel missing while sending; queued event');
       return;
     }
+    final state = channel.state?.toString().toLowerCase() ?? '';
+    if (state.isNotEmpty && !state.contains('open')) {
+      _pendingEventPayloads.addFirst(payload);
+      _dataChannelOpen = false;
+      _recordFailure(
+        RealtimeFailureType.dataChannelFailed,
+        'Data channel not open while sending: $state',
+      );
+      _log('Data channel state is $state; queued event');
+      return;
+    }
     await channel.send(RTCDataChannelMessage(payload));
   }
 
@@ -588,6 +763,7 @@ class RealtimeVoiceService {
   }
 
   Future<void> _resetConnectionResources({required bool emitIdle}) async {
+    _cancelDataChannelOpenTimer();
     _dataChannelOpen = false;
     _pendingEventPayloads.clear();
     _lastConnectionState = '';
@@ -781,6 +957,29 @@ class RealtimeVoiceService {
     _eventController.add(RealtimeVoiceEvent(type: type, payload: payload));
   }
 
+  void _startDataChannelOpenTimer() {
+    _cancelDataChannelOpenTimer();
+    _dataChannelOpenTimer = Timer(dataChannelOpenTimeout, () {
+      if (_dataChannelOpen || _isStopping || _isDisposed) return;
+      _recordFailure(
+        RealtimeFailureType.dataChannelFailed,
+        'Data channel did not open within ${dataChannelOpenTimeout.inSeconds}s',
+      );
+      _emit(RealtimeEventType.error,
+          RealtimeFailureType.dataChannelFailed.message);
+    });
+  }
+
+  void _cancelDataChannelOpenTimer() {
+    _dataChannelOpenTimer?.cancel();
+    _dataChannelOpenTimer = null;
+  }
+
+  void _recordFailure(RealtimeFailureType type, String message) {
+    _lastFailureType = type;
+    _lastFailureMessage = message;
+  }
+
   String _instructionsWithCompanionContext(String context) {
     final outputGuidance = _outputLanguageGuidance(context);
     return '''
@@ -817,6 +1016,7 @@ $context
     _isDisposed = true;
     _connectGeneration += 1;
     _isStopping = true;
+    _cancelDataChannelOpenTimer();
     unawaited(_resetConnectionResources(emitIdle: false));
     if (_rendererReady) {
       _remoteAudioRenderer.dispose();
