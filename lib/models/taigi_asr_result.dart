@@ -48,7 +48,7 @@ class TaigiAsrResult {
       confidence: 0,
       source: 'taigi-asr',
       durationMs: 0,
-      message: '我剛剛沒有聽清楚，可以再說一次嗎？',
+      message: '我這次沒有聽清楚，可以再說一次嗎？',
     );
   }
 }

@@ -48,7 +48,9 @@ const {
 } = require("../agent/agent_orchestrator");
 const {
   TaigiAsrError,
+  getTaigiAsrStatus,
   transcribeTaigiAudio,
+  warmupTaigiAsr,
 } = require("./services/taigiAsrService");
 
 const app = express();
@@ -394,6 +396,32 @@ app.post("/api/stt/transcribe", upload.single("audio"), async (req, res) => {
     });
   } finally {
     fs.unlink(req.file.path, () => {});
+  }
+});
+
+app.get("/api/asr/taigi/status", async (_, res) => {
+  const status = await getTaigiAsrStatus();
+  return res.status(status.available ? 200 : 503).json(status);
+});
+
+app.post("/api/asr/taigi/warmup", async (_, res) => {
+  try {
+    const status = await warmupTaigiAsr();
+    return res.json({
+      available: true,
+      warmingUp: false,
+      modelReady: true,
+      message: status.message || "Taigi ASR is ready",
+    });
+  } catch (error) {
+    logError("Taigi ASR warmup failed", {
+      code: error instanceof TaigiAsrError ? error.code : "TAIGI_ASR_FAILED",
+      message: error?.message || "Unknown error",
+    });
+    return res.status(error instanceof TaigiAsrError ? error.status : 503).json({
+      error: "TAIGI_ASR_UNAVAILABLE",
+      message: "Taigi ASR service is not available",
+    });
   }
 });
 

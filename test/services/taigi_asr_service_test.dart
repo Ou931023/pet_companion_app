@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path/path.dart' as path;
+import 'package:pet_companion_app/config/app_config.dart';
 import 'package:pet_companion_app/services/taigi_asr_service.dart';
 
 void main() {
@@ -65,6 +66,80 @@ void main() {
     } finally {
       await file.delete();
     }
+  });
+
+  test('TaigiAsrService fetchStatus parses friendly status', () async {
+    final client = MockClient((request) async {
+      expect(request.method, 'GET');
+      expect(request.url.path, '/api/asr/taigi/status');
+      return http.Response(
+        jsonEncode({
+          'enabled': true,
+          'available': true,
+          'warmingUp': false,
+          'modelReady': false,
+          'message': 'Taigi ASR is available',
+        }),
+        200,
+      );
+    });
+
+    final status = await TaigiAsrService(client: client).fetchStatus(
+      sttProxyUrl: 'http://127.0.0.1:3001/api/stt/transcribe',
+    );
+
+    expect(status.available, isTrue);
+    expect(status.userMessage, '台語語音辨識可使用');
+  });
+
+  test('TaigiAsrService warmup handles success and error', () async {
+    var callCount = 0;
+    final client = MockClient((request) async {
+      callCount += 1;
+      expect(request.method, 'POST');
+      expect(request.url.path, '/api/asr/taigi/warmup');
+      if (callCount == 1) {
+        return http.Response(
+          jsonEncode({
+            'available': true,
+            'warmingUp': false,
+            'modelReady': true,
+            'message': 'Taigi ASR is ready',
+          }),
+          200,
+        );
+      }
+      return http.Response(
+        jsonEncode({
+          'error': 'TAIGI_ASR_UNAVAILABLE',
+          'message': 'Taigi ASR service is not available',
+        }),
+        503,
+      );
+    });
+    final service = TaigiAsrService(client: client);
+
+    final ready = await service.warmup(
+      sttProxyUrl: 'http://127.0.0.1:3001/api/stt/transcribe',
+    );
+    final unavailable = await service.warmup(
+      sttProxyUrl: 'http://127.0.0.1:3001/api/stt/transcribe',
+    );
+
+    expect(ready.available, isTrue);
+    expect(ready.modelReady, isTrue);
+    expect(unavailable.available, isFalse);
+    expect(unavailable.userMessage, '台語語音辨識暫時無法使用');
+  });
+
+  test('AppConfig preserves LAN backend URLs for real devices', () {
+    final normalized = AppConfig.normalizeSttProxyUrl(
+      'http://192.168.1.23:3001/api/stt/transcribe',
+    );
+    final statusUrl = AppConfig.apiBaseUrlForSttProxy(normalized);
+
+    expect(normalized, 'http://192.168.1.23:3001/api/stt/transcribe');
+    expect(statusUrl, 'http://192.168.1.23:3001/api');
   });
 }
 

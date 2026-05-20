@@ -16,8 +16,6 @@ class AppConfig {
     '127.0.0.1',
     'localhost',
     '10.0.2.2',
-    '10.51.16.97',
-    '192.168.0.30',
   };
 
   static String realtimeCallUrlForSttProxy(String sttProxyUrl) {
@@ -51,6 +49,6 @@ class AppConfig {
     if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
       return '$backendBaseUrl$apiPath';
     }
-    return uri.replace(path: apiPath, query: '', fragment: '').toString();
+    return uri.replace(path: apiPath, query: null, fragment: null).toString();
   }
 }

@@ -8,6 +8,7 @@ import 'package:record/record.dart';
 
 import '../config/app_config.dart';
 import '../models/taigi_asr_result.dart';
+import '../models/taigi_asr_status.dart';
 
 class TaigiAsrService {
   TaigiAsrService({
@@ -72,6 +73,47 @@ class TaigiAsrService {
     } catch (_) {
       return TaigiAsrResult.unavailable();
     }
+  }
+
+  Future<TaigiAsrStatus> fetchStatus({
+    required String sttProxyUrl,
+  }) async {
+    try {
+      final uri = _apiUri(sttProxyUrl, '/asr/taigi/status');
+      final response = await _client.get(uri).timeout(
+            const Duration(seconds: 8),
+          );
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      return TaigiAsrStatus.fromJson(decoded);
+    } catch (_) {
+      return TaigiAsrStatus.unavailable();
+    }
+  }
+
+  Future<TaigiAsrStatus> warmup({
+    required String sttProxyUrl,
+  }) async {
+    try {
+      final uri = _apiUri(sttProxyUrl, '/asr/taigi/warmup');
+      final response = await _client.post(uri).timeout(
+            const Duration(seconds: 40),
+          );
+      if (response.statusCode >= 400) {
+        return TaigiAsrStatus.unavailable();
+      }
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      return TaigiAsrStatus.fromJson({
+        'enabled': true,
+        ...decoded,
+      });
+    } catch (_) {
+      return TaigiAsrStatus.unavailable();
+    }
+  }
+
+  Uri _apiUri(String sttProxyUrl, String endpointPath) {
+    final apiBase = Uri.parse(AppConfig.apiBaseUrlForSttProxy(sttProxyUrl));
+    return apiBase.replace(path: '${apiBase.path}$endpointPath');
   }
 }
 

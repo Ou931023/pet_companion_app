@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -34,6 +36,7 @@ import 'package:pet_companion_app/services/taigi_asr_strategy.dart';
 import 'package:pet_companion_app/services/taigi_asr_service.dart';
 import 'package:pet_companion_app/services/text_to_speech_service.dart';
 import 'package:pet_companion_app/services/web_search_service.dart';
+import 'package:pet_companion_app/models/taigi_asr_result.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -120,21 +123,127 @@ void main() {
       expect(controller.history, isEmpty);
     });
 
-    test('Taigi ASR transcript stores source and route metadata', () async {
+    test('Taigi ASR transcript waits for confirmation before history',
+        () async {
       await controller.profileController.setTtsEnabled(false);
+      final fakeService = _FakeTaigiAsrService(
+        result: const TaigiAsrResult(
+          success: true,
+          transcript: '今仔日心情無好',
+          language: 'taigi',
+          confidence: 0,
+          source: 'taigi-asr',
+          durationMs: 1200,
+        ),
+      );
+      final controllerWithFake = _createConversationController(
+        taigiAsrService: fakeService,
+      );
+      addTearDown(controllerWithFake.dispose);
+      await controllerWithFake.profileController.setTtsEnabled(false);
 
-      await controller.handleTaigiAsrTranscript('今仔日心情無好');
+      expect(await controllerWithFake.startTaigiShortRecording(), isTrue);
+      await controllerWithFake.stopTaigiShortRecordingAndTranscribe();
 
-      expect(controller.history.first.userText, '今仔日心情無好');
-      expect(controller.history.first.languageHint, 'taigi');
-      expect(controller.history.first.asrSource, 'taigi-asr');
-      expect(controller.history.first.routeReason, 'taigi_asr_transcript');
-      expect(controller.history.first.replyLanguage, 'mixed-zh-taigi');
+      expect(controllerWithFake.history, isEmpty);
+      expect(controllerWithFake.pendingTaigiAsrTranscript, '今仔日心情無好');
+      expect(controllerWithFake.taigiAsrStatusMessage, '請確認辨識內容');
+    });
+
+    test('confirming pending Taigi ASR transcript stores source metadata',
+        () async {
+      await controller.profileController.setTtsEnabled(false);
+      final fakeService = _FakeTaigiAsrService(
+        result: const TaigiAsrResult(
+          success: true,
+          transcript: '今仔日心情無好',
+          language: 'taigi',
+          confidence: 0,
+          source: 'taigi-asr',
+          durationMs: 1200,
+        ),
+      );
+      final controllerWithFake = _createConversationController(
+        taigiAsrService: fakeService,
+      );
+      addTearDown(controllerWithFake.dispose);
+      await controllerWithFake.profileController.setTtsEnabled(false);
+
+      await controllerWithFake.startTaigiShortRecording();
+      await controllerWithFake.stopTaigiShortRecordingAndTranscribe();
+      await controllerWithFake.confirmPendingTaigiAsrTranscript();
+
+      expect(controllerWithFake.pendingTaigiAsrTranscript, isEmpty);
+      expect(controllerWithFake.history.first.userText, '今仔日心情無好');
+      expect(controllerWithFake.history.first.languageHint, 'taigi');
+      expect(controllerWithFake.history.first.asrSource, 'taigi-asr');
+      expect(
+        controllerWithFake.history.first.routeReason,
+        'taigi_asr_transcript',
+      );
+      expect(controllerWithFake.history.first.replyLanguage, 'mixed-zh-taigi');
+    });
+
+    test('retry clears pending Taigi ASR transcript', () async {
+      controller.clearPendingTaigiAsrTranscript();
+      final fakeService = _FakeTaigiAsrService(
+        result: const TaigiAsrResult(
+          success: true,
+          transcript: '食飽未',
+          language: 'taigi',
+          confidence: 0,
+          source: 'taigi-asr',
+          durationMs: 900,
+        ),
+      );
+      final controllerWithFake = _createConversationController(
+        taigiAsrService: fakeService,
+      );
+      addTearDown(controllerWithFake.dispose);
+
+      await controllerWithFake.startTaigiShortRecording();
+      await controllerWithFake.stopTaigiShortRecordingAndTranscribe();
+      controllerWithFake.clearPendingTaigiAsrTranscript();
+
+      expect(controllerWithFake.pendingTaigiAsrTranscript, isEmpty);
+      expect(controllerWithFake.history, isEmpty);
+    });
+
+    test('empty Taigi ASR result does not add history', () async {
+      final fakeService = _FakeTaigiAsrService(
+        result: TaigiAsrResult.empty(),
+      );
+      final controllerWithFake = _createConversationController(
+        taigiAsrService: fakeService,
+      );
+      addTearDown(controllerWithFake.dispose);
+
+      await controllerWithFake.startTaigiShortRecording();
+      await controllerWithFake.stopTaigiShortRecordingAndTranscribe();
+
+      expect(controllerWithFake.pendingTaigiAsrTranscript, isEmpty);
+      expect(controllerWithFake.history, isEmpty);
+      expect(
+        controllerWithFake.taigiAsrStatusMessage,
+        '我這次沒有聽清楚，可以再說一次嗎？',
+      );
+    });
+
+    test('Realtime busy state blocks Taigi short recording', () async {
+      final started = await controller.startTaigiShortRecording(
+        realtimeBusy: true,
+      );
+
+      expect(started, isFalse);
+      expect(controller.isTaigiAsrRecording, isFalse);
+      expect(controller.taigiAsrStatusMessage, '請先結束目前語音對話。');
     });
   });
 }
 
-ConversationController _createConversationController() {
+ConversationController _createConversationController({
+  TaigiAsrService? taigiAsrService,
+}) {
   final localStorage = LocalStorageService();
   final profileController = ProfileController(localStorage);
   final petController = PetController();
@@ -186,6 +295,31 @@ ConversationController _createConversationController() {
         ],
       ),
     ),
-    taigiAsrService: TaigiAsrService(),
+    taigiAsrService: taigiAsrService ?? TaigiAsrService(),
   );
+}
+
+class _FakeTaigiAsrService extends TaigiAsrService {
+  _FakeTaigiAsrService({required this.result});
+
+  final TaigiAsrResult result;
+  File? _file;
+
+  @override
+  Future<void> startRecording() async {
+    final dir = await Directory.systemTemp.createTemp('fake_taigi_asr_');
+    _file = File('${dir.path}/sample.m4a');
+    await _file!.writeAsBytes([0, 1, 2, 3]);
+  }
+
+  @override
+  Future<File?> stopRecording() async => _file;
+
+  @override
+  Future<TaigiAsrResult> transcribeAudio({
+    required File audioFile,
+    required String sttProxyUrl,
+  }) async {
+    return result;
+  }
 }

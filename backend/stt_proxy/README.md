@@ -62,6 +62,43 @@ Notes:
   `--dart-define=BACKEND_BASE_URL=http://<your-computer-ip>:3001`.
 - The migration script uses `DATABASE_URL` environment variable. By default the compose file exposes Postgres on localhost:5432.
 
+### iPhone on-device backend access
+
+When running the Flutter app on an iPhone, `127.0.0.1` means the phone itself,
+not your Mac. Use the Mac's Wi-Fi LAN IP instead.
+
+```bash
+ipconfig getifaddr en0
+```
+
+Put the iPhone and Mac on the same Wi-Fi, then start the backend so it is
+reachable from the LAN:
+
+```env
+HOST=0.0.0.0
+PORT=3001
+```
+
+Before opening the app, confirm from iPhone Safari:
+
+```text
+http://<your-mac-lan-ip>:3001/api/asr/taigi/status
+```
+
+Run Flutter with the same base URL:
+
+```bash
+flutter run \
+  --dart-define=BACKEND_BASE_URL=http://<your-mac-lan-ip>:3001
+```
+
+If you configure the backend URL from the app settings, use the full STT proxy
+URL:
+
+```text
+http://<your-mac-lan-ip>:3001/api/stt/transcribe
+```
+
 ## 3) Run migrations
 
 ```bash
@@ -100,6 +137,16 @@ with field name `audio`. The backend normalizes audio to 16 kHz mono WAV
 with `ffmpeg`, then calls the configured Taigi ASR provider. Phase 2 supports
 short recording transcription only; it is not streaming ASR.
 
+`GET /api/asr/taigi/status` checks whether Taigi ASR is enabled and whether the
+basic runtime dependencies are available. Product UI should translate this into
+friendly states such as "台語語音辨識可使用" or "台語語音辨識暫時無法使用";
+do not show provider names, model IDs, raw JSON, or stack traces to users.
+
+`POST /api/asr/taigi/warmup` runs the environment checks plus
+`transcribe_taigi.py --dry-run`. It does not perform a real transcription and it
+does not make the Python ASR model a persistent worker. It is intended for demo
+preflight checks before using short recording ASR.
+
 Enable it with:
 
 ```env
@@ -119,6 +166,14 @@ ffmpeg
 pip install transformers torch torchaudio librosa soundfile
 ```
 
+Dry-run can also be checked directly:
+
+```bash
+python3 scripts/transcribe_taigi.py \
+  --dry-run \
+  --model NUTN-KWS/Whisper-Taiwanese-model-v0.5
+```
+
 If the model, Python packages, or `ffmpeg` are missing, the endpoint returns a
 clear JSON error such as `TAIGI_ASR_UNAVAILABLE`; the Flutter app shows a
 friendly message and does not fall back to fake transcripts.
@@ -129,6 +184,12 @@ Operational notes:
   subprocess and loads the ASR model for the request. After the model files are
   cached locally, later requests are usually faster, but Phase 2 does not keep a
   warm ASR worker alive.
+- Phase 2.5 is still short recording ASR, not streaming ASR. Because the Python
+  provider is not a persistent worker, a real transcription can still take
+  around 20 seconds on local demo hardware.
+- Run `/api/asr/taigi/warmup` before a demo to check the environment and model
+  configuration. Warmup does not replace the cost of the later real
+  transcription.
 - `confidence` may be `0` when the underlying model or pipeline does not expose
   a reliable confidence score. Treat it as unavailable in product UI rather than
   as a low-confidence percentage.
@@ -137,6 +198,11 @@ Operational notes:
 - Recognition quality can be affected by quiet recordings, very short clips,
   background noise, the `m4a` to 16 kHz mono WAV conversion step, and the model's
   coverage of the spoken sentence.
+- In the Flutter app, recognized Taigi text is shown to the user first. The
+  transcript is sent into the companion conversation only after the user confirms
+  it.
+- While transcription is running, the app shows "台語辨識中，請稍等" and blocks
+  duplicate ASR requests for the same recording.
 
 ## 6) Test memory API quickly
 

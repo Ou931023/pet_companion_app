@@ -69,6 +69,84 @@ async function transcribeTaigiAudio({
   }
 }
 
+async function getTaigiAsrStatus({ env = process.env, runDryRun = false } = {}) {
+  const enabled = isTaigiAsrEnabled(env);
+  const provider = String(env.TAIGI_ASR_PROVIDER || "python").toLowerCase();
+  const model = String(env.TAIGI_ASR_MODEL || "").trim();
+  if (!enabled) {
+    return {
+      enabled: false,
+      available: false,
+      warmingUp: false,
+      modelReady: false,
+      message: "Taigi ASR is not enabled",
+    };
+  }
+  if (provider !== "python" && !(provider === "test" && env.NODE_ENV === "test")) {
+    return {
+      enabled: true,
+      available: false,
+      warmingUp: false,
+      modelReady: false,
+      message: "Taigi ASR provider is not available",
+    };
+  }
+  if (provider === "test" && env.NODE_ENV === "test") {
+    return {
+      enabled: true,
+      available: true,
+      warmingUp: false,
+      modelReady: true,
+      message: "Taigi ASR is available",
+    };
+  }
+  if (!model) {
+    return {
+      enabled: true,
+      available: false,
+      warmingUp: false,
+      modelReady: false,
+      message: "Taigi ASR model is not configured",
+    };
+  }
+
+  try {
+    await checkCommand(env.FFMPEG_PATH || "ffmpeg", ["-version"], 5000);
+    await checkCommand(env.TAIGI_ASR_PYTHON || "python3", ["--version"], 5000);
+    if (runDryRun) {
+      await runTaigiAsrDryRun(env);
+    }
+    return {
+      enabled: true,
+      available: true,
+      warmingUp: false,
+      modelReady: runDryRun,
+      message: runDryRun ? "Taigi ASR is ready" : "Taigi ASR is available",
+    };
+  } catch (_) {
+    return {
+      enabled: true,
+      available: false,
+      warmingUp: false,
+      modelReady: false,
+      message: "Taigi ASR service is not available",
+    };
+  }
+}
+
+async function warmupTaigiAsr({ env = process.env } = {}) {
+  ensureAvailable(env);
+  const status = await getTaigiAsrStatus({ env, runDryRun: true });
+  if (!status.available || !status.modelReady) {
+    throw new TaigiAsrError(
+      "TAIGI_ASR_UNAVAILABLE",
+      "Taigi ASR service is not available",
+      503,
+    );
+  }
+  return status;
+}
+
 async function normalizeAudioForAsr(audioPath, env = process.env) {
   const ffmpeg = env.FFMPEG_PATH || "ffmpeg";
   const outPath = path.join(
@@ -145,33 +223,84 @@ async function transcribeWithPython({
   };
 }
 
-function runCommand(command, args) {
+function runCommand(command, args, { timeoutMs = 0 } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       stdio: ["ignore", "pipe", "pipe"],
     });
+    let settled = false;
+    let timeoutId;
     let stdout = "";
     let stderr = "";
+    const finish = (callback) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+      callback();
+    };
+    if (timeoutMs > 0) {
+      timeoutId = setTimeout(() => {
+        child.kill("SIGKILL");
+        finish(() => reject(new Error(`Command timed out after ${timeoutMs}ms`)));
+      }, timeoutMs);
+    }
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
     });
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString();
     });
-    child.on("error", reject);
+    child.on("error", (error) => finish(() => reject(error)));
     child.on("close", (code) => {
       if (code === 0) {
-        resolve(stdout.trim());
+        finish(() => resolve(stdout.trim()));
         return;
       }
-      reject(new Error(stderr.trim() || `Command failed with code ${code}`));
+      finish(() => reject(new Error(stderr.trim() || `Command failed with code ${code}`)));
     });
   });
+}
+
+function checkCommand(command, args, timeoutMs) {
+  return runCommand(command, args, { timeoutMs });
+}
+
+async function runTaigiAsrDryRun(env = process.env) {
+  const python = env.TAIGI_ASR_PYTHON || "python3";
+  const script = env.TAIGI_ASR_SCRIPT ||
+    path.join(__dirname, "..", "scripts", "transcribe_taigi.py");
+  const model = env.TAIGI_ASR_MODEL || "NUTN-KWS/Whisper-Taiwanese-model-v0.5";
+  const stdout = await runCommand(python, [
+    script,
+    "--dry-run",
+    "--model",
+    model,
+  ], { timeoutMs: Number(env.TAIGI_ASR_DRY_RUN_TIMEOUT_MS) || 30000 });
+  let decoded;
+  try {
+    decoded = JSON.parse(stdout);
+  } catch (_) {
+    throw new TaigiAsrError(
+      "TAIGI_ASR_PROVIDER_ERROR",
+      "Taigi ASR dry-run returned invalid output",
+      502,
+    );
+  }
+  if (!decoded.ok) {
+    throw new TaigiAsrError(
+      decoded.error || "TAIGI_ASR_UNAVAILABLE",
+      decoded.message || "Taigi ASR dry-run failed",
+      503,
+    );
+  }
+  return decoded;
 }
 
 module.exports = {
   TaigiAsrError,
   isTaigiAsrEnabled,
+  getTaigiAsrStatus,
+  warmupTaigiAsr,
   transcribeTaigiAudio,
   normalizeAudioForAsr,
 };

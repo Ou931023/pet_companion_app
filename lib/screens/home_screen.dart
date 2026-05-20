@@ -43,6 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isPetDragHovering = false;
   bool _showInventoryPanel = false;
   bool _inventoryTrayLowered = false;
+  bool _didCheckTaigiAsrStatus = false;
 
   @override
   void dispose() {
@@ -90,6 +91,15 @@ class _HomeScreenState extends State<HomeScreen> {
     final agentToolController = _maybeWatchAgentToolController(context);
     final useTaigiShortRecording =
         profileController.voiceLanguageMode == VoiceLanguageMode.taigiPreferred;
+    if (useTaigiShortRecording && !_didCheckTaigiAsrStatus) {
+      _didCheckTaigiAsrStatus = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        context.read<ConversationController>().refreshTaigiAsrStatus();
+      });
+    } else if (!useTaigiShortRecording && _didCheckTaigiAsrStatus) {
+      _didCheckTaigiAsrStatus = false;
+    }
     final isDead = petStatsController.lifeState == PetLifeState.dead;
     final showVoiceAura = switch (voiceAgentController.state) {
       VoiceAgentState.connecting ||
@@ -274,8 +284,25 @@ class _HomeScreenState extends State<HomeScreen> {
                                   } else {
                                     conversationController.startNewSession();
                                     await conversationController
-                                        .startTaigiShortRecording();
+                                        .startTaigiShortRecording(
+                                      realtimeBusy: voiceAgentController
+                                                  .state !=
+                                              VoiceAgentState.idle &&
+                                          voiceAgentController.state !=
+                                              VoiceAgentState.error,
+                                    );
                                   }
+                                  return;
+                                }
+                                if (conversationController
+                                        .isTaigiAsrRecording ||
+                                    conversationController
+                                        .isTaigiAsrProcessing) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('請先完成台語短錄音。'),
+                                    ),
+                                  );
                                   return;
                                 }
                                 if (voiceAgentController.state ==
@@ -595,6 +622,15 @@ class _ConversationDetailPanel extends StatelessWidget {
             ),
           ),
         ],
+        if (conversationController.hasPendingTaigiAsrTranscript) ...[
+          const SizedBox(height: 8),
+          _TaigiAsrConfirmationCard(
+            transcript: conversationController.pendingTaigiAsrTranscript,
+            isBusy: conversationController.isBusy,
+            onSend: conversationController.confirmPendingTaigiAsrTranscript,
+            onRetry: conversationController.clearPendingTaigiAsrTranscript,
+          ),
+        ],
         if (conversationController.latestReplyIsSearch) ...[
           if (conversationController.latestSources.isNotEmpty) ...[
             const SizedBox(height: 8),
@@ -625,6 +661,75 @@ class _ConversationDetailPanel extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+class _TaigiAsrConfirmationCard extends StatelessWidget {
+  const _TaigiAsrConfirmationCard({
+    required this.transcript,
+    required this.isBusy,
+    required this.onSend,
+    required this.onRetry,
+  });
+
+  final String transcript;
+  final bool isBusy;
+  final VoidCallback onSend;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBF2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE8D8B8)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              '我聽到的是：',
+              style: TextStyle(
+                color: Colors.black.withValues(alpha: 0.6),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '「$transcript」',
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 16,
+                height: 1.35,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: isBusy ? null : onRetry,
+                    child: const Text('重新錄音'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: isBusy ? null : onSend,
+                    child: const Text('送出'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

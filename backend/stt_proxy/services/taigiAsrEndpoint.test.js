@@ -31,6 +31,18 @@ function countRecentUploadFiles(startedAt) {
   }).length;
 }
 
+function writeDryRunScript({ ok = true } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "taigi_asr_dry_run_"));
+  const scriptPath = path.join(dir, "dry_run.js");
+  fs.writeFileSync(
+    scriptPath,
+    ok
+      ? "console.log(JSON.stringify({ ok: true, mode: 'dry-run' }));\n"
+      : "console.log(JSON.stringify({ ok: false, error: 'TAIGI_ASR_UNAVAILABLE' }));\n",
+  );
+  return { dir, scriptPath };
+}
+
 test("POST /api/asr/taigi returns 400 without audio", async () => {
   const server = await startServer();
   try {
@@ -42,6 +54,100 @@ test("POST /api/asr/taigi returns 400 without audio", async () => {
     assert.equal(body.error, "TAIGI_ASR_AUDIO_REQUIRED");
   } finally {
     server.close();
+  }
+});
+
+test("GET /api/asr/taigi/status returns unavailable when disabled", async () => {
+  process.env.TAIGI_ASR_ENABLED = "false";
+  const server = await startServer();
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const response = await fetch(`${baseUrl}/api/asr/taigi/status`);
+    const body = await response.json();
+
+    assert.equal(response.status, 503);
+    assert.equal(body.enabled, false);
+    assert.equal(body.available, false);
+  } finally {
+    server.close();
+  }
+});
+
+test("GET /api/asr/taigi/status returns available for configured test provider", async () => {
+  process.env.TAIGI_ASR_ENABLED = "true";
+  process.env.TAIGI_ASR_PROVIDER = "test";
+  const server = await startServer();
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const response = await fetch(`${baseUrl}/api/asr/taigi/status`);
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.enabled, true);
+    assert.equal(body.available, true);
+    assert.equal(body.modelReady, true);
+  } finally {
+    server.close();
+    delete process.env.TAIGI_ASR_PROVIDER;
+  }
+});
+
+test("POST /api/asr/taigi/warmup runs dry-run and returns ready", async () => {
+  const dryRun = writeDryRunScript({ ok: true });
+  process.env.TAIGI_ASR_ENABLED = "true";
+  process.env.TAIGI_ASR_PROVIDER = "python";
+  process.env.TAIGI_ASR_MODEL = "test-model";
+  process.env.TAIGI_ASR_PYTHON = process.execPath;
+  process.env.TAIGI_ASR_SCRIPT = dryRun.scriptPath;
+  process.env.FFMPEG_PATH = "/bin/echo";
+  const server = await startServer();
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const response = await fetch(`${baseUrl}/api/asr/taigi/warmup`, {
+      method: "POST",
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.available, true);
+    assert.equal(body.modelReady, true);
+  } finally {
+    server.close();
+    fs.rmSync(dryRun.dir, { recursive: true, force: true });
+    delete process.env.TAIGI_ASR_PROVIDER;
+    delete process.env.TAIGI_ASR_MODEL;
+    delete process.env.TAIGI_ASR_PYTHON;
+    delete process.env.TAIGI_ASR_SCRIPT;
+    delete process.env.FFMPEG_PATH;
+  }
+});
+
+test("POST /api/asr/taigi/warmup returns unavailable when dry-run fails", async () => {
+  const dryRun = writeDryRunScript({ ok: false });
+  process.env.TAIGI_ASR_ENABLED = "true";
+  process.env.TAIGI_ASR_PROVIDER = "python";
+  process.env.TAIGI_ASR_MODEL = "test-model";
+  process.env.TAIGI_ASR_PYTHON = process.execPath;
+  process.env.TAIGI_ASR_SCRIPT = dryRun.scriptPath;
+  process.env.FFMPEG_PATH = "/bin/echo";
+  const server = await startServer();
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const response = await fetch(`${baseUrl}/api/asr/taigi/warmup`, {
+      method: "POST",
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 503);
+    assert.equal(body.error, "TAIGI_ASR_UNAVAILABLE");
+  } finally {
+    server.close();
+    fs.rmSync(dryRun.dir, { recursive: true, force: true });
+    delete process.env.TAIGI_ASR_PROVIDER;
+    delete process.env.TAIGI_ASR_MODEL;
+    delete process.env.TAIGI_ASR_PYTHON;
+    delete process.env.TAIGI_ASR_SCRIPT;
+    delete process.env.FFMPEG_PATH;
   }
 });
 

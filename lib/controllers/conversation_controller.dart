@@ -85,7 +85,9 @@ class ConversationController extends ChangeNotifier {
   bool _isAwaitingFinalTranscript = false;
   bool _isTaigiAsrRecording = false;
   bool _isTaigiAsrProcessing = false;
+  bool _isCheckingTaigiAsrStatus = false;
   String _taigiAsrStatusMessage = '';
+  String _pendingTaigiAsrTranscript = '';
   List<SourceReference> _latestSources = const [];
   bool _latestReplyIsSearch = false;
   String _latestSearchMode = '';
@@ -158,7 +160,11 @@ class ConversationController extends ChangeNotifier {
   bool get isAwaitingFinalTranscript => _isAwaitingFinalTranscript;
   bool get isTaigiAsrRecording => _isTaigiAsrRecording;
   bool get isTaigiAsrProcessing => _isTaigiAsrProcessing;
+  bool get isCheckingTaigiAsrStatus => _isCheckingTaigiAsrStatus;
   String get taigiAsrStatusMessage => _taigiAsrStatusMessage;
+  String get pendingTaigiAsrTranscript => _pendingTaigiAsrTranscript;
+  bool get hasPendingTaigiAsrTranscript =>
+      _pendingTaigiAsrTranscript.trim().isNotEmpty;
   bool get hasTemporaryUserBubble =>
       temporaryUserBubbleText.trim().isNotEmpty ||
       temporaryUserBubbleStatus.isNotEmpty;
@@ -305,17 +311,49 @@ class ConversationController extends ChangeNotifier {
     );
   }
 
-  Future<void> startTaigiShortRecording() async {
-    if (_isBusy || _isTaigiAsrRecording || _isTaigiAsrProcessing) return;
+  Future<void> refreshTaigiAsrStatus() async {
+    if (_isCheckingTaigiAsrStatus ||
+        _isTaigiAsrRecording ||
+        _isTaigiAsrProcessing) {
+      return;
+    }
+    _isCheckingTaigiAsrStatus = true;
+    _taigiAsrStatusMessage = '台語語音辨識準備中';
+    notifyListeners();
+    try {
+      final status = await taigiAsrService.fetchStatus(
+        sttProxyUrl: profileController.sttProxyUrl,
+      );
+      _taigiAsrStatusMessage = status.userMessage;
+    } finally {
+      _isCheckingTaigiAsrStatus = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> startTaigiShortRecording({bool realtimeBusy = false}) async {
+    if (_isBusy ||
+        realtimeBusy ||
+        _isTaigiAsrRecording ||
+        _isTaigiAsrProcessing) {
+      if (realtimeBusy) {
+        _taigiAsrStatusMessage = '請先結束目前語音對話。';
+        notifyListeners();
+      }
+      return false;
+    }
+    _pendingTaigiAsrTranscript = '';
     _taigiAsrStatusMessage = '';
     try {
       await taigiAsrService.startRecording();
       _isTaigiAsrRecording = true;
       _taigiAsrStatusMessage = '台語錄音中';
       notifyListeners();
+      return true;
     } catch (_) {
       _taigiAsrStatusMessage = '請先開啟麥克風權限，再試一次。';
       notifyListeners();
+      return false;
     }
   }
 
@@ -323,13 +361,13 @@ class ConversationController extends ChangeNotifier {
     if (!_isTaigiAsrRecording || _isTaigiAsrProcessing) return;
     _isTaigiAsrRecording = false;
     _isTaigiAsrProcessing = true;
-    _taigiAsrStatusMessage = '台語辨識中';
+    _taigiAsrStatusMessage = '台語辨識中，請稍等';
     notifyListeners();
     File? audioFile;
     try {
       audioFile = await taigiAsrService.stopRecording();
       if (audioFile == null) {
-        _taigiAsrStatusMessage = '我剛剛沒有聽清楚，可以再說一次嗎？';
+        _taigiAsrStatusMessage = '我這次沒有聽清楚，可以再說一次嗎？';
         return;
       }
       final result = await taigiAsrService.transcribeAudio(
@@ -342,11 +380,11 @@ class ConversationController extends ChangeNotifier {
       }
       final transcript = result.transcript.trim();
       if (transcript.isEmpty) {
-        _taigiAsrStatusMessage = '我剛剛沒有聽清楚，可以再說一次嗎？';
+        _taigiAsrStatusMessage = '我這次沒有聽清楚，可以再說一次嗎？';
         return;
       }
-      _taigiAsrStatusMessage = '已辨識台語內容';
-      await handleTaigiAsrTranscript(transcript);
+      _pendingTaigiAsrTranscript = transcript;
+      _taigiAsrStatusMessage = '請確認辨識內容';
     } finally {
       _isTaigiAsrProcessing = false;
       if (audioFile != null) {
@@ -354,6 +392,26 @@ class ConversationController extends ChangeNotifier {
       }
       notifyListeners();
     }
+  }
+
+  Future<void> confirmPendingTaigiAsrTranscript() async {
+    final transcript = _pendingTaigiAsrTranscript.trim();
+    if (transcript.isEmpty || _isBusy || _isTaigiAsrProcessing) return;
+    _pendingTaigiAsrTranscript = '';
+    _taigiAsrStatusMessage = '';
+    notifyListeners();
+    await handleTaigiAsrTranscript(transcript);
+  }
+
+  void clearPendingTaigiAsrTranscript() {
+    if (_pendingTaigiAsrTranscript.isEmpty &&
+        _taigiAsrStatusMessage.isEmpty) {
+      return;
+    }
+    _pendingTaigiAsrTranscript = '';
+    _taigiAsrStatusMessage = '';
+    _isCheckingTaigiAsrStatus = false;
+    notifyListeners();
   }
 
   void updateDraftText(String text) {

@@ -176,8 +176,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ],
                 selected: {profile.voiceLanguageMode},
-                onSelectionChanged: (values) =>
-                    profile.setVoiceLanguageMode(values.first),
+                onSelectionChanged: (values) {
+                  context
+                      .read<ConversationController>()
+                      .clearPendingTaigiAsrTranscript();
+                  profile.setVoiceLanguageMode(values.first);
+                },
               ),
               const SizedBox(height: 8),
               Text(
