@@ -123,6 +123,21 @@ If the model, Python packages, or `ffmpeg` are missing, the endpoint returns a
 clear JSON error such as `TAIGI_ASR_UNAVAILABLE`; the Flutter app shows a
 friendly message and does not fall back to fake transcripts.
 
+Operational notes:
+
+- The first inference can be slow because the Python provider starts a
+  subprocess and loads the ASR model for the request. After the model files are
+  cached locally, later requests are usually faster, but Phase 2 does not keep a
+  warm ASR worker alive.
+- `confidence` may be `0` when the underlying model or pipeline does not expose
+  a reliable confidence score. Treat it as unavailable in product UI rather than
+  as a low-confidence percentage.
+- Test Taigi ASR with short, clearly recorded clips first. A 3 to 5 second audio
+  file with close microphone distance and low background noise is recommended.
+- Recognition quality can be affected by quiet recordings, very short clips,
+  background noise, the `m4a` to 16 kHz mono WAV conversion step, and the model's
+  coverage of the spoken sentence.
+
 ## 6) Test memory API quickly
 
 ```bash

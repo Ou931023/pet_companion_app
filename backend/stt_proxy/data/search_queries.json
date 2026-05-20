@@ -453,5 +453,19 @@
     "queryMode": "health_tip",
     "usedProvider": "mock_fallback",
     "createdAt": "2026-05-13T15:32:25.367Z"
+  },
+  {
+    "id": "4412e9bc-c5b8-40d9-b896-ade46570eb3f",
+    "userQuery": "長者防詐提醒",
+    "queryMode": "health_tip",
+    "usedProvider": "local_index",
+    "createdAt": "2026-05-19T19:28:31.284Z"
+  },
+  {
+    "id": "e8d9340a-e401-447d-ab58-7f95ba58e3fe",
+    "userQuery": "完全沒有可信資料的奇怪查詢 zzzzzzz",
+    "queryMode": "news",
+    "usedProvider": "mock_fallback",
+    "createdAt": "2026-05-19T19:28:31.289Z"
   }
 ]

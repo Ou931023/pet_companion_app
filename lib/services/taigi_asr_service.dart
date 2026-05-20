@@ -57,7 +57,7 @@ class TaigiAsrService {
       final request = http.MultipartRequest('POST', uri)
         ..files.add(await http.MultipartFile.fromPath('audio', audioFile.path));
       final response = await _client.send(request).timeout(
-            const Duration(seconds: 20),
+            const Duration(seconds: 75),
           );
       final responseText = await response.stream.bytesToString();
       final decoded = jsonDecode(responseText) as Map<String, dynamic>;
