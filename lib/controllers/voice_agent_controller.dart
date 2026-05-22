@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../config/app_config.dart';
+import '../models/care_alert.dart';
 import '../models/companion_analysis_result.dart';
 import '../models/conversation_turn.dart';
 import '../models/language_route.dart';
@@ -18,6 +19,7 @@ import '../services/realtime_turn_coordinator.dart';
 import '../services/realtime_voice_service.dart';
 import 'app_navigation_controller.dart';
 import 'agent_tool_controller.dart';
+import 'care_alert_controller.dart';
 import 'conversation_controller.dart';
 import 'memory_controller.dart';
 import 'pet_controller.dart';
@@ -37,6 +39,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     required this.navigationService,
     required this.navigationController,
     this.agentToolController,
+    this.careAlertController,
     this.timeoutConfig = const RealtimeTimeoutConfig(),
     this.timeoutPolicy = const RealtimeTimeoutPolicy(),
   }) {
@@ -54,6 +57,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   final AiNavigationService navigationService;
   final AppNavigationController navigationController;
   final AgentToolController? agentToolController;
+  final CareAlertController? careAlertController;
   final RealtimeTimeoutConfig timeoutConfig;
   final RealtimeTimeoutPolicy timeoutPolicy;
   final TextEmotionService _textEmotionService = const TextEmotionService();
@@ -72,6 +76,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   String _activeTurnId = '';
   String _responseTurnId = '';
   String _latestCompanionTurnId = '';
+  String _lastAlertedTurnId = '';
   String _partialTranscript = '';
   DateTime? _speechStartedAt;
   DateTime? _speechStoppedAt;
@@ -590,6 +595,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
         return;
       }
       _currentCompanionContext = result;
+      _maybeCreateCareAlert(result, transcript, turnId);
       _emotion = _emotionFromEngine(result.emotion);
       _pendingRealtimeEmotion = result.emotion;
       _applyCompanionPetState(result);
@@ -604,6 +610,33 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       debugPrint('[COMPANION_ENGINE] fallback: $error');
       _applyLocalCompanionFallback(transcript, turnId);
     }
+  }
+
+  /// 旁路記錄：companion 分析判定需要人為關懷時，建立一筆 CareAlert。
+  /// 純附加式，不影響 Realtime 狀態機、SDP、DataChannel 或對話流程。
+  void _maybeCreateCareAlert(
+    CompanionAnalysisResult result,
+    String transcript,
+    String turnId,
+  ) {
+    final controller = careAlertController;
+    if (controller == null) return;
+    if (!result.safety.needsHumanSupport) return;
+    if (turnId.isEmpty || turnId == _lastAlertedTurnId) return;
+    _lastAlertedTurnId = turnId;
+    final summary = result.implicitMeaning.trim();
+    final alert = CareAlert(
+      id: 'care_alert_$turnId',
+      createdAt: DateTime.now(),
+      riskLevel: CareAlertRiskLevel.fromJson(result.safety.riskLevel),
+      category: CareAlertCategory.other,
+      triggerSummary:
+          summary.isEmpty ? '對話中偵測到需要關心的狀況' : summary,
+      transcriptSnippet: transcript.trim(),
+      source: 'companion_analysis',
+      isRead: false,
+    );
+    unawaited(controller.addAlert(alert));
   }
 
   void _applyLocalCompanionFallback(String transcript, String turnId) {
@@ -796,6 +829,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     _pendingRealtimeUserText = '';
     _partialTranscript = '';
     _latestCompanionTurnId = '';
+    _lastAlertedTurnId = '';
     _turnCoordinator.reset();
     _cancelTurnTimeouts();
     conversationController.clearRealtimeTranscriptState();

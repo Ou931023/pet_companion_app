@@ -245,6 +245,7 @@ class PetCompanionApp extends StatelessWidget {
             navigationService: context.read<AiNavigationService>(),
             navigationController: context.read<AppNavigationController>(),
             agentToolController: context.read<AgentToolController>(),
+            careAlertController: context.read<CareAlertController>(),
           ),
           update: (context, profile, pet, petStats, conversation,
                   realtimeService, navigation, controller) =>
@@ -261,6 +262,7 @@ class PetCompanionApp extends StatelessWidget {
                 navigationService: context.read<AiNavigationService>(),
                 navigationController: navigation,
                 agentToolController: context.read<AgentToolController>(),
+                careAlertController: context.read<CareAlertController>(),
               ),
         ),
       ],
@@ -359,6 +361,7 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
       final checkInController = context.read<CheckInController>();
       final inventoryController = context.read<InventoryController>();
       final reminderController = context.read<ReminderController>();
+      final careAlertController = context.read<CareAlertController>();
       final conversationController = context.read<ConversationController>();
       final notificationService = context.read<NotificationService>();
 
@@ -367,6 +370,7 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
       checkInController.load();
       inventoryController.load();
       reminderController.load();
+      careAlertController.loadAlerts();
       await conversationController.loadHistory();
       notificationService.initialize();
     });
