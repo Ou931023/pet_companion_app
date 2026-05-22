@@ -272,7 +272,7 @@ test("rankMemories uses similarity, importance, and recency thresholds", () => {
     {
       id: 1,
       memorySummary: "低相似記憶",
-      similarity: 0.5,
+      similarity: 0.3,
       importance: 5,
       createdAt: now,
       isActive: true,
@@ -280,7 +280,7 @@ test("rankMemories uses similarity, importance, and recency thresholds", () => {
     {
       id: 2,
       memorySummary: "可用記憶",
-      similarity: 0.82,
+      similarity: 0.55,
       importance: 4,
       createdAt: now,
       isActive: true,
@@ -288,7 +288,7 @@ test("rankMemories uses similarity, importance, and recency thresholds", () => {
   ], "postgres_pgvector");
   assert.equal(ranked.length, 1);
   assert.equal(ranked[0].id, 2);
-  assert.ok(ranked[0].finalScore >= 0.65);
+  assert.ok(ranked[0].finalScore >= 0.55);
 });
 
 test("buildPromptBlock hides technical details and includes usage rules", () => {

@@ -57,6 +57,9 @@ function scoreMemory(memory) {
   };
 }
 
+const MIN_SIMILARITY = 0.40;
+const MIN_FINAL_SCORE = 0.55;
+
 function rankMemories(memories = [], provider = "none") {
   const ranked = memories
     .filter((memory) => memory && memory.isActive !== false)
@@ -64,9 +67,9 @@ function rankMemories(memories = [], provider = "none") {
     .filter((memory) => {
       if (memory.importance < 3) return false;
       if (memory.similarity == null && provider === "json_fallback") {
-        return memory.finalScore >= 0.65;
+        return memory.finalScore >= MIN_FINAL_SCORE;
       }
-      return memory.similarity >= 0.72 && memory.finalScore >= 0.65;
+      return memory.similarity >= MIN_SIMILARITY && memory.finalScore >= MIN_FINAL_SCORE;
     })
     .sort((a, b) => b.finalScore - a.finalScore)
     .slice(0, 3);

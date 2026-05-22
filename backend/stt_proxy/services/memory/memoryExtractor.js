@@ -264,7 +264,15 @@ async function extractMemoryFromTurn(input) {
   try {
     const aiResult = await aiExtract(normalized);
     if (aiResult) {
-      return sanitizeAiResult(aiResult, normalized);
+      const sanitized = sanitizeAiResult(aiResult, normalized);
+      if (sanitized.shouldRemember) return sanitized;
+      if (precheck.shouldRemember) {
+        return {
+          ...precheck,
+          reason: `${precheck.reason}（AI 判 false 但規則命中，採信規則）`,
+        };
+      }
+      return sanitized;
     }
   } catch (error) {
     console.warn("[memory-extractor] AI extract failed, using fallback", error?.message || error);
