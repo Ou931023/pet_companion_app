@@ -39,7 +39,7 @@
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>需要連線到同一個 Wi-Fi 內的語音服務，才能使用即時語音陪伴功能。</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Microphone access is required for realtime voice companion conversations.</string>
+	<string>需要使用麥克風，才能和陪伴寵物進行即時語音對話。</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>需要語音辨識權限，才能把您說的話轉成文字並讓寵物回應。</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

@@ -2,6 +2,8 @@
 
 結合全語音互動、AI 陪伴寵物、長照生活任務與獨立長照商城網站的第一版展示原型。
 
+> 畢業專題 Demo 架構、Realtime 主流程、長期記憶流程、fallback、Demo 腳本與倫理隱私聲明，詳見 [`docs/demo_architecture.md`](docs/demo_architecture.md)。
+
 ## 專題介紹
 
 系統分成三部分：
@@ -38,25 +40,43 @@
 ## Flutter App 啟動方式
 
 1. 安裝 Flutter SDK 並確認 `flutter` 指令可用。
-2. 進入專案根目錄：
-   - `cd d:\pet_companion_app`
+2. 進入專案根目錄（以下用 `<專案根目錄>` 代表實際路徑）：
+   - `cd <專案根目錄>`
 3. 安裝套件：
    - `flutter pub get`
-4. 啟動：
+4. 啟動（桌機 / 模擬器 / 預設裝置）：
    - `flutter run`
 
-## Backend 啟動方式（STT + Realtime Session Broker）
+### iPhone 實機 Demo 啟動方式
+
+iPhone 實機無法用 `127.0.0.1` 連到開發電腦，啟動時要用 `--dart-define` 指定電腦在區域網路（LAN）的 IP：
+
+1. 查出開發電腦的 LAN IP（macOS）：
+   - `ipconfig getifaddr en0`（例如 `192.168.0.17`）
+2. 確認 iPhone 與電腦連到同一個 Wi-Fi。
+3. 確認後端已啟動且 `.env` 內 `HOST=0.0.0.0`（見下方 Backend 說明）。
+4. 取得 iPhone 裝置 ID：
+   - `flutter devices`
+5. 以實機啟動並指定後端位址：
+   - `flutter run -d <iPhone裝置ID> --dart-define=BACKEND_BASE_URL=http://<電腦LAN-IP>:3001`
+   - 範例：`flutter run -d 00008110-000XXXXXXXXXXXXX --dart-define=BACKEND_BASE_URL=http://192.168.0.17:3001`
+
+`BACKEND_BASE_URL` 預設為 `http://127.0.0.1:3001`（適合桌機 / 模擬器）；iPhone 實機請務必用 `--dart-define` 覆寫成電腦的 LAN IP。
+
+## Backend 啟動方式（STT Proxy + Realtime Broker）
 
 1. 進入後端目錄：
-   - `cd d:\pet_companion_app\backend\stt_proxy`
+   - `cd <專案根目錄>/backend/stt_proxy`
 2. 安裝套件：
    - `npm install`
 3. 建立 `.env`：
-   - 複製 `.env.example` 為 `.env`
+   - 複製 `.env.example` 為 `.env`，並填入 `OPENAI_API_KEY`
+   - iPhone 實機 Demo：請確認 `.env` 內 `HOST=0.0.0.0`，後端才會綁定所有網路介面，讓同一個 Wi-Fi 下的 iPhone 連得到（純本機開發可用 `127.0.0.1`）
 4. 啟動服務：
    - `npm start`
 5. 檢查健康狀態：
-   - `GET http://localhost:3001/health`
+   - 本機：`GET http://localhost:3001/health`
+   - iPhone 實機驗證：用手機瀏覽器開 `http://<電腦LAN-IP>:3001/health`，看得到 JSON 即代表連得到後端
 
 ## OpenAI API Key 設定方式
 
@@ -64,6 +84,7 @@
 
 ```env
 OPENAI_API_KEY=your_openai_api_key_here
+HOST=0.0.0.0
 PORT=3001
 REALTIME_MODEL=gpt-realtime
 REALTIME_VOICE=alloy
@@ -83,16 +104,25 @@ REALTIME_VOICE=alloy
 Android 模擬器若要連本機網站：
 - 請改用 `http://10.0.2.2:5500`
 
-## Realtime 連線方式
+## Realtime 連線方式（正式主流程）
 
-Flutter 只呼叫：
-- `POST /api/realtime/session`
+正式 Realtime 語音主流程是 WebRTC SDP 交換：
 
-Backend 會回傳短效 session secret，Flutter 不會拿到正式 API Key。
+- Flutter（`RealtimeVoiceService`，WebRTC）
+  → 後端 `POST /api/realtime/call`
+  → OpenAI GA Realtime API `POST /v1/realtime/calls`
 
-預設 URL：
-- `http://localhost:3001/api/realtime/session`
-- Android 模擬器請改成：`http://10.0.2.2:3001/api/realtime/session`
+流程說明：
+- Flutter 端建立 WebRTC 連線並產生 SDP offer。
+- 將 offer 以 `Content-Type: application/sdp` POST 到後端 `POST /api/realtime/call`。
+- 後端持有 `OPENAI_API_KEY`，代為呼叫 OpenAI GA 端點 `POST /v1/realtime/calls`，取回 answer SDP 後回傳給 App。
+- App 不會拿到正式 API Key。
+
+後端位址：
+- 由 `BACKEND_BASE_URL` 決定，預設 `http://127.0.0.1:3001`，實際呼叫端點為 `<BACKEND_BASE_URL>/api/realtime/call`。
+- iPhone 實機請用 `--dart-define=BACKEND_BASE_URL=http://<電腦LAN-IP>:3001` 覆寫（見上方「iPhone 實機 Demo 啟動方式」）。
+
+> 註：`POST /api/realtime/session`（session secret 模式）為舊版 legacy 端點，目前主流程**不使用**，僅保留作相容用途，請勿作為主流程依據。
 
 ## 備援模式（Fallback）
 
@@ -101,18 +131,12 @@ Backend 會回傳短效 session secret，Flutter 不會拿到正式 API Key。
 
 並可切回一般語音模式（第一版流程）。
 
-## 舊版 STT 切換方式（保留）
+## 舊版 STT 端點（保留，App 不再提供切換 UI）
 
-在 App 的「設定」頁：
+第一版檔案上傳式 STT 端點 `POST /api/stt/transcribe` 仍保留在後端作為相容用途，但目前 App 的「設定」頁**已不再提供** STT 模式切換或 STT Proxy URL 輸入欄位。
 
-1. 切換 STT 模式：
-   - Mock STT
-   - OpenAI STT Proxy
-2. 設定 STT Proxy URL
-   - 實機/桌機可用：`http://localhost:3001/api/stt/transcribe`
-   - Android 模擬器請改：`http://10.0.2.2:3001/api/stt/transcribe`
-
-當 OpenAI STT Proxy 連線失敗時，系統會提示並自動退回 Mock STT。
+- 後端位址統一由 `BACKEND_BASE_URL` 決定（見「Realtime 連線方式（正式主流程）」），不需在 App 內手動輸入。
+- 此端點非目前主流程；主流程請見「Realtime 連線方式（正式主流程）」。
 
 ## Assets 放置方式
 
