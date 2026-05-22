@@ -12,6 +12,7 @@ class AppRoute {
   static const String puzzle = '/puzzle';
   static const String conversationDetail = '/conversation-detail';
   static const String agentToolDemo = '/agent-tool-demo';
+  static const String careAlerts = '/care-alerts';
 
   static const List<String> shellRoutes = [
     home,

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import 'controllers/app_navigation_controller.dart';
 import 'controllers/agent_tool_controller.dart';
+import 'controllers/care_alert_controller.dart';
 import 'controllers/conversation_controller.dart';
 import 'controllers/check_in_controller.dart';
 import 'controllers/inventory_controller.dart';
@@ -18,6 +19,7 @@ import 'controllers/wallet_controller.dart';
 import 'routes/app_routes.dart';
 import 'screens/album_screen.dart';
 import 'screens/agent_tool_demo_screen.dart';
+import 'screens/care_alert_screen.dart';
 import 'screens/conversation_detail_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/home_screen.dart';
@@ -32,6 +34,7 @@ import 'services/ai_tool_router.dart';
 import 'services/agent_router_service.dart';
 import 'services/ai_navigation_service.dart';
 import 'services/asr_strategy_service.dart';
+import 'services/care_alert_storage_service.dart';
 import 'services/check_in_storage_service.dart';
 import 'services/companion_content_service.dart';
 import 'services/companion_engine_service.dart';
@@ -68,6 +71,7 @@ class PetCompanionApp extends StatelessWidget {
         Provider(create: (_) => PetStatsStorageService()),
         Provider(create: (_) => CheckInStorageService()),
         Provider(create: (_) => InventoryStorageService()),
+        Provider(create: (_) => CareAlertStorageService()),
         Provider(create: (_) => const ShopService()),
         Provider(create: (_) => MemoryService()),
         Provider(create: (_) => const CompanionEngineService()),
@@ -95,6 +99,10 @@ class PetCompanionApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (context) =>
               InventoryController(context.read<InventoryStorageService>()),
+        ),
+        ChangeNotifierProvider(
+          create: (context) =>
+              CareAlertController(context.read<CareAlertStorageService>()),
         ),
         ChangeNotifierProvider(
           create: (context) => MemoryController(context.read<MemoryService>()),
@@ -293,6 +301,7 @@ class PetCompanionApp extends StatelessWidget {
           AppRoute.album => const AlbumScreen(),
           AppRoute.notification => const NotificationScreen(),
           AppRoute.agentToolDemo => const AgentToolDemoScreen(),
+          AppRoute.careAlerts => const CareAlertScreen(),
           AppRoute.reminders => const ReminderScreen(),
           AppRoute.memories => const MemoryManagementScreen(),
           AppRoute.puzzle => const PuzzleGameScreen(),

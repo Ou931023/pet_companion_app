@@ -288,6 +288,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 icon: const Icon(Icons.psychology_alt_outlined),
                 label: const Text('管理長期記憶'),
               ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: () =>
+                    Navigator.of(context).pushNamed(AppRoute.careAlerts),
+                icon: const Icon(Icons.health_and_safety_outlined),
+                label: const Text('長照提醒紀錄'),
+              ),
             ],
           ),
         ),
