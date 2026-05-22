@@ -37,6 +37,7 @@ import 'package:pet_companion_app/services/taigi_asr_service.dart';
 import 'package:pet_companion_app/services/text_to_speech_service.dart';
 import 'package:pet_companion_app/services/web_search_service.dart';
 import 'package:pet_companion_app/models/taigi_asr_result.dart';
+import 'package:pet_companion_app/models/taigi_asr_status.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -238,6 +239,25 @@ void main() {
       expect(controller.isTaigiAsrRecording, isFalse);
       expect(controller.taigiAsrStatusMessage, '請先結束目前語音對話。');
     });
+
+    test('unavailable Taigi ASR status blocks short recording', () async {
+      final controllerWithFake = _createConversationController(
+        taigiAsrService: _FakeTaigiAsrService(
+          result: TaigiAsrResult.empty(),
+          status: TaigiAsrStatus.unavailable(),
+        ),
+      );
+      addTearDown(controllerWithFake.dispose);
+
+      final started = await controllerWithFake.startTaigiShortRecording();
+
+      expect(started, isFalse);
+      expect(controllerWithFake.isTaigiAsrRecording, isFalse);
+      expect(
+        controllerWithFake.taigiAsrStatusMessage,
+        '台語語音辨識暫時無法使用',
+      );
+    });
   });
 }
 
@@ -300,10 +320,27 @@ ConversationController _createConversationController({
 }
 
 class _FakeTaigiAsrService extends TaigiAsrService {
-  _FakeTaigiAsrService({required this.result});
+  _FakeTaigiAsrService({
+    required this.result,
+    this.status = const TaigiAsrStatus(
+      enabled: true,
+      available: true,
+      warmingUp: false,
+      modelReady: false,
+      message: 'Taigi ASR is available',
+    ),
+  });
 
   final TaigiAsrResult result;
+  final TaigiAsrStatus status;
   File? _file;
+
+  @override
+  Future<TaigiAsrStatus> fetchStatus({
+    required String sttProxyUrl,
+  }) async {
+    return status;
+  }
 
   @override
   Future<void> startRecording() async {

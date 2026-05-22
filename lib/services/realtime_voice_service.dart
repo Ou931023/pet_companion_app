@@ -108,6 +108,7 @@ class RealtimeConnectRequest {
     required this.companionContext,
     required this.languageHint,
     required this.replyLanguage,
+    required this.mode,
     required this.attempt,
   });
 
@@ -117,6 +118,7 @@ class RealtimeConnectRequest {
   final String companionContext;
   final String languageHint;
   final String replyLanguage;
+  final String mode;
   final int attempt;
 }
 
@@ -237,6 +239,7 @@ class RealtimeVoiceService {
     String companionContext = '',
     String languageHint = 'zh',
     String replyLanguage = 'zh-TW',
+    String mode = '',
   }) async {
     if (_isDisposed) {
       throw StateError('RealtimeVoiceService has been disposed');
@@ -255,6 +258,7 @@ class RealtimeVoiceService {
       companionContext: companionContext,
       languageHint: languageHint,
       replyLanguage: replyLanguage,
+      mode: mode,
     );
     _connectInFlight = future;
     try {
@@ -274,6 +278,7 @@ class RealtimeVoiceService {
     required String companionContext,
     required String languageHint,
     required String replyLanguage,
+    required String mode,
   }) async {
     Object? lastError;
     for (var attempt = 1; attempt <= 3; attempt += 1) {
@@ -295,6 +300,7 @@ class RealtimeVoiceService {
             companionContext: companionContext,
             languageHint: languageHint,
             replyLanguage: replyLanguage,
+            mode: mode,
             attempt: attempt,
           ));
         } else {
@@ -305,6 +311,7 @@ class RealtimeVoiceService {
             companionContext: companionContext,
             languageHint: languageHint,
             replyLanguage: replyLanguage,
+            mode: mode,
             generation: generation,
           );
         }
@@ -346,6 +353,7 @@ class RealtimeVoiceService {
     required String companionContext,
     required String languageHint,
     required String replyLanguage,
+    required String mode,
     required int generation,
   }) async {
     await _ensureRendererInitialized();
@@ -429,6 +437,7 @@ class RealtimeVoiceService {
                 'companionContext': companionContext.trim(),
               'languageHint': languageHint.trim(),
               'replyLanguage': replyLanguage.trim(),
+              if (mode.trim().isNotEmpty) 'mode': mode.trim(),
             },
           ),
           headers: {'Content-Type': 'application/sdp'},

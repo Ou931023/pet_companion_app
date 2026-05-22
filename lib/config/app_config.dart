@@ -12,6 +12,11 @@ class AppConfig {
     defaultValue: 'http://127.0.0.1:5500',
   );
 
+  /// 是否顯示開發用面板（Realtime Diagnostics / Companion Debug Panel /
+  /// AI Agent 工具測試）。預設 false，Demo build 保持隱藏；
+  /// 開發時用 --dart-define=SHOW_DEV_PANELS=true 啟用。
+  static const bool showDevPanels = bool.fromEnvironment('SHOW_DEV_PANELS');
+
   static const Set<String> legacyBackendHosts = {
     '127.0.0.1',
     'localhost',

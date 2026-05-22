@@ -141,6 +141,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     _isConnecting = true;
     _reconnectAttempts = 0;
     _lastError = '';
+    _currentLanguageRoute = _realtimeStartRoute();
     _sub?.cancel();
     _sub = realtimeVoiceService.events.listen(_handleRealtimeEvent);
     try {
@@ -173,6 +174,10 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
         companionContext: _companionContextPrompt(),
         languageHint: _currentLanguageRoute.languageHint.value,
         replyLanguage: _currentLanguageRoute.replyLanguage.value,
+        mode: profileController.voiceLanguageMode ==
+                VoiceLanguageMode.taigiRealtime
+            ? 'taigi_realtime'
+            : '',
       );
       if (attemptId != _connectionAttemptId ||
           _state == VoiceAgentState.idle ||
@@ -503,6 +508,27 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       );
     }
     notifyListeners();
+  }
+
+  LanguageRouteResult _realtimeStartRoute() {
+    if (profileController.voiceLanguageMode == VoiceLanguageMode.taigiRealtime) {
+      return const LanguageRouteResult(
+        strategyName: 'openai-realtime',
+        languageHint: TranscriptLanguageHint.taigi,
+        routeReason: 'taigi_realtime_mode',
+        isFallback: false,
+        transcript: '',
+        replyLanguage: ReplyLanguage.mixedZhTaigi,
+      );
+    }
+    return const LanguageRouteResult(
+      strategyName: 'defaultOpenAiRealtime',
+      languageHint: TranscriptLanguageHint.zh,
+      routeReason: 'default_openai_realtime',
+      isFallback: false,
+      transcript: '',
+      replyLanguage: ReplyLanguage.zhTw,
+    );
   }
 
   Future<void> _handleLocalRealtimeCommand(String text, String turnId) async {

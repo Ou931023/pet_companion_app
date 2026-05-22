@@ -167,6 +167,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     label: Text('即時語音對話'),
                   ),
                   ButtonSegment(
+                    value: VoiceLanguageMode.taigiRealtime,
+                    label: Text('台語 Realtime'),
+                  ),
+                  ButtonSegment(
                     value: VoiceLanguageMode.taigiPreferred,
                     label: Text('台語短錄音'),
                   ),
@@ -185,9 +189,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                profile.voiceLanguageMode == VoiceLanguageMode.taigiPreferred
-                    ? '台語短錄音會先錄下語音，再辨識成文字讓寵物回覆。'
-                    : '即時語音對話會使用原本的 Realtime 連線。台語短錄音不會影響即時語音功能。',
+                switch (profile.voiceLanguageMode) {
+                  VoiceLanguageMode.taigiRealtime =>
+                    '台語 Realtime 對話會使用原本即時語音連線，可以直接用台語或台語混中文跟寵物說話。',
+                  VoiceLanguageMode.taigiPreferred =>
+                    '台語短錄音會先錄下語音，再辨識成文字讓寵物回覆。',
+                  _ =>
+                    '即時語音對話會使用原本的 Realtime 連線。台語短錄音不會影響即時語音功能。',
+                },
                 style: TextStyle(
                   color: Colors.black.withValues(alpha: 0.58),
                   fontWeight: FontWeight.w600,
@@ -282,19 +291,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         ),
-        const SizedBox(height: 14),
-        _SettingsSection(
-          title: 'AI Agent',
-          child: SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: () =>
-                  Navigator.of(context).pushNamed(AppRoute.agentToolDemo),
-              icon: const Icon(Icons.auto_awesome),
-              label: const Text('AI Agent 工具測試'),
+        if (AppConfig.showDevPanels) ...[
+          const SizedBox(height: 14),
+          _SettingsSection(
+            title: 'AI Agent',
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () =>
+                    Navigator.of(context).pushNamed(AppRoute.agentToolDemo),
+                icon: const Icon(Icons.auto_awesome),
+                label: const Text('AI Agent 工具測試'),
+              ),
             ),
           ),
-        ),
+        ],
         const SizedBox(height: 14),
         const _SettingsSection(
           title: '寵物代辦',
@@ -325,32 +336,68 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         ),
-        const SizedBox(height: 14),
-        _SettingsSection(
-          title: 'Realtime Diagnostics',
-          child: Consumer3<VoiceAgentController, RealtimeVoiceService,
-              ConversationController>(
-            builder: (context, voice, realtime, conversation, _) {
-              return _RealtimeDiagnosticsPanel(
-                voiceController: voice,
-                realtimeService: realtime,
-                conversationController: conversation,
-                profile: profile,
-              );
-            },
+        if (AppConfig.showDevPanels) ...[
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.black12),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Theme(
+              data: Theme.of(context).copyWith(
+                dividerColor: Colors.transparent,
+              ),
+              child: ExpansionTile(
+                initiallyExpanded: false,
+                tilePadding: const EdgeInsets.symmetric(horizontal: 14),
+                childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+                title: const Text(
+                  '進階診斷（開發人員）',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+                ),
+                subtitle: const Text(
+                  '開發人員診斷資訊，僅在啟用 SHOW_DEV_PANELS 時顯示',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                children: [
+                  const Text(
+                    'Realtime Diagnostics',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 12),
+                  Consumer3<VoiceAgentController, RealtimeVoiceService,
+                      ConversationController>(
+                    builder: (context, voice, realtime, conversation, _) {
+                      return _RealtimeDiagnosticsPanel(
+                        voiceController: voice,
+                        realtimeService: realtime,
+                        conversationController: conversation,
+                        profile: profile,
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 18),
+                  const Text(
+                    'Companion Debug Panel',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 12),
+                  Consumer<ConversationController>(
+                    builder: (context, conversation, _) {
+                      return CompanionDebugPanel(
+                        info: conversation.latestCompanionDebugInfo,
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
-        const SizedBox(height: 14),
-        _SettingsSection(
-          title: 'Companion Debug Panel',
-          child: Consumer<ConversationController>(
-            builder: (context, conversation, _) {
-              return CompanionDebugPanel(
-                info: conversation.latestCompanionDebugInfo,
-              );
-            },
-          ),
-        ),
+        ],
       ],
     );
   }

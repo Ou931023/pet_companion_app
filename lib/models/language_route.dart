@@ -1,5 +1,6 @@
 enum VoiceLanguageMode {
   defaultOpenAiRealtime,
+  taigiRealtime,
   taigiPreferred,
   manualOverride,
 }
@@ -20,6 +21,7 @@ enum ReplyLanguage {
 extension VoiceLanguageModeLabel on VoiceLanguageMode {
   String get storageValue {
     return switch (this) {
+      VoiceLanguageMode.taigiRealtime => 'taigiRealtime',
       VoiceLanguageMode.taigiPreferred => 'taigiPreferred',
       VoiceLanguageMode.manualOverride => 'manualOverride',
       VoiceLanguageMode.defaultOpenAiRealtime => 'defaultOpenAiRealtime',
@@ -28,6 +30,7 @@ extension VoiceLanguageModeLabel on VoiceLanguageMode {
 
   static VoiceLanguageMode fromStorage(String value) {
     return switch (value) {
+      'taigiRealtime' => VoiceLanguageMode.taigiRealtime,
       'taigiPreferred' => VoiceLanguageMode.taigiPreferred,
       'manualOverride' => VoiceLanguageMode.manualOverride,
       _ => VoiceLanguageMode.defaultOpenAiRealtime,

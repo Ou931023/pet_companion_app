@@ -144,6 +144,7 @@ const REALTIME_INSTRUCTIONS = `你是長者陪伴寵物，不是一般助理。
 不要像客服，不要像老師，不要做醫療診斷。
 如果使用者輸入呈現台語、台語混中文、或台灣長輩常用口語，請先理解語意與情緒，再用台灣長輩容易理解的溫暖中文回覆；可以自然穿插少量台語詞，例如「今仔日」「有我陪你」「慢慢來」「食飽未」，但不要整段使用難懂台語文字。回覆要像陪伴寵物，不要像客服或醫生。
 如果 languageHint=taigi，可以用台灣長者自然聽得懂的溫暖中文與少量台語詞回應；不要硬翻成不自然台語，不要使用大量羅馬拼音。
+如果 mode=taigi_realtime 或 languageHint=taigi，使用者可能會用台語、台語混中文、台灣長輩口語與你對話。請盡量理解語意與情緒，不要要求使用者改講標準中文。回覆時以台灣長輩容易理解的溫暖中文為主，可以自然穿插少量台語詞，例如「今仔日」「無要緊」「我陪你」「慢慢來」「食飽未」，但不要整段使用難懂台羅或大量台語漢字。你的角色是陪伴型 AI 寵物，語氣要簡短、溫柔、有回應感，不要像客服或醫生。若你沒有完全聽懂台語內容，請不要直接說系統錯誤，也不要假裝百分百聽懂。請用陪伴方式確認，例如：「我有聽著，你是說今仔日感覺較悶，是嗎？我陪你慢慢講。」
 如果台語 transcript 不完整，請溫和追問，不要假裝完全聽懂。
 如果有 Companion Engine 提供的 nextStrategy，請優先遵守。
 當使用者提到胸痛、呼吸困難、跌倒、嚴重不適、自傷意念時，請提高安全提醒，建議聯絡家人或尋求醫療協助。`;
@@ -161,9 +162,13 @@ function fallbackGreeting({ petName, localHour }) {
   return `晚安，我是${petName}，這麼晚了，要不要準備休息了呢？`;
 }
 
-function outputLanguageInstruction({ languageHint = "", replyLanguage = "" } = {}) {
+function outputLanguageInstruction({ languageHint = "", replyLanguage = "", mode = "" } = {}) {
   const normalizedReplyLanguage = (replyLanguage || "").toString().trim();
   const normalizedLanguageHint = (languageHint || "").toString().trim();
+  const normalizedMode = (mode || "").toString().trim();
+  if (normalizedMode === "taigi_realtime") {
+    return "輸入語境：使用者可能直接用台語、台語混中文或台灣長輩口語說話。請盡量理解語意與情緒，不要要求改講標準中文。輸出語言：以溫暖、簡短、台灣長輩聽得懂的繁體中文為主，可自然穿插少量台語詞；若沒完全聽懂，請用陪伴方式確認，不要說系統錯誤。";
+  }
   if (normalizedReplyLanguage === "mixed-zh-taigi") {
     return "輸出語言：請用台灣長輩容易理解的溫暖中文回覆，可以自然穿插少量台語詞；不要整段使用難懂台語文字，也不要使用大量羅馬拼音。";
   }
@@ -924,6 +929,10 @@ app.post("/api/crawl/refresh", async (req, res) => {
   }
 });
 
+// [DEPRECATED] 舊版 Realtime Beta session endpoint（代理 OpenAI POST /v1/realtime/sessions）。
+// OpenAI 已不再支援此 Beta API；目前 Flutter 主語音流程不使用此路由。
+// 正式 WebRTC 主流程請改用 POST /api/realtime/call（SDP 交換，OpenAI GA /v1/realtime/calls）。
+// 保留此 endpoint 僅供向後相容，請勿在 demo 或新整合中依賴。
 app.post("/api/realtime/session", realtimeLimiter, async (req, res) => {
   logInfo("POST /api/realtime/session received");
   logInfo("OPENAI_API_KEY exists", { hasApiKey: Boolean(process.env.OPENAI_API_KEY) });
@@ -938,6 +947,18 @@ app.post("/api/realtime/session", realtimeLimiter, async (req, res) => {
 
   try {
     const realtimeModel = process.env.REALTIME_MODEL || "gpt-realtime";
+    const languageHint = (req.body?.languageHint || req.query?.languageHint || "")
+      .toString()
+      .replace(/\r|\n/g, " ")
+      .substring(0, 32);
+    const replyLanguage = (req.body?.replyLanguage || req.query?.replyLanguage || "")
+      .toString()
+      .replace(/\r|\n/g, " ")
+      .substring(0, 32);
+    const mode = (req.body?.mode || req.query?.mode || "")
+      .toString()
+      .replace(/\r|\n/g, " ")
+      .substring(0, 32);
     logInfo("Using realtime model", { model: realtimeModel });
 
     const response = await fetch("https://api.openai.com/v1/realtime/sessions", {
@@ -950,7 +971,8 @@ app.post("/api/realtime/session", realtimeLimiter, async (req, res) => {
         model: realtimeModel,
         voice: process.env.REALTIME_VOICE || "alloy",
         modalities: ["audio", "text"],
-        instructions: REALTIME_INSTRUCTIONS,
+        instructions: `${REALTIME_INSTRUCTIONS}
+${outputLanguageInstruction({ languageHint, replyLanguage, mode })}`,
         input_audio_format: "pcm16",
         output_audio_format: "pcm16",
         turn_detection: {
@@ -962,6 +984,8 @@ app.post("/api/realtime/session", realtimeLimiter, async (req, res) => {
         },
         input_audio_transcription: {
           model: "gpt-4o-mini-transcribe",
+          prompt:
+            "使用者可能使用台語、台語混中文、台灣長輩口語。請優先保留語意，台語詞可轉成接近中文意思。",
         },
       }),
     });
@@ -1044,11 +1068,13 @@ app.post(
     let companionContext = (req.query?.companionContext || "").toString().trim();
     let languageHint = (req.query?.languageHint || "").toString().trim();
     let replyLanguage = (req.query?.replyLanguage || "").toString().trim();
+    let mode = (req.query?.mode || "").toString().trim();
     petName = petName.replace(/\r|\n/g, ' ').substring(0, 128) || "陪伴寶";
     userId = userId.replace(/\r|\n/g, ' ').substring(0, 128) || "local_user";
     companionContext = companionContext.replace(/\r|\n/g, " ").substring(0, 900);
     languageHint = languageHint.replace(/\r|\n/g, " ").substring(0, 32);
     replyLanguage = replyLanguage.replace(/\r|\n/g, " ").substring(0, 32);
+    mode = mode.replace(/\r|\n/g, " ").substring(0, 32);
 
     const memoryTopK = Number(process.env.MEMORY_TOP_K || 5);
     const contextResult = await withTimeout(
@@ -1075,6 +1101,7 @@ app.post(
       hasCompanionContext: Boolean(companionContext),
       languageHint,
       replyLanguage,
+      mode,
     });
 
     const sessionConfig = {
@@ -1090,7 +1117,7 @@ app.post(
         memorySummaries,
         contextResult?.memoryContext || "",
         companionContext,
-        { languageHint, replyLanguage },
+        { languageHint, replyLanguage, mode },
       ),
     };
 

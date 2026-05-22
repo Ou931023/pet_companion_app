@@ -206,27 +206,20 @@ void main() {
     await _pumpHomeScreen(tester, harness, textScale: 1.3);
   });
 
-  testWidgets('SettingsScreen keeps realtime diagnostics available',
+  testWidgets('SettingsScreen hides dev panels when SHOW_DEV_PANELS is off',
       (tester) async {
     final harness = await _HomeHarness.create();
     addTearDown(harness.dispose);
 
     await tester.pumpWidget(_settingsHost(harness));
-    await tester.pump();
-    await tester.scrollUntilVisible(
-      find.text('Realtime Diagnostics'),
-      500,
-      scrollable: find.byType(Scrollable).first,
-    );
     await tester.pumpAndSettle();
 
+    // SHOW_DEV_PANELS 預設為 false：開發用面板不應出現在使用者設定頁。
     expect(tester.takeException(), isNull);
-    expect(find.text('Realtime Diagnostics'), findsOneWidget);
-    expect(find.textContaining('最近 ASR strategy'), findsOneWidget);
-    expect(find.textContaining('最近 languageHint'), findsOneWidget);
-    expect(find.textContaining('最近 routeReason'), findsOneWidget);
-    expect(find.textContaining('最近 emotion fusion'), findsOneWidget);
-    expect(find.textContaining('最近錯誤'), findsOneWidget);
+    expect(find.text('進階診斷（開發人員）'), findsNothing);
+    expect(find.text('Realtime Diagnostics'), findsNothing);
+    expect(find.text('Companion Debug Panel'), findsNothing);
+    expect(find.text('AI Agent 工具測試'), findsNothing);
   });
 }
 

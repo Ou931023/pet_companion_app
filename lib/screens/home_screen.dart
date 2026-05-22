@@ -91,6 +91,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final agentToolController = _maybeWatchAgentToolController(context);
     final useTaigiShortRecording =
         profileController.voiceLanguageMode == VoiceLanguageMode.taigiPreferred;
+    final useTaigiRealtime =
+        profileController.voiceLanguageMode == VoiceLanguageMode.taigiRealtime;
     if (useTaigiShortRecording && !_didCheckTaigiAsrStatus) {
       _didCheckTaigiAsrStatus = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -134,7 +136,8 @@ class _HomeScreenState extends State<HomeScreen> {
             VoiceAgentState.transcribing => '正在聽你說話',
             VoiceAgentState.thinking => '正在想回應',
             VoiceAgentState.speaking => '正在陪你說話',
-            VoiceAgentState.idle => '開始語音陪伴',
+            VoiceAgentState.idle =>
+              useTaigiRealtime ? '開始台語 Realtime 對話' : '開始語音陪伴',
           };
     final companionSources = _companionSourceReferences(
       voiceAgentController.currentCompanionContext?.sourceReferences,
@@ -334,11 +337,25 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                     ),
-                    if (conversationController
+                    if (useTaigiShortRecording &&
+                        conversationController
                         .taigiAsrStatusMessage.isNotEmpty) ...[
                       const SizedBox(height: 6),
                       Text(
                         conversationController.taigiAsrStatusMessage,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.black.withValues(alpha: 0.56),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                    if (useTaigiRealtime) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        '台語 Realtime 對話，可以直接用台語跟寵物說話',
                         textAlign: TextAlign.center,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

@@ -48,6 +48,49 @@ void main() {
       expect(route.replyLanguage, ReplyLanguage.mixedZhTaigi);
     });
 
+    test('taigi realtime mode keeps OpenAI Realtime and marks taigi metadata',
+        () async {
+      final service = LanguageRoutingService(
+        AsrStrategyService(
+          strategies: const [
+            OpenAiRealtimeAsrStrategy(),
+            MockTaigiAsrStrategy(),
+          ],
+        ),
+      );
+
+      final route = await service.routeTranscript(
+        mode: VoiceLanguageMode.taigiRealtime,
+        realtimeTranscript: ' 心情無好 ',
+      );
+
+      expect(route.strategyName, 'openai-realtime');
+      expect(route.languageHint, TranscriptLanguageHint.taigi);
+      expect(route.routeReason, 'taigi_realtime_mode');
+      expect(route.replyLanguage, ReplyLanguage.mixedZhTaigi);
+      expect(route.transcript, '心情無好');
+    });
+
+    test('taigi realtime text preview marks taigi context', () {
+      final service = LanguageRoutingService(
+        AsrStrategyService(
+          strategies: const [
+            OpenAiRealtimeAsrStrategy(),
+            MockTaigiAsrStrategy(),
+          ],
+        ),
+      );
+
+      final route = service.previewRouteFromText(
+        mode: VoiceLanguageMode.taigiRealtime,
+        text: '今天心情不太好',
+      );
+
+      expect(route.languageHint, TranscriptLanguageHint.taigi);
+      expect(route.routeReason, 'taigi_realtime_mode');
+      expect(route.replyLanguage, ReplyLanguage.mixedZhTaigi);
+    });
+
     test('text preview keeps plain Mandarin in zh context', () {
       final service = LanguageRoutingService(
         AsrStrategyService(

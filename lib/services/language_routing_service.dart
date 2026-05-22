@@ -31,11 +31,14 @@ class LanguageRoutingService {
       );
     }
 
-    if (mode == VoiceLanguageMode.taigiPreferred) {
+    if (mode == VoiceLanguageMode.taigiPreferred ||
+        mode == VoiceLanguageMode.taigiRealtime) {
       return LanguageRouteResult(
         strategyName: 'textInput',
         languageHint: TranscriptLanguageHint.taigi,
-        routeReason: 'taigi_manual_mode',
+        routeReason: mode == VoiceLanguageMode.taigiRealtime
+            ? 'taigi_realtime_mode'
+            : 'taigi_manual_mode',
         isFallback: false,
         transcript: normalizedText,
         replyLanguage: ReplyLanguage.mixedZhTaigi,
@@ -98,6 +101,16 @@ class LanguageRoutingService {
     }
 
     return switch (mode) {
+      VoiceLanguageMode.taigiRealtime => Future.value(
+          LanguageRouteResult(
+            strategyName: 'openai-realtime',
+            languageHint: TranscriptLanguageHint.taigi,
+            routeReason: 'taigi_realtime_mode',
+            isFallback: false,
+            transcript: normalizedRealtime,
+            replyLanguage: ReplyLanguage.mixedZhTaigi,
+          ),
+        ),
       VoiceLanguageMode.taigiPreferred => _routeTaigiPreferred(
           normalizedRealtime,
         ),
@@ -125,7 +138,8 @@ class LanguageRoutingService {
     VoiceLanguageMode mode, [
     String manualStrategyName = 'defaultOpenAiRealtime',
   ]) {
-    if (mode == VoiceLanguageMode.taigiPreferred) {
+    if (mode == VoiceLanguageMode.taigiPreferred ||
+        mode == VoiceLanguageMode.taigiRealtime) {
       return ReplyLanguage.mixedZhTaigi;
     }
     if (mode == VoiceLanguageMode.manualOverride &&

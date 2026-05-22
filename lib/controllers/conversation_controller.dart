@@ -343,6 +343,16 @@ class ConversationController extends ChangeNotifier {
       return false;
     }
     _pendingTaigiAsrTranscript = '';
+    _taigiAsrStatusMessage = '台語語音辨識準備中';
+    notifyListeners();
+    final status = await taigiAsrService.fetchStatus(
+      sttProxyUrl: profileController.sttProxyUrl,
+    );
+    if (!status.available) {
+      _taigiAsrStatusMessage = status.userMessage;
+      notifyListeners();
+      return false;
+    }
     _taigiAsrStatusMessage = '';
     try {
       await taigiAsrService.startRecording();

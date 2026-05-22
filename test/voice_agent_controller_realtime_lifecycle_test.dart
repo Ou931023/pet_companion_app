@@ -15,6 +15,7 @@ import 'package:pet_companion_app/controllers/reminder_controller.dart';
 import 'package:pet_companion_app/controllers/task_controller.dart';
 import 'package:pet_companion_app/controllers/voice_agent_controller.dart';
 import 'package:pet_companion_app/controllers/wallet_controller.dart';
+import 'package:pet_companion_app/models/language_route.dart';
 import 'package:pet_companion_app/models/voice_agent_state.dart';
 import 'package:pet_companion_app/models/realtime_timeout.dart';
 import 'package:pet_companion_app/services/ai_navigation_service.dart';
@@ -95,6 +96,31 @@ void main() {
     harness.dispose();
   });
 
+  test('taigi realtime mode passes taigi language hint without Taigi ASR',
+      () async {
+    RealtimeConnectRequest? captured;
+    final realtimeService = RealtimeVoiceService(
+      healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+      connectImplementationForTesting: (request) async {
+        captured = request;
+      },
+    );
+    final harness = await _VoiceControllerHarness.create(realtimeService);
+    await harness.controller.profileController
+        .setVoiceLanguageMode(VoiceLanguageMode.taigiRealtime);
+
+    await harness.controller.startRealtimeConversation();
+
+    expect(captured, isNotNull);
+    expect(captured!.languageHint, 'taigi');
+    expect(captured!.replyLanguage, 'mixed-zh-taigi');
+    expect(captured!.mode, 'taigi_realtime');
+    expect(harness.conversationController.isTaigiAsrRecording, isFalse);
+    expect(harness.conversationController.taigiAsrStatusMessage, isEmpty);
+
+    harness.dispose();
+  });
+
   test('health check failed does not stay connecting', () async {
     var attempts = 0;
     final realtimeService = RealtimeVoiceService(
@@ -163,6 +189,32 @@ void main() {
     expect(harness.controller.state, VoiceAgentState.idle);
     expect(harness.controller.partialTranscript, isEmpty);
     expect(harness.conversationController.temporaryUserBubbleText, isEmpty);
+
+    harness.dispose();
+  });
+
+  test('taigi realtime final transcript stores taigi realtime metadata',
+      () async {
+    final realtimeService = RealtimeVoiceService(
+      healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+      connectImplementationForTesting: (_) async {},
+    );
+    final harness = await _VoiceControllerHarness.create(realtimeService);
+    await harness.controller.profileController
+        .setVoiceLanguageMode(VoiceLanguageMode.taigiRealtime);
+
+    await harness.controller.startRealtimeConversation();
+    realtimeService.handleDataChannelEventForTest('''
+{"type":"conversation.item.input_audio_transcription.completed","transcript":"心情無好"}
+''');
+    await pumpEventQueue();
+
+    final turn = harness.conversationController.history.first;
+    expect(turn.userText, '心情無好');
+    expect(turn.languageHint, 'taigi');
+    expect(turn.asrSource, 'openai-realtime');
+    expect(turn.routeReason, 'taigi_realtime_mode');
+    expect(turn.replyLanguage, 'mixed-zh-taigi');
 
     harness.dispose();
   });
