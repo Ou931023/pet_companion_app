@@ -35,6 +35,26 @@ class ProfileController extends ChangeNotifier {
   String get sttProxyUrl => _profile.sttProxyUrl;
   SttMode get sttMode =>
       _profile.sttMode == 'openAiProxy' ? SttMode.openAiProxy : SttMode.mock;
+  List<Map<String, String>> get familyContacts => List.unmodifiable(
+        _profile.familyContacts.map((e) => Map<String, String>.from(e)),
+      );
+
+  Future<void> setFamilyContacts(List<Map<String, String>> contacts) async {
+    _profile = _profile.copyWith(
+      familyContacts: contacts
+          .map((c) => {
+                'alias': (c['alias'] ?? '').trim(),
+                'phone': (c['phone'] ?? '').trim(),
+                'email': (c['email'] ?? '').trim(),
+              })
+          .where((c) =>
+              c['alias']!.isNotEmpty ||
+              c['phone']!.isNotEmpty ||
+              c['email']!.isNotEmpty)
+          .toList(),
+    );
+    await _persist();
+  }
 
   Future<void> load() async {
     _isLoading = true;

@@ -195,7 +195,7 @@ class RealtimeVoiceService {
     try {
       final response = await http
           .get(Uri.parse(healthUrl))
-          .timeout(const Duration(seconds: 3));
+          .timeout(const Duration(seconds: 10));
       if (response.statusCode >= 500) {
         _recordFailure(
           RealtimeFailureType.backendUnavailable,
@@ -483,12 +483,22 @@ class RealtimeVoiceService {
       await _sendEventPayload(jsonEncode({
         'type': 'session.update',
         'session': {
+          'type': 'realtime',
           'instructions': _instructionsWithCompanionContext(normalized),
         },
       }));
       _log('Companion context sent to realtime session');
     } catch (error) {
       _log('Unable to update companion context: $error');
+    }
+  }
+
+  Future<void> cancelResponse() async {
+    try {
+      await _sendEventPayload(jsonEncode({'type': 'response.cancel'}));
+      _log('Sent response.cancel to interrupt assistant audio');
+    } catch (error) {
+      _log('Unable to cancel response: $error');
     }
   }
 

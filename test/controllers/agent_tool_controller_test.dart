@@ -17,7 +17,8 @@ import 'package:pet_companion_app/services/search_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  test('high risk intent waits for confirmation before executing', () async {
+  test('high risk intent now also executes automatically without confirmation',
+      () async {
     final harness = await _Harness.create(
       router: _FakeRouter(
         AgentRouteResult(
@@ -40,11 +41,6 @@ void main() {
       emotion: 'neutral',
       languageHint: 'zh-TW',
     );
-
-    expect(harness.controller.pendingIntent?.toolName, 'open_phone_dialer');
-    expect(harness.executor.executedCount, 0);
-
-    await harness.controller.confirmAndExecute();
 
     expect(harness.executor.executedCount, 1);
     expect(harness.controller.executionResult?.success, isTrue);

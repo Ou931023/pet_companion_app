@@ -8,6 +8,7 @@ class TextConversationBar extends StatelessWidget {
     required this.isBusy,
     required this.onChanged,
     required this.onSend,
+    this.focusNode,
   });
 
   final TextEditingController controller;
@@ -15,6 +16,7 @@ class TextConversationBar extends StatelessWidget {
   final bool isBusy;
   final ValueChanged<String> onChanged;
   final ValueChanged<String> onSend;
+  final FocusNode? focusNode;
 
   @override
   Widget build(BuildContext context) {
@@ -40,6 +42,7 @@ class TextConversationBar extends StatelessWidget {
           Expanded(
             child: TextField(
               controller: controller,
+              focusNode: focusNode,
               enabled: enabled,
               minLines: 1,
               maxLines: 2,

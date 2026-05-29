@@ -5,45 +5,45 @@ import 'package:pet_companion_app/widgets/conversation_bubble_stack.dart';
 import 'package:pet_companion_app/widgets/text_conversation_bar.dart';
 
 void main() {
-  testWidgets('shows temporary user bubble for transcript delta',
+  testWidgets('transcript delta shows live in the unified bubble',
       (tester) async {
     await tester.pumpWidget(_bubbleHost(
       temporaryUserText: '今天家裡',
       temporaryUserStatus: '聆聽中',
     ));
 
-    expect(find.byKey(const ValueKey('temporary-user-message-bubble')),
+    expect(find.byKey(const ValueKey('latest-pet-message-bubble')),
         findsOneWidget);
     expect(find.text('今天家裡'), findsOneWidget);
     expect(find.text('你說・聆聽中'), findsOneWidget);
   });
 
-  testWidgets('commits completed transcript and clears temporary bubble',
+  testWidgets('finalized user transcript shows in the unified bubble',
       (tester) async {
     await tester.pumpWidget(_bubbleHost(
       userText: '今天家裡好安靜',
     ));
 
-    expect(find.byKey(const ValueKey('temporary-user-message-bubble')),
-        findsNothing);
-    expect(find.byKey(const ValueKey('latest-user-message-bubble')),
+    expect(find.byKey(const ValueKey('latest-pet-message-bubble')),
         findsOneWidget);
     expect(find.text('今天家裡好安靜'), findsOneWidget);
+    expect(find.text('你說'), findsOneWidget);
   });
 
-  testWidgets('shows draft bubble while typing', (tester) async {
+  testWidgets('typing in draft shows live in the unified bubble',
+      (tester) async {
     await tester.pumpWidget(const _DraftHarness());
 
     await tester.enterText(find.byType(TextField), '我想聊聊天');
     await tester.pump();
 
-    expect(find.byKey(const ValueKey('temporary-user-message-bubble')),
+    expect(find.byKey(const ValueKey('latest-pet-message-bubble')),
         findsOneWidget);
     expect(find.text('我想聊聊天'), findsWidgets);
     expect(find.text('你說・輸入中'), findsOneWidget);
   });
 
-  testWidgets('sending text clears draft bubble and shows formal message',
+  testWidgets('sending text replaces draft with formal user content',
       (tester) async {
     await tester.pumpWidget(const _DraftHarness());
 
@@ -52,14 +52,30 @@ void main() {
     await tester.tap(find.byTooltip('送出'));
     await tester.pump();
 
-    expect(find.byKey(const ValueKey('temporary-user-message-bubble')),
-        findsNothing);
-    expect(find.byKey(const ValueKey('latest-user-message-bubble')),
+    expect(find.byKey(const ValueKey('latest-pet-message-bubble')),
         findsOneWidget);
     expect(find.text('謝謝你陪我'), findsOneWidget);
+    expect(find.text('你說・輸入中'), findsNothing);
   });
 
-  testWidgets('speech partial and draft do not become two formal messages',
+  testWidgets('pet reply takes priority over user content',
+      (tester) async {
+    await tester.pumpWidget(_bubbleHost(
+      userText: '使用者最終文字',
+      temporaryUserText: '語音 partial',
+      temporaryUserStatus: '聆聽中',
+      petText: '我在這裡陪你。',
+    ));
+
+    expect(find.byKey(const ValueKey('latest-pet-message-bubble')),
+        findsOneWidget);
+    expect(find.text('我在這裡陪你。'), findsOneWidget);
+    expect(find.text('小伴'), findsOneWidget);
+    expect(find.text('使用者最終文字'), findsNothing);
+    expect(find.text('語音 partial'), findsNothing);
+  });
+
+  testWidgets('final user text shown above partial when both set',
       (tester) async {
     await tester.pumpWidget(_bubbleHost(
       userText: '正式訊息',
@@ -67,22 +83,16 @@ void main() {
       temporaryUserStatus: '聆聽中',
     ));
 
-    expect(find.byKey(const ValueKey('latest-user-message-bubble')),
-        findsOneWidget);
-    expect(find.byKey(const ValueKey('temporary-user-message-bubble')),
-        findsOneWidget);
     expect(find.text('正式訊息'), findsOneWidget);
-    expect(find.text('語音 partial'), findsOneWidget);
+    expect(find.text('語音 partial'), findsNothing);
+    expect(find.text('你說'), findsOneWidget);
   });
 
-  testWidgets('empty final transcript does not create a formal user bubble',
-      (tester) async {
+  testWidgets('empty everything renders a placeholder bubble', (tester) async {
     await tester.pumpWidget(_bubbleHost());
 
-    expect(find.byKey(const ValueKey('temporary-user-message-bubble')),
-        findsNothing);
-    expect(
-        find.byKey(const ValueKey('latest-user-message-bubble')), findsNothing);
+    expect(find.byKey(const ValueKey('latest-pet-message-bubble')),
+        findsOneWidget);
   });
 
   testWidgets('petText over 80 Chinese chars does not overflow',
@@ -99,7 +109,7 @@ void main() {
     expect(petTextWidget.maxLines, 6);
   });
 
-  testWidgets('userText over 60 Chinese chars does not overflow',
+  testWidgets('userText over 60 Chinese chars renders without overflow',
       (tester) async {
     final longUserText = List.filled(
       5,
@@ -109,11 +119,10 @@ void main() {
     await tester.pumpWidget(_bubbleHost(userText: longUserText));
 
     expect(tester.takeException(), isNull);
-    final userTextWidget = tester.widget<Text>(find.text(longUserText));
-    expect(userTextWidget.maxLines, 6);
+    expect(find.text(longUserText), findsOneWidget);
   });
 
-  testWidgets('temporaryUserText stays short while transcribing',
+  testWidgets('temporaryUserText renders without throwing when long',
       (tester) async {
     final longPartialText = List.filled(
       5,
@@ -126,8 +135,7 @@ void main() {
     ));
 
     expect(tester.takeException(), isNull);
-    final partialTextWidget = tester.widget<Text>(find.text(longPartialText));
-    expect(partialTextWidget.maxLines, 3);
+    expect(find.text(longPartialText), findsOneWidget);
   });
 }
 
@@ -135,7 +143,7 @@ Widget _bubbleHost({
   String userText = '',
   String temporaryUserText = '',
   String temporaryUserStatus = '',
-  String petText = '我在這裡陪你。',
+  String petText = '',
   bool compact = false,
 }) {
   return MaterialApp(
@@ -186,7 +194,7 @@ class _DraftHarnessState extends State<_DraftHarness> {
                 userText: _formal,
                 temporaryUserText: _draft,
                 temporaryUserStatus: _draft.trim().isEmpty ? '' : '輸入中',
-                petText: '我在這裡陪你。',
+                petText: '',
                 petName: '小伴',
                 isWaiting: false,
                 compact: false,

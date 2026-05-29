@@ -76,9 +76,9 @@ class AgentToolController extends ChangeNotifier {
       }
       _pendingIntent = result.intent;
       _executionResult = null;
-      if (!_pendingIntent!.requiresConfirmation) {
-        await executeLowRiskIfAllowed();
-      }
+      // Auto-execute every intent regardless of risk level — the pet is meant
+      // to act as an agent that just gets things done without prompts.
+      await _executeCurrentIntent();
     } catch (error) {
       _errorMessage = error.toString();
       debugPrint('[AgentToolController] route failed: $error');

@@ -18,7 +18,6 @@ import 'controllers/voice_agent_controller.dart';
 import 'controllers/wallet_controller.dart';
 import 'routes/app_routes.dart';
 import 'screens/album_screen.dart';
-import 'screens/agent_tool_demo_screen.dart';
 import 'screens/care_alert_screen.dart';
 import 'screens/conversation_detail_screen.dart';
 import 'screens/history_screen.dart';
@@ -38,6 +37,7 @@ import 'services/care_alert_storage_service.dart';
 import 'services/check_in_storage_service.dart';
 import 'services/companion_content_service.dart';
 import 'services/companion_engine_service.dart';
+import 'services/contact_lookup_service.dart';
 import 'services/companion_reply_strategy_service.dart';
 import 'services/emotion_services.dart';
 import 'services/inventory_storage_service.dart';
@@ -82,11 +82,17 @@ class PetCompanionApp extends StatelessWidget {
         Provider(create: (_) => const EmotionFusionService()),
         Provider(create: (_) => const PetEmotionMapper()),
         Provider(create: (_) => AgentRouterService()),
-        Provider(create: (_) => NativeToolExecutorService()),
         ChangeNotifierProvider(create: (_) => AppNavigationController()),
         ChangeNotifierProvider(
           create: (context) =>
               ProfileController(context.read<LocalStorageService>()),
+        ),
+        ProxyProvider<ProfileController, NativeToolExecutorService>(
+          update: (_, profile, previous) =>
+              previous ??
+              NativeToolExecutorService(
+                contactLookup: ContactLookupService(profile),
+              ),
         ),
         ChangeNotifierProvider(
           create: (context) =>
@@ -302,7 +308,6 @@ class PetCompanionApp extends StatelessWidget {
         return switch (settings.name) {
           AppRoute.album => const AlbumScreen(),
           AppRoute.notification => const NotificationScreen(),
-          AppRoute.agentToolDemo => const AgentToolDemoScreen(),
           AppRoute.careAlerts => const CareAlertScreen(),
           AppRoute.reminders => const ReminderScreen(),
           AppRoute.memories => const MemoryManagementScreen(),
@@ -421,11 +426,13 @@ class _MainShellState extends State<MainShell> {
     final navigation = context.watch<AppNavigationController>();
     final index =
         navigation.currentShellIndex < 0 ? 0 : navigation.currentShellIndex;
-    final bottomContentPadding = supportsLiquidGlassHomeBar
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
+    final bottomContentPadding = supportsLiquidGlassHomeBar && !keyboardOpen
         ? 84 + MediaQuery.paddingOf(context).bottom
         : 0.0;
     return Scaffold(
       extendBody: supportsLiquidGlassHomeBar,
+      resizeToAvoidBottomInset: index != 0,
       body: Padding(
         padding: EdgeInsets.only(bottom: bottomContentPadding),
         child: _pages[index],

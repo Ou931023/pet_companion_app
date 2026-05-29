@@ -23,6 +23,7 @@ class LocalStorageService {
   static const _keyContentPreferences = 'contentPreferences';
   static const _keyVoiceLanguageMode = 'voiceLanguageMode';
   static const _keyManualAsrStrategy = 'manualAsrStrategy';
+  static const _keyFamilyContacts = 'familyContactsList';
   static const _keyConversationHistory = 'conversationHistory';
 
   Future<UserProfile> loadProfile() async {
@@ -55,7 +56,21 @@ class LocalStorageService {
           prefs.getString(_keyVoiceLanguageMode) ?? initial.voiceLanguageMode,
       manualAsrStrategy:
           prefs.getString(_keyManualAsrStrategy) ?? initial.manualAsrStrategy,
+      familyContacts: _loadFamilyContacts(prefs),
     );
+  }
+
+  List<Map<String, String>> _loadFamilyContacts(SharedPreferences prefs) {
+    final raw = prefs.getString(_keyFamilyContacts);
+    if (raw == null || raw.trim().isEmpty) return [];
+    try {
+      final decoded = jsonDecode(raw) as List<dynamic>;
+      return decoded
+          .map((e) => Map<String, String>.from(e as Map))
+          .toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   Future<void> saveProfile(UserProfile profile) async {
@@ -89,6 +104,10 @@ class LocalStorageService {
     await prefs.setStringList(
       _keyContentPreferences,
       profile.contentPreferences,
+    );
+    await prefs.setString(
+      _keyFamilyContacts,
+      jsonEncode(profile.familyContacts),
     );
   }
 

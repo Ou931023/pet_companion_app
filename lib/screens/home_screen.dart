@@ -27,8 +27,6 @@ import '../widgets/pet_avatar.dart';
 import '../widgets/pet_status_panel.dart';
 import '../widgets/source_reference_list.dart';
 import '../widgets/text_conversation_bar.dart';
-import '../widgets/agent/agent_tool_card.dart';
-import '../widgets/agent/agent_tool_result_card.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -192,10 +190,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                         conversationController,
                                     agentToolController: agentToolController,
                                     companionSources: companionSources,
-                                    petText: conversationController
-                                            .latestReply.isNotEmpty
-                                        ? conversationController.latestReply
-                                        : petController.message,
+                                    petText: _resolvePetText(
+                                      conversationController,
+                                      petController.message,
+                                    ),
                                     petName: profileController.petName,
                                     compact: compact,
                                   ),
@@ -599,6 +597,20 @@ class _HomeHeader extends StatelessWidget {
   }
 }
 
+String _resolvePetText(
+  ConversationController conversation,
+  String petControllerMessage,
+) {
+  if (conversation.latestReply.trim().isNotEmpty) {
+    return conversation.latestReply;
+  }
+  final userActive = conversation.latestUserText.trim().isNotEmpty ||
+      conversation.temporaryUserBubbleText.trim().isNotEmpty ||
+      conversation.hasTemporaryUserBubble;
+  if (userActive) return '';
+  return petControllerMessage;
+}
+
 class _ConversationDetailPanel extends StatelessWidget {
   const _ConversationDetailPanel({
     required this.conversationController,
@@ -660,22 +672,6 @@ class _ConversationDetailPanel extends StatelessWidget {
             companionSources.isNotEmpty) ...[
           const SizedBox(height: 8),
           SourceReferenceList(sources: companionSources),
-        ],
-        if (agentToolController?.pendingIntent != null) ...[
-          const SizedBox(height: 8),
-          AgentToolCard(
-            intent: agentToolController!.pendingIntent!,
-            isExecuting: agentToolController!.isExecuting,
-            onConfirm: agentToolController!.confirmAndExecute,
-            onCancel: agentToolController!.cancelIntent,
-          ),
-        ],
-        if (agentToolController?.executionResult != null) ...[
-          const SizedBox(height: 8),
-          AgentToolResultCard(
-            result: agentToolController!.executionResult!,
-            onDismiss: agentToolController!.clear,
-          ),
         ],
       ],
     );

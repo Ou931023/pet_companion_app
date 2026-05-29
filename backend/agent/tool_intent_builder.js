@@ -41,7 +41,7 @@ function buildIntentDraft({ userText = "", petName = "陪伴寶" } = {}) {
       userFacingMessage: "我可以幫你查可信資訊。",
     };
   }
-  if (/(去|打開|開啟|帶我去).*(商城|商店|提醒|設定|紀錄|首頁|記憶)/.test(text)) {
+  if (/(去|打開|開啟|帶我去|到|逛).*(商城|商店|商場|商场|店裡|店里|提醒|設定|设定|紀錄|纪录|歷史|历史|首頁|首页|記憶|记忆)/.test(text)) {
     return {
       toolName: "open_app_route",
       arguments: { route: extractAppRoute(text) },
@@ -88,11 +88,11 @@ function extractEmailBody(text) {
 }
 
 function extractAppRoute(text) {
-  if (/商城|商店/.test(text)) return "/shop";
+  if (/商城|商店|商場|商场|店裡|店里/.test(text)) return "/shop";
   if (/提醒/.test(text)) return "/reminders";
-  if (/設定/.test(text)) return "/settings";
-  if (/紀錄|歷史/.test(text)) return "/history";
-  if (/記憶/.test(text)) return "/memories";
+  if (/設定|设定/.test(text)) return "/settings";
+  if (/紀錄|纪录|歷史|历史/.test(text)) return "/history";
+  if (/記憶|记忆/.test(text)) return "/memories";
   return "/home";
 }
 

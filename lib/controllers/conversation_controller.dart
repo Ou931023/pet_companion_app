@@ -442,6 +442,9 @@ class ConversationController extends ChangeNotifier {
     _isAwaitingFinalTranscript = true;
     _currentPartialTranscript = '';
     _currentDraftText = '';
+    _latestUserText = '';
+    _latestReply = '';
+    _isAwaitingPetReply = false;
     notifyListeners();
   }
 

@@ -164,22 +164,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 segments: const [
                   ButtonSegment(
                     value: VoiceLanguageMode.defaultOpenAiRealtime,
-                    label: Text('即時語音對話'),
+                    label: Text('中文即時語音'),
                   ),
                   ButtonSegment(
                     value: VoiceLanguageMode.taigiRealtime,
-                    label: Text('台語 Realtime'),
-                  ),
-                  ButtonSegment(
-                    value: VoiceLanguageMode.taigiPreferred,
-                    label: Text('台語短錄音'),
-                  ),
-                  ButtonSegment(
-                    value: VoiceLanguageMode.manualOverride,
-                    label: Text('手動'),
+                    label: Text('台語即時語音'),
                   ),
                 ],
-                selected: {profile.voiceLanguageMode},
+                selected: {
+                  profile.voiceLanguageMode == VoiceLanguageMode.taigiRealtime
+                      ? VoiceLanguageMode.taigiRealtime
+                      : VoiceLanguageMode.defaultOpenAiRealtime,
+                },
                 onSelectionChanged: (values) {
                   context
                       .read<ConversationController>()
@@ -191,11 +187,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Text(
                 switch (profile.voiceLanguageMode) {
                   VoiceLanguageMode.taigiRealtime =>
-                    '台語 Realtime 對話會使用原本即時語音連線，可以直接用台語或台語混中文跟寵物說話。',
-                  VoiceLanguageMode.taigiPreferred =>
-                    '台語短錄音會先錄下語音，再辨識成文字讓寵物回覆。',
+                    '台語即時語音對話會使用原本即時語音連線，可以直接用台語或台語混中文跟寵物說話。',
                   _ =>
-                    '即時語音對話會使用原本的 Realtime 連線。台語短錄音不會影響即時語音功能。',
+                    '中文即時語音對話會使用原本的 Realtime 連線。',
                 },
                 style: TextStyle(
                   color: Colors.black.withValues(alpha: 0.58),
@@ -298,50 +292,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         ),
-        if (AppConfig.showDevPanels) ...[
-          const SizedBox(height: 14),
-          _SettingsSection(
-            title: 'AI Agent',
-            child: SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: () =>
-                    Navigator.of(context).pushNamed(AppRoute.agentToolDemo),
-                icon: const Icon(Icons.auto_awesome),
-                label: const Text('AI Agent 工具測試'),
-              ),
-            ),
-          ),
-        ],
         const SizedBox(height: 14),
-        const _SettingsSection(
-          title: '寵物代辦',
-          child: Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              _PetCommandChip(
-                label: '幫我簽到',
-                command: '幫我簽到',
-              ),
-              _PetCommandChip(
-                label: '買小餅乾',
-                command: '幫我買小餅乾',
-              ),
-              _PetCommandChip(
-                label: '聲音關掉',
-                command: '把聲音關掉',
-              ),
-              _PetCommandChip(
-                label: '文字調大',
-                command: '把文字調大',
-              ),
-              _PetCommandChip(
-                label: '慢慢說',
-                command: '說話慢一點',
-              ),
-            ],
-          ),
+        _SettingsSection(
+          title: '家人聯絡人',
+          child: _FamilyContactsEditor(profile: profile),
         ),
         if (AppConfig.showDevPanels) ...[
           const SizedBox(height: 14),
@@ -629,30 +583,6 @@ class _DiagnosticLine extends StatelessWidget {
   }
 }
 
-class _PetCommandChip extends StatelessWidget {
-  const _PetCommandChip({
-    required this.label,
-    required this.command,
-  });
-
-  final String label;
-  final String command;
-
-  @override
-  Widget build(BuildContext context) {
-    return ActionChip(
-      avatar: const Icon(Icons.pets, size: 18),
-      label: Text(label),
-      onPressed: () {
-        context.read<ConversationController>().quickAction(command);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已請寵物處理：$label')),
-        );
-      },
-    );
-  }
-}
-
 class _PreferenceTile extends StatelessWidget {
   const _PreferenceTile({
     required this.value,
@@ -709,3 +639,172 @@ class _SettingsSection extends StatelessWidget {
     );
   }
 }
+
+class _FamilyContactsEditor extends StatefulWidget {
+  const _FamilyContactsEditor({required this.profile});
+
+  final ProfileController profile;
+
+  @override
+  State<_FamilyContactsEditor> createState() => _FamilyContactsEditorState();
+}
+
+class _ContactDraft {
+  _ContactDraft({String alias = '', String phone = '', String email = ''})
+      : alias = TextEditingController(text: alias),
+        phone = TextEditingController(text: phone),
+        email = TextEditingController(text: email),
+        aliasFocus = FocusNode(),
+        phoneFocus = FocusNode(),
+        emailFocus = FocusNode();
+
+  final TextEditingController alias;
+  final TextEditingController phone;
+  final TextEditingController email;
+  final FocusNode aliasFocus;
+  final FocusNode phoneFocus;
+  final FocusNode emailFocus;
+
+  Map<String, String> toMap() => {
+        'alias': alias.text.trim(),
+        'phone': phone.text.trim(),
+        'email': email.text.trim(),
+      };
+
+  bool get hasFocus =>
+      aliasFocus.hasFocus || phoneFocus.hasFocus || emailFocus.hasFocus;
+
+  void dispose() {
+    alias.dispose();
+    phone.dispose();
+    email.dispose();
+    aliasFocus.dispose();
+    phoneFocus.dispose();
+    emailFocus.dispose();
+  }
+}
+
+class _FamilyContactsEditorState extends State<_FamilyContactsEditor> {
+  late final List<_ContactDraft> _drafts;
+
+  @override
+  void initState() {
+    super.initState();
+    final saved = widget.profile.familyContacts;
+    if (saved.isEmpty) {
+      _drafts = [_attachListeners(_ContactDraft())];
+    } else {
+      _drafts = saved
+          .map((c) => _attachListeners(_ContactDraft(
+                alias: c['alias'] ?? '',
+                phone: c['phone'] ?? '',
+                email: c['email'] ?? '',
+              )))
+          .toList();
+    }
+  }
+
+  _ContactDraft _attachListeners(_ContactDraft draft) {
+    draft.aliasFocus.addListener(_persistOnAnyBlur);
+    draft.phoneFocus.addListener(_persistOnAnyBlur);
+    draft.emailFocus.addListener(_persistOnAnyBlur);
+    return draft;
+  }
+
+  @override
+  void dispose() {
+    for (final d in _drafts) {
+      d.dispose();
+    }
+    super.dispose();
+  }
+
+  void _persistOnAnyBlur() {
+    if (_drafts.any((d) => d.hasFocus)) return;
+    _save();
+  }
+
+  Future<void> _save() async {
+    await widget.profile
+        .setFamilyContacts(_drafts.map((d) => d.toMap()).toList());
+  }
+
+  void _addRow() {
+    setState(() => _drafts.add(_attachListeners(_ContactDraft())));
+  }
+
+  Future<void> _removeRow(int index) async {
+    setState(() {
+      _drafts[index].dispose();
+      _drafts.removeAt(index);
+      if (_drafts.isEmpty) _drafts.add(_attachListeners(_ContactDraft()));
+    });
+    await _save();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < _drafts.length; i++) ...[
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _drafts[i].alias,
+                  focusNode: _drafts[i].aliasFocus,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    labelText: '暱稱（例：女兒、王醫師）',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: '刪除',
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () => _removeRow(i),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _drafts[i].phone,
+            focusNode: _drafts[i].phoneFocus,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(
+              isDense: true,
+              labelText: '電話',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _drafts[i].email,
+            focusNode: _drafts[i].emailFocus,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(
+              isDense: true,
+              labelText: 'Email',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          if (i < _drafts.length - 1)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Divider(),
+            )
+          else
+            const SizedBox(height: 8),
+        ],
+        OutlinedButton.icon(
+          onPressed: _addRow,
+          icon: const Icon(Icons.add),
+          label: const Text('新增聯絡人'),
+        ),
+      ],
+    );
+  }
+}
+

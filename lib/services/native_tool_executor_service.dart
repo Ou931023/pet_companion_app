@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../controllers/app_navigation_controller.dart';
@@ -6,6 +7,7 @@ import '../controllers/reminder_controller.dart';
 import '../models/agent_tool_execution_result.dart';
 import '../models/agent_tool_intent.dart';
 import '../routes/app_routes.dart';
+import 'contact_lookup_service.dart';
 import 'search_service.dart';
 
 typedef UrlLauncherCallback = Future<bool> Function(
@@ -16,9 +18,11 @@ typedef UrlLauncherCallback = Future<bool> Function(
 class NativeToolExecutorService {
   NativeToolExecutorService({
     UrlLauncherCallback? launch,
+    this.contactLookup,
   }) : _launch = launch ?? _defaultLaunch;
 
   final UrlLauncherCallback _launch;
+  final ContactLookupService? contactLookup;
 
   static const Set<String> supportedToolNames = {
     'play_music',
@@ -59,7 +63,8 @@ class NativeToolExecutorService {
             message: '不支援的工具，已拒絕執行。',
           )),
       };
-    } catch (error) {
+    } catch (error, stackTrace) {
+      debugPrint('[NativeToolExecutorService] ${intent.toolName} failed: $error\n$stackTrace');
       return AgentToolExecutionResult.failed(
         toolName: intent.toolName,
         message: '工具執行失敗：$error',
@@ -87,13 +92,24 @@ class NativeToolExecutorService {
   Future<AgentToolExecutionResult> _openPhoneDialer(
     AgentToolIntent intent,
   ) async {
-    final phoneNumber = _stringArg(intent, 'phoneNumber');
+    var phoneNumber = _stringArg(intent, 'phoneNumber');
+    if (phoneNumber.isEmpty && contactLookup != null) {
+      final contactName = _stringArg(intent, 'contactName');
+      if (contactName.isNotEmpty) {
+        final resolved = await contactLookup!.lookupPhoneNumber(contactName);
+        if (resolved != null && resolved.isNotEmpty) {
+          phoneNumber = resolved;
+        }
+      }
+    }
     final uri = Uri(scheme: 'tel', path: phoneNumber);
     final ok = await _launch(uri, LaunchMode.externalApplication);
     return ok
         ? AgentToolExecutionResult.succeeded(
             toolName: intent.toolName,
-            message: '已開啟撥號畫面，電話不會自動撥出。',
+            message: phoneNumber.isEmpty
+                ? '已開啟撥號畫面，請輸入號碼。'
+                : '已撥號到 $phoneNumber。',
           )
         : AgentToolExecutionResult.failed(
             toolName: intent.toolName,
@@ -104,12 +120,18 @@ class NativeToolExecutorService {
   Future<AgentToolExecutionResult> _createEmailDraft(
     AgentToolIntent intent,
   ) async {
-    final to = _stringArg(intent, 'to');
+    var to = _stringArg(intent, 'to');
+    // The `to` field from the LLM can be a Chinese alias like 「家人」; resolve
+    // it to a real email through the in-app family contacts table.
+    if ((to.isEmpty || !to.contains('@')) && contactLookup != null) {
+      final resolved = await contactLookup!.lookupEmail(to);
+      if (resolved != null && resolved.isNotEmpty) to = resolved;
+    }
     final subject = _stringArg(intent, 'subject', fallback: '想跟你說');
     final body = _stringArg(intent, 'body');
     final uri = Uri(
       scheme: 'mailto',
-      path: to,
+      path: to.contains('@') ? to : '',
       queryParameters: {
         'subject': subject,
         if (body.isNotEmpty) 'body': body,
@@ -119,7 +141,9 @@ class NativeToolExecutorService {
     return ok
         ? AgentToolExecutionResult.succeeded(
             toolName: intent.toolName,
-            message: '已建立 Email 草稿，信件不會自動寄出。',
+            message: to.contains('@')
+                ? '已建立 Email 草稿，收件人 $to。'
+                : '已開啟郵件，請輸入收件人。',
           )
         : AgentToolExecutionResult.failed(
             toolName: intent.toolName,

@@ -17,11 +17,11 @@ void main() {
       expect(plan.fallbackReply, '連線有點不穩，我們再試一次。');
     });
 
-    test('transcript timeout returns to listening with retry prompt', () {
+    test('transcript timeout returns to listening silently', () {
       final plan = policy.planFor(RealtimeTimeoutType.transcriptTimeout);
 
       expect(plan.targetState, VoiceAgentState.listening);
-      expect(plan.fallbackReply, '我剛剛有點沒聽清楚，可以再跟我說一次嗎？');
+      expect(plan.fallbackReply, '');
     });
 
     test('response timeout returns fallback reply', () {

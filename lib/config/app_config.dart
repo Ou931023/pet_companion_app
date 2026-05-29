@@ -40,6 +40,19 @@ class AppConfig {
     if (trimmed.isEmpty || isLegacyDefaultUrl(trimmed)) {
       return defaultSttProxyUrl;
     }
+    // When --dart-define=BACKEND_BASE_URL provides a real host (not the
+    // 127.0.0.1 default), treat it as the source of truth and discard any
+    // stored URL whose host differs — auto-recovers from stale LAN IPs
+    // after Wi-Fi changes or rebuilds with a new LAN IP.
+    final baseUri = Uri.tryParse(backendBaseUrl);
+    final storedUri = Uri.tryParse(trimmed);
+    if (baseUri != null &&
+        storedUri != null &&
+        baseUri.host.isNotEmpty &&
+        baseUri.host != '127.0.0.1' &&
+        storedUri.host != baseUri.host) {
+      return defaultSttProxyUrl;
+    }
     return trimmed;
   }
 

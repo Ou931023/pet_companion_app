@@ -72,7 +72,7 @@ class RealtimeTimeoutPolicy {
           type: RealtimeTimeoutType.transcriptTimeout,
           reason: 'transcript_timeout',
           targetState: VoiceAgentState.listening,
-          fallbackReply: '我剛剛有點沒聽清楚，可以再跟我說一次嗎？',
+          fallbackReply: '',
         ),
       RealtimeTimeoutType.responseTimeout => const RealtimeTimeoutRecoveryPlan(
           type: RealtimeTimeoutType.responseTimeout,

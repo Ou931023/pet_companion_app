@@ -231,7 +231,6 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
         _speechStoppedAt = null;
         _partialTranscript = '';
         conversationController.beginRealtimeUserSpeech();
-        conversationController.showPetBubbleMessage('我在聽，慢慢說。');
         _startTimeout(RealtimeTimeoutType.transcriptTimeout);
         break;
       case RealtimeEventType.userSpeechStopped:
@@ -289,14 +288,12 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
           _skipNextAssistantText = false;
           return;
         }
+        // Always show the latest assistant text even if the user started a
+        // new turn before OpenAI's previous response landed — OpenAI's reply
+        // is the most recent meaningful content and dropping it leaves the
+        // bubble empty.
         final responseTurnId =
             _responseTurnId.isEmpty ? _pendingRealtimeTurnId : _responseTurnId;
-        if (responseTurnId.isNotEmpty && !_isActiveTurn(responseTurnId)) {
-          debugPrint(
-            '[VoiceAgentController] drop stale assistant text turn=$responseTurnId active=$_activeTurnId',
-          );
-          return;
-        }
         unawaited(petStatsController.markRealtimeConversationCompleted());
         conversationController.handleRealtimeAssistantReply(
           event.payload,
@@ -479,10 +476,9 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     if (conversationController.shouldHandleAsLocalCommand(transcript)) {
-      _pendingRealtimeUserText = '';
-      _skipNextAssistantText = true;
       unawaited(_handleLocalRealtimeCommand(transcript, turnId));
-      return;
+      // Fall through: let OpenAI realtime speak the reply, while the local
+      // toolRouter quietly applies the action's side-effects in parallel.
     }
     final renameResult = _tryHandleRenameIntent(transcript);
     _emotion = detectEmotion(transcript);
@@ -537,24 +533,11 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _handleLocalRealtimeCommand(String text, String turnId) async {
-    if (!_isActiveTurn(turnId)) return;
-    _transition(VoiceAgentState.thinking, 'local_command_started',
-        turnId: turnId);
     try {
-      await conversationController.quickAction(text);
-    } catch (error) {
-      await conversationController.showFallbackMessage(
-        '我剛剛查詢時卡住了，可以再說一次嗎？',
-      );
-    } finally {
-      if (_state != VoiceAgentState.error && _state != VoiceAgentState.idle) {
-        _transition(
-          VoiceAgentState.listening,
-          'local_command_completed',
-          turnId: turnId,
-        );
-      }
-    }
+      // Execute the toolRouter side-effects silently (check-in, settings, etc.)
+      // — no pet bubble, no TTS — so OpenAI realtime stays the only speaker.
+      await conversationController.toolRouter.route(text);
+    } catch (_) {}
   }
 
   Future<void> _analyzeCompanionTranscript(

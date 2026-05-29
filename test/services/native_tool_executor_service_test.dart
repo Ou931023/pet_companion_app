@@ -54,7 +54,7 @@ void main() {
 
     expect(result.success, isTrue, reason: result.message);
     expect(launched?.scheme, 'tel');
-    expect(result.message, contains('不會自動撥出'));
+    expect(launched?.path, '0912345678');
   });
 
   test('create reminder delegates to reminder controller', () async {

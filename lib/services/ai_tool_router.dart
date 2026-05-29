@@ -40,7 +40,7 @@ class AiToolRouter {
     String userText, {
     String memoryContextSummary = '',
   }) async {
-    final normalized = userText.trim();
+    final normalized = _toTraditional(userText.trim());
     if (_isDailyCheckIn(normalized)) {
       return _dailyCheckIn();
     }
@@ -69,7 +69,7 @@ class AiToolRouter {
   }
 
   bool shouldHandleLocally(String text) {
-    final normalized = text.trim();
+    final normalized = _toTraditional(text.trim());
     return _isDailyCheckIn(normalized) ||
         _isBuyRequest(normalized) ||
         _isSettingsRequest(normalized) ||
@@ -80,8 +80,41 @@ class AiToolRouter {
         WebSearchService.shouldSearch(normalized);
   }
 
-  bool _isDailyCheckIn(String text) =>
-      text.contains('簽到') || text.contains('每日簽到') || text.contains('今天簽到了嗎');
+  // OpenAI transcribe sometimes returns Simplified Chinese for Taiwanese
+  // users; normalize the chars used by our intent matchers so detection works
+  // regardless of script. This is a targeted map, not a full S→T converter.
+  static const Map<String, String> _s2tMap = {
+    '签': '簽', '帮': '幫', '买': '買', '购': '購', '场': '場', '声': '聲',
+    '乐': '樂', '设': '設', '记': '記', '欢': '歡', '务': '務', '历': '歷',
+    '览': '覽', '号': '號', '医': '醫', '体': '體',
+    '关': '關', '开': '開', '点': '點', '钟': '鐘', '币': '幣', '宠': '寵',
+    '态': '態', '说': '說', '话': '話', '让': '讓', '听': '聽', '问': '問',
+    '现': '現', '钱': '錢', '钢': '鋼', '银': '銀', '门': '門', '区': '區',
+    '动': '動', '运': '運', '总': '總', '远': '遠', '过': '過', '应': '應',
+    '处': '處', '会': '會', '后': '後', '从': '從', '们': '們', '为': '為',
+    '东': '東', '车': '車', '电': '電', '简': '簡',
+  };
+
+  static String _toTraditional(String input) {
+    final buffer = StringBuffer();
+    for (final ch in input.split('')) {
+      buffer.write(_s2tMap[ch] ?? ch);
+    }
+    return buffer.toString();
+  }
+
+  bool _isDailyCheckIn(String text) {
+    if (text.contains('簽到') ||
+        text.contains('每日簽到') ||
+        text.contains('今天簽到了嗎')) {
+      return true;
+    }
+    // Tolerate common transcription mishearings of 「簽到」 from gpt realtime
+    // (e.g. 停到/添到/籤到/簽道/添道/簽倒/僉到) when the user clearly intended
+    // a check-in.
+    final phoneticMisreads = ['停到', '添到', '添道', '籤到', '簽道', '簽倒', '僉到', '前到'];
+    return phoneticMisreads.any(text.contains);
+  }
 
   bool _isBuyRequest(String text) {
     if (text.contains('不要買') || text.contains('不買')) return false;

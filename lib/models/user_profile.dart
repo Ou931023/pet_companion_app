@@ -19,6 +19,7 @@ class UserProfile {
     required this.contentPreferences,
     required this.voiceLanguageMode,
     required this.manualAsrStrategy,
+    required this.familyContacts,
   });
 
   final bool hasCompletedOnboarding;
@@ -38,6 +39,9 @@ class UserProfile {
   final List<String> contentPreferences;
   final String voiceLanguageMode;
   final String manualAsrStrategy;
+  // List of contacts the user keeps for voice "打給 X / 寄信給 X" — each entry
+  // is {alias, phone, email}.
+  final List<Map<String, String>> familyContacts;
 
   factory UserProfile.initial() {
     return const UserProfile(
@@ -64,6 +68,7 @@ class UserProfile {
       contentPreferences: ['story', 'healthTip', 'scamAlert'],
       voiceLanguageMode: 'defaultOpenAiRealtime',
       manualAsrStrategy: 'defaultOpenAiRealtime',
+      familyContacts: [],
     );
   }
 
@@ -85,6 +90,7 @@ class UserProfile {
     List<String>? contentPreferences,
     String? voiceLanguageMode,
     String? manualAsrStrategy,
+    List<Map<String, String>>? familyContacts,
   }) {
     return UserProfile(
       hasCompletedOnboarding:
@@ -105,6 +111,7 @@ class UserProfile {
       contentPreferences: contentPreferences ?? this.contentPreferences,
       voiceLanguageMode: voiceLanguageMode ?? this.voiceLanguageMode,
       manualAsrStrategy: manualAsrStrategy ?? this.manualAsrStrategy,
+      familyContacts: familyContacts ?? this.familyContacts,
     );
   }
 }
