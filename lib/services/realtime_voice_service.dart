@@ -127,7 +127,7 @@ class RealtimeVoiceService {
     @visibleForTesting this.connectImplementationForTesting,
     @visibleForTesting this.eventSenderForTesting,
     @visibleForTesting this.healthCheckImplementationForTesting,
-    this.dataChannelOpenTimeout = const Duration(seconds: 5),
+    this.dataChannelOpenTimeout = const Duration(seconds: 8),
   });
 
   @visibleForTesting
@@ -358,8 +358,20 @@ class RealtimeVoiceService {
   }) async {
     await _ensureRendererInitialized();
 
+    // 必須提供 STUN，否則 peer connection 只會蒐集本機 host candidate，
+    // 在 NAT / 行動網路（手機熱點、4G/5G）後面無法找到對外 srflx candidate，
+    // ICE 永遠連不上 OpenAI，data channel 也就一直開不起來。
     _peerConnection = await createPeerConnection({
       'sdpSemantics': 'unified-plan',
+      'iceServers': [
+        {
+          'urls': [
+            'stun:stun.l.google.com:19302',
+            'stun:stun1.l.google.com:19302',
+            'stun:stun2.l.google.com:19302',
+          ],
+        },
+      ],
     });
     _throwIfStaleConnect(generation);
     _peerConnection!.onConnectionState = (state) {
