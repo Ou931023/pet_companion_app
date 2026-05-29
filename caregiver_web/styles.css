@@ -360,6 +360,60 @@ code {
   font-size: 15px;
 }
 
+/* 詳情狀態操作 */
+.detail-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.btn-success {
+  background: var(--normal);
+  border-color: var(--normal);
+  color: #fff;
+}
+
+.btn-success:hover {
+  background: #2f7350;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.detail-done {
+  margin: 0;
+  font-weight: 700;
+  color: var(--normal);
+}
+
+.detail-msg {
+  margin: 10px 0 0;
+  font-size: 14px;
+  min-height: 1.2em;
+  color: var(--normal);
+}
+
+.detail-msg.error {
+  color: var(--urgent);
+  font-weight: 700;
+}
+
+/* 狀態徽章配色 */
+.badge.status-resolved {
+  background: var(--normal-bg);
+  color: var(--normal);
+}
+
+.badge.status-acknowledged {
+  background: #e7eefe;
+  color: var(--primary);
+}
+
 @media (max-width: 560px) {
   .stats {
     grid-template-columns: 1fr 1fr 1fr;

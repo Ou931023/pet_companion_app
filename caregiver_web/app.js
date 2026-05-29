@@ -10,10 +10,13 @@
 
   var RISK_LABELS = { urgent: "緊急", attention: "需注意", normal: "一般" };
   var STATUS_LABELS = {
-    new: "待處理",
+    new: "新提醒",
     acknowledged: "已查看",
     resolved: "已處理",
   };
+
+  // 目前在詳情 modal 中顯示的提醒（狀態更新時參照）。
+  var selectedAlert = null;
 
   // ---- DOM ----
   var el = {
@@ -142,7 +145,9 @@
           '<span class="badge">' +
           escapeHtml(categoryLabel(a)) +
           "</span>" +
-          '<span class="badge status">' +
+          '<span class="badge status status-' +
+          escapeHtml(a.status) +
+          '">' +
           escapeHtml(statusLabel(a.status)) +
           "</span>" +
           "</div>" +
@@ -229,7 +234,49 @@
     );
   }
 
+  function buildActionSection(a) {
+    if (a.status === "resolved") {
+      return (
+        '<div class="detail-actions"><p class="detail-done">此提醒已處理</p></div>' +
+        '<p id="detail-msg" class="detail-msg"></p>'
+      );
+    }
+    var buttons = "";
+    if (a.status === "new") {
+      buttons +=
+        '<button type="button" class="btn act-btn" data-status="acknowledged">標記為已查看</button>';
+    }
+    buttons +=
+      '<button type="button" class="btn btn-success act-btn" data-status="resolved">標記為已處理</button>';
+    return (
+      '<div class="detail-actions">' +
+      buttons +
+      "</div>" +
+      '<p id="detail-msg" class="detail-msg"></p>'
+    );
+  }
+
+  function wireActionButtons() {
+    Array.prototype.forEach.call(
+      el.detailBody.querySelectorAll(".detail-actions .act-btn"),
+      function (btn) {
+        btn.addEventListener("click", function () {
+          if (!selectedAlert) return;
+          updateAlertStatus(selectedAlert.id, btn.getAttribute("data-status"));
+        });
+      }
+    );
+  }
+
+  function setDetailMsg(text, isError) {
+    var m = document.getElementById("detail-msg");
+    if (!m) return;
+    m.textContent = text || "";
+    m.className = "detail-msg" + (isError ? " error" : "");
+  }
+
   function renderDetail(a) {
+    selectedAlert = a;
     el.detailBody.innerHTML =
       detailRow(
         "風險等級",
@@ -251,11 +298,50 @@
       detailRow("建立時間", escapeHtml(formatTime(a.createdAt))) +
       detailRow("收到時間", escapeHtml(formatTime(a.receivedAt))) +
       detailRow("來源", escapeHtml(a.source || "—")) +
-      detailRow("ID", escapeHtml(a.id || "—"));
+      detailRow("ID", escapeHtml(a.id || "—")) +
+      buildActionSection(a);
+    wireActionButtons();
+  }
+
+  function updateAlertStatus(id, status) {
+    if (!id || !status) return;
+    var buttons = el.detailBody.querySelectorAll(".detail-actions .act-btn");
+    Array.prototype.forEach.call(buttons, function (b) {
+      b.disabled = true;
+    });
+    setDetailMsg("更新中…", false);
+
+    fetch(getApiBase() + "/care-alerts/" + encodeURIComponent(id) + "/status", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: status }),
+    })
+      .then(function (res) {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      })
+      .then(function (data) {
+        if (!data || data.success !== true || !data.alert) {
+          throw new Error("unexpected response");
+        }
+        renderDetail(data.alert); // modal 立即更新（按鈕也會依新狀態重繪）
+        setDetailMsg(
+          status === "resolved" ? "已標記為已處理" : "已標記為已查看",
+          false
+        );
+        loadAlerts(); // 重新 fetch 列表 + 更新 Dashboard 統計
+      })
+      .catch(function () {
+        Array.prototype.forEach.call(buttons, function (b) {
+          b.disabled = false;
+        });
+        setDetailMsg("狀態更新失敗，請確認後端是否啟動", true);
+      });
   }
 
   function closeDetail() {
     el.overlay.classList.add("hidden");
+    selectedAlert = null;
     el.detailBody.innerHTML = "";
   }
 
