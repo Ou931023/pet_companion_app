@@ -52,6 +52,9 @@ const {
   transcribeTaigiAudio,
   warmupTaigiAsr,
 } = require("./services/taigiAsrService");
+const {
+  sendCareAlertNotification,
+} = require("./services/telegramNotifyService");
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -303,6 +306,40 @@ app.post("/api/agent/route", (req, res) => {
       intent: null,
       error: "agent_route_failed",
     });
+  }
+});
+
+app.post("/api/care-alerts/notify", async (req, res) => {
+  const body = req.body || {};
+  const summary =
+    typeof body.triggerSummary === "string" ? body.triggerSummary.trim() : "";
+  const snippet =
+    typeof body.transcriptSnippet === "string" ? body.transcriptSnippet.trim() : "";
+  if (!summary || !snippet) {
+    return res.status(400).json({ success: false, error: "invalid_payload" });
+  }
+  try {
+    const result = await sendCareAlertNotification({
+      riskLevel: body.riskLevel,
+      riskLevelLabel: body.riskLevelLabel,
+      category: body.category,
+      categoryLabel: body.categoryLabel,
+      triggerSummary: body.triggerSummary,
+      transcriptSnippet: body.transcriptSnippet,
+      createdAt: body.createdAt,
+      source: body.source,
+    });
+    if (!result.success) {
+      // 僅記錄 error code / status，不含 token 或完整 Telegram URL。
+      logError("care alert notify failed", {
+        error: result.error,
+        status: result.status,
+      });
+    }
+    return res.json(result);
+  } catch (error) {
+    logError("care alert notify exception", { error: error?.message || error });
+    return res.status(500).json({ success: false, error: "notify_failed" });
   }
 });
 
