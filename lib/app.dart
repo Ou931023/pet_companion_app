@@ -33,6 +33,7 @@ import 'services/ai_tool_router.dart';
 import 'services/agent_router_service.dart';
 import 'services/ai_navigation_service.dart';
 import 'services/asr_strategy_service.dart';
+import 'services/care_alert_notification_service.dart';
 import 'services/care_alert_storage_service.dart';
 import 'services/check_in_storage_service.dart';
 import 'services/companion_content_service.dart';
@@ -82,6 +83,7 @@ class PetCompanionApp extends StatelessWidget {
         Provider(create: (_) => const EmotionFusionService()),
         Provider(create: (_) => const PetEmotionMapper()),
         Provider(create: (_) => AgentRouterService()),
+        Provider(create: (_) => CareAlertNotificationService()),
         ChangeNotifierProvider(create: (_) => AppNavigationController()),
         ChangeNotifierProvider(
           create: (context) =>
@@ -252,6 +254,8 @@ class PetCompanionApp extends StatelessWidget {
             navigationController: context.read<AppNavigationController>(),
             agentToolController: context.read<AgentToolController>(),
             careAlertController: context.read<CareAlertController>(),
+            careAlertNotificationService:
+                context.read<CareAlertNotificationService>(),
           ),
           update: (context, profile, pet, petStats, conversation,
                   realtimeService, navigation, controller) =>
@@ -269,6 +273,8 @@ class PetCompanionApp extends StatelessWidget {
                 navigationController: navigation,
                 agentToolController: context.read<AgentToolController>(),
                 careAlertController: context.read<CareAlertController>(),
+                careAlertNotificationService:
+                    context.read<CareAlertNotificationService>(),
               ),
         ),
       ],

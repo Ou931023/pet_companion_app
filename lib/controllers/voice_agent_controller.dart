@@ -11,6 +11,7 @@ import '../models/pet_status.dart';
 import '../models/realtime_timeout.dart';
 import '../models/voice_agent_state.dart';
 import '../services/ai_navigation_service.dart';
+import '../services/care_alert_notification_service.dart';
 import '../services/companion_engine_service.dart';
 import '../services/emotion_services.dart';
 import '../services/language_routing_service.dart';
@@ -40,6 +41,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     required this.navigationController,
     this.agentToolController,
     this.careAlertController,
+    this.careAlertNotificationService,
     this.timeoutConfig = const RealtimeTimeoutConfig(),
     this.timeoutPolicy = const RealtimeTimeoutPolicy(),
   }) {
@@ -58,6 +60,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   final AppNavigationController navigationController;
   final AgentToolController? agentToolController;
   final CareAlertController? careAlertController;
+  final CareAlertNotificationService? careAlertNotificationService;
   final RealtimeTimeoutConfig timeoutConfig;
   final RealtimeTimeoutPolicy timeoutPolicy;
   final TextEmotionService _textEmotionService = const TextEmotionService();
@@ -620,6 +623,14 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       isRead: false,
     );
     unawaited(controller.addAlert(alert));
+    final notificationService = careAlertNotificationService;
+    if (notificationService != null) {
+      // fire-and-forget：通知失敗不影響 Realtime，也不影響本機 CareAlert。
+      unawaited(notificationService.notify(
+        sttProxyUrl: profileController.sttProxyUrl,
+        alert: alert,
+      ));
+    }
   }
 
   void _applyLocalCompanionFallback(String transcript, String turnId) {
