@@ -59,6 +59,7 @@ const {
   saveAlert: saveCareAlert,
   listAlerts: listCareAlerts,
   getAlertById: getCareAlertById,
+  updateAlertStatus: updateCareAlertStatus,
 } = require("./services/careAlertStoreService");
 
 const app = express();
@@ -381,6 +382,28 @@ app.get("/api/care-alerts/:id", async (req, res) => {
   } catch (error) {
     logError("care alert get failed", { error: error?.message || error });
     return res.status(500).json({ success: false, error: "care_alert_get_failed" });
+  }
+});
+
+app.patch("/api/care-alerts/:id/status", async (req, res) => {
+  const status =
+    req.body && typeof req.body.status === "string" ? req.body.status : "";
+  try {
+    const result = await updateCareAlertStatus(req.params.id, status);
+    if (result.success) {
+      return res.json(result);
+    }
+    if (result.error === "invalid_status") {
+      return res.status(400).json(result);
+    }
+    if (result.error === "not_found") {
+      return res.status(404).json(result);
+    }
+    logError("care alert status update failed", { error: result.error });
+    return res.status(500).json(result);
+  } catch (error) {
+    logError("care alert status update exception", { error: error?.message || error });
+    return res.status(500).json({ success: false, error: "write_failed" });
   }
 });
 

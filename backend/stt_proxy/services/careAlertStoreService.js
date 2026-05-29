@@ -101,9 +101,39 @@ async function getAlertById(id, options = {}) {
   return alerts.find((a) => a.id === id) || null;
 }
 
+const VALID_STATUSES = ["new", "acknowledged", "resolved"];
+
+async function updateAlertStatus(id, status, options = {}) {
+  if (!VALID_STATUSES.includes(status)) {
+    return { success: false, error: "invalid_status" };
+  }
+  const filePath = resolveFile(options.filePath);
+  try {
+    const alerts = await readAll(filePath);
+    const index = alerts.findIndex((a) => a.id === id);
+    if (index === -1) {
+      return { success: false, error: "not_found" };
+    }
+    const now = new Date().toISOString();
+    const updated = { ...alerts[index], status, statusUpdatedAt: now };
+    if (status === "acknowledged") updated.acknowledgedAt = now;
+    if (status === "resolved") updated.resolvedAt = now;
+    alerts[index] = updated;
+    await writeAll(filePath, alerts);
+    return { success: true, alert: updated };
+  } catch (error) {
+    console.error("[care-alert-store] updateAlertStatus failed", {
+      error: error?.message || error,
+    });
+    return { success: false, error: "write_failed" };
+  }
+}
+
 module.exports = {
   saveAlert,
   listAlerts,
   getAlertById,
+  updateAlertStatus,
   normalizeAlert,
+  VALID_STATUSES,
 };
