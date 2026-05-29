@@ -55,6 +55,11 @@ const {
 const {
   sendCareAlertNotification,
 } = require("./services/telegramNotifyService");
+const {
+  saveAlert: saveCareAlert,
+  listAlerts: listCareAlerts,
+  getAlertById: getCareAlertById,
+} = require("./services/careAlertStoreService");
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -318,6 +323,15 @@ app.post("/api/care-alerts/notify", async (req, res) => {
   if (!summary || !snippet) {
     return res.status(400).json({ success: false, error: "invalid_payload" });
   }
+  // 持久化：供長照管理者網頁查詢。失敗只 log，不影響 Telegram 發送與回應。
+  try {
+    const stored = await saveCareAlert(body);
+    if (!stored.success) {
+      logError("care alert persist failed", { error: stored.error });
+    }
+  } catch (error) {
+    logError("care alert persist exception", { error: error?.message || error });
+  }
   try {
     const result = await sendCareAlertNotification({
       riskLevel: body.riskLevel,
@@ -340,6 +354,33 @@ app.post("/api/care-alerts/notify", async (req, res) => {
   } catch (error) {
     logError("care alert notify exception", { error: error?.message || error });
     return res.status(500).json({ success: false, error: "notify_failed" });
+  }
+});
+
+app.get("/api/care-alerts", async (req, res) => {
+  try {
+    const alerts = await listCareAlerts({
+      limit: req.query.limit,
+      riskLevel: req.query.riskLevel,
+      status: req.query.status,
+    });
+    return res.json({ success: true, alerts });
+  } catch (error) {
+    logError("care alerts list failed", { error: error?.message || error });
+    return res.status(500).json({ success: false, error: "care_alerts_list_failed" });
+  }
+});
+
+app.get("/api/care-alerts/:id", async (req, res) => {
+  try {
+    const alert = await getCareAlertById(req.params.id);
+    if (!alert) {
+      return res.status(404).json({ success: false, error: "not_found" });
+    }
+    return res.json({ success: true, alert });
+  } catch (error) {
+    logError("care alert get failed", { error: error?.message || error });
+    return res.status(500).json({ success: false, error: "care_alert_get_failed" });
   }
 });
 

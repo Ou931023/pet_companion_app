@@ -1,6 +1,14 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 
+// notify 現在會持久化 CareAlert；把 runtime data 檔導到 temp，避免污染正式 data。
+process.env.CARE_ALERTS_DATA_FILE = path.join(
+  fs.mkdtempSync(path.join(os.tmpdir(), "care_alerts_notify_ep_")),
+  "care_alerts.json",
+);
 process.env.NODE_ENV = "test";
 const app = require("../server");
 
