@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>愛陪伴 · 長照照護管理後台</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <h1>愛陪伴 · 長照照護管理後台</h1>
+      <p class="subtitle">查看 AI 陪伴寵物偵測到的照護提醒</p>
+    </header>
+
+    <main class="container">
+      <!-- 後端連線設定 -->
+      <section class="panel">
+        <label class="field-label" for="api-base">後端 API 位址</label>
+        <div class="row">
+          <input
+            id="api-base"
+            type="text"
+            class="text-input"
+            placeholder="http://127.0.0.1:3001/api"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button id="save-api-base" class="btn">儲存位址</button>
+        </div>
+        <p class="hint">
+          本機開發用 <code>http://127.0.0.1:3001/api</code>;
+          手機 / 其他電腦請改成 <code>http://&lt;Mac區網IP&gt;:3001/api</code>。
+        </p>
+      </section>
+
+      <!-- 統計概覽 -->
+      <section class="stats" id="stats" aria-live="polite">
+        <div class="stat-card">
+          <div class="stat-value" id="stat-total">—</div>
+          <div class="stat-label">目前筆數</div>
+        </div>
+        <div class="stat-card stat-urgent">
+          <div class="stat-value" id="stat-urgent">—</div>
+          <div class="stat-label">緊急</div>
+        </div>
+        <div class="stat-card stat-new">
+          <div class="stat-value" id="stat-new">—</div>
+          <div class="stat-label">待處理</div>
+        </div>
+      </section>
+
+      <!-- 篩選列 -->
+      <section class="panel filters">
+        <div class="filter-item">
+          <label class="field-label" for="filter-risk">風險等級</label>
+          <select id="filter-risk" class="select">
+            <option value="">全部</option>
+            <option value="urgent">緊急</option>
+            <option value="attention">需注意</option>
+            <option value="normal">一般</option>
+          </select>
+        </div>
+        <div class="filter-item">
+          <label class="field-label" for="filter-status">狀態</label>
+          <select id="filter-status" class="select">
+            <option value="">全部</option>
+            <option value="new">待處理</option>
+            <option value="acknowledged">已查看</option>
+            <option value="resolved">已處理</option>
+          </select>
+        </div>
+        <div class="filter-item">
+          <label class="field-label" for="filter-limit">顯示筆數</label>
+          <select id="filter-limit" class="select">
+            <option value="20">20</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </div>
+        <div class="filter-item filter-action">
+          <button id="refresh" class="btn btn-primary">重新整理</button>
+        </div>
+      </section>
+
+      <!-- 狀態訊息（載入中 / 無資料 / 錯誤） -->
+      <p id="status-message" class="status-message"></p>
+
+      <!-- 列表 -->
+      <section id="alert-list" class="alert-list"></section>
+    </main>
+
+    <!-- 詳情 modal -->
+    <div id="detail-overlay" class="overlay hidden">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+        <div class="modal-head">
+          <h2 id="detail-title">提醒詳情</h2>
+          <button id="detail-close" class="btn-close" aria-label="關閉">×</button>
+        </div>
+        <div id="detail-body" class="modal-body"></div>
+      </div>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
