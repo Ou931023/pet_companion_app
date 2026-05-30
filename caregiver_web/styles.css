@@ -7,6 +7,8 @@
   --primary: #3346d3;
   --urgent: #d23b3b;
   --urgent-bg: #fdeaea;
+  --high: #e2682a;
+  --high-bg: #fdeee4;
   --attention: #d98324;
   --attention-bg: #fdf3e7;
   --normal: #3a8a5f;
@@ -221,6 +223,20 @@ code {
   background: var(--urgent-bg);
 }
 
+.alert-card.risk-high {
+  border-left-color: var(--high);
+  background: var(--high-bg);
+}
+
+.alert-card.risk-medium {
+  border-left-color: var(--attention);
+  background: var(--attention-bg);
+}
+
+.alert-card.risk-low {
+  border-left-color: var(--normal);
+}
+
 .alert-card.risk-attention {
   border-left-color: var(--attention);
   background: var(--attention-bg);
@@ -256,6 +272,21 @@ code {
 
 .badge.risk-urgent {
   background: var(--urgent);
+  color: #fff;
+}
+
+.badge.risk-high {
+  background: var(--high);
+  color: #fff;
+}
+
+.badge.risk-medium {
+  background: var(--attention);
+  color: #fff;
+}
+
+.badge.risk-low {
+  background: var(--normal);
   color: #fff;
 }
 

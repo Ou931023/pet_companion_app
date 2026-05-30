@@ -161,3 +161,91 @@ test("updateAlertStatus 後 getAlertById 可看到新 status", async () => {
   assert.equal(got.status, "acknowledged");
   assert.ok(got.acknowledgedAt);
 });
+
+// ---- CR-0002 Batch 2：四級正規化與向下相容 ----
+
+test("normalizeRiskLevel 規則：legacy→權威、原樣保留、未知→low", () => {
+  assert.equal(store.normalizeRiskLevel("normal"), "low");
+  assert.equal(store.normalizeRiskLevel("attention"), "medium");
+  assert.equal(store.normalizeRiskLevel("urgent"), "urgent");
+  assert.equal(store.normalizeRiskLevel("low"), "low");
+  assert.equal(store.normalizeRiskLevel("medium"), "medium");
+  assert.equal(store.normalizeRiskLevel("high"), "high");
+  // 未知 / 空 / null → low
+  assert.equal(store.normalizeRiskLevel("bogus"), "low");
+  assert.equal(store.normalizeRiskLevel(""), "low");
+  assert.equal(store.normalizeRiskLevel(null), "low");
+  assert.equal(store.normalizeRiskLevel(undefined), "low");
+  // 大小寫 / 空白不敏感
+  assert.equal(store.normalizeRiskLevel(" Attention "), "medium");
+  assert.equal(store.normalizeRiskLevel("URGENT"), "urgent");
+});
+
+test("saveAlert 寫入前正規化 riskLevel（normal→low、attention→medium、high 原樣）", async () => {
+  const filePath = tempFile();
+  const a = await store.saveAlert({ ...base, riskLevel: "normal" }, { filePath });
+  const b = await store.saveAlert({ ...base, riskLevel: "attention" }, { filePath });
+  const c = await store.saveAlert({ ...base, riskLevel: "high" }, { filePath });
+  assert.equal(a.alert.riskLevel, "low");
+  assert.equal(b.alert.riskLevel, "medium");
+  assert.equal(c.alert.riskLevel, "high");
+});
+
+test("filter 用新值可命中由舊代碼寫入的資料（attention 查 medium）", async () => {
+  const filePath = tempFile();
+  await store.saveAlert({ ...base, riskLevel: "attention" }, { filePath });
+  await store.saveAlert({ ...base, riskLevel: "urgent" }, { filePath });
+  const medium = await store.listAlerts({ filePath, riskLevel: "medium" });
+  assert.equal(medium.length, 1);
+  assert.equal(medium[0].riskLevel, "medium");
+});
+
+test("filter 用舊代碼也能命中（查 attention 命中已正規化的 medium）", async () => {
+  const filePath = tempFile();
+  await store.saveAlert({ ...base, riskLevel: "attention" }, { filePath });
+  const byLegacy = await store.listAlerts({ filePath, riskLevel: "attention" });
+  assert.equal(byLegacy.length, 1);
+});
+
+test("filter 對未被正規化的舊 care_alerts.json 仍正確（讀時比對也 normalize）", async () => {
+  // 模擬一份「Batch 2 之前就寫好、未正規化」的 care_alerts.json。
+  const filePath = tempFile();
+  const legacy = [
+    {
+      id: "legacy-1",
+      receivedAt: "2026-05-20T10:00:00.000Z",
+      status: "new",
+      riskLevel: "attention",
+      riskLevelLabel: "需注意",
+      category: "loneliness",
+      triggerSummary: "舊資料",
+      transcriptSnippet: "片段",
+      createdAt: "2026-05-20T10:00:00.000",
+      source: "companion_analysis",
+    },
+    {
+      id: "legacy-2",
+      receivedAt: "2026-05-20T11:00:00.000Z",
+      status: "new",
+      riskLevel: "normal",
+      riskLevelLabel: "一般",
+      category: "other",
+      triggerSummary: "舊資料2",
+      transcriptSnippet: "片段2",
+      createdAt: "2026-05-20T11:00:00.000",
+      source: "companion_analysis",
+    },
+  ];
+  fs.writeFileSync(filePath, JSON.stringify(legacy, null, 2), "utf8");
+
+  // 舊資料原樣保留（讀取不改寫），但 filter 用權威值仍可命中。
+  const all = await store.listAlerts({ filePath });
+  assert.equal(all.length, 2);
+  const medium = await store.listAlerts({ filePath, riskLevel: "medium" });
+  assert.equal(medium.length, 1);
+  assert.equal(medium[0].id, "legacy-1");
+  assert.equal(medium[0].riskLevel, "attention", "讀取不改寫舊資料本身");
+  const low = await store.listAlerts({ filePath, riskLevel: "low" });
+  assert.equal(low.length, 1);
+  assert.equal(low[0].id, "legacy-2");
+});

@@ -223,7 +223,12 @@ class _CareAlertCard extends StatelessWidget {
 
   Color _riskColor(CareAlertRiskLevel level) {
     return switch (level) {
+      // 權威四級
       CareAlertRiskLevel.urgent => Colors.red.shade700,
+      CareAlertRiskLevel.high => Colors.deepOrange.shade700,
+      CareAlertRiskLevel.medium => Colors.orange.shade700,
+      CareAlertRiskLevel.low => Colors.indigo,
+      // 舊代碼（legacy，向下相容顯示）
       CareAlertRiskLevel.attention => Colors.orange.shade800,
       CareAlertRiskLevel.normal => Colors.indigo,
     };

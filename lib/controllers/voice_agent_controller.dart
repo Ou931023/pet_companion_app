@@ -610,7 +610,11 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     if (!result.safety.needsHumanSupport) return;
     if (turnId.isEmpty || turnId == _lastAlertedTurnId) return;
     _lastAlertedTurnId = turnId;
-    final summary = result.implicitMeaning.trim();
+    // triggerSummary 來源：優先用後端 companion 產生的 careAlertSummary（白話、非診斷），
+    // 缺少時才退回 implicitMeaning（CR-0003 Batch 3 wiring）。
+    final careSummary = result.careAlertSummary.trim();
+    final summary =
+        careSummary.isNotEmpty ? careSummary : result.implicitMeaning.trim();
     final alert = CareAlert(
       id: 'care_alert_$turnId',
       createdAt: DateTime.now(),

@@ -4,9 +4,23 @@ const test = require("node:test");
 const {
   sendCareAlertNotification,
   buildMessage,
+  riskLevelDisplay,
+  shouldNotify,
   truncateSnippet,
   SNIPPET_MAX_LENGTH,
 } = require("./telegramNotifyService");
+
+test("shouldNotify：只有 high / urgent 推 Telegram，low / medium 不推", () => {
+  assert.equal(shouldNotify({ riskLevel: "high" }), true);
+  assert.equal(shouldNotify({ riskLevel: "urgent" }), true);
+  assert.equal(shouldNotify({ riskLevel: "medium" }), false);
+  assert.equal(shouldNotify({ riskLevel: "low" }), false);
+  // legacy 值經正規化：attention→medium（不推）、normal→low（不推）
+  assert.equal(shouldNotify({ riskLevel: "attention" }), false);
+  assert.equal(shouldNotify({ riskLevel: "normal" }), false);
+  // 未知 → low → 不推
+  assert.equal(shouldNotify({ riskLevel: "bogus" }), false);
+});
 
 const ORIGINAL_FETCH = global.fetch;
 const ORIGINAL_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -82,6 +96,43 @@ test("buildMessage 採用 ISO 牆上時間且含必要欄位", () => {
   assert.ok(message.includes("類型：其他"));
   assert.ok(message.includes("時間：2026/05/28 16:30"));
   assert.ok(message.includes("建議：請長照人員或家屬主動關心。"));
+});
+
+// ---- CR-0002 Batch 2：四級中文 label 與向下相容 ----
+
+test("riskLevelDisplay 由權威四級推導中文 label（無 riskLevelLabel 時）", () => {
+  assert.equal(riskLevelDisplay({ riskLevel: "low" }), "一般");
+  assert.equal(riskLevelDisplay({ riskLevel: "medium" }), "持續觀察");
+  assert.equal(riskLevelDisplay({ riskLevel: "high" }), "需通知");
+  assert.equal(riskLevelDisplay({ riskLevel: "urgent" }), "緊急");
+});
+
+test("riskLevelDisplay 對舊代碼也能推導（normal→一般、attention→持續觀察）", () => {
+  assert.equal(riskLevelDisplay({ riskLevel: "normal" }), "一般");
+  assert.equal(riskLevelDisplay({ riskLevel: "attention" }), "持續觀察");
+  // 未知 → low → 一般
+  assert.equal(riskLevelDisplay({ riskLevel: "bogus" }), "一般");
+});
+
+test("riskLevelDisplay 優先採用前端帶來的 riskLevelLabel", () => {
+  assert.equal(
+    riskLevelDisplay({ riskLevel: "high", riskLevelLabel: "需通知" }),
+    "需通知",
+  );
+  // 即使與 level 不一致也以前端 label 為準（前端已是顯示來源）
+  assert.equal(
+    riskLevelDisplay({ riskLevel: "attention", riskLevelLabel: "需注意" }),
+    "需注意",
+  );
+});
+
+test("buildMessage 對 high（無 label）顯示『風險等級：需通知』", () => {
+  const message = buildMessage({
+    ...samplePayload,
+    riskLevel: "high",
+    riskLevelLabel: undefined,
+  });
+  assert.ok(message.includes("風險等級：需通知"));
 });
 
 test("fetch 成功時回 success:true，並送到 sendMessage", async () => {

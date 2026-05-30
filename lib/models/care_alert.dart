@@ -3,25 +3,54 @@
 // 用來把對話中偵測到的長者異常狀況，記錄成一筆可供長照人員或家屬查看的提醒。
 // 此批次只建立資料地基，尚未與對話偵測串接（hook 留待下一個小批次）。
 
-/// 提醒風險等級。目前先支援三級，與後端 safety_guard 一致。
+/// 提醒風險等級。
+///
+/// 為了向下相容（CR-0002 Batch 3），同時支援兩套代碼：
+/// - 權威四級：low / medium / high / urgent（PROJECT_ARCHITECTURE.md §5.1）
+/// - 舊代碼（legacy）：normal / attention / urgent（後端 safety_guard 目前仍輸出）
+///
+/// 在資料層權威值尚未切換前，本 enum 只「忠實透傳」收到的代碼：
+/// `fromJson` 讀得懂兩套值，`toJson()` 原樣輸出，不把舊值改寫成新值
+/// （避免提前切換資料層）。需要統一比較 / 排序時，請改用 [canonical]。
 enum CareAlertRiskLevel {
+  // 權威四級
+  low,
+  medium,
+  high,
+  urgent,
+  // 舊代碼（legacy，待 CR-0002 全部完成後淘汰）
   normal,
-  attention,
-  urgent;
+  attention;
 
   static CareAlertRiskLevel fromJson(Object? value) {
     return switch (value?.toString()) {
       'urgent' => CareAlertRiskLevel.urgent,
+      'high' => CareAlertRiskLevel.high,
+      'medium' => CareAlertRiskLevel.medium,
+      'low' => CareAlertRiskLevel.low,
       'attention' => CareAlertRiskLevel.attention,
+      'normal' => CareAlertRiskLevel.normal,
+      // 未知值保守對映為 normal（其 canonical 即為 low），維持既有行為。
       _ => CareAlertRiskLevel.normal,
     };
   }
 
   String toJson() => name;
 
+  /// 權威等級。舊代碼對映到權威四級（normal→low、attention→medium），
+  /// 其餘維持自身。供排序 / 分組 / 一致性比較使用，不影響序列化。
+  CareAlertRiskLevel get canonical => switch (this) {
+        CareAlertRiskLevel.normal => CareAlertRiskLevel.low,
+        CareAlertRiskLevel.attention => CareAlertRiskLevel.medium,
+        _ => this,
+      };
+
   /// 長者 / 家屬看得懂的中文標籤。
   String get label => switch (this) {
         CareAlertRiskLevel.urgent => '緊急',
+        CareAlertRiskLevel.high => '需通知',
+        CareAlertRiskLevel.medium => '持續觀察',
+        CareAlertRiskLevel.low => '一般',
         CareAlertRiskLevel.attention => '需注意',
         CareAlertRiskLevel.normal => '一般',
       };

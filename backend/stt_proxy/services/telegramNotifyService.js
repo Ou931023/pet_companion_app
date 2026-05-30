@@ -8,9 +8,30 @@
 // - 不在 log 印出含 token 的完整 Telegram URL。
 // - 只傳 CareAlert 的摘要與片段，不傳完整對話紀錄；片段過長會截斷。
 
+const {
+  normalizeRiskLevel,
+  RISK_LEVEL_LABELS,
+} = require("./careAlertStoreService");
+
 const TELEGRAM_API_BASE = "https://api.telegram.org";
 const REQUEST_TIMEOUT_MS = 5000;
 const SNIPPET_MAX_LENGTH = 200;
+
+// 風險等級顯示文字：優先採用 payload 帶來的 riskLevelLabel（前端已給正確中文），
+// 否則由正規化後的權威四級（low/medium/high/urgent）推導中文 label。
+function riskLevelDisplay(payload = {}) {
+  const explicit =
+    typeof payload.riskLevelLabel === "string" ? payload.riskLevelLabel.trim() : "";
+  if (explicit) return explicit;
+  return RISK_LEVEL_LABELS[normalizeRiskLevel(payload.riskLevel)] || "未知";
+}
+
+// Telegram 推播門檻：只有 high / urgent 適合推播給長照人員；
+// low / medium 只進 store / caregiver_web，不洗版。
+const TELEGRAM_NOTIFY_LEVELS = new Set(["high", "urgent"]);
+function shouldNotify(payload = {}) {
+  return TELEGRAM_NOTIFY_LEVELS.has(normalizeRiskLevel(payload.riskLevel));
+}
 
 function truncateSnippet(text) {
   const value = typeof text === "string" ? text.trim() : "";
@@ -34,7 +55,7 @@ function formatTimestamp(value) {
 }
 
 function buildMessage(payload = {}) {
-  const riskLevel = payload.riskLevelLabel || payload.riskLevel || "未知";
+  const riskLevel = riskLevelDisplay(payload);
   const category = payload.categoryLabel || payload.category || "其他";
   const summary =
     (typeof payload.triggerSummary === "string" ? payload.triggerSummary.trim() : "") ||
@@ -89,6 +110,8 @@ async function sendCareAlertNotification(payload = {}) {
 module.exports = {
   sendCareAlertNotification,
   buildMessage,
+  riskLevelDisplay,
+  shouldNotify,
   truncateSnippet,
   formatTimestamp,
   SNIPPET_MAX_LENGTH,

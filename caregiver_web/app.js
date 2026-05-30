@@ -8,7 +8,15 @@
   var API_BASE_KEY = "caregiver_api_base";
   var DEFAULT_API_BASE = "http://127.0.0.1:3001/api";
 
-  var RISK_LABELS = { urgent: "緊急", attention: "需注意", normal: "一般" };
+  // 同時支援權威四級（low/medium/high/urgent）與舊代碼（normal/attention）。
+  var RISK_LABELS = {
+    urgent: "緊急",
+    high: "需通知",
+    medium: "持續觀察",
+    low: "一般",
+    attention: "需注意",
+    normal: "一般",
+  };
   var STATUS_LABELS = {
     new: "新提醒",
     acknowledged: "已查看",
@@ -68,10 +76,24 @@
   }
 
   function riskClass(riskLevel) {
-    if (riskLevel === "urgent") return "risk-urgent";
-    if (riskLevel === "attention") return "risk-attention";
-    if (riskLevel === "normal") return "risk-normal";
-    return "";
+    switch (riskLevel) {
+      // 權威四級
+      case "urgent":
+        return "risk-urgent";
+      case "high":
+        return "risk-high";
+      case "medium":
+        return "risk-medium";
+      case "low":
+        return "risk-low";
+      // 舊代碼（legacy）
+      case "attention":
+        return "risk-attention";
+      case "normal":
+        return "risk-normal";
+      default:
+        return "";
+    }
   }
 
   function formatTime(iso) {

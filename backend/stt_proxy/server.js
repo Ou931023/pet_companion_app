@@ -54,13 +54,19 @@ const {
 } = require("./services/taigiAsrService");
 const {
   sendCareAlertNotification,
+  shouldNotify: shouldTelegramNotify,
 } = require("./services/telegramNotifyService");
 const {
   saveAlert: saveCareAlert,
   listAlerts: listCareAlerts,
   getAlertById: getCareAlertById,
   updateAlertStatus: updateCareAlertStatus,
+  normalizeRiskLevel,
 } = require("./services/careAlertStoreService");
+const {
+  canSendTelegram,
+  markTelegramSent,
+} = require("./services/careAlertCooldown");
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -333,7 +339,18 @@ app.post("/api/care-alerts/notify", async (req, res) => {
   } catch (error) {
     logError("care alert persist exception", { error: error?.message || error });
   }
+  // Telegram 推播規則：只有 high / urgent 推播；low / medium 只進 store / caregiver_web。
+  // 並套用 in-process cooldown 防洗版（同 source+riskLevel 在冷卻期內只成功推一次）。
   try {
+    if (!shouldTelegramNotify(body)) {
+      // 低風險：已持久化、供 caregiver_web 查看，但不推 Telegram。
+      return res.json({ success: true, telegram: "skipped_low_risk" });
+    }
+    const cooldownKey = `${body.source || "unknown"}::${normalizeRiskLevel(body.riskLevel)}`;
+    if (!canSendTelegram(cooldownKey)) {
+      // 冷卻期內重複的同類高風險：略過 Telegram，避免洗版（alert 仍已持久化）。
+      return res.json({ success: true, telegram: "skipped_cooldown" });
+    }
     const result = await sendCareAlertNotification({
       riskLevel: body.riskLevel,
       riskLevelLabel: body.riskLevelLabel,
@@ -344,7 +361,10 @@ app.post("/api/care-alerts/notify", async (req, res) => {
       createdAt: body.createdAt,
       source: body.source,
     });
-    if (!result.success) {
+    if (result.success) {
+      // 只有真的推成功才開始冷卻，避免「送失敗卻擋住後續」。
+      markTelegramSent(cooldownKey);
+    } else {
       // 僅記錄 error code / status，不含 token 或完整 Telegram URL。
       logError("care alert notify failed", {
         error: result.error,

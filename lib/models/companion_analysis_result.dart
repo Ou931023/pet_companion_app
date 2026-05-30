@@ -14,6 +14,7 @@ class CompanionAnalysisResult {
     required this.nextStrategy,
     required this.voiceFeatures,
     required this.fusion,
+    this.careAlertSummary = '',
     this.needsSearch = false,
     this.searchTopic = 'none',
     this.knowledgeAnswer = '',
@@ -34,6 +35,9 @@ class CompanionAnalysisResult {
   final CompanionNextStrategy nextStrategy;
   final CompanionVoiceFeatures voiceFeatures;
   final CompanionEmotionFusion fusion;
+
+  /// Care Alert 人類可讀摘要（後端 companion 產生；給 Telegram / caregiver_web 顯示）。
+  final String careAlertSummary;
   final bool needsSearch;
   final String searchTopic;
   final String knowledgeAnswer;
@@ -65,6 +69,7 @@ class CompanionAnalysisResult {
       fusion: CompanionEmotionFusion.fromJson(
         Map<String, dynamic>.from((json['fusion'] as Map?) ?? const {}),
       ),
+      careAlertSummary: json['careAlertSummary']?.toString() ?? '',
       needsSearch: json['needsSearch'] == true,
       searchTopic: json['searchTopic']?.toString() ?? 'none',
       knowledgeAnswer: json['knowledgeAnswer']?.toString() ?? '',

@@ -19,6 +19,31 @@ function resolveFile(explicit) {
   return explicit || process.env.CARE_ALERTS_DATA_FILE || DEFAULT_DATA_FILE;
 }
 
+// ---- Care Alert 風險分級正規化（CR-0002 Batch 2）----
+//
+// 權威四級：low / medium / high / urgent（見 PROJECT_ARCHITECTURE.md §5.1）。
+// 為向下相容，舊代碼 normal / attention 在「寫入」與「filter 比對」時都會被正規化。
+const AUTHORITATIVE_RISK_LEVELS = new Set(["low", "medium", "high", "urgent"]);
+const RISK_LEVEL_ALIASES = { normal: "low", attention: "medium" };
+const RISK_LEVEL_LABELS = {
+  low: "一般",
+  medium: "持續觀察",
+  high: "需通知",
+  urgent: "緊急",
+};
+
+// 把任意輸入正規化為權威四級之一。
+// 規則：normal→low、attention→medium、urgent→urgent、low/medium/high/urgent 原樣、
+// 其餘（含空字串、未知值）→ low。大小寫與前後空白不敏感。
+function normalizeRiskLevel(value) {
+  const raw = (value == null ? "" : String(value)).trim().toLowerCase();
+  if (AUTHORITATIVE_RISK_LEVELS.has(raw)) return raw;
+  if (Object.prototype.hasOwnProperty.call(RISK_LEVEL_ALIASES, raw)) {
+    return RISK_LEVEL_ALIASES[raw];
+  }
+  return "low";
+}
+
 async function readAll(filePath) {
   try {
     const raw = await fs.readFile(filePath, "utf8");
@@ -46,7 +71,8 @@ function normalizeAlert(payload = {}) {
     id: payload.id || randomUUID(),
     receivedAt: new Date().toISOString(),
     status: payload.status || "new",
-    riskLevel: payload.riskLevel ?? "",
+    // 寫入前正規化為權威四級（舊代碼 normal/attention 會被轉換；未知→low）。
+    riskLevel: normalizeRiskLevel(payload.riskLevel),
     riskLevelLabel: payload.riskLevelLabel ?? "",
     category: payload.category ?? "",
     categoryLabel: payload.categoryLabel ?? "",
@@ -78,7 +104,10 @@ async function listAlerts(options = {}) {
   const alerts = await readAll(filePath);
   let result = alerts;
   if (options.riskLevel) {
-    result = result.filter((a) => a.riskLevel === options.riskLevel);
+    // filter 條件與資料本身都先正規化再比對，讓「用新值查也能命中舊資料
+    // （含尚未轉換的舊 care_alerts.json）」、反之亦然。
+    const wanted = normalizeRiskLevel(options.riskLevel);
+    result = result.filter((a) => normalizeRiskLevel(a.riskLevel) === wanted);
   }
   if (options.status) {
     result = result.filter((a) => a.status === options.status);
@@ -135,5 +164,7 @@ module.exports = {
   getAlertById,
   updateAlertStatus,
   normalizeAlert,
+  normalizeRiskLevel,
+  RISK_LEVEL_LABELS,
   VALID_STATUSES,
 };

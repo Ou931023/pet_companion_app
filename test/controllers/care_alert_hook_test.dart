@@ -127,6 +127,63 @@ void main() {
 
     harness.dispose();
   });
+
+  test('triggerSummary 優先採用 careAlertSummary（CR-0003 B3 wiring）', () async {
+    final careAlertController = CareAlertController(CareAlertStorageService());
+    await careAlertController.loadAlerts();
+    final harness = await _CareAlertHookHarness.create(
+      companionEngineService: _FakeCompanionEngineService(
+        needsHumanSupport: true,
+        careAlertSummary: '系統偵測長者提到睡眠不佳，建議照護人員主動關心近況。',
+        implicitMeaning: '使用者需要陪伴。',
+      ),
+      careAlertController: careAlertController,
+    );
+
+    await harness.controller.startRealtimeConversation();
+    harness.realtimeService.handleDataChannelEventForTest('''
+{"type":"conversation.item.input_audio_transcription.completed","transcript":"我都睡不好"}
+''');
+    await pumpEventQueue();
+    await pumpEventQueue();
+
+    expect(careAlertController.alerts.length, 1);
+    expect(
+      careAlertController.alerts.first.triggerSummary,
+      '系統偵測長者提到睡眠不佳，建議照護人員主動關心近況。',
+    );
+
+    harness.dispose();
+  });
+
+  test('careAlertSummary 缺失時 fallback 到 implicitMeaning（CR-0003 B3 wiring）',
+      () async {
+    final careAlertController = CareAlertController(CareAlertStorageService());
+    await careAlertController.loadAlerts();
+    final harness = await _CareAlertHookHarness.create(
+      companionEngineService: _FakeCompanionEngineService(
+        needsHumanSupport: true,
+        careAlertSummary: '',
+        implicitMeaning: '使用者可能感到孤單，需要被溫柔確認。',
+      ),
+      careAlertController: careAlertController,
+    );
+
+    await harness.controller.startRealtimeConversation();
+    harness.realtimeService.handleDataChannelEventForTest('''
+{"type":"conversation.item.input_audio_transcription.completed","transcript":"我覺得孤單"}
+''');
+    await pumpEventQueue();
+    await pumpEventQueue();
+
+    expect(careAlertController.alerts.length, 1);
+    expect(
+      careAlertController.alerts.first.triggerSummary,
+      '使用者可能感到孤單，需要被溫柔確認。',
+    );
+
+    harness.dispose();
+  });
 }
 
 RealtimeHealthStatus _healthyBackend() {
@@ -141,9 +198,15 @@ RealtimeHealthStatus _healthyBackend() {
 /// 測試用假的 companion engine：回傳可控的 safety 結果，並 echo turnId
 /// （與真實後端行為一致，才能通過 VoiceAgentController 的 staleness guard）。
 class _FakeCompanionEngineService extends CompanionEngineService {
-  _FakeCompanionEngineService({required this.needsHumanSupport}) : super();
+  _FakeCompanionEngineService({
+    required this.needsHumanSupport,
+    this.careAlertSummary = '',
+    this.implicitMeaning = '',
+  }) : super();
 
   final bool needsHumanSupport;
+  final String careAlertSummary;
+  final String implicitMeaning;
 
   @override
   Future<CompanionAnalysisResult?> analyze({
@@ -164,6 +227,8 @@ class _FakeCompanionEngineService extends CompanionEngineService {
   }) async {
     return CompanionAnalysisResult.fromJson({
       'turnId': turnId,
+      'implicitMeaning': implicitMeaning,
+      'careAlertSummary': careAlertSummary,
       'safety': {
         'riskLevel': 'urgent',
         'needsHumanSupport': needsHumanSupport,

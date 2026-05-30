@@ -5,6 +5,7 @@ const { mapPetState, mapReplyStrategy } = require("./pet_state_mapper");
 const { shouldSaveMemory } = require("./memory_policy");
 const { assessSafety } = require("./safety_guard");
 const { planNextStrategy } = require("./next_strategy_planner");
+const { buildCareAlertSummary } = require("./companion_prompt_builder");
 const { estimateVoiceFeatures } = require("./voice_feature_service");
 const { fuseEmotion } = require("./emotion_fusion_service");
 const { classifySearchIntent } = require("../search/search_intent_classifier");
@@ -24,7 +25,8 @@ function analyzeCompanionTurn(input = {}) {
       petExpression: "idle",
       petAction: "stay",
       memory: { shouldSave: false, candidate: "", type: "none" },
-      safety: { riskLevel: "normal", needsHumanSupport: false },
+      safety: { riskLevel: "low", needsHumanSupport: false },
+      careAlertSummary: buildCareAlertSummary({ riskLevel: "low", transcript: "" }),
       nextStrategy: {
         mode: "normal_chat",
         instruction: "下一輪回應保持自然、簡短、陪伴感，每次最多問一個問題。",
@@ -98,6 +100,10 @@ function analyzeCompanionTurn(input = {}) {
     petAction: petState.petAction,
     memory,
     safety,
+    careAlertSummary: buildCareAlertSummary({
+      riskLevel: safety.riskLevel,
+      transcript,
+    }),
     nextStrategy,
     voiceFeatures,
     fusion,
@@ -125,9 +131,15 @@ function structuredResult(result) {
       type: (result.memory?.type || "none").toString(),
     },
     safety: {
-      riskLevel: enumValue(result.safety?.riskLevel, RISK_LEVELS, "normal"),
+      riskLevel: enumValue(
+        normalizeRiskLevel(result.safety?.riskLevel),
+        RISK_LEVELS,
+        "low",
+      ),
       needsHumanSupport: Boolean(result.safety?.needsHumanSupport),
     },
+    // Care Alert 人類可讀摘要（單一字串，供 Telegram / caregiver_web 顯示）。
+    careAlertSummary: (result.careAlertSummary || "").toString(),
     nextStrategy: {
       mode: (result.nextStrategy?.mode || "normal_chat").toString(),
       instruction: (result.nextStrategy?.instruction || "").toString(),
@@ -164,6 +176,14 @@ function enumValue(value, allowed, fallback) {
   return allowed.has(normalized) ? normalized : fallback;
 }
 
+// 對舊代碼做讀取相容：normal→low、attention→medium；其餘原樣（含新權威四級）。
+// 未知值交由 enumValue 的 fallback（low）處理。
+const RISK_LEVEL_ALIASES = { normal: "low", attention: "medium" };
+function normalizeRiskLevel(value) {
+  const raw = (value || "").toString().trim().toLowerCase();
+  return RISK_LEVEL_ALIASES[raw] || raw;
+}
+
 function clampConfidence(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return 0.5;
@@ -192,8 +212,9 @@ const REPLY_STRATEGIES = new Set([
 ]);
 const PET_EXPRESSIONS = new Set(["idle", "happy", "concerned", "sad", "calm", "excited", "sleepy"]);
 const PET_ACTIONS = new Set(["stay", "move_closer", "wag_tail", "nod", "comfort", "cheer", "rest"]);
-const RISK_LEVELS = new Set(["normal", "attention", "urgent"]);
+const RISK_LEVELS = new Set(["low", "medium", "high", "urgent"]);
 
 module.exports = {
   analyzeCompanionTurn,
+  normalizeRiskLevel,
 };
