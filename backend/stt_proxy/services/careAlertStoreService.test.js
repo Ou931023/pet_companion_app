@@ -249,3 +249,59 @@ test("filter 對未被正規化的舊 care_alerts.json 仍正確（讀時比對�
   assert.equal(low.length, 1);
   assert.equal(low[0].id, "legacy-2");
 });
+
+// ---- CR-0008：Care Alert 綁 elderId（向下相容）----
+
+test("saveAlert 寫入 elderId；未帶入為 null", async () => {
+  const filePath = tempFile();
+  const withElder = await store.saveAlert(
+    { ...base, elderId: "elder-1" },
+    { filePath },
+  );
+  assert.equal(withElder.alert.elderId, "elder-1");
+  const withoutElder = await store.saveAlert(base, { filePath });
+  assert.equal(withoutElder.alert.elderId, null, "未帶入應為 null");
+});
+
+test("listAlerts elderId 過濾：明確帶入才過濾", async () => {
+  const filePath = tempFile();
+  await store.saveAlert({ ...base, elderId: "elder-1" }, { filePath });
+  await store.saveAlert({ ...base, elderId: "elder-2" }, { filePath });
+  await store.saveAlert(base, { filePath }); // elderId=null
+
+  const e1 = await store.listAlerts({ filePath, elderId: "elder-1" });
+  assert.equal(e1.length, 1);
+  assert.equal(e1[0].elderId, "elder-1");
+
+  // 未帶 elderId → 回全部（含 null）。
+  const all = await store.listAlerts({ filePath });
+  assert.equal(all.length, 3);
+});
+
+test("listAlerts elderId 過濾：舊資料缺 elderId 欄位視為 null，不被特定 elderId 命中", async () => {
+  const filePath = tempFile();
+  // 直接寫入一筆「沒有 elderId 欄位」的舊資料。
+  const fsSync = require("node:fs");
+  fsSync.writeFileSync(
+    filePath,
+    JSON.stringify([
+      {
+        id: "legacy-no-elder",
+        riskLevel: "urgent",
+        status: "new",
+        receivedAt: "2026-05-20T00:00:00.000Z",
+      },
+    ]),
+    "utf8",
+  );
+  await store.saveAlert({ ...base, elderId: "elder-1" }, { filePath });
+
+  // 帶 elder-1 → 只命中新資料，不含舊缺欄位資料。
+  const e1 = await store.listAlerts({ filePath, elderId: "elder-1" });
+  assert.equal(e1.length, 1);
+  assert.equal(e1[0].elderId, "elder-1");
+
+  // 未帶 elderId → 兩筆都回（含缺欄位舊資料）。
+  const all = await store.listAlerts({ filePath });
+  assert.equal(all.length, 2);
+});

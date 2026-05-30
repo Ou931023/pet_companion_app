@@ -67,6 +67,8 @@ const {
   canSendTelegram,
   markTelegramSent,
 } = require("./services/careAlertCooldown");
+const { createSession } = require("./services/auth/sessionService");
+const adminAnalysis = require("./services/admin/adminAnalysisService");
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -384,6 +386,8 @@ app.get("/api/care-alerts", async (req, res) => {
       limit: req.query.limit,
       riskLevel: req.query.riskLevel,
       status: req.query.status,
+      // CR-0008：明確帶入 elderId 才過濾，未帶回全部（含舊資料 elderId=null）。
+      elderId: req.query.elderId,
     });
     return res.json({ success: true, alerts });
   } catch (error) {
@@ -424,6 +428,111 @@ app.patch("/api/care-alerts/:id/status", async (req, res) => {
   } catch (error) {
     logError("care alert status update exception", { error: error?.message || error });
     return res.status(500).json({ success: false, error: "write_failed" });
+  }
+});
+
+// CR-0006 Batch 1：登入後建立 / 取回 user+elder。
+// 驗 Firebase ID Token；缺金鑰時走 demo mock（不 crash、不擋 Demo）。
+// 契約見 PROJECT_ARCHITECTURE.md §10.2。
+app.post("/api/auth/session", async (req, res) => {
+  const body = req.body || {};
+  // 必填檢查：缺 firebaseUid / idToken → 400。
+  const firebaseUid =
+    typeof body.firebaseUid === "string" ? body.firebaseUid.trim() : "";
+  const idToken = typeof body.idToken === "string" ? body.idToken.trim() : "";
+  if (!firebaseUid || !idToken) {
+    return res.status(400).json({ success: false, error: "invalid_payload" });
+  }
+  try {
+    const result = await createSession(body);
+    if (result.success) {
+      return res.json(result);
+    }
+    // token 無效（正式模式驗證失敗）→ 401。
+    if (result.error === "invalid_id_token") {
+      return res.status(401).json({ success: false, error: "invalid_id_token" });
+    }
+    // 其餘缺欄位語義（理論上已被上面攔截）→ 400。
+    return res.status(400).json({ success: false, error: "invalid_payload" });
+  } catch (error) {
+    logError("auth session exception", { error: error?.message || error });
+    return res.status(500).json({ success: false, error: "auth_session_failed" });
+  }
+});
+
+// CR-0007 Batch 2：健康後台 Admin API（契約見 PROJECT_ARCHITECTURE.md §11）。
+// 只新增路由，不改既有路由形狀。生理 / 情緒 / 遊戲指標為確定性產生器供給，
+// elders / care alert 為真實資料。未知 elderId → 404 elder_not_found。
+
+app.get("/api/admin/overview", async (_req, res) => {
+  try {
+    const overview = await adminAnalysis.getOverview();
+    return res.json(overview);
+  } catch (error) {
+    logError("admin overview failed", { error: error?.message || error });
+    return res.status(500).json({ success: false, error: "admin_overview_failed" });
+  }
+});
+
+app.get("/api/admin/elders", async (_req, res) => {
+  try {
+    const elders = await adminAnalysis.listElderSummaries();
+    return res.json(elders);
+  } catch (error) {
+    logError("admin elders list failed", { error: error?.message || error });
+    return res.status(500).json({ success: false, error: "admin_elders_failed" });
+  }
+});
+
+app.get("/api/admin/elders/:elderId", async (req, res) => {
+  try {
+    const analysis = await adminAnalysis.getElderAnalysis(req.params.elderId);
+    if (!analysis) {
+      return res.status(404).json({ success: false, error: "elder_not_found" });
+    }
+    return res.json(analysis);
+  } catch (error) {
+    logError("admin elder analysis failed", { error: error?.message || error });
+    return res.status(500).json({ success: false, error: "admin_elder_failed" });
+  }
+});
+
+app.get("/api/admin/elders/:elderId/physio", async (req, res) => {
+  try {
+    const physio = await adminAnalysis.getElderPhysio(req.params.elderId);
+    if (!physio) {
+      return res.status(404).json({ success: false, error: "elder_not_found" });
+    }
+    return res.json(physio);
+  } catch (error) {
+    logError("admin elder physio failed", { error: error?.message || error });
+    return res.status(500).json({ success: false, error: "admin_physio_failed" });
+  }
+});
+
+app.get("/api/admin/elders/:elderId/emotion", async (req, res) => {
+  try {
+    const emotion = await adminAnalysis.getElderEmotion(req.params.elderId);
+    if (!emotion) {
+      return res.status(404).json({ success: false, error: "elder_not_found" });
+    }
+    return res.json(emotion);
+  } catch (error) {
+    logError("admin elder emotion failed", { error: error?.message || error });
+    return res.status(500).json({ success: false, error: "admin_emotion_failed" });
+  }
+});
+
+app.get("/api/admin/elders/:elderId/game-metrics", async (req, res) => {
+  try {
+    const game = await adminAnalysis.getElderGameMetrics(req.params.elderId);
+    if (!game) {
+      return res.status(404).json({ success: false, error: "elder_not_found" });
+    }
+    return res.json(game);
+  } catch (error) {
+    logError("admin elder game metrics failed", { error: error?.message || error });
+    return res.status(500).json({ success: false, error: "admin_game_failed" });
   }
 });
 

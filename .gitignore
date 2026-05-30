@@ -28,3 +28,8 @@ backend/stt_proxy/.env
 backend/stt_proxy/node_modules/
 backend/stt_proxy/uploads/
 backend/stt_proxy/tmp_*.js
+
+# Backend runtime data stores (JSON fallback) — never commit runtime data
+backend/stt_proxy/data/care_alerts.json
+backend/stt_proxy/data/users.json
+backend/stt_proxy/data/elders.json

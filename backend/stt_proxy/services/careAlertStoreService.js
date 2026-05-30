@@ -69,6 +69,8 @@ async function writeAll(filePath, alerts) {
 function normalizeAlert(payload = {}) {
   return {
     id: payload.id || randomUUID(),
+    // CR-0008：綁定哪位長者；未帶入為 null（向下相容，舊資料缺欄位視為 null）。
+    elderId: payload.elderId ?? null,
     receivedAt: new Date().toISOString(),
     status: payload.status || "new",
     // 寫入前正規化為權威四級（舊代碼 normal/attention 會被轉換；未知→low）。
@@ -103,6 +105,11 @@ async function listAlerts(options = {}) {
   const filePath = resolveFile(options.filePath);
   const alerts = await readAll(filePath);
   let result = alerts;
+  // CR-0008：elderId 過濾——明確帶入才過濾（嚴格 ===），未帶則回全部
+  // （含舊資料缺欄位 / elderId=null）。
+  if (options.elderId != null) {
+    result = result.filter((a) => a.elderId === options.elderId);
+  }
   if (options.riskLevel) {
     // filter 條件與資料本身都先正規化再比對，讓「用新值查也能命中舊資料
     // （含尚未轉換的舊 care_alerts.json）」、反之亦然。

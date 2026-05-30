@@ -105,8 +105,16 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
 | POST | `/api/crawl/refresh` | 重整爬取來源 | backend |
 | POST | `/api/realtime/session` | Realtime 短期 session（含 rate limit） | backend + realtime |
 | POST | `/api/realtime/call` | Realtime SDP 轉送 | backend + realtime |
+| POST | `/api/auth/session` | 登入後建立 / 取回 user+elder（驗 Firebase ID Token，缺金鑰走 demo mock） | backend |
+| GET | `/api/admin/overview` | 健康後台 Dashboard 六指標總覽 | backend |
+| GET | `/api/admin/elders` | 長者列表（含最近活動 / 風險摘要） | backend |
+| GET | `/api/admin/elders/:elderId` | 單一長者完整分析（基本資料 / care alert / 生理 / 心理 / 情緒 / 遊戲） | backend |
+| GET | `/api/admin/elders/:elderId/physio` | 生理健康分析序列（demo 資料） | backend |
+| GET | `/api/admin/elders/:elderId/emotion` | 情緒分析歷史序列 | backend |
+| GET | `/api/admin/elders/:elderId/game-metrics` | 遊戲認知退化指標序列 | backend |
 
 > 註：本表為現況快照；新增 / 修改路由時請同步維護。
+> auth / admin 路由為 CR-0006 / CR-0007 新增（見 `docs/CHANGE_REVIEW.md`），契約定義見 §10、§11。
 
 ---
 
@@ -119,6 +127,7 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
 ```jsonc
 {
   "id": "uuid",
+  "elderId": "uuid | null",         // CR-0008 新增：綁定哪位長者（舊資料/未綁定為 null，向下相容）
   "receivedAt": "ISO8601",          // 後端收到時間
   "status": "new | acknowledged | resolved",  // VALID_STATUSES
   "riskLevel": "low | medium | high | urgent", // 權威分級（見 §5.1）
@@ -136,6 +145,8 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
 ```
 
 狀態機（已實作）：`new → acknowledged → resolved`。
+
+**`elderId` 相容規則（CR-0008）**：`elderId` 為 **nullable 新增欄位**——payload 未帶時寫入 `null`，既有 `data/care_alerts.json` 舊資料不改寫、讀取時缺欄位視為 `null`。`GET /api/care-alerts?elderId=` 過濾時：明確帶入才過濾，未帶則回全部（含 `elderId=null` 的舊資料）。前台顯示與 Telegram 推播規則不因此改變。
 
 ### 5.1 Care Alert 權威風險分級（architecture-agent 裁決，OI-0001 已結案）
 
@@ -207,6 +218,13 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
 - Telegram 長照通知：`TELEGRAM_BOT_TOKEN`、`TELEGRAM_CARE_CHAT_ID`
 - 資料庫：`DATABASE_URL`、`PGVECTOR_ENABLED`、`PG_POOL_MAX`、`PG_CONNECTION_TIMEOUT_MS`、`PG_IDLE_TIMEOUT_MS`
 - Rate limit：`RATE_LIMIT_WINDOW_MS`、`RATE_LIMIT_MAX_CALLS`、`REALTIME_RATE_LIMIT_WINDOW_MS`、`REALTIME_RATE_LIMIT_MAX`
+- Firebase ID Token 驗證（CR-0006，**全部缺省時走 demo mock 驗證，不 crash、不擋 Demo**）：
+  - 服務帳戶（擇一）：`GOOGLE_APPLICATION_CREDENTIALS`（service account JSON 路徑）；或拆欄位 `FIREBASE_PROJECT_ID`、`FIREBASE_CLIENT_EMAIL`、`FIREBASE_PRIVATE_KEY`
+  - 驗證 token audience：`FIREBASE_PROJECT_ID`
+  - `AUTH_ALLOW_MOCK`（預設 `true`；未設定 Firebase 時允許 mock session，正式上線可設 `false` 強制驗 token）
+- 綁定邏輯：`BINDING_DEADLINE_DAYS`（預設 60）
+
+> Flutter 端 Firebase 設定（`google-services.json` / `GoogleService-Info.plist`、Google `REVERSED_CLIENT_ID`、Apple Service ID/Key）屬 client 平台設定檔，**不是後端 env、也不進 feature commit**。
 
 ---
 
@@ -225,3 +243,104 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
 `backend/stt_proxy/server.js`（路由 / response）、`backend/stt_proxy/db/migrate.js` 與 DB schema、
 Care Alert 共用資料結構、`pubspec.yaml` / `backend/stt_proxy/package.json` 依賴、
 `.claude/agents/*`、以及任何跨兩個以上 agent 範圍的改動。
+
+---
+
+## 10. 身份與綁定模型（CR-0006，🔒 跨前後端契約）
+
+登入導入後，**每位長者都有固定 `userId` 與 `elderId`**；後續對話記憶、Care Alert、情緒分析、遊戲紀錄都綁定 `elderId`。
+登入供應商為 Firebase Authentication（Email / Google / Apple）；**Firebase 缺金鑰時走 demo mock 驗證**，登入系統不得阻擋 Demo。
+
+### 10.1 登入流程（不破壞 Realtime / 不擋 Demo）
+
+1. Flutter 透過 Firebase 完成 Email / Google / Apple 登入，取得 `firebaseUid` + `idToken`。
+2. Flutter 呼叫 `POST /api/auth/session`（見下）。
+3. 後端驗證 ID Token（或 mock）→ upsert `users` / `elders` → 回 `{ userId, elderId, role, bindingStatus, bindingDeadline }`。
+4. Flutter 把 `userId` / `elderId` 存進 secure storage，作為記憶 / care alert / 遊戲 / 情緒寫入時的綁定鍵。
+5. **未登入或 demo 模式**：fallback `elderId = "default_user"`（保留既有行為），Realtime 語音與既有流程照常運作。
+6. **紅線**：`lib/services/realtime_voice_service.dart` 主流程不得因登入而修改；登入只改「上層傳入的 userId / elderId 來源」。
+
+### 10.2 `POST /api/auth/session` 契約
+
+Request body：
+```jsonc
+{
+  "firebaseUid": "string",      // 必填
+  "idToken": "string",          // 必填（mock 模式可為任意非空字串）
+  "email": "string | null",
+  "displayName": "string | null",
+  "provider": "email | google | apple | mock",
+  "photoUrl": "string | null"   // 可選
+}
+```
+Response（200）：
+```jsonc
+{
+  "success": true,
+  "userId": "uuid",
+  "elderId": "uuid",
+  "role": "elder | caregiver | admin",
+  "bindingStatus": "pending | bound | expired",
+  "bindingDeadline": "ISO8601",
+  "isNewUser": true,
+  "authMode": "firebase | mock"   // mock 表示後端未設定 Firebase、以 demo 模式採信
+}
+```
+規則：
+- 若 `users.firebase_uid` 已存在 → 回既有 `userId` / `elderId`（`isNewUser=false`）。
+- 否則建立 `users` + 對應 `elders`，`bindingDeadline = now + BINDING_DEADLINE_DAYS`（預設 60 天）。
+- 驗證失敗（Firebase 模式下 token 無效）→ 401 `{ success:false, error:"invalid_id_token" }`，不得 crash。
+
+### 10.3 DB schema（migrations 006 / 007，🔒）
+
+> 沿用既有 `db/migrate.js` 跑 `db/migrations/*.sql` 機制。後端在 DB 不可用時須能 fallback JSON store（沿用 `memoryStore.js` 模式），確保 Demo 不掛。
+
+`users`：`id (uuid pk)`、`firebase_uid (text unique)`、`elder_id (uuid fk elders.id)`、`role (text default 'elder')`、`email (text)`、`email_verified (bool default false)`、`display_name (text)`、`auth_provider (text)`、`provider_user_id (text)`、`binding_status (text default 'pending')`、`binding_deadline (timestamptz)`、`created_at (timestamptz default now())`、`verified_at (timestamptz null)`、`updated_at (timestamptz)`
+
+`elders`：`id (uuid pk)`、`display_name (text)`、`birth_year (int null)`、`gender (text null)`、`created_at (timestamptz default now())`
+
+`emotion_history`：`id (uuid pk)`、`elder_id (uuid fk)`、`emotion (text)`、`score (numeric null)`、`source (text default 'companion_analysis')`、`summary (text)`、`created_at (timestamptz default now())`
+
+`elder_health_metrics`（生理，demo 資料）：`id (uuid pk)`、`elder_id (uuid fk)`、`metric_date (date)`、`daily_interaction_minutes (int)`、`reminder_completion_rate (numeric)`、`medication_completion_rate (numeric)`、`water_completion_rate (numeric)`、`exercise_completion_rate (numeric)`、`sleep_hours (numeric)`、`sleep_quality (text)`、`created_at (timestamptz default now())`
+
+`game_cognitive_metrics`：`id (uuid pk)`、`elder_id (uuid fk)`、`game_type (text)`、`played_at (timestamptz)`、`moves (int)`、`duration_seconds (int)`、`completion_rate (numeric)`、`difficulty (text)`、`cognitive_score (numeric)`、`regression_flag (bool default false)`、`created_at (timestamptz default now())`
+
+---
+
+## 11. 健康後台 Admin API 契約（CR-0007，🔒）
+
+> demo 階段資料可由 JSON store / 確定性 demo 產生器供給（**不串智慧手環**），但 response 形狀須接近正式版；使用者/管理者可見處不得出現 demo / fake / debug 字樣。
+
+`GET /api/admin/overview` → Dashboard 六指標：
+```jsonc
+{
+  "totalElders": 0,            // 長者總人數
+  "activeToday": 0,           // 今日互動長者數
+  "careAlertsToday": 0,       // 今日 Care Alert 數量
+  "highRiskElders": 0,        // 高風險長者數（high/urgent）
+  "emotionAbnormalElders": 0, // 情緒異常長者數
+  "cognitiveDeclineElders": 0 // 遊戲退化指標異常人數
+}
+```
+
+`GET /api/admin/elders` → `[{ elderId, displayName, lastActiveAt, latestRiskLevel, emotionAbnormal, cognitiveDecline }]`
+
+`GET /api/admin/elders/:elderId` → 個人完整分析：
+```jsonc
+{
+  "profile": { "elderId", "displayName", "birthYear", "gender", "bindingStatus" },
+  "careAlerts": [ /* §5 Care Alert 形狀，依 elderId 過濾 */ ],
+  "physio": { /* 同 /physio summary */ },
+  "psych": { "summary": "白話心理摘要", "dominantEmotion": "...", "abnormal": false },
+  "emotionHistory": [ /* 同 /emotion */ ],
+  "gameMetrics": { /* 同 /game-metrics summary */ }
+}
+```
+
+`GET /api/admin/elders/:elderId/physio` → `{ series: [{ date, dailyInteractionMinutes, reminderCompletionRate, medicationCompletionRate, waterCompletionRate, exerciseCompletionRate, sleepHours, sleepQuality }], summary: {...} }`
+
+`GET /api/admin/elders/:elderId/emotion` → `{ series: [{ date, emotion, score, summary }], dominantEmotion, abnormal }`
+
+`GET /api/admin/elders/:elderId/game-metrics` → `{ series: [{ date, gameType, cognitiveScore, completionRate, durationSeconds, regressionFlag }], trend: "stable | declining", abnormal }`
+
+未知 `elderId` → 404 `{ success:false, error:"elder_not_found" }`。
