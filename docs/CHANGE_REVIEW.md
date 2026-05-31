@@ -320,6 +320,192 @@
 
 ---
 
+### CR-0006 Batch 3d：memory / search 的 elderId 接線（提案＋核准，architecture-agent 2026-05-31）
+
+- 提出 / 審查：architecture-agent；執行 owner：frontend-ux-agent
+- 目標：把記憶 / 搜尋的 `userId` 由硬寫 `default_user` 改為由 `AuthController.currentElderId` 集中供給，建立「登入後綁定真實 elderId」的 plumbing，**但完全不破壞 Demo、不動後端 API 契約、不碰 Realtime**。
+- 現況盤點（已驗證）：`default_user` 權威來源僅 2 處——`lib/controllers/memory_controller.dart`（`_userId` 預設 + `_init()` 硬寫）、`lib/services/search_service.dart`（`search()` body 硬寫）。後端 `/search` 與 memory API **早已接受 `userId` 參數**，本批只改傳入值，不改 API 形狀（不踩 🔒 `server.js`）。
+- ⚠️ 先決風險（已拍板）：`auth_service.dart` 的 `_deriveDemoUid()` 每次回 `demo-${timestamp}` → 每次 demo 登入產生新空 elder。若直接綁 `currentElderId`，demo 登入後對到空 elder，seed 記憶（key=`default_user`）消失→「寵物記得你」失效。
+- **核准決策（使用者 2026-05-31 確認）：**
+  1. mock / demo session → `currentElderId = default_user`（Demo 保護）
+  2. 僅「真 Firebase session（authMode=='firebase'）」使用 `session.elderId`
+  3. 未登入 / 未知 authMode → `default_user`
+  4. 接線限定 **`app.dart` 集中注入**，盡量不動 `conversation_controller`
+  5. 本批只做 Flutter 端 elderId 傳遞，不改後端 API、不碰 Realtime / SDP、不動 `pubspec.yaml`
+- 允許修改：`lib/controllers/auth_controller.dart`（`currentElderId`/`currentUserId` 加 authMode 解析）、`lib/controllers/memory_controller.dart`（新增 `syncUserId(String)`，移除 `_init()` 硬寫，保留空字串→`default_user`，**不重建 controller、不清 UI 狀態**）、`lib/services/search_service.dart`（`search()` 加 optional `userId`，預設 `default_user`，body 用傳入值）、`lib/app.dart`（集中監聽 `AuthController` → `MemoryController.syncUserId`）、`test/**`。
+- 禁止修改：`lib/services/realtime_voice_service.dart`、`lib/controllers/voice_agent_controller.dart` 的 Realtime/SDP/DataChannel/語音狀態機、`backend/**`、`pubspec.yaml`、`caregiver_web/**`、`.env`/token、`backend/stt_proxy/data/*.json`、`lib/models/auth_session.dart`、`lib/services/auth/auth_service.dart` 對外介面。
+- 測試清單：AuthController（mock→default_user、firebase→session.elderId、未知→default_user）、MemoryController（`syncUserId` 可切換、`syncUserId('')` fallback、預設 default_user、不丟去重狀態）、SearchService（預設 body `userId=default_user`、傳入 elderId 生效、4xx/例外仍 fallback）、端到端（demo 登入後 MemoryController.userId 仍 default_user）；回歸 `flutter analyze` + 既有 `test/` 全綠。
+- Rollback：單一 feature commit（branch `feat/auth-admin-backend`，不 push）；純加法（`search` optional 參數有預設值、`syncUserId` 不傳即維持 default_user），`git revert` 即恢復「全程 default_user」；後端零改動、無 migration、無資料相容問題。
+- architecture-agent 裁決：✅ 核准執行（範圍如上，frontend-ux-agent 主導）。
+- 完成狀態：✅ 已完成（frontend-ux-agent 實作 + architecture-agent checkpoint commit `c71d90c`；`flutter test` 188/188、analyze 全綠；未 push）。
+
+---
+
+### CR-0006 Batch 4：Firebase Auth 正式登入（🔒 依賴＋原生設定提案，architecture-agent 2026-05-31）
+
+- 提出 / 審查：architecture-agent；執行 owner：frontend-ux-agent（Flutter 端為主）
+- 目標：在既有 mock auth / `AuthController` / `LoginScreen` 架構上，加入正式 Firebase 登入能力——**Email 註冊/登入 →（其次）Google Sign-In**，Apple 暫不做（UI 保留「即將推出」）。登入成功取 Firebase ID Token → 呼叫既有 `POST /api/auth/session`（`provider='email'|'google'`）→ 後端回 `userId/elderId/bindingStatus/authMode` → `AuthController` 儲存 session。**Demo 快速登入永遠保留為 fallback。**
+- 關鍵現況（已驗證，決定本批範圍）：
+  - 後端 `services/auth/firebaseAdmin.js` 已能驗證真實 ID Token（`GOOGLE_APPLICATION_CREDENTIALS` 或 `FIREBASE_PROJECT_ID/CLIENT_EMAIL/PRIVATE_KEY`），`POST /api/auth/session` 與 `session_api_service.createSession({firebaseUid, idToken, provider, email, displayName, photoUrl})` **早已支援真實 token** → **後端 API 契約零改動**。
+  - `AuthSession.authMode` 已有 `firebase|mock` 兩態；`AuthController.currentElderId` 已是「firebase→後端 elderId、其餘→default_user」（Batch 3d 完成）→ **身份解析邏輯零改動**。
+  - 現況尚無任何 Firebase 套件 / 原生設定；iOS deployment target 13.0；Android 用 `flutter.minSdkVersion`（Firebase Auth 需 ≥23，須確認/上修）。
+- ⚠️ 架構依賴提醒：即使前端接上真 Firebase，**只有當後端 Firebase 環境變數已設定、`firebaseAdmin.isConfigured()=true` 時，後端才會回 `authMode='firebase'` 並給真實 elderId**；否則後端走 mock → `currentElderId` 仍為 `default_user`。本批前端完成後，需「設定後端 Firebase env（手動 ops，不在本批 code）」才會真正綁定真實 elderId。
+
+#### 1. 需要新增的 `pubspec.yaml` 套件（🔒）
+- `firebase_core`、`firebase_auth`、`google_sign_in`（本批）。
+- **不**加 `sign_in_with_apple`（Apple 暫緩，UI 維持「即將推出」）。
+- 實際版本：動工前以 `flutter pub add` 解析與 Flutter SDK 相容的最新穩定版並**回報鎖定版本待核准**；注意 `google_sign_in` v7 為實例化 API（與 v6 不同），實作須對齊解析到的版本。
+
+#### 2. iOS 需要哪些設定
+- 將 `GoogleService-Info.plist` 放入 `ios/Runner/`（經 Xcode 加入 target；**不進版控**）。
+- `ios/Runner/Info.plist` 新增 `CFBundleURLTypes`（Google 的 `REVERSED_CLIENT_ID`）；google_sign_in 可能需 `GIDClientID`。
+- 確認 iOS deployment target（現 13.0）符合解析到的 Firebase iOS SDK 需求，必要時上修。
+- 須 `pod install`（CocoaPods）；專案已用 `SceneDelegate`，Google 回呼 URL handling 屬原生設定風險點，動工時驗證。
+
+#### 3. Android 是否需要設定
+- 需要。`android/build.gradle.kts`（project）與 `android/settings.gradle.kts` 加入 `com.google.gms.google-services` plugin；`android/app/build.gradle.kts` apply 該 plugin 並確認/上修 `minSdk≥23`。
+- `google-services.json` 放 `android/app/`（**不進版控**）。Google 登入需在 Firebase/Console 設定 SHA-1。
+
+#### 4. Firebase Console 需要啟用哪些登入方式
+- **Email/Password**、**Google**（本批）。Apple **不啟用**（暫緩）。
+- 在 Firebase 專案新增 iOS App（bundle id）與 Android App（package name）以產生 plist/json；設定 OAuth 同意畫面 / support email；Android 註冊 SHA-1。
+
+#### 5. 是否需要 `google-services.json` / `GoogleService-Info.plist`
+- 兩者都需要（Android `google-services.json`、iOS `GoogleService-Info.plist`）。
+- **一律 gitignore、永不 commit、永不貼進訊息**。`.gitignore` 新增：`ios/Runner/GoogleService-Info.plist`、`android/app/google-services.json`、`**/GoogleService-Info.plist`、`**/google-services.json`。
+
+#### 6. 哪些檔案允許修改
+- `pubspec.yaml`（🔒，本提案核准後）。
+- 新增 `lib/services/auth/firebase_auth_service.dart`（包一層 `FirebaseAuth`+`GoogleSignIn`，回傳 `uid/idToken/email/displayName/photoUrl`；以 interface 注入，便於測試）。
+- `lib/services/auth/auth_service.dart`（**新增** `registerWithEmail/signInWithEmail/signInWithGoogle`，內部呼叫 firebase_auth_service 取 token 再 `createSession`；**`mockLogin` 維持不動**，Demo fallback 保留）。
+- `lib/controllers/auth_controller.dart`（**新增** `loginWithEmail/registerWithEmail/loginWithGoogle`；`loginAsDemoUser` 維持不動；失敗進 `error` 但不可死路）。
+- `lib/screens/login_screen.dart`、`lib/screens/register_screen.dart`（接 Email 欄位驗證 + Google 鈕；Demo 鈕保留；Apple 維持「即將推出」）。
+- `lib/main.dart`（`Firebase.initializeApp()` 包 try/catch，**初始化失敗仍可進 App 且 Demo 可用**）。
+- `ios/Runner/Info.plist`、`android/build.gradle.kts`、`android/app/build.gradle.kts`、`android/settings.gradle.kts`、`.gitignore`。
+- `test/**`（新增 mock Firebase/Google 的測試）。
+
+#### 7. 哪些檔案禁止修改
+- `lib/services/realtime_voice_service.dart`、`lib/controllers/voice_agent_controller.dart` 的 Realtime/SDP/DataChannel/語音狀態機。
+- `backend/**`（含 `server.js` 路由/response、`firebaseAdmin.js`、`sessionService.js`）——**API 契約不變**；後端啟用 Firebase 僅靠設定環境變數（手動 ops，非本批 code）。
+- `lib/services/auth/session_api_service.dart` 的對外契約、`lib/models/auth_session.dart`、`AuthController.currentElderId` 的解析規則（皆已支援本批，不需動）。
+- `caregiver_web/**`、Care Alert 結構。
+- 任何 `.env` / key / secret / token / `*.plist` / `google-services.json` 內容。
+
+#### 8. 實作批次
+- **4a 地基**：pubspec 加 Firebase 套件（回報鎖定版本）+ `Firebase.initializeApp` safe try/catch + iOS/Android 原生設定 + `.gitignore`。驗收：App 能啟動、**即使缺 plist/json 或 init 失敗，Demo 登入仍可進 App**；可 build。
+- **4b Email**：firebase_auth_service email 方法 + AuthService + AuthController + Login/Register 接線（`provider='email'`，idToken→session）。測試 + 真機手動驗證。
+- **4c Google**：Google Sign-In 流程 + 鈕接線（`provider='google'`）。測試 + 真機手動驗證。
+- Apple：本批不做（UI 不變）。每個 sub-batch 各自 review 後獨立 checkpoint commit。
+
+#### 9. 測試方式
+- 單元/Widget 測試**一律不得依賴真 Firebase 專案**（CI 無 plist/json）：Firebase/Google 行為走可注入 interface + fake。
+- AuthService：`signInWithEmail/registerWithEmail/signInWithGoogle` 成功→以正確 `provider` 呼叫 `createSession` 回 session；失敗→拋出可處理錯誤且 Demo 仍可用。
+- AuthController：三個新登入方法更新狀態；失敗進 `error` 非死路；`loginAsDemoUser` 仍可用。
+- main.dart：模擬 `Firebase.initializeApp` 失敗→仍進 LoginScreen 且 Demo 可登入。
+- Widget：Email 欄位驗證、Google 鈕觸發、Demo 鈕仍動、Apple 顯示「即將推出」。
+- 回歸：既有 188 測試全綠、`flutter analyze` 乾淨。
+- 手動清單（需真 Firebase 專案 + plist/json，無法自動化）：真機 Email 註冊/登入、Google 登入、後端設好 Firebase env 後確認回 `authMode='firebase'` 與真實 elderId。
+
+#### 10. rollback 方式
+- 每個 sub-batch = `feat/auth-admin-backend` 上獨立 commit、不 push → 逐批 `git revert`。
+- 依賴 rollback：移除 `pubspec` 的 `firebase_*` + 還原原生設定；因 `Firebase.initializeApp` 包 try/catch 且 Demo 登入恆在，半套狀態也不擋 Demo。
+- plist/json 為 gitignore → rollback 僅動已提交的 gradle/Info.plist scheme/pubspec，無金鑰清理問題。
+- 最壞情境（Demo 當天）：revert 4c/4b/4a → 回到目前 mock-only auth（`c71d90c`），完整可用。
+
+- architecture-agent 裁決：✅ 核准依賴與原生設定方向（範圍如上）。動工前置：(a) `flutter pub add` 回報鎖定版本待二次確認；(b) 你需在 Firebase Console 建專案、啟用 Email/Google、產生並放置 plist/json（不貼訊息）；(c) 後端 Firebase env 由你手動設定才會真正綁定真實 elderId。
+- 完成狀態：🚧 進行中 — **4a ✅**（pubspec firebase_core 4.9.0 / firebase_auth 6.5.1 / google_sign_in 7.2.0 + safe-init wrapper，test 46/46）、**4b ✅**（Email 註冊/登入，test 210/210、analyze 綠）、**4c 待執行**（Google，見下）。皆未 commit / 未 push。
+
+---
+
+### CR-0006 Batch 4c：Google Sign-In（🔒 原生設定＋實作核准，architecture-agent 2026-05-31）
+
+- 提出 / 審查：architecture-agent；執行 owner：frontend-ux-agent
+- 目標：在已完成的 Firebase Auth / Email 架構上加入 Google 登入。**Google 登入成功 → 取 Firebase ID Token → 呼叫既有 `POST /api/auth/session`（`provider='google'`）**；後端回 `authMode='firebase'` 時 `currentElderId` 用真實 elderId（規則沿用 Batch 3d，不改）。Demo 與 Email 登入皆不得被破壞；Google/Firebase 失敗（含使用者取消）App 不 crash。
+
+#### 1. `google_sign_in` 7.2.0 正確 API 使用方式（已核對安裝版本原始碼）
+- v7 為**實例化 + 需先 initialize**，與 v6 完全不同：
+  1. `await GoogleSignIn.instance.initialize(serverClientId: <Web client ID>, clientId: <iOS client ID 可選>)`——**只需一次**。`serverClientId` 用 Firebase 專案的 **Web OAuth client ID**，確保拿到的 Google idToken 受 Firebase 採信。
+  2.（建議）先檢查平台支援：`GoogleSignIn.instance.supportsAuthenticate()`。
+  3. 互動登入：`final account = await GoogleSignIn.instance.authenticate();`（型別 `GoogleSignInAccount`，失敗丟 `GoogleSignInException`）。
+  4. 取 Google idToken：`final googleIdToken = account.authentication.idToken;`
+  5. 轉 Firebase 憑證並登入：`final cred = GoogleAuthProvider.credential(idToken: googleIdToken); final userCred = await FirebaseAuth.instance.signInWithCredential(cred);`
+  6. **送後端的是 Firebase ID Token**：`final firebaseIdToken = await userCred.user!.getIdToken();`（與 Email 流程一致，後端 `firebaseAdmin.verifyIdToken` 驗的是這個，不是 Google 的）。
+- 例外 code（`GoogleSignInExceptionCode`）：`canceled`（使用者取消，**視為柔性中止、非錯誤死路**）、`interrupted`、`clientConfigurationError`、`providerConfigurationError`、`uiUnavailable`、`unknownError` → 由 wrapper 轉成應用層錯誤再給白話。
+- 封裝原則：所有上述細節都封在 `FirebaseAuthService.signInWithGoogle()` 內，並把 `GoogleSignInException` / `FirebaseAuthException` 轉成既有 `EmailAuthException`（或新增 `GoogleAuthException`，擇一，沿用 code→白話 機制）；上層 Controller/UI 不直接依賴 SDK，測試以子類覆寫注入 fake。
+- `initialize()` 採**惰性呼叫**（首次 `signInWithGoogle` 時 init 一次並記憶），避免動 `main.dart`。
+
+#### 2. iOS 需要修改哪些檔案
+- `ios/Runner/Info.plist`：新增 `CFBundleURLTypes` → URL scheme 填 `GoogleService-Info.plist` 內的 `REVERSED_CLIENT_ID`（Google 登入完成後導回 App）。
+- `GoogleService-Info.plist`：放 `ios/Runner/`（**不進版控**，4a/4b 已列）。
+- `ios/Runner/AppDelegate.swift` 或 `SceneDelegate.swift`：本專案用 `SceneDelegate`（UIScene）→ Google 回呼 URL 在 scene 架構下的處理為**風險點**，動工時驗證 `google_sign_in_ios 6.3.0` 是否需在 scene delegate 補 `openURLContexts` 轉接；多數情況外掛自動處理，但需實機確認。
+- `Podfile` / `pod install`：deployment target ≥ 13（現 13.0 OK）。
+
+#### 3. Android 需要修改哪些檔案
+- `android/settings.gradle.kts`：`plugins { id("com.google.gms.google-services") version "<ver>" apply false }`。
+- `android/app/build.gradle.kts`：`plugins { id("com.google.gms.google-services") }`；確認 `minSdk ≥ 23`。
+- `android/build.gradle.kts`（專案級）：僅當改用 classpath 寫法時才需；採 plugins DSL 則以 settings.gradle.kts 為準。
+- `google-services.json`：放 `android/app/`（**不進版控**）。
+
+#### 4. 是否需要 `GoogleService-Info.plist` / `google-services.json`
+- 需要（兩者）。Google 登入沿用 Firebase 同一組設定檔；**一律 gitignore、永不 commit、永不貼訊息**（`.gitignore` 規則 4a 已加）。
+
+#### 5. Firebase Console 需要啟用什麼
+- 啟用 **Google** 登入方式（Authentication → Sign-in method）；設定專案 support email。
+- 確認 iOS App（Bundle ID）與 Android App（package name）已建立；取得 **Web client ID** 作為 `serverClientId`。
+
+#### 6. SHA-1 / Bundle ID / URL Scheme 注意事項
+- **Android SHA-1/SHA-256**：debug 與 release keystore 的指紋都要加進 Firebase Android App，**否則 Google 登入會失敗**；加完重新下載 `google-services.json`。
+- **iOS Bundle ID**：須與 Firebase iOS App 一致；URL scheme = `REVERSED_CLIENT_ID`。
+- **serverClientId**：用 Web client ID（不是 iOS/Android client ID），否則 Firebase 可能不採信 Google idToken。
+
+#### 7. 允許修改檔案
+- `lib/services/auth/firebase_auth_service.dart`（實作 `signInWithGoogle()` + 惰性 `initialize` + 例外轉應用層錯誤）。
+- `lib/controllers/auth_controller.dart`（新增 `loginWithGoogle()`；**取消（canceled）走柔性中止**：回 `unauthenticated` 或不顯示嚇人錯誤，不可變死路）。
+- `lib/screens/login_screen.dart`、`lib/screens/register_screen.dart`（Google 鈕由「即將推出」改接真流程；Demo / Email / Apple 不變，Apple 維持「即將推出」）。
+- `ios/Runner/Info.plist`、`android/settings.gradle.kts`、`android/app/build.gradle.kts`（必要時 `android/build.gradle.kts`、`ios/Runner/SceneDelegate.swift`）。
+- `test/**`。
+
+#### 8. 禁止修改檔案
+- `lib/services/realtime_voice_service.dart`、`lib/controllers/voice_agent_controller.dart`（Realtime/SDP/DataChannel/狀態機）。
+- `backend/**`（API 契約不變）、`lib/services/auth/session_api_service.dart` 契約、`lib/models/auth_session.dart`、`currentElderId` 規則。
+- `caregiver_web/**`、Care Alert 結構、`pubspec.yaml`（google_sign_in 已於 4a 加入，本批不需動）。
+- 任何 `.env` / key / token / `*.plist` / `google-services.json` 內容。
+
+#### 9. 測試策略
+- 單元/Widget **不得依賴真 Google/Firebase**：`signInWithGoogle` 透過子類覆寫 / 注入 fake（同 4b Email 模式），回 canned `FirebaseSignInResult` 或丟對應例外。
+- AuthService / AuthController：Google 成功 → `createSession(provider:'google')` → authenticated 且 firebase session 用真實 elderId；`canceled` → 柔性中止（不顯示錯誤死路）；其他錯誤 → 白話訊息。
+- Widget：Login/Register 的 Google 鈕觸發 `loginWithGoogle`；取消不 crash；**Demo / Email 仍可用**；Apple 仍「即將推出」。
+- 回歸：既有 210 測試全綠、`flutter analyze` 乾淨。
+- 手動清單（需真設定，無法自動化）：iOS/Android 實機 Google 登入、SHA-1 設好後 Android 成功、後端 Firebase env 設好後回 `authMode='firebase'` 與真實 elderId。
+
+#### 10. rollback 方式
+- 本批獨立 commit（`feat/auth-admin-backend`，不 push）→ `git revert`。
+- Google 鈕可一鍵改回「即將推出」；**Email + Demo 完全不受影響**。
+- 原生設定（Info.plist scheme、gradle plugin）revert；plist/json 為 gitignore，無金鑰清理。
+- 最壞情境：revert 回 4b 狀態（Google 入口消失，Email/Demo 正常）。
+
+- architecture-agent 裁決：✅ 核准原生設定與實作方向（範圍如上）。前置：你需在 Firebase Console 啟用 Google、放置 plist/json、登錄 Android SHA-1，並提供 Web client ID 作 serverClientId（不貼金鑰內容，放進原生設定檔即可）。
+- 完成狀態：4c-1（Dart 層＋UI）✅ 已完成（frontend-ux-agent）；4c-2（原生設定＋真機）待設定檔備齊。
+
+#### Checkpoint Review（architecture-agent，2026-05-31）— CR-0006 Batch 4a / 4b / 4c-1
+
+- 範圍：Firebase Auth 地基（4a）＋ Email 註冊/登入（4b）＋ Google Sign-In Dart 層與 UI 接線（4c-1）。未含 iOS/Android 原生設定（留 4c-2）。
+- 唯讀驗證結果（9 項全 PASS）：
+  1. **版本正確**：`pubspec.yaml` `firebase_core ^4.9.0` / `firebase_auth ^6.5.1` / `google_sign_in ^7.2.0`；`pubspec.lock` 鎖定 4.9.0 / 6.5.1 / 7.2.0。✅
+  2. **Init 失敗不 crash**：`firebase_init.dart` `ensureInitialized()` try/catch 吞例外、失敗只設 `_available=false`、永不丟；`main.dart` await 後照常 `runApp`。✅
+  3. **Demo Login 仍可用**：`mockLogin` 主體未變（diff 僅文件註解提及）；`loginAsDemoUser` → `currentElderId='default_user'` 不受影響。✅
+  4. **Email 完成**：`AuthService.signInWithEmail/registerWithEmail` + `AuthController` 對應方法 + Login/Register 欄位齊全；失敗轉白話、後端失敗回 mockFallback。✅
+  5. **Google 僅 Dart＋UI**：`signInWithGoogle` 三層皆在；**`git status` 顯示 `ios/`、`android/`、`Info.plist`、gradle 全未改**。✅
+  6. **測試 223/223 全綠**（`flutter test` 全套）。✅
+  7. **analyze 乾淨**（`flutter analyze lib/ test/` → No issues found）。✅
+  8. **未觸邊界**：`realtime_voice_service.dart`、`voice_agent_controller.dart`、`auth_session.dart`、`session_api_service.dart` 皆未在 `git status`；`currentElderId`/`_resolveDownstreamId` 未出現在 diff（規則未動）；`backend/**` 僅 runtime data、無程式碼改動。✅
+  9. **建議 commit**：✅ 視為一個乾淨、可獨立回復的 checkpoint。
+- **commit 範圍須顯式挑檔**：含 4a/4b/4c-1 的 lib/test + `pubspec.yaml/lock` + `.gitignore` + `main.dart` + pub get 連帶的 desktop 產生檔（macOS/Windows plugin registrant）。**排除**：`docs/CHANGE_REVIEW.md`（另行）、runtime `data/*.json`、`caregiver_web/**`、與本批無關的 `lib/screens/{care_alert,home,settings}_screen.dart` 與 `test/screens/care_alert_screen_test.dart`、tooling 噪音（`repomix-output.xml`、`devtools_options.yaml`、`.claude/worktrees/`、`docs/DEMO_SCRIPT.md`）。
+- commit message：`feat: add firebase email and google auth foundation`。
+- 後續放行：**可進 4c-2**（原生設定＋真機），前置仍為使用者備妥 plist/json、Android SHA-1、Web client ID、（綁真實 elderId 需）後端 Firebase env。
+
+---
+
 ## 待釐清項目 / 後續（Follow-ups）
 
 ### FU-0001：移除 legacy 容錯（待四級資料穩定後另開 CR）
