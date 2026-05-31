@@ -33,3 +33,5 @@ backend/stt_proxy/tmp_*.js
 backend/stt_proxy/data/care_alerts.json
 backend/stt_proxy/data/users.json
 backend/stt_proxy/data/elders.json
+ios/Runner/GoogleService-Info.plist
+android/app/google-services.json

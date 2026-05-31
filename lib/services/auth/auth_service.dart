@@ -3,18 +3,24 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/auth_session.dart';
+import 'firebase_auth_service.dart';
 import 'session_api_service.dart';
 
-/// 登入狀態的應用層：負責「mock 登入 → 呼叫後端建立 session → 本機持久化 →
-/// 啟動時還原 / 登出清除」。
+/// 登入狀態的應用層：負責「登入（mock / Email）→ 呼叫後端建立 session →
+/// 本機持久化 → 啟動時還原 / 登出清除」。
 ///
-/// CR-0006 Batch 3a 只做地基，**不接任何 UI**、不改記憶/搜尋的 userId 來源。
-/// 真正的 Firebase token 安全儲存延後到真 Firebase 批次再評估。
+/// CR-0006 Batch 3a 地基；Batch 4b 加入 Email 註冊 / 登入。Demo 快速登入
+/// （[mockLogin]）保持不變，永遠是 fallback。真正的 Firebase token 安全儲存
+/// 延後到後續批次再評估。
 class AuthService {
-  AuthService({SessionApiService? sessionApiService})
-      : _sessionApiService = sessionApiService ?? SessionApiService();
+  AuthService({
+    SessionApiService? sessionApiService,
+    FirebaseAuthService? firebaseAuthService,
+  })  : _sessionApiService = sessionApiService ?? SessionApiService(),
+        _firebaseAuthService = firebaseAuthService ?? FirebaseAuthService();
 
   final SessionApiService _sessionApiService;
+  final FirebaseAuthService _firebaseAuthService;
 
   /// shared_preferences key（版本化，未來換結構好遷移）。
   static const String prefsKey = 'auth_session_v1';
@@ -29,6 +35,60 @@ class AuthService {
       email: email,
       displayName: displayName,
       provider: 'mock',
+    );
+    await persist(session);
+    return session;
+  }
+
+  /// Email 登入：Firebase 驗證 → 拿 idToken 呼叫後端建立 session → 持久化。
+  ///
+  /// Firebase 驗證失敗會丟 [EmailAuthException]（由上層轉白話）。後端 session
+  /// 失敗時 `createSession` 內部已回 mockFallback（不丟例外、不 crash）。
+  Future<AuthSession> signInWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    final result = await _firebaseAuthService.signInWithEmail(
+      email: email,
+      password: password,
+    );
+    return _createSessionFromFirebase(result);
+  }
+
+  /// Email 註冊：建立 Firebase 帳號 → 拿 idToken 呼叫後端建立 session → 持久化。
+  Future<AuthSession> registerWithEmail({
+    required String email,
+    required String password,
+    String? displayName,
+  }) async {
+    final result = await _firebaseAuthService.registerWithEmail(
+      email: email,
+      password: password,
+      displayName: displayName,
+    );
+    return _createSessionFromFirebase(result);
+  }
+
+  /// Google 登入：Google/Firebase 驗證 → 拿 Firebase idToken 呼叫後端建立
+  /// session（provider='google'）→ 持久化。
+  ///
+  /// Google 驗證失敗 / 取消會丟 [GoogleAuthException]（由上層轉白話 / 柔性中止）。
+  /// 後端 session 失敗時 `createSession` 內部已回 mockFallback（不丟例外）。
+  Future<AuthSession> signInWithGoogle() async {
+    final result = await _firebaseAuthService.signInWithGoogle();
+    return _createSessionFromFirebase(result);
+  }
+
+  Future<AuthSession> _createSessionFromFirebase(
+    FirebaseSignInResult result,
+  ) async {
+    final session = await _sessionApiService.createSession(
+      firebaseUid: result.uid,
+      idToken: result.idToken,
+      email: result.email,
+      displayName: result.displayName,
+      provider: result.provider,
+      photoUrl: result.photoUrl,
     );
     await persist(session);
     return session;
@@ -55,8 +115,10 @@ class AuthService {
     await prefs.setString(prefsKey, jsonEncode(session.toPrefsMap()));
   }
 
-  /// 清除本機 session（登出）。
+  /// 清除本機 session（登出）。同時嘗試登出 Firebase（不可用時為安全 no-op，
+  /// 不影響本機清除）。
   Future<void> logout() async {
+    await _firebaseAuthService.signOut();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(prefsKey);
   }

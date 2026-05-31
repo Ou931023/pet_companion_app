@@ -23,10 +23,23 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
   bool _isSigningIn = false;
+  bool _isEmailSubmitting = false;
+  bool _isGoogleSubmitting = false;
+
+  bool get _isBusy => _isSigningIn || _isEmailSubmitting || _isGoogleSubmitting;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
   Future<void> _handleQuickStart() async {
-    if (_isSigningIn) return;
+    if (_isBusy) return;
     final authController = context.read<AuthController>();
     setState(() => _isSigningIn = true);
 
@@ -42,8 +55,57 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _handleEmailSignIn() async {
+    if (_isBusy) return;
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    if (email.isEmpty) {
+      _showFriendlyMessage('請先填一下 Email 喔。');
+      return;
+    }
+    if (password.isEmpty) {
+      _showFriendlyMessage('請輸入密碼喔。');
+      return;
+    }
+
+    FocusScope.of(context).unfocus();
+    final authController = context.read<AuthController>();
+    setState(() => _isEmailSubmitting = true);
+
+    await authController.signInWithEmail(email: email, password: password);
+
+    if (!mounted) return;
+    setState(() => _isEmailSubmitting = false);
+
+    if (authController.status == AuthStatus.authenticated) {
+      widget.onSignedIn?.call();
+    } else {
+      _showFriendlyMessage(
+        authController.errorMessage ?? '現在連線不太順，待會再試一次好嗎？',
+      );
+    }
+  }
+
+  Future<void> _handleGoogleSignIn() async {
+    if (_isBusy) return;
+    final authController = context.read<AuthController>();
+    setState(() => _isGoogleSubmitting = true);
+
+    await authController.signInWithGoogle();
+
+    if (!mounted) return;
+    setState(() => _isGoogleSubmitting = false);
+
+    if (authController.status == AuthStatus.authenticated) {
+      widget.onSignedIn?.call();
+    } else if (authController.errorMessage != null) {
+      // 使用者取消時 errorMessage 為 null → 不打擾；其他失敗才顯示白話。
+      _showFriendlyMessage(authController.errorMessage!);
+    }
+  }
+
   void _showComingSoon(String provider) {
-    _showFriendlyMessage('$provider 綁定即將推出，現在先用「快速開始」進去陪伴吧。');
+    _showFriendlyMessage('$provider 綁定即將推出，現在先用「先進去陪伴」進去吧。');
   }
 
   void _showFriendlyMessage(String message) {
@@ -121,24 +183,26 @@ class _LoginScreenState extends State<LoginScreen> {
                       const Spacer(),
                       _buildPrimaryButton(context),
                       const SizedBox(height: 24),
-                      _buildDivider(),
+                      _buildDivider('或用 Email 登入'),
+                      const SizedBox(height: 20),
+                      _buildEmailField(),
+                      const SizedBox(height: 14),
+                      _buildPasswordField(),
+                      const SizedBox(height: 16),
+                      _buildEmailSignInButton(),
                       const SizedBox(height: 24),
+                      _buildDivider('或綁定其他帳號'),
+                      const SizedBox(height: 20),
                       AuthProviderButton(
                         icon: Icons.g_mobiledata,
                         label: '用 Google 綁定',
-                        onPressed: () => _showComingSoon('Google'),
+                        onPressed: () => _handleGoogleSignIn(),
                       ),
                       const SizedBox(height: 14),
                       AuthProviderButton(
                         icon: Icons.apple,
                         label: '用 Apple 綁定',
                         onPressed: () => _showComingSoon('Apple'),
-                      ),
-                      const SizedBox(height: 14),
-                      AuthProviderButton(
-                        icon: Icons.email_outlined,
-                        label: '用 Email 綁定',
-                        onPressed: () => _showComingSoon('Email'),
                       ),
                       const SizedBox(height: 28),
                       _buildRegisterLink(context),
@@ -198,14 +262,14 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildDivider() {
+  Widget _buildDivider(String label) {
     return Row(
       children: [
         Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Text(
-            '或綁定帳號保存紀錄',
+            label,
             style: TextStyle(
               fontSize: 16,
               color: Colors.grey.shade600,
@@ -214,6 +278,72 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
       ],
+    );
+  }
+
+  Widget _buildEmailField() {
+    return TextField(
+      controller: _emailController,
+      enabled: !_isBusy,
+      keyboardType: TextInputType.emailAddress,
+      autocorrect: false,
+      style: const TextStyle(fontSize: 20),
+      decoration: InputDecoration(
+        labelText: 'Email',
+        labelStyle: const TextStyle(fontSize: 18),
+        prefixIcon: const Icon(Icons.email_outlined, size: 26),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPasswordField() {
+    return TextField(
+      controller: _passwordController,
+      enabled: !_isBusy,
+      obscureText: true,
+      style: const TextStyle(fontSize: 20),
+      onSubmitted: (_) => _handleEmailSignIn(),
+      decoration: InputDecoration(
+        labelText: '密碼',
+        labelStyle: const TextStyle(fontSize: 18),
+        prefixIcon: const Icon(Icons.lock_outline, size: 26),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmailSignInButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton(
+        onPressed: _isBusy ? null : _handleEmailSignIn,
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          side: BorderSide(color: Colors.grey.shade400, width: 1.5),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+        child: _isEmailSubmitting
+            ? const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              )
+            : const Text(
+                '用 Email 登入',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+              ),
+      ),
     );
   }
 
