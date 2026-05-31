@@ -22,15 +22,24 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.915787903571-m7847vqolr4q4gdk73uln3s5lipu0lc3</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
-	<key>LSRequiresIPhoneOS</key>
-	<true/>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>tel</string>
 		<string>mailto</string>
 	</array>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
@@ -40,12 +49,12 @@
 	<string>需要連線到同一個 Wi-Fi 內的語音服務，才能使用即時語音陪伴功能。</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>需要使用麥克風，才能和陪伴寵物進行即時語音對話。</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>需要語音辨識權限，才能把您說的話轉成文字並讓寵物回應。</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>需要相簿權限，讓您選擇照片製作記憶拼圖。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>需要相簿權限，讓您選擇照片製作記憶拼圖。</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>需要語音辨識權限，才能把您說的話轉成文字並讓寵物回應。</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

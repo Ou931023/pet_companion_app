@@ -2,13 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../controllers/auth_controller.dart';
-import '../widgets/auth/auth_provider_button.dart';
 
 /// 註冊頁（CR-0006 Batch 3b UI / Batch 4b 接上 Email 註冊）。
 ///
-/// 長者友善：大字、大按鈕、溫暖語氣。Email 註冊已接真 Firebase；Google / Apple
-/// 仍只保留 UI，點擊顯示「即將推出」白話提示。透過 callback 對外溝通，註冊成功
-/// 後會自行 pop 回上一頁（auth gate 會因為已登入而切到陪伴流程）。
+/// 長者友善：大字、大按鈕、溫暖語氣。**註冊頁只做 Email 註冊**；Google / Apple
+/// 綁定統一放在最前面的登入頁，這裡不重複（CR-0009 後續調整）。Email 註冊成功
+/// 後不自動登入，會提示「請用 Email 登入」並返回登入頁。
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key, this.onBackToLogin});
 
@@ -24,9 +23,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmController = TextEditingController();
   bool _isSubmitting = false;
-  bool _isGoogleSubmitting = false;
 
-  bool get _isBusy => _isSubmitting || _isGoogleSubmitting;
+  bool get _isBusy => _isSubmitting;
 
   @override
   void dispose() {
@@ -63,41 +61,49 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final authController = context.read<AuthController>();
     setState(() => _isSubmitting = true);
 
-    await authController.registerWithEmail(email: email, password: password);
+    // CR-0006 Batch 4d：註冊**不自動登入**。成功回 null、失敗回白話訊息。
+    final error =
+        await authController.registerAccount(email: email, password: password);
 
     if (!mounted) return;
     setState(() => _isSubmitting = false);
 
-    if (authController.status == AuthStatus.authenticated) {
-      // 註冊即登入：pop 回上一頁，auth gate 會切到陪伴流程。
+    if (error == null) {
+      await _showRegisteredDialog();
+      if (!mounted) return;
+      // 回登入頁，讓使用者用剛建立的 Email / 密碼登入（不自動進 App）。
       Navigator.of(context).maybePop();
     } else {
-      _showFriendlyMessage(
-        authController.errorMessage ?? '現在連線不太順，待會再試一次好嗎？',
-      );
+      _showFriendlyMessage(error);
     }
   }
 
-  Future<void> _handleGoogleSignUp() async {
-    if (_isBusy) return;
-    final authController = context.read<AuthController>();
-    setState(() => _isGoogleSubmitting = true);
-
-    await authController.signInWithGoogle();
-
-    if (!mounted) return;
-    setState(() => _isGoogleSubmitting = false);
-
-    if (authController.status == AuthStatus.authenticated) {
-      Navigator.of(context).maybePop();
-    } else if (authController.errorMessage != null) {
-      // 取消時 errorMessage 為 null → 不打擾。
-      _showFriendlyMessage(authController.errorMessage!);
-    }
-  }
-
-  void _showComingSoon(String provider) {
-    _showFriendlyMessage('$provider 綁定即將推出，現在可以先用 Email 註冊，或回去「先進去陪伴」。');
+  /// 註冊成功提示：「帳號建立成功，請用 Email 登入。」
+  Future<void> _showRegisteredDialog() {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text(
+            '帳號建立成功',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+          ),
+          content: const Text(
+            '請用剛剛的 Email 和密碼登入吧。',
+            style: TextStyle(fontSize: 18, height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text(
+                '去登入',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void _showFriendlyMessage(String message) {
@@ -173,19 +179,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                       const SizedBox(height: 20),
                       _buildRegisterButton(),
-                      const SizedBox(height: 24),
-                      _buildDivider('或綁定其他帳號'),
-                      const SizedBox(height: 20),
-                      AuthProviderButton(
-                        icon: Icons.g_mobiledata,
-                        label: '用 Google 註冊',
-                        onPressed: () => _handleGoogleSignUp(),
-                      ),
                       const SizedBox(height: 16),
-                      AuthProviderButton(
-                        icon: Icons.apple,
-                        label: '用 Apple 註冊',
-                        onPressed: () => _showComingSoon('Apple'),
+                      Text(
+                        '想用 Google 或 Apple？回上一頁就能綁定。',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 16,
+                          height: 1.4,
+                          color: Colors.grey.shade600,
+                        ),
                       ),
                       const Spacer(),
                       SizedBox(
@@ -268,22 +270,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
               ),
       ),
-    );
-  }
-
-  Widget _buildDivider(String label) {
-    return Row(
-      children: [
-        Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Text(
-            label,
-            style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
-          ),
-        ),
-        Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
-      ],
     );
   }
 }

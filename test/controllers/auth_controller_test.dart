@@ -23,11 +23,26 @@ AuthService _authServiceReturning(Map<String, dynamic> responseJson) {
 /// 覆寫 Email / Google 方法的假 AuthService，回 canned session 或丟錯，
 /// **不碰真 Firebase**。
 class _StubEmailAuthService extends AuthService {
-  _StubEmailAuthService({this.session, this.error, this.googleError});
+  _StubEmailAuthService({
+    this.session,
+    this.error,
+    this.googleError,
+    this.registerError,
+  });
 
   final AuthSession? session;
   final Object? error;
   final Object? googleError;
+  final Object? registerError;
+
+  @override
+  Future<void> registerAccountOnly({
+    required String email,
+    required String password,
+    String? displayName,
+  }) async {
+    if (registerError != null) throw registerError!;
+  }
 
   @override
   Future<AuthSession> signInWithEmail({
@@ -60,6 +75,7 @@ const _firebaseSession = AuthSession(
   elderId: 'elder-email-1',
   bindingStatus: 'bound',
   authMode: 'firebase',
+  provider: 'email', // CR-0009：正式帳號（依登入方式判斷）→ 用 session.elderId
   isNewUser: false,
 );
 
@@ -88,15 +104,16 @@ void main() {
       'isNewUser': false,
       'authMode': 'firebase',
     });
-    // 先登入一次寫入持久化。
+    // 先以 demo（mockLogin）登入一次寫入持久化。
     await service.mockLogin();
 
     final controller = AuthController(authService: service);
     await controller.restore();
 
     expect(controller.status, AuthStatus.authenticated);
-    expect(controller.currentUserId, 'user-123');
-    expect(controller.currentElderId, 'elder-456');
+    // CR-0009：mockLogin 是 demo 登入（provider='mock'）→ 還原後仍是 default_user。
+    expect(controller.currentUserId, 'default_user');
+    expect(controller.currentElderId, 'default_user');
   });
 
   test('loginAsDemoUser 成功（mock session）→ authenticated 但 elderId 仍 default_user',
@@ -120,16 +137,19 @@ void main() {
     expect(controller.currentUserId, 'default_user');
   });
 
-  test('firebase session → currentElderId / currentUserId 使用後端真實 id', () async {
-    final service = _authServiceReturning({
-      'success': true,
-      'userId': 'user-789',
-      'elderId': 'elder-789',
-      'bindingStatus': 'bound',
-      'isNewUser': false,
-      'authMode': 'firebase',
-    });
-    await service.mockLogin();
+  test('正式帳號 session（provider=google）→ 即使 authMode=mock 也用後端真實 id',
+      () async {
+    // CR-0009：隔離依「登入方式」判斷，不靠 authMode。直接持久化一個正式帳號
+    // session（provider=google，authMode 故意設 mock）模擬還原。
+    final service = _authServiceReturning(const {});
+    await service.persist(const AuthSession(
+      userId: 'user-789',
+      elderId: 'elder-789',
+      bindingStatus: 'bound',
+      authMode: 'mock',
+      provider: 'google',
+      isNewUser: false,
+    ));
 
     final controller = AuthController(authService: service);
     await controller.restore();
@@ -230,7 +250,7 @@ void main() {
       );
 
       expect(controller.status, AuthStatus.error);
-      expect(controller.errorMessage, '帳號或密碼不太對，再試一次好嗎？');
+      expect(controller.errorMessage, 'Email 或密碼不太對，請再確認一次。');
       expect(controller.errorMessage, isNot(contains('wrong-password')));
       expect(controller.errorMessage, isNot(contains('Exception')));
     });
@@ -263,6 +283,39 @@ void main() {
 
       expect(controller.status, AuthStatus.error);
       expect(controller.errorMessage, '現在連線不太順，待會再試一次好嗎？');
+    });
+  });
+
+  group('Email 註冊不自動登入（CR-0006 Batch 4d）', () {
+    test('registerAccount 成功 → 回 null 且 status 不變、未登入', () async {
+      final controller = AuthController(authService: _StubEmailAuthService());
+      await controller.restore(); // → unauthenticated
+      final before = controller.status;
+
+      final result = await controller.registerAccount(
+        email: 'grandma@example.com',
+        password: 'secret1',
+      );
+
+      expect(result, isNull); // 成功
+      expect(controller.status, before); // 狀態未變
+      expect(controller.isAuthenticated, false); // 不自動登入
+    });
+
+    test('registerAccount 失敗（email 已使用）→ 回白話訊息、未登入', () async {
+      final controller = AuthController(
+        authService: _StubEmailAuthService(
+          registerError: const EmailAuthException('email-already-in-use'),
+        ),
+      );
+
+      final result = await controller.registerAccount(
+        email: 'grandma@example.com',
+        password: 'secret1',
+      );
+
+      expect(result, '這個 Email 已經註冊過了，直接登入就可以囉。');
+      expect(controller.isAuthenticated, false);
     });
   });
 
@@ -304,7 +357,7 @@ void main() {
       expect(controller.status, AuthStatus.error);
       expect(
         controller.errorMessage,
-        'Google 登入暫時還不能用，可以先用 Email 或「先進去陪伴」喔。',
+        'Google 登入暫時還不能用，可以改用 Email 登入喔。',
       );
       expect(controller.errorMessage, isNot(contains('config')));
       expect(controller.errorMessage, isNot(contains('Exception')));

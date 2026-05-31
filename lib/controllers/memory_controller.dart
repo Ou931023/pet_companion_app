@@ -23,14 +23,18 @@ class MemoryController extends ChangeNotifier {
 
   /// CR-0006 Batch 3d：由 [app.dart] 集中監聽 AuthController 後同步進來的記憶識別。
   ///
-  /// 空字串視為未登入，回退 'default_user'（保護 Demo）。**只更新識別、不重建
-  /// controller、不清空既有 UI 狀態（記憶清單 / 去重集合 / 問候 slot）**，
-  /// 避免登入狀態切換時把對話脈絡或畫面狀態打掉。
+  /// 空字串視為未登入，回退 'default_user'（保護 Demo）。
+  ///
+  /// CR-0009：**真的換了帳號（id 改變）時**，重置問候 slot 與去重集合，
+  /// 讓新帳號能拿到屬於自己（新寵物名）的問候，而不是被前一帳號的同時段 slot
+  /// 守門而跳過問候。
   void syncUserId(String userId) {
     final next = userId.isEmpty ? _fallbackUserId : userId;
     final current = _userId.isEmpty ? _fallbackUserId : _userId;
     if (next == current) return;
     _userId = next;
+    _lastGreetingSlot = null;
+    _processedTurnIds.clear();
     notifyListeners();
   }
 

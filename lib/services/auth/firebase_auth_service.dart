@@ -172,10 +172,21 @@ class FirebaseAuthService {
     }
   }
 
+  /// Google 的 Web client ID（serverClientId）。
+  ///
+  /// CR-0006 Batch 4c-2：**不寫死進 git**，由建置時注入：
+  /// `--dart-define=GOOGLE_SERVER_CLIENT_ID=<web client id>`。
+  /// 未提供時傳 null —— iOS 會自動採用 `GoogleService-Info.plist` 的 clientId，
+  /// Android 會採用 `google-services.json` 由 plugin 產生的 default_web_client_id。
+  static const String _serverClientId =
+      String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID');
+
   /// 只需初始化一次 GoogleSignIn（v7 要求先 initialize 才能 authenticate）。
   Future<void> _ensureGoogleInitialized() async {
     if (_googleInitialized) return;
-    await GoogleSignIn.instance.initialize();
+    await GoogleSignIn.instance.initialize(
+      serverClientId: _serverClientId.isEmpty ? null : _serverClientId,
+    );
     _googleInitialized = true;
   }
 

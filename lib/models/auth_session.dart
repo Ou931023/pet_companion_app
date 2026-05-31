@@ -10,6 +10,7 @@ class AuthSession {
     required this.bindingStatus,
     required this.authMode,
     required this.isNewUser,
+    this.provider = 'mock',
     this.role,
     this.bindingDeadline,
   });
@@ -25,6 +26,12 @@ class AuthSession {
 
   /// 'firebase' | 'mock'。mock 表示後端未設定 Firebase、以 demo 模式採信。
   final String authMode;
+
+  /// CR-0009：登入方式 'mock' | 'email' | 'google' | 'apple'。
+  /// 由前端在登入時標記並持久化——**這是判斷「Demo vs 正式帳號」的依據**
+  /// （因為後端在 mock 模式下對正式帳號也回 authMode='mock'）。
+  /// 'mock' = Demo → 用 default_user；'email'/'google'/'apple' = 正式帳號 → 用 elderId。
+  final String provider;
 
   /// 此次 session 是否建立了新使用者。
   final bool isNewUser;
@@ -45,6 +52,7 @@ class AuthSession {
       elderId: _readString(json['elderId'], fallback: fallbackUserId),
       bindingStatus: _readString(json['bindingStatus'], fallback: 'pending'),
       authMode: _readString(json['authMode'], fallback: 'mock'),
+      provider: _readString(json['provider'], fallback: 'mock'),
       isNewUser: json['isNewUser'] == true,
       role: _readNullableString(json['role']),
       bindingDeadline: _readNullableString(json['bindingDeadline']),
@@ -65,6 +73,7 @@ class AuthSession {
       'elderId': elderId,
       'bindingStatus': bindingStatus,
       'authMode': authMode,
+      'provider': provider,
       'isNewUser': isNewUser,
       if (role != null) 'role': role,
       if (bindingDeadline != null) 'bindingDeadline': bindingDeadline,
@@ -88,6 +97,7 @@ class AuthSession {
     String? elderId,
     String? bindingStatus,
     String? authMode,
+    String? provider,
     bool? isNewUser,
     String? role,
     String? bindingDeadline,
@@ -97,6 +107,7 @@ class AuthSession {
       elderId: elderId ?? this.elderId,
       bindingStatus: bindingStatus ?? this.bindingStatus,
       authMode: authMode ?? this.authMode,
+      provider: provider ?? this.provider,
       isNewUser: isNewUser ?? this.isNewUser,
       role: role ?? this.role,
       bindingDeadline: bindingDeadline ?? this.bindingDeadline,

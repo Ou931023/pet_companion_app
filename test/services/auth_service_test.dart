@@ -194,9 +194,10 @@ void main() {
     );
   });
 
-  test('Firebase 成功但後端 session 失敗 → 回 mockFallback、不 crash', () async {
+  test('Firebase 成功但後端不可達 → 用 Firebase uid 當隔離 key（不落 default_user）',
+      () async {
     final service = AuthService(
-      // 後端 500 → createSession 內部回 mockFallback。
+      // 後端 500 → createSession 內部回 mockFallback（elderId=default_user）。
       sessionApiService: SessionApiService(
         client: MockClient((request) async => http.Response('err', 500)),
       ),
@@ -207,7 +208,10 @@ void main() {
         await service.signInWithEmail(email: 'grandma@example.com', password: 'secret1');
 
     expect(session.authMode, 'mock');
-    expect(session.userId, 'default_user');
+    // CR-0009：正式帳號不可落在 default_user，改用 Firebase uid 隔離。
+    expect(session.elderId, 'fb-uid-1');
+    expect(session.userId, 'fb-uid-1');
+    expect(session.provider, 'email');
   });
 
   test('signInWithGoogle 成功 → 帶 idToken 與 provider=google 呼叫後端並回 session',
@@ -258,6 +262,49 @@ void main() {
     );
   });
 
+  test('registerAccountOnly 成功 → 不建後端 session、不持久化（不自動登入）',
+      () async {
+    final service = AuthService(
+      sessionApiService: _apiReturning({
+        'success': true,
+        'userId': 'u',
+        'elderId': 'e',
+        'bindingStatus': 'pending',
+        'isNewUser': true,
+        'authMode': 'firebase',
+      }),
+      firebaseAuthService: _FakeFirebaseAuthService(result: _firebaseResult),
+    );
+
+    await service.registerAccountOnly(
+      email: 'grandma@example.com',
+      password: 'secret1',
+    );
+
+    // 沒有持久化任何 session → 還原為 null（代表沒被自動登入）。
+    expect(await service.restoreSession(), isNull);
+  });
+
+  test('registerAccountOnly 失敗（email 已使用）→ 丟 EmailAuthException', () async {
+    final service = AuthService(
+      sessionApiService: _apiReturning(const {}),
+      firebaseAuthService: _FakeFirebaseAuthService(
+        error: const EmailAuthException('email-already-in-use'),
+      ),
+    );
+
+    await expectLater(
+      service.registerAccountOnly(
+        email: 'grandma@example.com',
+        password: 'secret1',
+      ),
+      throwsA(
+        isA<EmailAuthException>()
+            .having((e) => e.code, 'code', 'email-already-in-use'),
+      ),
+    );
+  });
+
   test('Google 成功但後端失敗 → mockFallback、不 crash', () async {
     final service = AuthService(
       sessionApiService: SessionApiService(
@@ -269,6 +316,9 @@ void main() {
     final session = await service.signInWithGoogle();
 
     expect(session.authMode, 'mock');
-    expect(session.userId, 'default_user');
+    // CR-0009：正式帳號不可落在 default_user，改用 Firebase uid 隔離。
+    expect(session.elderId, 'fb-uid-g');
+    expect(session.userId, 'fb-uid-g');
+    expect(session.provider, 'google');
   });
 }

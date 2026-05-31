@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
+import 'package:pet_companion_app/controllers/app_navigation_controller.dart';
 import 'package:pet_companion_app/controllers/auth_controller.dart';
 import 'package:pet_companion_app/models/auth_session.dart';
 import 'package:pet_companion_app/screens/login_screen.dart';
@@ -62,14 +63,22 @@ Future<void> _pumpLogin(
   AuthController controller, {
   VoidCallback? onSignedIn,
   VoidCallback? onRegister,
+  // 預設帶出 Demo 備援按鈕，方便沿用既有 Demo 測試；正式模式另有專門測試。
+  bool showDemoLogin = true,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
-      home: ChangeNotifierProvider<AuthController>.value(
-        value: controller,
+      home: MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthController>.value(value: controller),
+          ChangeNotifierProvider<AppNavigationController>(
+            create: (_) => AppNavigationController(),
+          ),
+        ],
         child: LoginScreen(
           onSignedIn: onSignedIn,
           onRegister: onRegister,
+          showDemoLogin: showDemoLogin,
         ),
       ),
     ),
@@ -190,19 +199,23 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.status, AuthStatus.error);
-    expect(find.text('帳號或密碼不太對，再試一次好嗎？'), findsOneWidget);
+    // 錯誤改由 build() 內白話橫幅顯示（不靠 snackbar）。
+    expect(find.text('Email 或密碼不太對，請再確認一次。'), findsOneWidget);
     expect(find.textContaining('wrong-password'), findsNothing);
     expect(find.textContaining('Exception'), findsNothing);
   });
 
-  testWidgets('Apple 按鈕仍顯示「即將推出」，不 crash', (tester) async {
+  testWidgets('Apple 按鈕存在；點到給白話提示、不 crash（僅展示用）', (tester) async {
     useTallView(tester);
     final controller = AuthController(authService: _FakeAuthService());
     await _pumpLogin(tester, controller);
 
-    await tester.tap(find.text('用 Apple 綁定'));
+    expect(find.text('用 Apple 登入'), findsOneWidget);
+
+    await tester.tap(find.text('用 Apple 登入'));
     await tester.pump();
-    expect(find.textContaining('即將推出'), findsOneWidget);
+    expect(find.text('Apple 登入準備中，敬請期待。'), findsOneWidget);
+    expect(find.textContaining('Exception'), findsNothing);
   });
 
   testWidgets('Google 按鈕成功登入 → authenticated 並呼叫 onSignedIn', (tester) async {
@@ -211,7 +224,7 @@ void main() {
     var signedIn = false;
     await _pumpLogin(tester, controller, onSignedIn: () => signedIn = true);
 
-    await tester.tap(find.text('用 Google 綁定'));
+    await tester.tap(find.text('用 Google 登入'));
     await tester.pumpAndSettle();
 
     expect(controller.status, AuthStatus.authenticated);
@@ -227,7 +240,7 @@ void main() {
     );
     await _pumpLogin(tester, controller);
 
-    await tester.tap(find.text('用 Google 綁定'));
+    await tester.tap(find.text('用 Google 登入'));
     await tester.pumpAndSettle();
 
     expect(controller.status, isNot(AuthStatus.authenticated));
@@ -244,26 +257,53 @@ void main() {
     );
     await _pumpLogin(tester, controller);
 
-    await tester.tap(find.text('用 Google 綁定'));
+    await tester.tap(find.text('用 Google 登入'));
     await tester.pumpAndSettle();
 
     expect(controller.status, AuthStatus.error);
     expect(
-      find.text('Google 登入暫時還不能用，可以先用 Email 或「先進去陪伴」喔。'),
+      find.text('Google 登入暫時還不能用，可以改用 Email 登入喔。'),
       findsOneWidget,
     );
     expect(find.textContaining('Exception'), findsNothing);
   });
 
-  testWidgets('點「註冊」會呼叫 onRegister', (tester) async {
+  testWidgets('點「建立帳號」會呼叫 onRegister', (tester) async {
     useTallView(tester);
     final controller = AuthController(authService: _FakeAuthService());
     var registerTapped = false;
     await _pumpLogin(tester, controller, onRegister: () => registerTapped = true);
 
-    await tester.tap(find.text('註冊'));
+    await tester.tap(find.text('建立帳號'));
     await tester.pump();
 
     expect(registerTapped, isTrue);
+  });
+
+  testWidgets('正式模式（showDemoLogin=false）：無測試感按鈕，主視覺為 Google/Email/建立帳號',
+      (tester) async {
+    useTallView(tester);
+    final controller = AuthController(authService: _FakeAuthService());
+    await _pumpLogin(tester, controller, showDemoLogin: false);
+
+    // 主視覺：Google 登入 / Email 登入 / 建立帳號
+    expect(find.text('用 Google 登入'), findsOneWidget);
+    expect(find.text('用 Email 登入'), findsOneWidget);
+    expect(find.text('建立帳號'), findsOneWidget);
+
+    // 不出現測試感字樣 / Demo 按鈕。
+    expect(find.text('先進去陪伴'), findsNothing);
+    expect(find.textContaining('Demo'), findsNothing);
+    expect(find.textContaining('demo'), findsNothing);
+    expect(find.textContaining('測試'), findsNothing);
+    expect(find.textContaining('快速開始'), findsNothing);
+  });
+
+  testWidgets('開發模式（showDemoLogin=true）：仍保留 Demo 備援按鈕', (tester) async {
+    useTallView(tester);
+    final controller = AuthController(authService: _FakeAuthService());
+    await _pumpLogin(tester, controller, showDemoLogin: true);
+
+    expect(find.text('先進去陪伴'), findsOneWidget);
   });
 }

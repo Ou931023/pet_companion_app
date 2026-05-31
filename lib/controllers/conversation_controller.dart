@@ -211,7 +211,24 @@ class ConversationController extends ChangeNotifier {
     _history
       ..clear()
       ..addAll(turns);
+    // CR-0009：換帳號時一併清掉上一個帳號殘留的「最新回覆」顯示狀態。
+    // （問候 / 部分回覆用 saveToHistory:false，不進 _history 卻會設 _latestReply，
+    //  loadHistory 若只清 _history，主對話泡泡會還顯示前一帳號的寵物名/內容。）
+    _resetLatestReplyState();
     notifyListeners();
+  }
+
+  /// 清掉「最新回覆」相關的顯示暫存（換帳號 / 重置時用）。
+  void _resetLatestReplyState() {
+    _latestReply = '';
+    _latestUserText = '';
+    _isAwaitingPetReply = false;
+    _latestSources = const [];
+    _latestReplyIsSearch = false;
+    _latestSearchMode = '';
+    _latestSearchProvider = '';
+    _latestToolUsed = '';
+    _latestCompanionDebugInfo = null;
   }
 
   SpeechToTextService _currentSttService() {

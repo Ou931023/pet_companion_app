@@ -393,27 +393,39 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
       final conversationController = context.read<ConversationController>();
       final notificationService = context.read<NotificationService>();
       final memoryController = context.read<MemoryController>();
+      final localStorageService = context.read<LocalStorageService>();
+      final petStatsStorageService = context.read<PetStatsStorageService>();
 
-      // CR-0006 Batch 3d：建立 AuthController → MemoryController 的 elderId 同步。
-      // 先掛 listener 再 restore，確保還原出的 session 也會被同步；初次同步多為
-      // default_user（syncUserId 對相同值是 no-op，不會造成多餘 rebuild）。
+      // CR-0009：依「目前帳號的 elderId」切換本機資料命名空間 + 重載該帳號狀態。
+      // 監聽 AuthController：登入 / 換帳號 / 登出 / 還原時，只要 currentElderId 變了，
+      // 就重設各 storage 的命名空間（Demo/未登入=default_user 沿用既有資料），並重載
+      // Profile（→ onboarding / 寵物名）、PetStats、對話。先掛 listener 再 restore，
+      // 確保還原出的 session 也會套用。
       _authControllerForSync = authController;
-      void syncElderId() {
-        memoryController.syncUserId(authController.currentElderId);
+      String? lastElderId;
+      Future<void> applyAccount() async {
+        final elderId = authController.currentElderId;
+        if (elderId == lastElderId) return;
+        lastElderId = elderId;
+        localStorageService.setUserId(elderId);
+        petStatsStorageService.setUserId(elderId);
+        memoryController.syncUserId(elderId);
+        await profileController.load();
+        await petStatsController.load();
+        await conversationController.loadHistory();
       }
 
-      _elderIdSyncListener = syncElderId;
-      authController.addListener(syncElderId);
-      syncElderId();
+      _elderIdSyncListener = () {
+        applyAccount();
+      };
+      authController.addListener(_elderIdSyncListener!);
+      await applyAccount(); // 初次（多為 default_user）
 
       authController.restore();
-      profileController.load();
-      petStatsController.load();
       checkInController.load();
       inventoryController.load();
       reminderController.load();
       careAlertController.loadAlerts();
-      await conversationController.loadHistory();
       notificationService.initialize();
     });
   }

@@ -1,28 +1,42 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../config/app_config.dart';
+import '../controllers/app_navigation_controller.dart';
 import '../controllers/auth_controller.dart';
+import '../routes/app_routes.dart';
 import '../widgets/auth/auth_provider_button.dart';
 
-/// 登入頁（CR-0006 Batch 3b）。
+/// 登入頁。
 ///
-/// 長者友善：大字、大按鈕、溫暖語氣。透過 callback 對外溝通，**不自行導航**
-/// 到 MainShell（auth gate 接線是 Batch 3c）。第三方綁定（Google / Apple /
-/// Email）本批只保留 UI，點擊顯示「即將推出」白話提示，不接真 SDK。
+/// 長者友善：大字、大按鈕、溫暖語氣。正式展示主視覺為 **Google 登入 / Email
+/// 登入 / 建立帳號**；Demo 快速登入預設隱藏（正式截圖不露測試感按鈕），由
+/// `AppConfig.showDemoLoginButton`（或建構參數 [showDemoLogin]）控制，開發時可開啟。
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, this.onSignedIn, this.onRegister});
+  const LoginScreen({
+    super.key,
+    this.onSignedIn,
+    this.onRegister,
+    this.showDemoLogin,
+  });
 
   /// 登入成功（state=authenticated）後通知外層。
   final VoidCallback? onSignedIn;
 
-  /// 點「還沒有帳號？註冊」時通知外層切到註冊頁。
+  /// 點「還沒有帳號？建立帳號」時通知外層切到註冊頁。
   final VoidCallback? onRegister;
+
+  /// 是否顯示 Demo 快速登入（備援）。null → 沿用 [AppConfig.showDemoLoginButton]。
+  final bool? showDemoLogin;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  bool get _showDemoLogin =>
+      widget.showDemoLogin ?? AppConfig.showDemoLoginButton;
+
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _isSigningIn = false;
@@ -38,9 +52,16 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  /// 登入成功後 MainShell 要落在首頁，而不是上次停留的分頁（route 是單例、
+  /// 跨登入保留）。所以登入前先把 shell route 重置成首頁。
+  void _resetShellToHome() {
+    context.read<AppNavigationController>().navigateTo(AppRoute.home);
+  }
+
   Future<void> _handleQuickStart() async {
     if (_isBusy) return;
     final authController = context.read<AuthController>();
+    _resetShellToHome();
     setState(() => _isSigningIn = true);
 
     await authController.loginAsDemoUser();
@@ -50,9 +71,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (authController.status == AuthStatus.authenticated) {
       widget.onSignedIn?.call();
-    } else {
-      _showFriendlyMessage('現在連線不太順，待會再試一次好嗎？');
     }
+    // 失敗時由 build() 的白話錯誤橫幅顯示（讀 authController.errorMessage），
+    // 不另跳 snackbar，避免重複。
   }
 
   Future<void> _handleEmailSignIn() async {
@@ -70,6 +91,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     FocusScope.of(context).unfocus();
     final authController = context.read<AuthController>();
+    _resetShellToHome();
     setState(() => _isEmailSubmitting = true);
 
     await authController.signInWithEmail(email: email, password: password);
@@ -79,16 +101,16 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (authController.status == AuthStatus.authenticated) {
       widget.onSignedIn?.call();
-    } else {
-      _showFriendlyMessage(
-        authController.errorMessage ?? '現在連線不太順，待會再試一次好嗎？',
-      );
     }
+    // 失敗時不在這裡跳 snackbar：登入過程 auth gate 會把本頁換成 loading 再換
+    // 回來，這個 callback 多半已在「不再 mounted」的舊頁面上。錯誤改由 build()
+    // 內的白話錯誤橫幅顯示（讀 authController.errorMessage），保證一定看得到。
   }
 
   Future<void> _handleGoogleSignIn() async {
     if (_isBusy) return;
     final authController = context.read<AuthController>();
+    _resetShellToHome();
     setState(() => _isGoogleSubmitting = true);
 
     await authController.signInWithGoogle();
@@ -98,14 +120,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (authController.status == AuthStatus.authenticated) {
       widget.onSignedIn?.call();
-    } else if (authController.errorMessage != null) {
-      // 使用者取消時 errorMessage 為 null → 不打擾；其他失敗才顯示白話。
-      _showFriendlyMessage(authController.errorMessage!);
     }
+    // 取消（errorMessage 為 null）不打擾；其他失敗由 build() 的錯誤橫幅顯示。
   }
 
-  void _showComingSoon(String provider) {
-    _showFriendlyMessage('$provider 綁定即將推出，現在先用「先進去陪伴」進去吧。');
+  /// Apple 登入尚未接上：點到時給白話提示，不 crash（按鈕僅作展示）。
+  void _handleApplePending() {
+    _showFriendlyMessage('Apple 登入準備中，敬請期待。');
   }
 
   void _showFriendlyMessage(String message) {
@@ -124,6 +145,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 監聽 auth 狀態：登入失敗時用白話橫幅顯示錯誤（讀 errorMessage），
+    // 不依賴 snackbar（會被 auth gate 換頁吃掉）。
+    final auth = context.watch<AuthController>();
+    final errorMessage =
+        auth.status == AuthStatus.error ? auth.errorMessage : null;
     return Scaffold(
       body: SafeArea(
         child: LayoutBuilder(
@@ -172,7 +198,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        '點一下就能開始，和你的陪伴寵物說說話。',
+                        '用你的帳號登入，繼續陪伴的點滴。',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 20,
@@ -181,7 +207,17 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       const Spacer(),
-                      _buildPrimaryButton(context),
+                      AuthProviderButton(
+                        icon: Icons.g_mobiledata,
+                        label: '用 Google 登入',
+                        onPressed: () => _handleGoogleSignIn(),
+                      ),
+                      const SizedBox(height: 14),
+                      AuthProviderButton(
+                        icon: Icons.apple,
+                        label: '用 Apple 登入',
+                        onPressed: _handleApplePending,
+                      ),
                       const SizedBox(height: 24),
                       _buildDivider('或用 Email 登入'),
                       const SizedBox(height: 20),
@@ -190,22 +226,16 @@ class _LoginScreenState extends State<LoginScreen> {
                       _buildPasswordField(),
                       const SizedBox(height: 16),
                       _buildEmailSignInButton(),
+                      if (errorMessage != null) ...[
+                        const SizedBox(height: 16),
+                        _buildErrorBanner(errorMessage),
+                      ],
                       const SizedBox(height: 24),
-                      _buildDivider('或綁定其他帳號'),
-                      const SizedBox(height: 20),
-                      AuthProviderButton(
-                        icon: Icons.g_mobiledata,
-                        label: '用 Google 綁定',
-                        onPressed: () => _handleGoogleSignIn(),
-                      ),
-                      const SizedBox(height: 14),
-                      AuthProviderButton(
-                        icon: Icons.apple,
-                        label: '用 Apple 綁定',
-                        onPressed: () => _showComingSoon('Apple'),
-                      ),
-                      const SizedBox(height: 28),
                       _buildRegisterLink(context),
+                      if (_showDemoLogin) ...[
+                        const SizedBox(height: 24),
+                        _buildPrimaryButton(context),
+                      ],
                       const SizedBox(height: 12),
                     ],
                   ),
@@ -278,6 +308,36 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
       ],
+    );
+  }
+
+  Widget _buildErrorBanner(String message) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFF5C2C0), width: 1.2),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.error_outline, color: Color(0xFFC2410C), size: 26),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                fontSize: 18,
+                height: 1.4,
+                color: Color(0xFFB91C1C),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -361,7 +421,7 @@ class _LoginScreenState extends State<LoginScreen> {
         TextButton(
           onPressed: widget.onRegister,
           child: const Text(
-            '註冊',
+            '建立帳號',
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w700,

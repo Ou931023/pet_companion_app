@@ -3,6 +3,17 @@ class AppConfig {
     'BACKEND_BASE_URL',
     defaultValue: 'http://127.0.0.1:3001',
   );
+
+  /// 是否在登入頁顯示 Demo 快速登入按鈕。
+  ///
+  /// **正式展示 / 截圖預設為 false**（登入頁只露 Google / Email / 建立帳號，
+  /// 不出現測試感按鈕）。開發 / 測試需要 Demo 備援時，用
+  /// `--dart-define=SHOW_DEMO_LOGIN=true` 開啟。
+  /// 注意：即使隱藏，`AuthController.loginAsDemoUser()` 仍保留，能力不刪。
+  static const bool showDemoLoginButton = bool.fromEnvironment(
+    'SHOW_DEMO_LOGIN',
+    defaultValue: false,
+  );
   static const String defaultSttProxyUrl = '$backendBaseUrl/api/stt/transcribe';
   static const String realtimeSessionUrl =
       '$backendBaseUrl/api/realtime/session';

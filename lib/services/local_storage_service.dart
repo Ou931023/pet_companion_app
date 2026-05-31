@@ -26,42 +26,57 @@ class LocalStorageService {
   static const _keyFamilyContacts = 'familyContactsList';
   static const _keyConversationHistory = 'conversationHistory';
 
+  static const String defaultUserId = 'default_user';
+
+  // CR-0009：依帳號隔離本機資料。`default_user`（Demo / 未登入）沿用原本的
+  // 全域 key（**不動到既有資料與 Demo 寵物**）；真 Firebase 帳號的 elderId
+  // 會加前綴 `u:<elderId>:`，讓每個帳號各自獨立。
+  String _userId = defaultUserId;
+
+  void setUserId(String? userId) {
+    _userId = (userId == null || userId.isEmpty) ? defaultUserId : userId;
+  }
+
+  String get userId => _userId;
+
+  String _k(String key) => _userId == defaultUserId ? key : 'u:$_userId:$key';
+
   Future<UserProfile> loadProfile() async {
     final prefs = await SharedPreferences.getInstance();
     final initial = UserProfile.initial();
-    final taskJson = prefs.getString(_keyTaskCompletionState);
+    final taskJson = prefs.getString(_k(_keyTaskCompletionState));
     final taskMap = taskJson == null
         ? initial.taskCompletionState
         : Map<String, bool>.from(jsonDecode(taskJson) as Map);
 
     return UserProfile(
-      hasCompletedOnboarding: prefs.getBool(_keyHasCompletedOnboarding) ??
+      hasCompletedOnboarding: prefs.getBool(_k(_keyHasCompletedOnboarding)) ??
           initial.hasCompletedOnboarding,
-      petName: prefs.getString(_keyPetName) ?? initial.petName,
-      userCoins: prefs.getInt(_keyUserCoins) ?? initial.userCoins,
-      petBond: prefs.getInt(_keyPetBond) ?? initial.petBond,
-      petFullness: prefs.getInt(_keyPetFullness) ?? initial.petFullness,
-      petMood: prefs.getInt(_keyPetMood) ?? initial.petMood,
-      checkInDate: prefs.getString(_keyCheckInDate),
+      petName: prefs.getString(_k(_keyPetName)) ?? initial.petName,
+      userCoins: prefs.getInt(_k(_keyUserCoins)) ?? initial.userCoins,
+      petBond: prefs.getInt(_k(_keyPetBond)) ?? initial.petBond,
+      petFullness: prefs.getInt(_k(_keyPetFullness)) ?? initial.petFullness,
+      petMood: prefs.getInt(_k(_keyPetMood)) ?? initial.petMood,
+      checkInDate: prefs.getString(_k(_keyCheckInDate)),
       taskCompletionState: taskMap,
-      sttMode: prefs.getString(_keySttMode) ?? initial.sttMode,
-      sttProxyUrl: prefs.getString(_keySttProxyUrl) ?? initial.sttProxyUrl,
-      ttsEnabled: prefs.getBool(_keyTtsEnabled) ?? initial.ttsEnabled,
-      fontScale: prefs.getDouble(_keyFontScale) ?? initial.fontScale,
-      petVolume: prefs.getDouble(_keyPetVolume) ?? initial.petVolume,
-      speechStyle: prefs.getString(_keySpeechStyle) ?? initial.speechStyle,
-      contentPreferences: prefs.getStringList(_keyContentPreferences) ??
+      sttMode: prefs.getString(_k(_keySttMode)) ?? initial.sttMode,
+      sttProxyUrl: prefs.getString(_k(_keySttProxyUrl)) ?? initial.sttProxyUrl,
+      ttsEnabled: prefs.getBool(_k(_keyTtsEnabled)) ?? initial.ttsEnabled,
+      fontScale: prefs.getDouble(_k(_keyFontScale)) ?? initial.fontScale,
+      petVolume: prefs.getDouble(_k(_keyPetVolume)) ?? initial.petVolume,
+      speechStyle: prefs.getString(_k(_keySpeechStyle)) ?? initial.speechStyle,
+      contentPreferences: prefs.getStringList(_k(_keyContentPreferences)) ??
           initial.contentPreferences,
-      voiceLanguageMode:
-          prefs.getString(_keyVoiceLanguageMode) ?? initial.voiceLanguageMode,
-      manualAsrStrategy:
-          prefs.getString(_keyManualAsrStrategy) ?? initial.manualAsrStrategy,
+      voiceLanguageMode: prefs.getString(_k(_keyVoiceLanguageMode)) ??
+          initial.voiceLanguageMode,
+      manualAsrStrategy: prefs.getString(_k(_keyManualAsrStrategy)) ??
+          initial.manualAsrStrategy,
       familyContacts: _loadFamilyContacts(prefs),
     );
   }
 
   List<Map<String, String>> _loadFamilyContacts(SharedPreferences prefs) {
-    final raw = prefs.getString(_keyFamilyContacts);
+    final raw = prefs.getString(_k(_keyFamilyContacts));
     if (raw == null || raw.trim().isEmpty) return [];
     try {
       final decoded = jsonDecode(raw) as List<dynamic>;
@@ -76,44 +91,44 @@ class LocalStorageService {
   Future<void> saveProfile(UserProfile profile) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(
-      _keyHasCompletedOnboarding,
+      _k(_keyHasCompletedOnboarding),
       profile.hasCompletedOnboarding,
     );
-    await prefs.setString(_keyPetName, profile.petName);
-    await prefs.setInt(_keyUserCoins, profile.userCoins);
-    await prefs.setInt(_keyPetBond, profile.petBond);
-    await prefs.setInt(_keyPetFullness, profile.petFullness);
-    await prefs.setInt(_keyPetMood, profile.petMood);
+    await prefs.setString(_k(_keyPetName), profile.petName);
+    await prefs.setInt(_k(_keyUserCoins), profile.userCoins);
+    await prefs.setInt(_k(_keyPetBond), profile.petBond);
+    await prefs.setInt(_k(_keyPetFullness), profile.petFullness);
+    await prefs.setInt(_k(_keyPetMood), profile.petMood);
     if (profile.checkInDate == null) {
-      await prefs.remove(_keyCheckInDate);
+      await prefs.remove(_k(_keyCheckInDate));
     } else {
-      await prefs.setString(_keyCheckInDate, profile.checkInDate!);
+      await prefs.setString(_k(_keyCheckInDate), profile.checkInDate!);
     }
     await prefs.setString(
-      _keyTaskCompletionState,
+      _k(_keyTaskCompletionState),
       jsonEncode(profile.taskCompletionState),
     );
-    await prefs.setString(_keySttMode, profile.sttMode);
-    await prefs.setString(_keySttProxyUrl, profile.sttProxyUrl);
-    await prefs.setBool(_keyTtsEnabled, profile.ttsEnabled);
-    await prefs.setDouble(_keyFontScale, profile.fontScale);
-    await prefs.setDouble(_keyPetVolume, profile.petVolume);
-    await prefs.setString(_keySpeechStyle, profile.speechStyle);
-    await prefs.setString(_keyVoiceLanguageMode, profile.voiceLanguageMode);
-    await prefs.setString(_keyManualAsrStrategy, profile.manualAsrStrategy);
+    await prefs.setString(_k(_keySttMode), profile.sttMode);
+    await prefs.setString(_k(_keySttProxyUrl), profile.sttProxyUrl);
+    await prefs.setBool(_k(_keyTtsEnabled), profile.ttsEnabled);
+    await prefs.setDouble(_k(_keyFontScale), profile.fontScale);
+    await prefs.setDouble(_k(_keyPetVolume), profile.petVolume);
+    await prefs.setString(_k(_keySpeechStyle), profile.speechStyle);
+    await prefs.setString(_k(_keyVoiceLanguageMode), profile.voiceLanguageMode);
+    await prefs.setString(_k(_keyManualAsrStrategy), profile.manualAsrStrategy);
     await prefs.setStringList(
-      _keyContentPreferences,
+      _k(_keyContentPreferences),
       profile.contentPreferences,
     );
     await prefs.setString(
-      _keyFamilyContacts,
+      _k(_keyFamilyContacts),
       jsonEncode(profile.familyContacts),
     );
   }
 
   Future<List<ConversationTurn>> loadConversationHistory() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_keyConversationHistory);
+    final raw = prefs.getString(_k(_keyConversationHistory));
     if (raw == null || raw.trim().isEmpty) return [];
     try {
       final decoded = jsonDecode(raw) as List<dynamic>;
@@ -133,7 +148,7 @@ class LocalStorageService {
     final cappedTurns =
         turns.length > 120 ? turns.sublist(turns.length - 120) : turns;
     await prefs.setString(
-      _keyConversationHistory,
+      _k(_keyConversationHistory),
       jsonEncode(cappedTurns.map((turn) => turn.toJson()).toList()),
     );
   }

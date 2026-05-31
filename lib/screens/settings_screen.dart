@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../config/app_config.dart';
+import '../controllers/auth_controller.dart';
 import '../controllers/conversation_controller.dart';
 import '../controllers/pet_controller.dart';
 import '../controllers/profile_controller.dart';
@@ -286,8 +287,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               OutlinedButton.icon(
                 onPressed: () =>
                     Navigator.of(context).pushNamed(AppRoute.careAlerts),
-                icon: const Icon(Icons.health_and_safety_outlined),
-                label: const Text('長照提醒紀錄'),
+                icon: const Icon(Icons.favorite_outline),
+                label: const Text('今日關心紀錄'),
               ),
             ],
           ),
@@ -359,8 +360,83 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
         ],
+        const SizedBox(height: 14),
+        _SettingsSection(
+          title: '帳號',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                '登出後會回到一開始的畫面，下次再進來就好。',
+                style: TextStyle(fontSize: 16, height: 1.4),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _handleLogout,
+                  icon: const Icon(Icons.logout, size: 26),
+                  label: const Text(
+                    '登出',
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    foregroundColor: const Color(0xFFC2410C),
+                    side: const BorderSide(color: Color(0xFFC2410C), width: 1.5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
       ],
     );
+  }
+
+  Future<void> _handleLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text(
+            '要登出嗎？',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+          ),
+          content: const Text(
+            '登出後會回到一開始的登入畫面，你的紀錄都還在，隨時可以再進來。',
+            style: TextStyle(fontSize: 18, height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('先不要', style: TextStyle(fontSize: 18)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text(
+                '登出',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFC2410C),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+    if (!mounted) return;
+    // 只要把狀態切成未登入，app.dart 的 AuthGate 會自動回到 LoginScreen，
+    // 不需要在這裡手動導航。
+    await context.read<AuthController>().logout();
   }
 
   Future<void> _confirmRenamePet(

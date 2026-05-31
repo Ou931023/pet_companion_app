@@ -43,24 +43,25 @@ class AuthController extends ChangeNotifier {
 
   bool get isAuthenticated => _status == AuthStatus.authenticated;
 
-  /// 下游記憶/搜尋用的 elderId。
+  /// 下游記憶/搜尋/本機資料隔離用的 elderId。
   ///
-  /// CR-0006 Batch 3d：**只有真 Firebase session 才使用後端 elderId**；
-  /// 未登入、mock/demo session、或未知 authMode 一律回 'default_user'，
-  /// 確保 demo 登入仍對到既有 seed 記憶、Demo 不被破壞。
+  /// CR-0009：改以**登入方式**判斷 Demo vs 正式帳號（不靠後端 authMode，因為
+  /// 後端在 mock 模式對正式 Email/Google 帳號也回 authMode='mock'）。
+  /// - email / google / apple 登入 → 用 `session.elderId`（每帳號各自獨立）。
+  /// - mock（Demo）/ 未登入 → 'default_user'（沿用既有 Demo 資料與記憶）。
   String get currentElderId => _resolveDownstreamId(_session?.elderId);
 
   /// 目前 userId（規則同 [currentElderId]）。
   String get currentUserId => _resolveDownstreamId(_session?.userId);
 
-  /// 依 authMode 決定要不要採用後端回傳的真實 id。
-  /// firebase（且有非空 id）→ 用真實 id；其餘（mock / 未知 / 未登入）→ default_user。
+  /// 是否為「正式帳號」（以登入方式判斷）。
+  bool get _isRealAccount {
+    final provider = _session?.provider;
+    return provider == 'email' || provider == 'google' || provider == 'apple';
+  }
+
   String _resolveDownstreamId(String? sessionId) {
-    final session = _session;
-    if (session != null &&
-        session.authMode == 'firebase' &&
-        sessionId != null &&
-        sessionId.isNotEmpty) {
+    if (_isRealAccount && sessionId != null && sessionId.isNotEmpty) {
       return sessionId;
     }
     return AuthSession.fallbackUserId;
@@ -98,6 +99,7 @@ class AuthController extends ChangeNotifier {
       _setStatus(AuthStatus.authenticated);
     } catch (error) {
       debugPrint('[AUTH] loginAsDemoUser 失敗：$error');
+      _errorMessage = '現在連線不太順，待會再試一次好嗎？';
       _setStatus(AuthStatus.error);
     }
   }
@@ -158,9 +160,28 @@ class AuthController extends ChangeNotifier {
         return '剛剛 Google 登入中斷了，再試一次好嗎？';
       case 'config':
       case 'unavailable':
-        return 'Google 登入暫時還不能用，可以先用 Email 或「先進去陪伴」喔。';
+        return 'Google 登入暫時還不能用，可以改用 Email 登入喔。';
       default:
         return '現在連線不太順，待會再試一次好嗎？';
+    }
+  }
+
+  /// CR-0006 Batch 4d：Email 註冊（**不自動登入**）。
+  ///
+  /// 成功回 `null`；失敗回白話錯誤訊息。**刻意不改變 [status]**——註冊不等於
+  /// 登入，使用者會被導回登入頁再自行登入，避免直接進 App。
+  Future<String?> registerAccount({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      await _authService.registerAccountOnly(email: email, password: password);
+      return null;
+    } on EmailAuthException catch (error) {
+      return _friendlyEmailError(error.code);
+    } catch (error) {
+      debugPrint('[AUTH] registerAccount 失敗：$error');
+      return _friendlyEmailError('unknown');
     }
   }
 
@@ -190,7 +211,7 @@ class AuthController extends ChangeNotifier {
       case 'user-not-found':
       case 'wrong-password':
       case 'invalid-credential':
-        return '帳號或密碼不太對，再試一次好嗎？';
+        return 'Email 或密碼不太對，請再確認一次。';
       case 'email-already-in-use':
         return '這個 Email 已經註冊過了，直接登入就可以囉。';
       case 'weak-password':

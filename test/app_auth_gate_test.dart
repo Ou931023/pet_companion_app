@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 import 'package:pet_companion_app/app.dart';
+import 'package:pet_companion_app/controllers/app_navigation_controller.dart';
 import 'package:pet_companion_app/controllers/auth_controller.dart';
 import 'package:pet_companion_app/controllers/profile_controller.dart';
 import 'package:pet_companion_app/models/auth_session.dart';
@@ -42,6 +43,15 @@ class _StubAuthController extends AuthController {
   Future<void> loginAsDemoUser({String? displayName, String? email}) async {
     setStatusForTest(AuthStatus.authenticated);
   }
+
+  /// 模擬 Email 登入成功：直接收斂到 authenticated（正式模式登入頁用 Email）。
+  @override
+  Future<void> signInWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    setStatusForTest(AuthStatus.authenticated);
+  }
 }
 
 class _StubAuthService extends AuthService {
@@ -76,6 +86,10 @@ Future<void> _pumpGate(
   WidgetTester tester, {
   required AuthController auth,
   ProfileController? profile,
+  // 只有「會在 LoginScreen 點按登入」的測試需要 AppNavigationController
+  // （登入處理會重置 shell route 到首頁）。預設不提供，讓 authenticated→MainShell
+  // 分支測試維持「子樹缺 provider 拋單一錯誤」的輕量驗證。
+  bool withNavigation = false,
 }) async {
   await tester.pumpWidget(
     MultiProvider(
@@ -85,6 +99,10 @@ Future<void> _pumpGate(
           value: profile ??
               _FakeProfileController(isLoading: false, onboarded: false),
         ),
+        if (withNavigation)
+          ChangeNotifierProvider<AppNavigationController>(
+            create: (_) => AppNavigationController(),
+          ),
       ],
       child: const MaterialApp(home: AuthGate()),
     ),
@@ -121,7 +139,8 @@ void main() {
     await tester.pump();
 
     expect(find.byType(LoginScreen), findsOneWidget);
-    expect(find.text('先進去陪伴'), findsOneWidget);
+    // 正式模式無 Demo 按鈕；以可操作的登入入口為標記。
+    expect(find.text('用 Email 登入'), findsOneWidget);
   });
 
   testWidgets('error → 顯示 LoginScreen（可重試，不死路、不露工程字）', (tester) async {
@@ -130,8 +149,8 @@ void main() {
     await tester.pump();
 
     expect(find.byType(LoginScreen), findsOneWidget);
-    // 仍可看到可操作的主按鈕（可重試 / 重新 demo 登入）
-    expect(find.text('先進去陪伴'), findsOneWidget);
+    // 仍可看到可操作的登入入口（可重試）。
+    expect(find.text('用 Email 登入'), findsOneWidget);
     expect(find.textContaining('Exception'), findsNothing);
     expect(find.textContaining('error'), findsNothing);
   });
@@ -189,9 +208,13 @@ void main() {
     expect(find.byType(OnboardingScreen), findsNothing);
     expect(find.text('正在準備你的陪伴空間…'), findsNothing);
 
-    // MainShell 子樹（HomeScreen）缺 provider 的建構錯誤屬預期，收掉避免污染測試結果。
-    final exception = tester.takeException();
-    expect(exception, isNotNull);
+    // MainShell 子樹（HomeScreen / bottom nav 等）缺 provider 的建構錯誤屬預期，
+    // 全部收掉避免污染測試結果（可能不只一個）。
+    var drained = 0;
+    while (tester.takeException() != null) {
+      drained++;
+    }
+    expect(drained, greaterThan(0));
   });
 
   testWidgets('demo 登入成功 → gate 由 LoginScreen 重建進入既有流程', (tester) async {
@@ -201,12 +224,15 @@ void main() {
       tester,
       auth: auth,
       profile: _FakeProfileController(isLoading: false, onboarded: false),
+      withNavigation: true, // 登入處理會重置 shell route → 需要此 provider
     );
     await tester.pump();
     expect(find.byType(LoginScreen), findsOneWidget);
 
-    // 按主按鈕走 demo 登入（stub 直接收斂 authenticated）。
-    await tester.tap(find.text('先進去陪伴'));
+    // 正式模式登入頁用 Email 登入（stub 直接收斂 authenticated）。
+    await tester.enterText(find.byType(TextField).at(0), 'grandma@example.com');
+    await tester.enterText(find.byType(TextField).at(1), 'secret1');
+    await tester.tap(find.text('用 Email 登入'));
     await tester.pumpAndSettle();
 
     // gate 重建後不再是登入頁，落到既有流程（此處 onboarded=false → Onboarding）。
@@ -225,7 +251,7 @@ void main() {
 
     expect(find.byType(LoginScreen), findsOneWidget);
 
-    await tester.tap(find.text('註冊'));
+    await tester.tap(find.text('建立帳號'));
     await tester.pumpAndSettle();
     expect(find.byType(RegisterScreen), findsOneWidget);
 

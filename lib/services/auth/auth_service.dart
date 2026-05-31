@@ -36,8 +36,10 @@ class AuthService {
       displayName: displayName,
       provider: 'mock',
     );
-    await persist(session);
-    return session;
+    // CR-0009：標記為 demo 登入（provider='mock'）→ 下游用 default_user 空間。
+    final stamped = session.copyWith(provider: 'mock');
+    await persist(stamped);
+    return stamped;
   }
 
   /// Email 登入：Firebase 驗證 → 拿 idToken 呼叫後端建立 session → 持久化。
@@ -69,6 +71,25 @@ class AuthService {
     return _createSessionFromFirebase(result);
   }
 
+  /// CR-0006 Batch 4d：只建立 Firebase 帳號，**不自動登入**。
+  ///
+  /// 不建立後端 session、不持久化、並登出 Firebase；使用者註冊完要回登入頁
+  /// 再用 Email / 密碼登入（後端 user/elder 會在首次登入時建立）。
+  /// 失敗（如 email 已被使用）會丟 [EmailAuthException]，由上層轉白話。
+  Future<void> registerAccountOnly({
+    required String email,
+    required String password,
+    String? displayName,
+  }) async {
+    await _firebaseAuthService.registerWithEmail(
+      email: email,
+      password: password,
+      displayName: displayName,
+    );
+    // 註冊不等於登入：登出剛建立的 Firebase session，避免自動進 App。
+    await _firebaseAuthService.signOut();
+  }
+
   /// Google 登入：Google/Firebase 驗證 → 拿 Firebase idToken 呼叫後端建立
   /// session（provider='google'）→ 持久化。
   ///
@@ -90,8 +111,22 @@ class AuthService {
       provider: result.provider,
       photoUrl: result.photoUrl,
     );
-    await persist(session);
-    return session;
+    // CR-0009：標記為正式登入（email/google）→ 下游用 session.elderId 隔離，
+    // 即使後端在 mock 模式回 authMode='mock' 也能依登入方式正確判斷。
+    var stamped = session.copyWith(provider: result.provider);
+
+    // 後端不可達時（例如實機連不到 127.0.0.1 的後端）createSession 會回
+    // mockFallback（elderId/userId = 'default_user'）。正式帳號**不該**落在
+    // default_user（會和其他帳號 + Demo 共用本機資料），所以改用 Firebase uid
+    // 當穩定且每帳號唯一的隔離 key，確保不依賴後端也能正確隔離。
+    final needsLocalId = stamped.elderId.isEmpty ||
+        stamped.elderId == AuthSession.fallbackUserId;
+    if (needsLocalId && result.uid.isNotEmpty) {
+      stamped = stamped.copyWith(elderId: result.uid, userId: result.uid);
+    }
+
+    await persist(stamped);
+    return stamped;
   }
 
   /// 啟動時從 shared_preferences 還原 session；沒有則回 null。
