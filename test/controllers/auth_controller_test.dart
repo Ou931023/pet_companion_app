@@ -54,8 +54,9 @@ void main() {
     expect(controller.currentElderId, 'elder-456');
   });
 
-  test('loginAsDemoUser 成功 → authenticated 且 currentElderId 為後端 elderId',
+  test('loginAsDemoUser 成功（mock session）→ authenticated 但 elderId 仍 default_user',
       () async {
+    // CR-0006 Batch 3d：mock/demo session 一律回 default_user，保護既有 seed 記憶。
     final controller = AuthController(
       authService: _authServiceReturning({
         'success': true,
@@ -70,8 +71,46 @@ void main() {
     await controller.loginAsDemoUser(displayName: 'Demo');
 
     expect(controller.status, AuthStatus.authenticated);
-    expect(controller.currentElderId, 'elder-456');
-    expect(controller.currentUserId, 'user-123');
+    expect(controller.currentElderId, 'default_user');
+    expect(controller.currentUserId, 'default_user');
+  });
+
+  test('firebase session → currentElderId / currentUserId 使用後端真實 id', () async {
+    final service = _authServiceReturning({
+      'success': true,
+      'userId': 'user-789',
+      'elderId': 'elder-789',
+      'bindingStatus': 'bound',
+      'isNewUser': false,
+      'authMode': 'firebase',
+    });
+    await service.mockLogin();
+
+    final controller = AuthController(authService: service);
+    await controller.restore();
+
+    expect(controller.status, AuthStatus.authenticated);
+    expect(controller.currentElderId, 'elder-789');
+    expect(controller.currentUserId, 'user-789');
+  });
+
+  test('未知 authMode → fallback default_user', () async {
+    final service = _authServiceReturning({
+      'success': true,
+      'userId': 'user-xyz',
+      'elderId': 'elder-xyz',
+      'bindingStatus': 'pending',
+      'isNewUser': true,
+      'authMode': 'something-else',
+    });
+    await service.mockLogin();
+
+    final controller = AuthController(authService: service);
+    await controller.restore();
+
+    expect(controller.status, AuthStatus.authenticated);
+    expect(controller.currentElderId, 'default_user');
+    expect(controller.currentUserId, 'default_user');
   });
 
   test('未登入時 currentElderId / currentUserId == default_user', () {

@@ -355,6 +355,12 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
   bool _initialized = false;
   String _lastDateKey = _dateKey();
 
+  // CR-0006 Batch 3d：集中把登入後的 elderId 同步給記憶層。
+  // 監聽 AuthController，登入 / 還原 / 登出時把 currentElderId 推進 MemoryController，
+  // 不重建任何 controller、不動 conversation_controller、不動 Realtime。
+  AuthController? _authControllerForSync;
+  VoidCallback? _elderIdSyncListener;
+
   @override
   void initState() {
     super.initState();
@@ -363,6 +369,9 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    if (_authControllerForSync != null && _elderIdSyncListener != null) {
+      _authControllerForSync!.removeListener(_elderIdSyncListener!);
+    }
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -383,6 +392,19 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
       final careAlertController = context.read<CareAlertController>();
       final conversationController = context.read<ConversationController>();
       final notificationService = context.read<NotificationService>();
+      final memoryController = context.read<MemoryController>();
+
+      // CR-0006 Batch 3d：建立 AuthController → MemoryController 的 elderId 同步。
+      // 先掛 listener 再 restore，確保還原出的 session 也會被同步；初次同步多為
+      // default_user（syncUserId 對相同值是 no-op，不會造成多餘 rebuild）。
+      _authControllerForSync = authController;
+      void syncElderId() {
+        memoryController.syncUserId(authController.currentElderId);
+      }
+
+      _elderIdSyncListener = syncElderId;
+      authController.addListener(syncElderId);
+      syncElderId();
 
       authController.restore();
       profileController.load();

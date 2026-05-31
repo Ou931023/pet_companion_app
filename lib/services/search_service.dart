@@ -53,7 +53,16 @@ class SearchService {
     return asksForGuidance && hasKnowledgeTopic;
   }
 
-  Future<SearchResponse> search(String query) async {
+  /// 查詢可信資訊。
+  ///
+  /// CR-0006 Batch 3d：新增 optional [userId]，預設 'default_user'（與既有行為
+  /// 完全相同，呼叫端不傳即不受影響）。傳入時改用該識別綁定查詢，API 路徑與
+  /// response 形狀皆不變。
+  Future<SearchResponse> search(
+    String query, {
+    String userId = 'default_user',
+  }) async {
+    final resolvedUserId = userId.isEmpty ? 'default_user' : userId;
     try {
       final response = await _client.post(
         Uri.parse(
@@ -62,7 +71,7 @@ class SearchService {
         body: jsonEncode({
           'query': query,
           'topic': '',
-          'userId': 'default_user',
+          'userId': resolvedUserId,
           'userProfile': {
             'ageGroup': 'elderly',
             'language': 'zh-TW',

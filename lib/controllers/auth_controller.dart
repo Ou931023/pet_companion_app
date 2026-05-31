@@ -37,13 +37,28 @@ class AuthController extends ChangeNotifier {
 
   bool get isAuthenticated => _status == AuthStatus.authenticated;
 
-  /// 下游記憶/搜尋用的 elderId；未登入 fallback 'default_user'。
-  String get currentElderId =>
-      _session?.elderId ?? AuthSession.fallbackUserId;
+  /// 下游記憶/搜尋用的 elderId。
+  ///
+  /// CR-0006 Batch 3d：**只有真 Firebase session 才使用後端 elderId**；
+  /// 未登入、mock/demo session、或未知 authMode 一律回 'default_user'，
+  /// 確保 demo 登入仍對到既有 seed 記憶、Demo 不被破壞。
+  String get currentElderId => _resolveDownstreamId(_session?.elderId);
 
-  /// 目前 userId；未登入 fallback 'default_user'。
-  String get currentUserId =>
-      _session?.userId ?? AuthSession.fallbackUserId;
+  /// 目前 userId（規則同 [currentElderId]）。
+  String get currentUserId => _resolveDownstreamId(_session?.userId);
+
+  /// 依 authMode 決定要不要採用後端回傳的真實 id。
+  /// firebase（且有非空 id）→ 用真實 id；其餘（mock / 未知 / 未登入）→ default_user。
+  String _resolveDownstreamId(String? sessionId) {
+    final session = _session;
+    if (session != null &&
+        session.authMode == 'firebase' &&
+        sessionId != null &&
+        sessionId.isNotEmpty) {
+      return sessionId;
+    }
+    return AuthSession.fallbackUserId;
+  }
 
   /// 啟動時還原既有 session。
   Future<void> restore() async {

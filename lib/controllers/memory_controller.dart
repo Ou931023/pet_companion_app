@@ -1,31 +1,36 @@
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/memory_service.dart';
 
 class MemoryController extends ChangeNotifier {
-  MemoryController(this.memoryService) {
-    _init();
-  }
+  MemoryController(this.memoryService);
+
+  /// 未登入 / 未綁定時的下游記憶識別。
+  static const String _fallbackUserId = 'default_user';
 
   final MemoryService memoryService;
   final Set<String> _processedTurnIds = <String>{};
-  static const String _prefsUserKey = '_memory_user_id';
   String _userId = '';
   int? _lastGreetingSlot;
   List<Map<String, dynamic>> _memories = const [];
   bool _isLoadingMemories = false;
   String _memoryErrorMessage = '';
 
-  String get userId => _userId.isEmpty ? 'default_user' : _userId;
+  String get userId => _userId.isEmpty ? _fallbackUserId : _userId;
   List<Map<String, dynamic>> get memories => List.unmodifiable(_memories);
   bool get isLoadingMemories => _isLoadingMemories;
   String get memoryErrorMessage => _memoryErrorMessage;
 
-  Future<void> _init() async {
-    final prefs = await SharedPreferences.getInstance();
-    _userId = 'default_user';
-    await prefs.setString(_prefsUserKey, _userId);
+  /// CR-0006 Batch 3d：由 [app.dart] 集中監聽 AuthController 後同步進來的記憶識別。
+  ///
+  /// 空字串視為未登入，回退 'default_user'（保護 Demo）。**只更新識別、不重建
+  /// controller、不清空既有 UI 狀態（記憶清單 / 去重集合 / 問候 slot）**，
+  /// 避免登入狀態切換時把對話脈絡或畫面狀態打掉。
+  void syncUserId(String userId) {
+    final next = userId.isEmpty ? _fallbackUserId : userId;
+    final current = _userId.isEmpty ? _fallbackUserId : _userId;
+    if (next == current) return;
+    _userId = next;
     notifyListeners();
   }
 
