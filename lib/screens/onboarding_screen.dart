@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../controllers/profile_controller.dart';
+import '../widgets/feature_tour.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -12,6 +13,9 @@ class OnboardingScreen extends StatefulWidget {
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
   late final TextEditingController _nameController;
+  // CR-0010：先看完功能導覽（可略過），再進到寵物命名。命名完成 → completeOnboarding
+  // 翻轉 elderId 各自的 hasCompletedOnboarding，沿用既有 app gate 不重寫。
+  bool _tourDone = false;
 
   @override
   void initState() {
@@ -27,6 +31,18 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_tourDone) {
+      return FeatureTourView(
+        pages: featureTourPages,
+        finishLabel: '下一步',
+        onFinish: () => setState(() => _tourDone = true),
+        onSkip: () => setState(() => _tourDone = true),
+      );
+    }
+    return _buildNamingStep(context);
+  }
+
+  Widget _buildNamingStep(BuildContext context) {
     final profileController = context.read<ProfileController>();
     return Scaffold(
       body: SafeArea(
@@ -93,7 +109,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           child: const Padding(
                             padding: EdgeInsets.symmetric(vertical: 16),
                             child: Text(
-                              '開始陪伴',
+                              '開始使用',
                               style: TextStyle(
                                 fontSize: 28,
                                 fontWeight: FontWeight.w700,

@@ -21,6 +21,7 @@ import '../routes/app_routes.dart';
 import '../widgets/bag_icon_button.dart';
 import '../widgets/coin_badge.dart';
 import '../widgets/conversation_bubble_stack.dart';
+import '../widgets/feature_tour.dart';
 import '../widgets/home_date_checkin_card.dart';
 import '../widgets/inventory_item_card.dart';
 import '../widgets/pet_avatar.dart';
@@ -127,15 +128,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 ? '台語辨識中'
                 : '開始台語短錄音'
         : switch (voiceAgentController.state) {
-            VoiceAgentState.connecting => '正在連線陪伴寵物',
-            VoiceAgentState.ready || VoiceAgentState.listening => '可以開始說話',
-            VoiceAgentState.recovering => '重新連線中',
-            VoiceAgentState.error => '連線失敗，點我重試',
-            VoiceAgentState.transcribing => '正在聽你說話',
-            VoiceAgentState.thinking => '正在想回應',
-            VoiceAgentState.speaking => '正在陪你說話',
+            VoiceAgentState.connecting => '正在連線，馬上就好',
+            VoiceAgentState.ready ||
+            VoiceAgentState.listening =>
+              '我在聽，你說',
+            VoiceAgentState.recovering => '正在重新連線',
+            VoiceAgentState.error => '連線怪怪的，點我再試一次',
+            VoiceAgentState.transcribing => '正在聽你說',
+            VoiceAgentState.thinking => '正在想怎麼回你',
+            VoiceAgentState.speaking => '正在跟你說話',
             VoiceAgentState.idle =>
-              useTaigiRealtime ? '開始台語 Realtime 對話' : '開始語音陪伴',
+              useTaigiRealtime ? '用台語跟我聊聊' : '想聊天就點我',
           };
     final companionSources = _companionSourceReferences(
       voiceAgentController.currentCompanionContext?.sourceReferences,
@@ -164,6 +167,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       }),
                       onOpenCalendarTap: () =>
                           _openCalendarDialog(context, checkInController),
+                      onHelpTap: () => showFeatureTour(context),
                     ),
                     SizedBox(height: compact ? 8 : 10),
                     Expanded(
@@ -557,6 +561,7 @@ class _HomeHeader extends StatelessWidget {
     required this.hasCheckedInToday,
     required this.onBagTap,
     required this.onOpenCalendarTap,
+    required this.onHelpTap,
   });
 
   final String petName;
@@ -565,22 +570,48 @@ class _HomeHeader extends StatelessWidget {
   final bool hasCheckedInToday;
   final VoidCallback onBagTap;
   final VoidCallback onOpenCalendarTap;
+  final VoidCallback onHelpTap;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    // CR-0010：頂部列為次要 chrome（名稱 + 工具按鈕）。多了「？」說明鈕後，
+    // 在極小寬度 + 大字級下會擠不下，因此把這一列的文字放大上限夾住，讓按鈕排得下；
+    // 主要內容（寵物 / 對話）仍維持完整字級，不影響長者閱讀。
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.0,
+      child: Row(
       children: [
         Expanded(
-          child: Text(
-            petName,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.w800,
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                petName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '今天想跟$petName聊聊嗎？我都在這裡陪你',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 14,
+                  height: 1.2,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black.withValues(alpha: 0.55),
+                ),
+              ),
+            ],
           ),
         ),
+        _HelpIconButton(onTap: onHelpTap),
+        const SizedBox(width: 6),
         BagIconButton(
           totalItems: totalItems,
           onTap: onBagTap,
@@ -593,6 +624,41 @@ class _HomeHeader extends StatelessWidget {
           onOpenCalendarTap: onOpenCalendarTap,
         ),
       ],
+      ),
+    );
+  }
+}
+
+/// 首頁「？」功能說明按鈕（放在背包旁；長者忘記怎麼用可隨時再看一次）。
+class _HelpIconButton extends StatelessWidget {
+  const _HelpIconButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: '功能說明',
+      child: Material(
+        color: Colors.white,
+        shape: const CircleBorder(),
+        elevation: 1.5,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: Container(
+            width: 42,
+            height: 42,
+            alignment: Alignment.center,
+            child: Icon(
+              Icons.help_outline,
+              size: 24,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
