@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import 'controllers/app_navigation_controller.dart';
 import 'controllers/agent_tool_controller.dart';
+import 'controllers/auth_controller.dart';
 import 'controllers/care_alert_controller.dart';
 import 'controllers/conversation_controller.dart';
 import 'controllers/check_in_controller.dart';
@@ -22,15 +23,18 @@ import 'screens/care_alert_screen.dart';
 import 'screens/conversation_detail_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/login_screen.dart';
 import 'screens/memory_management_screen.dart';
 import 'screens/notification_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/puzzle_game_screen.dart';
+import 'screens/register_screen.dart';
 import 'screens/reminder_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/shop_screen.dart';
 import 'services/ai_tool_router.dart';
 import 'services/agent_router_service.dart';
+import 'services/auth/auth_service.dart';
 import 'services/ai_navigation_service.dart';
 import 'services/asr_strategy_service.dart';
 import 'services/care_alert_notification_service.dart';
@@ -85,6 +89,9 @@ class PetCompanionApp extends StatelessWidget {
         Provider(create: (_) => AgentRouterService()),
         Provider(create: (_) => CareAlertNotificationService()),
         ChangeNotifierProvider(create: (_) => AppNavigationController()),
+        ChangeNotifierProvider(
+          create: (_) => AuthController(authService: AuthService()),
+        ),
         ChangeNotifierProvider(
           create: (context) =>
               ProfileController(context.read<LocalStorageService>()),
@@ -300,7 +307,7 @@ class PetCompanionApp extends StatelessWidget {
               );
             },
             onGenerateRoute: _onGenerateRoute,
-            home: const _AppRoot(),
+            home: const AppRoot(),
           );
         },
       ),
@@ -337,14 +344,14 @@ class PetCompanionApp extends StatelessWidget {
   }
 }
 
-class _AppRoot extends StatefulWidget {
-  const _AppRoot();
+class AppRoot extends StatefulWidget {
+  const AppRoot({super.key});
 
   @override
-  State<_AppRoot> createState() => _AppRootState();
+  State<AppRoot> createState() => _AppRootState();
 }
 
-class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
+class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
   bool _initialized = false;
   String _lastDateKey = _dateKey();
 
@@ -367,6 +374,7 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
     _initialized = true;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
+      final authController = context.read<AuthController>();
       final profileController = context.read<ProfileController>();
       final petStatsController = context.read<PetStatsController>();
       final checkInController = context.read<CheckInController>();
@@ -376,6 +384,7 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
       final conversationController = context.read<ConversationController>();
       final notificationService = context.read<NotificationService>();
 
+      authController.restore();
       profileController.load();
       petStatsController.load();
       checkInController.load();
@@ -399,14 +408,77 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    final profile = context.watch<ProfileController>();
-    if (profile.isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    // 登入 gate 只在最前面加一層；authenticated 後落回既有 onboarding/MainShell 分流。
+    return const AuthGate();
+  }
+}
+
+/// 登入 gate：依 [AuthController.status] 分流。
+///
+/// - loading → 溫暖等待畫面。
+/// - unauthenticated / error → LoginScreen（error 不可死路，可重試 / 重新 demo 登入）。
+/// - authenticated → 落回既有流程（profile loading → onboarding → MainShell），一字不改。
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthController>();
+    switch (auth.status) {
+      case AuthStatus.loading:
+        return const _AuthLoadingView();
+      case AuthStatus.unauthenticated:
+      case AuthStatus.error:
+        // error 不可變成死路：一律回登入頁，長者可重試 / 重新 demo 登入。
+        return LoginScreen(
+          onRegister: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => RegisterScreen(
+                onBackToLogin: () => Navigator.of(context).pop(),
+              ),
+            ),
+          ),
+        );
+      case AuthStatus.authenticated:
+        // 落回既有流程，一字不改。
+        final profile = context.watch<ProfileController>();
+        if (profile.isLoading) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (!profile.hasCompletedOnboarding) {
+          return const OnboardingScreen();
+        }
+        return const MainShell();
     }
-    if (!profile.hasCompletedOnboarding) {
-      return const OnboardingScreen();
-    }
-    return const MainShell();
+  }
+}
+
+/// 啟動還原 / 登入呼叫中的溫暖等待畫面。
+class _AuthLoadingView extends StatelessWidget {
+  const _AuthLoadingView();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 24),
+            Text(
+              '正在準備你的陪伴空間…',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
