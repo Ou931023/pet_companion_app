@@ -3,49 +3,66 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>愛陪伴 · 長照照護管理後台</title>
+    <title>長者關懷管理中心</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <header class="app-header">
-      <h1>愛陪伴 · 長照照護管理後台</h1>
-      <p class="subtitle">查看 AI 陪伴寵物偵測到的照護提醒</p>
+      <div class="header-inner">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">🐾</span>
+          <div class="brand-text">
+            <h1>長者關懷管理中心</h1>
+            <p class="subtitle">AI 陪伴寵物在日常聊天中留意長者的身心狀況，有需要關心時即時提醒您。</p>
+          </div>
+        </div>
+      </div>
     </header>
 
     <main class="container">
-      <!-- 後端連線設定 -->
-      <section class="panel">
-        <label class="field-label" for="api-base">後端 API 位址</label>
-        <div class="row">
-          <input
-            id="api-base"
-            type="text"
-            class="text-input"
-            placeholder="http://127.0.0.1:3001/api"
-            autocomplete="off"
-            spellcheck="false"
-          />
-          <button id="save-api-base" class="btn">儲存位址</button>
-        </div>
-        <p class="hint">
-          本機開發用 <code>http://127.0.0.1:3001/api</code>;
-          手機 / 其他電腦請改成 <code>http://&lt;Mac區網IP&gt;:3001/api</code>。
-        </p>
-      </section>
+      <!-- 分頁：照護提醒 / 健康分析 -->
+      <nav class="view-tabs" role="tablist" aria-label="檢視切換">
+        <button id="tab-alerts" class="view-tab is-active" type="button" role="tab">
+          照護提醒
+        </button>
+        <button id="tab-health" class="view-tab" type="button" role="tab">
+          健康分析
+        </button>
+      </nav>
 
-      <!-- 統計概覽 -->
-      <section class="stats" id="stats" aria-live="polite">
-        <div class="stat-card">
-          <div class="stat-value" id="stat-total">—</div>
-          <div class="stat-label">目前筆數</div>
-        </div>
-        <div class="stat-card stat-urgent">
-          <div class="stat-value" id="stat-urgent">—</div>
-          <div class="stat-label">緊急</div>
-        </div>
-        <div class="stat-card stat-new">
-          <div class="stat-value" id="stat-new">—</div>
-          <div class="stat-label">待處理</div>
+      <div id="view-alerts">
+      <!-- 儀表板：四張關懷統計卡 -->
+      <section class="dashboard">
+        <h2 class="section-title">關懷概況</h2>
+        <div class="stats" id="stats" aria-live="polite">
+          <div class="stat-card stat-new">
+            <div class="stat-icon" aria-hidden="true">🔔</div>
+            <div class="stat-text">
+              <div class="stat-value" id="stat-new">—</div>
+              <div class="stat-label">新提醒</div>
+            </div>
+          </div>
+          <div class="stat-card stat-high">
+            <div class="stat-icon" aria-hidden="true">📢</div>
+            <div class="stat-text">
+              <div class="stat-value" id="stat-high">—</div>
+              <div class="stat-label">需通知</div>
+            </div>
+          </div>
+          <div class="stat-card stat-urgent">
+            <div class="stat-icon" aria-hidden="true">🚨</div>
+            <div class="stat-text">
+              <div class="stat-value" id="stat-urgent">—</div>
+              <div class="stat-label">緊急</div>
+            </div>
+          </div>
+          <div class="stat-card stat-resolved">
+            <div class="stat-icon" aria-hidden="true">✅</div>
+            <div class="stat-text">
+              <div class="stat-value" id="stat-resolved">—</div>
+              <div class="stat-label">已處理</div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -85,11 +102,134 @@
         </div>
       </section>
 
-      <!-- 狀態訊息（載入中 / 無資料 / 錯誤） -->
-      <p id="status-message" class="status-message"></p>
-
       <!-- 列表 -->
-      <section id="alert-list" class="alert-list"></section>
+      <section class="list-section">
+        <div class="list-head">
+          <h2 class="section-title">照護提醒列表</h2>
+          <span id="list-count" class="list-count"></span>
+        </div>
+        <!-- 狀態訊息（載入中 / 無資料 / 錯誤） -->
+        <p id="status-message" class="status-message"></p>
+        <section id="alert-list" class="alert-list"></section>
+      </section>
+      </div><!-- /view-alerts -->
+
+      <!-- 健康分析 view -->
+      <section id="view-health" class="view-health hidden" aria-hidden="true">
+        <!-- 健康分析概況：六指標 -->
+        <section class="dashboard">
+          <h2 class="section-title">健康分析概況</h2>
+          <div class="stats stats-health" id="health-overview" aria-live="polite">
+            <div class="stat-card">
+              <div class="stat-icon" aria-hidden="true">👵</div>
+              <div class="stat-text">
+                <div class="stat-value" id="ov-total">—</div>
+                <div class="stat-label">長者總數</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon" aria-hidden="true">💬</div>
+              <div class="stat-text">
+                <div class="stat-value" id="ov-active">—</div>
+                <div class="stat-label">今日活躍</div>
+              </div>
+            </div>
+            <div class="stat-card stat-high">
+              <div class="stat-icon" aria-hidden="true">🔔</div>
+              <div class="stat-text">
+                <div class="stat-value" id="ov-alerts">—</div>
+                <div class="stat-label">今日提醒</div>
+              </div>
+            </div>
+            <div class="stat-card stat-urgent">
+              <div class="stat-icon" aria-hidden="true">📢</div>
+              <div class="stat-text">
+                <div class="stat-value" id="ov-highrisk">—</div>
+                <div class="stat-label">高風險長者</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon" aria-hidden="true">🫧</div>
+              <div class="stat-text">
+                <div class="stat-value" id="ov-emotion">—</div>
+                <div class="stat-label">情緒異常</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon" aria-hidden="true">🧩</div>
+              <div class="stat-text">
+                <div class="stat-value" id="ov-cognitive">—</div>
+                <div class="stat-label">認知退化關注</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="health-layout">
+          <!-- 長者列表 -->
+          <aside class="panel elder-list-panel">
+            <div class="list-head">
+              <h2 class="section-title">長者列表</h2>
+              <button id="health-refresh" class="btn" type="button">重新整理</button>
+            </div>
+            <p id="elder-list-status" class="status-message"></p>
+            <ul id="elder-list" class="elder-list"></ul>
+          </aside>
+
+          <!-- 個別長者健康分析 -->
+          <div class="elder-detail-panel">
+            <p id="health-status" class="status-message">
+              請從左側選擇一位長者，查看完整健康分析。
+            </p>
+            <div id="elder-analysis" class="elder-analysis hidden">
+              <section class="panel" id="analysis-profile"></section>
+              <section class="panel">
+                <h3 class="analysis-title">生理健康分析</h3>
+                <div id="physio-body"></div>
+              </section>
+              <section class="panel">
+                <h3 class="analysis-title">心理健康分析</h3>
+                <div id="psych-body"></div>
+              </section>
+              <section class="panel">
+                <h3 class="analysis-title">情緒分析歷史</h3>
+                <div id="emotion-body"></div>
+              </section>
+              <section class="panel">
+                <h3 class="analysis-title">遊戲認知退化指標</h3>
+                <div id="game-body"></div>
+              </section>
+              <section class="panel">
+                <h3 class="analysis-title">近期照護提醒</h3>
+                <div id="health-alerts-body"></div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 後端連線設定（次要，平常收合） -->
+      <details class="settings">
+        <summary>連線設定</summary>
+        <div class="settings-body">
+          <label class="field-label" for="api-base">後端 API 位址</label>
+          <div class="row">
+            <input
+              id="api-base"
+              type="text"
+              class="text-input"
+              placeholder="http://127.0.0.1:3001/api"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <button id="save-api-base" class="btn">儲存位址</button>
+          </div>
+          <p class="hint">
+            本機展示用 <code>http://127.0.0.1:3001/api</code>；
+            手機 / 其他電腦請改成 <code>http://&lt;Mac區網IP&gt;:3001/api</code>。
+          </p>
+        </div>
+      </details>
     </main>
 
     <!-- 詳情 modal -->
