@@ -75,5 +75,28 @@ void main() {
       expect(storage.userId, 'default_user');
       expect((await storage.loadProfile()).petName, '小黑');
     });
+
+    test('首頁新手導覽完成旗標依帳號隔離（預設 false）', () async {
+      final storage = LocalStorageService();
+
+      // 預設未看過。
+      storage.setUserId('elder-A');
+      expect(await storage.loadHomeCoachMarkDone(), isFalse);
+
+      await storage.saveHomeCoachMarkDone(true);
+      expect(await storage.loadHomeCoachMarkDone(), isTrue);
+
+      // 帳號 B 不受影響，仍要看導覽。
+      storage.setUserId('elder-B');
+      expect(await storage.loadHomeCoachMarkDone(), isFalse);
+
+      // Demo（default_user）也獨立。
+      storage.setUserId('default_user');
+      expect(await storage.loadHomeCoachMarkDone(), isFalse);
+
+      // A 仍記得看過。
+      storage.setUserId('elder-A');
+      expect(await storage.loadHomeCoachMarkDone(), isTrue);
+    });
   });
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../onboarding/coach_mark_keys.dart';
 import '../controllers/check_in_controller.dart';
 import '../controllers/agent_tool_controller.dart';
 import '../controllers/conversation_controller.dart';
@@ -90,6 +91,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final inventoryController = context.watch<InventoryController>();
     final petStatsController = context.watch<PetStatsController>();
     final agentToolController = _maybeWatchAgentToolController(context);
+    final coachKeys = context.read<CoachMarkKeys>();
     final useTaigiShortRecording =
         profileController.voiceLanguageMode == VoiceLanguageMode.taigiPreferred;
     final useTaigiRealtime =
@@ -170,6 +172,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       onOpenCalendarTap: () =>
                           _openCalendarDialog(context, checkInController),
                       onHelpTap: () => showFeatureTour(context),
+                      reminderKey: coachKeys.reminderKey,
+                      onReminderTap: () =>
+                          Navigator.of(context).pushNamed(AppRoute.reminders),
                     ),
                     SizedBox(height: compact ? 8 : 10),
                     Expanded(
@@ -207,7 +212,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                               SizedBox(height: compact ? 6 : 8),
                               Expanded(
-                                child: _PetStage(
+                                child: KeyedSubtree(
+                                  key: coachKeys.petKey,
+                                  child: _PetStage(
                                   isDead: isDead,
                                   isPetDragHovering: _isPetDragHovering,
                                   showVoiceAura: showVoiceAura,
@@ -241,14 +248,18 @@ class _HomeScreenState extends State<HomeScreen> {
                                       petStatsController: petStatsController,
                                     );
                                   },
+                                  ),
                                 ),
                               ),
                               SizedBox(height: compact ? 6 : 8),
-                              PetStatusPanel(
-                                intimacy: petStatsController.intimacy,
-                                fullness: petStatsController.fullness,
-                                moodValue: petStatsController.moodValue,
-                                isDead: isDead,
+                              KeyedSubtree(
+                                key: coachKeys.statusKey,
+                                child: PetStatusPanel(
+                                  intimacy: petStatsController.intimacy,
+                                  fullness: petStatsController.fullness,
+                                  moodValue: petStatsController.moodValue,
+                                  isDead: isDead,
+                                ),
                               ),
                             ],
                           );
@@ -267,7 +278,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     SizedBox(height: compact ? 8 : 10),
-                    SizedBox(
+                    KeyedSubtree(
+                      key: coachKeys.voiceButtonKey,
+                      child: SizedBox(
                       width: double.infinity,
                       height: 54,
                       child: FilledButton(
@@ -341,6 +354,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ],
                         ),
+                      ),
                       ),
                     ),
                     if (useTaigiShortRecording &&
@@ -707,6 +721,8 @@ class _HomeHeader extends StatelessWidget {
     required this.onBagTap,
     required this.onOpenCalendarTap,
     required this.onHelpTap,
+    required this.reminderKey,
+    required this.onReminderTap,
   });
 
   final String petName;
@@ -716,6 +732,8 @@ class _HomeHeader extends StatelessWidget {
   final VoidCallback onBagTap;
   final VoidCallback onOpenCalendarTap;
   final VoidCallback onHelpTap;
+  final Key reminderKey;
+  final VoidCallback onReminderTap;
 
   @override
   Widget build(BuildContext context) {
@@ -755,18 +773,41 @@ class _HomeHeader extends StatelessWidget {
             ],
           ),
         ),
-        _HelpIconButton(onTap: onHelpTap),
-        const SizedBox(width: 6),
-        BagIconButton(
-          totalItems: totalItems,
-          onTap: onBagTap,
-        ),
-        const SizedBox(width: 8),
-        CoinBadge(coins: coins),
-        const SizedBox(width: 8),
-        HomeDateCheckinCard(
-          hasCheckedInToday: hasCheckedInToday,
-          onOpenCalendarTap: onOpenCalendarTap,
+        // 頂部工具列在窄螢幕（如 320 寬）要放得下 5 個控件，故用 compact
+        // IconButtonTheme 收斂點擊框（仍維持 40px 可點），並縮短間距。
+        IconButtonTheme(
+          data: IconButtonThemeData(
+            style: IconButton.styleFrom(
+              minimumSize: const Size(36, 40),
+              iconSize: 22,
+              padding: EdgeInsets.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                key: reminderKey,
+                onPressed: onReminderTap,
+                icon: const Icon(Icons.alarm),
+                tooltip: '提醒',
+              ),
+              _HelpIconButton(onTap: onHelpTap),
+              const SizedBox(width: 2),
+              BagIconButton(
+                totalItems: totalItems,
+                onTap: onBagTap,
+              ),
+              const SizedBox(width: 3),
+              CoinBadge(coins: coins),
+              const SizedBox(width: 3),
+              HomeDateCheckinCard(
+                hasCheckedInToday: hasCheckedInToday,
+                onOpenCalendarTap: onOpenCalendarTap,
+              ),
+            ],
+          ),
         ),
       ],
       ),

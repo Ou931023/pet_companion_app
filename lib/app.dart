@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import 'onboarding/coach_mark_controller.dart';
+import 'onboarding/coach_mark_keys.dart';
+import 'onboarding/coach_mark_overlay.dart';
 import 'controllers/app_navigation_controller.dart';
 import 'controllers/agent_tool_controller.dart';
 import 'controllers/auth_controller.dart';
@@ -88,6 +91,8 @@ class PetCompanionApp extends StatelessWidget {
         Provider(create: (_) => const PetEmotionMapper()),
         Provider(create: (_) => AgentRouterService()),
         Provider(create: (_) => CareAlertNotificationService()),
+        Provider(create: (_) => CoachMarkKeys()),
+        ChangeNotifierProvider(create: (_) => CoachMarkController()),
         ChangeNotifierProvider(create: (_) => AppNavigationController()),
         ChangeNotifierProvider(
           create: (_) => AuthController(authService: AuthService()),
@@ -560,16 +565,21 @@ class _MainShellState extends State<MainShell> {
     final bottomContentPadding = supportsLiquidGlassHomeBar && !keyboardOpen
         ? 84 + MediaQuery.paddingOf(context).bottom
         : 0.0;
-    return Scaffold(
-      extendBody: supportsLiquidGlassHomeBar,
-      resizeToAvoidBottomInset: index != 0,
-      body: Padding(
-        padding: EdgeInsets.only(bottom: bottomContentPadding),
-        child: _pages[index],
-      ),
-      bottomNavigationBar: _HomeNavigationBar(
-        selectedIndex: index,
-        onDestinationSelected: navigation.selectShellIndex,
+    // CoachMarkHost 包住整個 shell：首次進首頁自動跑新手導覽，並把 spotlight
+    // 疊在最上層（含底部導覽列）。導覽邏輯集中於 CoachMarkHost / CoachMarkController。
+    return CoachMarkHost(
+      homeVisible: index == 0,
+      child: Scaffold(
+        extendBody: supportsLiquidGlassHomeBar,
+        resizeToAvoidBottomInset: index != 0,
+        body: Padding(
+          padding: EdgeInsets.only(bottom: bottomContentPadding),
+          child: _pages[index],
+        ),
+        bottomNavigationBar: _HomeNavigationBar(
+          selectedIndex: index,
+          onDestinationSelected: navigation.selectShellIndex,
+        ),
       ),
     );
   }
@@ -620,7 +630,10 @@ class _HomeNavigationBarState extends State<_HomeNavigationBar> {
   @override
   Widget build(BuildContext context) {
     if (!supportsLiquidGlassHomeBar) {
+      // 掛上導覽用 key，讓新手導覽能高亮底部導覽列（取最右邊的「設定」）。
+      // iOS 原生導覽列（下方 UiKitView）拿不到 Flutter 框，該步驟會降級為置中說明。
       return NavigationBar(
+        key: context.read<CoachMarkKeys>().navBarKey,
         selectedIndex: widget.selectedIndex,
         onDestinationSelected: widget.onDestinationSelected,
         destinations: _destinations,

@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../config/app_config.dart';
+import '../controllers/app_navigation_controller.dart';
 import '../controllers/auth_controller.dart';
 import '../controllers/conversation_controller.dart';
 import '../controllers/pet_controller.dart';
 import '../controllers/profile_controller.dart';
 import '../controllers/voice_agent_controller.dart';
 import '../models/language_route.dart';
+import '../onboarding/coach_mark_controller.dart';
 import '../routes/app_routes.dart';
 import '../services/realtime_voice_service.dart';
 import '../widgets/companion_debug_panel.dart';
@@ -295,6 +297,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Navigator.of(context).pushNamed(AppRoute.careAlerts),
                 icon: const Icon(Icons.favorite_outline),
                 label: const Text('今日關心紀錄'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _SettingsSection(
+          title: '新手導覽',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                '不熟悉首頁功能嗎？可以再看一次首頁的逐步介紹。',
+                style: TextStyle(fontSize: 16, height: 1.35),
+              ),
+              const SizedBox(height: 10),
+              FilledButton.icon(
+                onPressed: () {
+                  // 要求重看，並切回首頁；CoachMarkHost 會在首頁就緒後開始導覽。
+                  context.read<CoachMarkController>().requestReplay();
+                  context.read<AppNavigationController>().selectShellIndex(0);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('帶你回首頁，再看一次介紹。')),
+                  );
+                },
+                icon: const Icon(Icons.school_outlined),
+                label: const Text('重新觀看新手導覽'),
               ),
             ],
           ),

@@ -27,6 +27,7 @@ class LocalStorageService {
   static const _keyFamilyContacts = 'familyContactsList';
   static const _keyConversationHistory = 'conversationHistory';
   static const _keyPetSkin = 'petSkin';
+  static const _keyHomeCoachMarkDone = 'homeCoachMarkDone';
 
   static const String defaultUserId = 'default_user';
 
@@ -166,6 +167,18 @@ class LocalStorageService {
   Future<void> savePetSkin(PetSkin skin) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_k(_keyPetSkin), skin.storageId);
+  }
+
+  /// 首頁新手導覽（Coach Mark）是否已看過。依 [_k] 各帳號獨立，
+  /// Demo（default_user）用全域 key；看過後下次開 App 不再自動跳出。
+  Future<bool> loadHomeCoachMarkDone() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_k(_keyHomeCoachMarkDone)) ?? false;
+  }
+
+  Future<void> saveHomeCoachMarkDone(bool done) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_k(_keyHomeCoachMarkDone), done);
   }
 
   Future<void> clearAll() async {

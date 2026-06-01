@@ -17,6 +17,7 @@ import 'package:pet_companion_app/controllers/voice_agent_controller.dart';
 import 'package:pet_companion_app/controllers/wallet_controller.dart';
 import 'package:pet_companion_app/models/conversation_turn.dart';
 import 'package:pet_companion_app/models/source_reference.dart';
+import 'package:pet_companion_app/onboarding/coach_mark_keys.dart';
 import 'package:pet_companion_app/screens/home_screen.dart';
 import 'package:pet_companion_app/screens/settings_screen.dart';
 import 'package:pet_companion_app/services/ai_navigation_service.dart';
@@ -273,6 +274,7 @@ Widget _homeHost(_HomeHarness harness, {double textScale = 1.0}) {
       ChangeNotifierProvider<AppNavigationController>.value(
         value: harness.navigationController,
       ),
+      Provider<CoachMarkKeys>(create: (_) => CoachMarkKeys()),
     ],
     child: MaterialApp(
       builder: (context, child) {
