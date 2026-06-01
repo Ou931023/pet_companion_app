@@ -148,6 +148,23 @@ class ConversationController extends ChangeNotifier {
         .toList();
   }
 
+  /// 刪除「對話紀錄」中的單筆紀錄（聊天歷史裡的一筆 user／pet 交換）。
+  ///
+  /// 只移除本機對話歷史並重新保存；**完全不會動到 MemoryService 的長期記憶**——
+  /// 長期記憶是另一套抽取後保存的重要資訊，由 MemoryController / MemoryService
+  /// 管理，本方法不碰。傳入的 [turn] 應取自 [turnsForSession] / [history]
+  /// （即 _history 中的同一個物件，採身分比對移除）。
+  ///
+  /// 回傳是否真的有刪到該筆（找不到 → false，UI 可顯示白話訊息）。
+  Future<bool> deleteConversationTurn(ConversationTurn turn) async {
+    final before = _history.length;
+    _history.remove(turn);
+    if (_history.length == before) return false;
+    await _persistHistory();
+    notifyListeners();
+    return true;
+  }
+
   bool get isBusy => _isBusy;
   bool get isAwaitingPetReply => _isAwaitingPetReply;
   String get activeSessionId => _activeSessionId;

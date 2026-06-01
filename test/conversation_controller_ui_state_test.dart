@@ -1,8 +1,12 @@
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:pet_companion_app/models/conversation_turn.dart';
+import 'package:pet_companion_app/screens/conversation_detail_screen.dart';
 import 'package:pet_companion_app/controllers/app_navigation_controller.dart';
 import 'package:pet_companion_app/controllers/check_in_controller.dart';
 import 'package:pet_companion_app/controllers/conversation_controller.dart';
@@ -257,6 +261,93 @@ void main() {
         controllerWithFake.taigiAsrStatusMessage,
         '台語語音辨識暫時無法使用',
       );
+    });
+  });
+
+  group('刪除單筆對話紀錄（CR-0021）', () {
+    setUp(() => SharedPreferences.setMockInitialValues({}));
+
+    ConversationTurn makeTurn(
+            String sid, DateTime ts, String user, String pet) =>
+        ConversationTurn(
+          timestamp: ts,
+          userText: user,
+          petReply: pet,
+          toolName: '',
+          sessionId: sid,
+        );
+
+    test('只移除指定那一筆，其他訊息不受影響', () async {
+      final controller = _createConversationController();
+      addTearDown(controller.dispose);
+      controller.startNewSession();
+      final sid = controller.activeSessionId;
+      controller.appendExternalTurn(makeTurn(sid, DateTime(2026, 1, 1), '第一句', '回一'));
+      controller.appendExternalTurn(makeTurn(sid, DateTime(2026, 1, 2), '第二句', '回二'));
+      controller.appendExternalTurn(makeTurn(sid, DateTime(2026, 1, 3), '第三句', '回三'));
+      expect(controller.turnsForSession(sid).length, 3);
+
+      final removed =
+          await controller.deleteConversationTurn(controller.turnsForSession(sid)[1]);
+
+      expect(removed, isTrue);
+      final after = controller.turnsForSession(sid);
+      expect(after.length, 2);
+      expect(after.map((t) => t.userText).toList(), ['第一句', '第三句']);
+    });
+
+    test('刪除不存在的紀錄回 false，歷史不變', () async {
+      final controller = _createConversationController();
+      addTearDown(controller.dispose);
+      controller.startNewSession();
+      final sid = controller.activeSessionId;
+      controller.appendExternalTurn(makeTurn(sid, DateTime(2026, 1, 1), '只有一句', 'ok'));
+
+      final ghost = makeTurn(sid, DateTime(2030, 1, 1), '不存在', '');
+      final removed = await controller.deleteConversationTurn(ghost);
+
+      expect(removed, isFalse);
+      expect(controller.turnsForSession(sid).length, 1);
+    });
+
+    testWidgets('長按 → 確認視窗；取消不刪；刪除移除該筆、保留其他', (tester) async {
+      final controller = _createConversationController();
+      addTearDown(controller.dispose);
+      controller.startNewSession();
+      final sid = controller.activeSessionId;
+      controller.appendExternalTurn(makeTurn(sid, DateTime(2026, 1, 1), '想刪的訊息', 'A'));
+      controller.appendExternalTurn(makeTurn(sid, DateTime(2026, 1, 2), '保留的訊息', 'B'));
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<ConversationController>.value(
+          value: controller,
+          child: MaterialApp(
+            home: ConversationDetailScreen(sessionId: sid, title: '紀錄'),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('想刪的訊息'), findsOneWidget);
+      expect(find.text('保留的訊息'), findsOneWidget);
+
+      // 長按 → 出現確認視窗（不會直接刪除）。
+      await tester.longPress(find.text('想刪的訊息'));
+      await tester.pumpAndSettle();
+      expect(find.text('要刪除這筆紀錄嗎？'), findsOneWidget);
+
+      // 點「取消」→ 不刪除。
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(find.text('要刪除這筆紀錄嗎？'), findsNothing);
+      expect(find.text('想刪的訊息'), findsOneWidget);
+
+      // 再長按 → 點「刪除」→ 只移除該筆，其他保留。
+      await tester.longPress(find.text('想刪的訊息'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('刪除'));
+      await tester.pumpAndSettle();
+      expect(find.text('想刪的訊息'), findsNothing);
+      expect(find.text('保留的訊息'), findsOneWidget);
     });
   });
 }
