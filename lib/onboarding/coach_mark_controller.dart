@@ -13,6 +13,7 @@ class CoachMarkStep {
     this.rectTransform,
     this.radius = 18,
     this.padding = 10,
+    this.shellTabIndex,
   });
 
   final String text;
@@ -20,6 +21,13 @@ class CoachMarkStep {
   final Rect Function(Rect raw)? rectTransform;
   final double radius;
   final double padding;
+
+  /// 這一步需要切換到哪個底部分頁（0 首頁 / 1 商城 / 2 紀錄 / 3 設定）才看得到 target。
+  ///
+  /// 預設 null＝不切頁，留在目前分頁。用於跨頁導覽（例如最後一步切到設定頁、
+  /// 高亮「家人聯絡人」入口）。實際切頁由 CoachMarkHost 負責，找不到 target 時
+  /// overlay 仍會安全降級成置中說明卡，不會 crash。
+  final int? shellTabIndex;
 }
 
 /// 新手導覽（Coach Mark / Spotlight）的狀態控制。

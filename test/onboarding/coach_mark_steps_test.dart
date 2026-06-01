@@ -32,7 +32,7 @@ void main() {
       '飽足',
       '金幣',
       '商城',
-      '紀錄',
+      '記錄',
       '設定',
       '聯絡',
     ]) {
@@ -40,11 +40,34 @@ void main() {
     }
   });
 
-  test('第一步指向寵物、最後一步指向底部導覽列（設定）', () {
+  test('第一步指向寵物、最後一步指向設定頁聯絡人入口', () {
     final keys = CoachMarkKeys();
     final steps = buildHomeCoachMarkSteps(keys);
     expect(steps.first.targetKey, keys.petKey);
-    expect(steps.last.targetKey, keys.navBarKey);
+    expect(steps.last.targetKey, keys.settingsContactKey);
+  });
+
+  test('Step 8 高亮每日簽到 icon、Step 9 高亮金幣區（index 7 / 8）', () {
+    final keys = CoachMarkKeys();
+    final steps = buildHomeCoachMarkSteps(keys);
+    expect(steps[7].targetKey, keys.dailyCheckInKey);
+    expect(steps[8].targetKey, keys.coinKey);
+  });
+
+  test('Step 10 / 11 / 12 都高亮底部導覽列（商城 / 紀錄 / 設定，index 9~11）', () {
+    final keys = CoachMarkKeys();
+    final steps = buildHomeCoachMarkSteps(keys);
+    for (final i in [9, 10, 11]) {
+      expect(steps[i].targetKey, keys.navBarKey, reason: 'Step ${i + 1} 應高亮底部列');
+      expect(steps[i].rectTransform, isNotNull, reason: 'Step ${i + 1} 應切出對應那一格');
+    }
+  });
+
+  test('Step 13 跨頁切到設定頁（shellTabIndex=3）並高亮聯絡人入口', () {
+    final keys = CoachMarkKeys();
+    final steps = buildHomeCoachMarkSteps(keys);
+    expect(steps[12].targetKey, keys.settingsContactKey);
+    expect(steps[12].shellTabIndex, 3);
   });
 
   test('有 target 的步驟都指向已知的高亮 key（不會指到野生 key）', () {
@@ -56,6 +79,9 @@ void main() {
       keys.statusKey,
       keys.reminderKey,
       keys.navBarKey,
+      keys.dailyCheckInKey,
+      keys.coinKey,
+      keys.settingsContactKey,
     };
     for (final step in steps) {
       if (step.targetKey != null) {
@@ -64,11 +90,11 @@ void main() {
     }
   });
 
-  test('有些步驟沒有 target → overlay 會安全降級為置中卡片，不應 crash', () {
+  test('只有「先聽牠說完」那步沒有 target → overlay 安全降級為置中卡片，不 crash', () {
     final steps = buildHomeCoachMarkSteps(CoachMarkKeys());
-    // 後段功能（先聽牠說完 / 簽到 / 金幣）首頁沒有穩定可高亮元件，
-    // 改用置中卡片說明，因此一定存在 targetKey 為 null 的步驟。
-    expect(steps.any((s) => s.targetKey == null), isTrue);
+    final noTarget = steps.where((s) => s.targetKey == null).toList();
+    expect(noTarget, hasLength(1));
+    expect(noTarget.single.text, contains('先聽'));
   });
 
   test('文字白話、不出現工程 / debug 字樣', () {

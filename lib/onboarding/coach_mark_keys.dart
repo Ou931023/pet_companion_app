@@ -4,18 +4,30 @@ import 'coach_mark_controller.dart';
 
 /// 共享的導覽高亮目標 key。
 ///
-/// HomeScreen 掛上寵物 / 語音 / 狀態 / 提醒入口的 key；MainShell 掛上底部
-/// 導覽列的 key。集中放在這裡，讓「組步驟」與「畫面」解耦，HomeScreen 不需要
-/// 知道導覽流程邏輯。
+/// HomeScreen 掛上寵物 / 語音 / 狀態 / 提醒 / 簽到 / 金幣的 key；MainShell 掛上
+/// 底部導覽列（整條）的 key；SettingsScreen 掛上「家人聯絡人」入口的 key。
+/// 集中放在這裡，讓「組步驟」與「畫面」解耦，畫面端只需把 key 掛上去，不需要
+/// 知道導覽流程邏輯。命名沿用專案既有風格（單一 registry，不另開第二套）。
 class CoachMarkKeys {
+  // 首頁主要區塊。
   final GlobalKey petKey = GlobalKey(debugLabel: 'coach_pet');
   final GlobalKey voiceButtonKey = GlobalKey(debugLabel: 'coach_voice');
   final GlobalKey statusKey = GlobalKey(debugLabel: 'coach_status');
   final GlobalKey reminderKey = GlobalKey(debugLabel: 'coach_reminder');
 
-  /// 底部導覽列（整條）的 key。設定是 4 格中最右邊那格，用 [settingsRightQuarter]
-  /// 取右側 1/4 當高亮框。iOS 原生導覽列拿不到 Flutter 框時，該步驟會降級為置中說明。
+  // 首頁頂部列：每日簽到 / 日曆 icon、金幣區（CR-0016 v2 新增，讓 Step 8 / 9 有真 target）。
+  final GlobalKey dailyCheckInKey = GlobalKey(debugLabel: 'coach_daily_checkin');
+  final GlobalKey coinKey = GlobalKey(debugLabel: 'coach_coin');
+
+  /// 底部導覽列（整條）的 key。掛在 MainShell 底部列的外層 KeyedSubtree 上，
+  /// 不論是 Flutter [NavigationBar] 或 iOS 原生列（UiKitView），都能取得這條列的
+  /// 螢幕框，再用 [navBarSlot] 切出商城 / 紀錄 / 設定那一格高亮（CR-0016 v2：
+  /// 解決原生列拿不到框、底部 tab 不會亮的實機問題）。
   final GlobalKey navBarKey = GlobalKey(debugLabel: 'coach_nav_bar');
+
+  /// 設定頁「家人聯絡人」入口的 key（Step 13 跨頁高亮用）。
+  final GlobalKey settingsContactKey =
+      GlobalKey(debugLabel: 'coach_settings_contact');
 }
 
 /// 取底部導覽列第 [index] 格（共 [total] 格）的高亮框。
@@ -38,10 +50,12 @@ Rect settingsRightQuarter(Rect raw) => navBarSlot(raw, 3);
 /// 7 點寵物玩遊戲 → 8 每日簽到 → 9 金幣 → 10 商城 → 11 紀錄 →
 /// 12 設定改名 / 語音 → 13 設定新增聯絡人。
 ///
-/// 每步只介紹一件事、文字白話溫柔。**有 target 的步驟**會在首頁高亮對應區塊
-/// （寵物 / 語音鍵 / 狀態面板 / 底部分頁）；**沒有 target 的步驟**（先聽牠說完、
-/// 每日簽到、金幣）目前在首頁沒有穩定可高亮的元件，overlay 會自動降級成
-/// 「畫面變暗 + 文字置中」的卡片說明，避免硬做不穩定的跨頁高亮或 crash。
+/// 每步只介紹一件事、文字白話溫柔，並盡量高亮畫面上對應的位置：
+/// - 首頁可見元件（寵物 / 語音鍵 / 狀態面板 / 簽到 / 金幣）直接 spotlight。
+/// - 商城 / 紀錄 / 設定高亮底部導覽列對應那一格。
+/// - 第 13 步跨頁切到設定頁，高亮「家人聯絡人」入口。
+/// - 第 3 步是行為提示（先聽牠說完），無對應元件 → overlay 自動降級成置中說明卡。
+/// 任何 target 取不到時（還沒繪製 / 跨頁未就緒）都會安全降級成置中卡片，不 crash。
 List<CoachMarkStep> buildHomeCoachMarkSteps(CoachMarkKeys keys) {
   return [
     // 1：這是你的 AI 寵物。
@@ -78,13 +92,17 @@ List<CoachMarkStep> buildHomeCoachMarkSteps(CoachMarkKeys keys) {
       targetKey: keys.petKey,
       text: '輕輕點一下寵物，可以玩記憶小遊戲，動動腦也很有趣。',
     ),
-    // 8：每日簽到可以拿金幣（簽到在最上方，無穩定 key → 置中卡片）。
-    const CoachMarkStep(
+    // 8：每日簽到可以拿金幣 → 高亮頂部日曆 / 簽到 icon。
+    CoachMarkStep(
+      targetKey: keys.dailyCheckInKey,
+      radius: 14,
       text: '每天回來看看寵物，就能完成每日簽到，拿到金幣。',
     ),
-    // 9：金幣可以用來解鎖外觀（概念說明 → 置中卡片）。
-    const CoachMarkStep(
-      text: '存下來的金幣，可以用來解鎖新的寵物外觀。',
+    // 9：金幣可以用來解鎖外觀 → 高亮頂部金幣區。
+    CoachMarkStep(
+      targetKey: keys.coinKey,
+      radius: 14,
+      text: '上面這些金幣，可以用來解鎖新的寵物外觀。',
     ),
     // 10：商城可以購買或解鎖物品（高亮底部「商城」分頁）。
     CoachMarkStep(
@@ -96,7 +114,7 @@ List<CoachMarkStep> buildHomeCoachMarkSteps(CoachMarkKeys keys) {
     CoachMarkStep(
       targetKey: keys.navBarKey,
       rectTransform: (raw) => navBarSlot(raw, 2),
-      text: '旁邊的「紀錄」可以回顧以前的心情、提醒和互動。',
+      text: '旁邊的「記錄」可以回顧以前的心情、提醒和互動。',
     ),
     // 12：設定可以改寵物名稱和語音方式（高亮底部「設定」分頁）。
     CoachMarkStep(
@@ -104,10 +122,11 @@ List<CoachMarkStep> buildHomeCoachMarkSteps(CoachMarkKeys keys) {
       rectTransform: settingsRightQuarter,
       text: '「設定」可以幫寵物改名字，也可以調整說話的語音方式。',
     ),
-    // 13：設定可以新增聯絡人（仍在「設定」分頁，最後一步）。
+    // 13：設定可以新增聯絡人 → 跨頁切到設定頁、高亮「家人聯絡人」入口（最後一步）。
     CoachMarkStep(
-      targetKey: keys.navBarKey,
-      rectTransform: settingsRightQuarter,
+      targetKey: keys.settingsContactKey,
+      shellTabIndex: 3,
+      radius: 14,
       text: '在「設定」裡還能新增家人或照護人員，需要時更方便聯絡。',
     ),
   ];

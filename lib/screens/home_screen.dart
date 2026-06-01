@@ -171,6 +171,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       onHelpTap: () =>
                           context.read<CoachMarkController>().requestReplay(),
                       reminderKey: coachKeys.reminderKey,
+                      // 導覽 Step 8 / 9 高亮用：簽到日曆 icon 與金幣區。
+                      dailyCheckInKey: coachKeys.dailyCheckInKey,
+                      coinKey: coachKeys.coinKey,
                       onReminderTap: () =>
                           Navigator.of(context).pushNamed(AppRoute.reminders),
                     ),
@@ -842,6 +845,8 @@ class _HomeHeader extends StatelessWidget {
     required this.onOpenCalendarTap,
     required this.onHelpTap,
     required this.reminderKey,
+    required this.dailyCheckInKey,
+    required this.coinKey,
     required this.onReminderTap,
   });
 
@@ -853,6 +858,8 @@ class _HomeHeader extends StatelessWidget {
   final VoidCallback onOpenCalendarTap;
   final VoidCallback onHelpTap;
   final Key reminderKey;
+  final Key dailyCheckInKey;
+  final Key coinKey;
   final VoidCallback onReminderTap;
 
   @override
@@ -908,11 +915,17 @@ class _HomeHeader extends StatelessWidget {
                 onTap: onBagTap,
               ),
               const SizedBox(width: 3),
-              CoinBadge(coins: coins),
+              KeyedSubtree(
+                key: coinKey,
+                child: CoinBadge(coins: coins),
+              ),
               const SizedBox(width: 3),
-              HomeDateCheckinCard(
-                hasCheckedInToday: hasCheckedInToday,
-                onOpenCalendarTap: onOpenCalendarTap,
+              KeyedSubtree(
+                key: dailyCheckInKey,
+                child: HomeDateCheckinCard(
+                  hasCheckedInToday: hasCheckedInToday,
+                  onOpenCalendarTap: onOpenCalendarTap,
+                ),
               ),
             ],
           ),

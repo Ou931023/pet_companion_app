@@ -25,18 +25,22 @@ void main() {
     expect(completed, isTrue);
   });
 
-  testWidgets('列印中點一下 → 立刻顯示完整並回呼 onCompleted', (tester) async {
+  testWidgets('列印中觸發 revealSignal → 立刻顯示完整並回呼 onCompleted', (tester) async {
     var completed = false;
+    final reveal = ValueNotifier<int>(0);
+    addTearDown(reveal.dispose);
     await tester.pumpWidget(_host(TypewriterText(
       text: '吃飽了嗎',
       charDuration: const Duration(milliseconds: 200),
       onCompleted: () => completed = true,
+      revealSignal: reveal,
     )));
 
     await tester.pump(const Duration(milliseconds: 200)); // 才印一兩個字
     expect(find.text('吃飽了嗎'), findsNothing);
 
-    await tester.tap(find.byType(TypewriterText));
+    // 外層 overlay 點任意處時會 bump 這個訊號，要求立刻補完整文字。
+    reveal.value++;
     await tester.pump(); // 完整顯示
     await tester.pump(); // onCompleted postFrame
     expect(find.text('吃飽了嗎'), findsOneWidget);

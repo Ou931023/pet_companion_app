@@ -4,7 +4,7 @@ import 'package:pet_companion_app/onboarding/coach_mark_controller.dart';
 import 'package:pet_companion_app/onboarding/coach_mark_keys.dart';
 import 'package:pet_companion_app/onboarding/coach_mark_overlay.dart';
 
-// targetKey 為 null → overlay 走「無高亮框、文字置中」的降級路徑，
+// targetKey 為 null → overlay 走「無高亮框、文字置中卡片」的降級路徑，
 // 不依賴實際 widget 佈局，測試最穩定。
 const _steps = [
   CoachMarkStep(text: '這是寵物'),
@@ -23,61 +23,84 @@ Widget _host(CoachMarkController controller, CoachMarkKeys keys) {
   );
 }
 
-FilledButton _button(WidgetTester tester) =>
-    tester.widget<FilledButton>(find.byType(FilledButton));
-
+/// 跑完逐字列印並 flush onCompleted 的 postFrame，讓「下一步」可被觸發。
 Future<void> _finishTyping(WidgetTester tester) async {
-  await tester.pump(const Duration(seconds: 2)); // 跑完逐字列印
-  await tester.pump(); // onCompleted 的 postFrame → markTypingDone
-  await tester.pump(); // 重建 → 按鈕解鎖
+  await tester.pump(const Duration(seconds: 2));
+  await tester.pump();
+  await tester.pump();
 }
 
 void main() {
-  testWidgets('列印未完成時「下一個」鎖住，完成後解鎖', (tester) async {
+  testWidgets('提示卡顯示步數，右下角有小三角（非最後一步）', (tester) async {
     final controller = CoachMarkController()..start(_steps);
     await tester.pumpWidget(_host(controller, CoachMarkKeys()));
-
     await tester.pump();
-    expect(find.text('第 1 步 / 共 2 步'), findsOneWidget);
-    expect(_button(tester).onPressed, isNull, reason: '列印中應鎖住');
 
+    expect(find.text('第 1 步 / 共 2 步'), findsOneWidget);
     await _finishTyping(tester);
-    expect(controller.isTyping, isFalse);
-    expect(_button(tester).onPressed, isNotNull, reason: '列印完成應解鎖');
-    expect(find.text('下一個'), findsOneWidget);
+    // 小三角（非最後一步），且沒有舊版的「下一個」整排按鈕。
+    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    expect(find.text('下一個'), findsNothing);
   });
 
-  testWidgets('點下一個 → 前進到第二步（最後一步顯示開始使用）', (tester) async {
+  testWidgets('列印中點一下 → 先補完整文字、不前進；再點一下才進下一步', (tester) async {
     final controller = CoachMarkController()..start(_steps);
     await tester.pumpWidget(_host(controller, CoachMarkKeys()));
-
-    await _finishTyping(tester);
-    await tester.tap(find.text('下一個'));
     await tester.pump();
+    expect(controller.isTyping, isTrue);
 
+    // 第一次點（畫面左上空白處 = 遮罩）：補完整文字，停在第 1 步。
+    await tester.tapAt(const Offset(8, 8));
+    await tester.pump();
+    await tester.pump();
+    expect(controller.isTyping, isFalse, reason: '第一次點先補完文字');
+    expect(controller.currentIndex, 0, reason: '補完文字當下不前進');
+    expect(find.text('第 1 步 / 共 2 步'), findsOneWidget);
+
+    // 第二次點：進到第 2 步。
+    await tester.tapAt(const Offset(8, 8));
+    await tester.pump();
     expect(controller.currentIndex, 1);
     expect(find.text('第 2 步 / 共 2 步'), findsOneWidget);
-    expect(controller.isTyping, isTrue, reason: '新步驟重新列印');
-
-    await _finishTyping(tester);
-    expect(find.text('開始使用'), findsOneWidget);
   });
 
-  testWidgets('最後一步按開始使用 → 結束導覽、overlay 消失', (tester) async {
+  testWidgets('點小三角可以進到下一步', (tester) async {
     final controller = CoachMarkController()..start(_steps);
     await tester.pumpWidget(_host(controller, CoachMarkKeys()));
-
     await _finishTyping(tester);
-    await tester.tap(find.text('下一個'));
+
+    await tester.tap(find.byIcon(Icons.play_arrow_rounded));
+    await tester.pump();
+    expect(controller.currentIndex, 1);
+  });
+
+  testWidgets('最後一步顯示「開始使用」，點了結束導覽、overlay 消失', (tester) async {
+    final controller = CoachMarkController()..start(_steps);
+    await tester.pumpWidget(_host(controller, CoachMarkKeys()));
+    await _finishTyping(tester);
+    await tester.tap(find.byIcon(Icons.play_arrow_rounded));
     await tester.pump();
     await _finishTyping(tester);
+
+    expect(find.text('開始使用'), findsOneWidget);
+    expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
 
     await tester.tap(find.text('開始使用'));
     await tester.pump();
-
     expect(controller.isActive, isFalse);
-    expect(find.byType(FilledButton), findsNothing);
     expect(find.text('開始使用'), findsNothing);
+  });
+
+  testWidgets('沒有 target 的步驟 → 置中卡片，提示卡預設在上半部，不 crash', (tester) async {
+    final controller = CoachMarkController()..start(_steps);
+    await tester.pumpWidget(_host(controller, CoachMarkKeys()));
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    // 預設上方提示卡：步數文字落在畫面上半部。
+    final counter = tester.getRect(find.text('第 1 步 / 共 2 步'));
+    final screenH = tester.view.physicalSize.height / tester.view.devicePixelRatio;
+    expect(counter.center.dy, lessThan(screenH / 2));
   });
 
   testWidgets('小螢幕 + 長文字：導覽卡片不溢出', (tester) async {
