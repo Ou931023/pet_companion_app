@@ -151,7 +151,7 @@ class _StatItemState extends State<_StatItem> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 12,
+                        fontSize: 14,
                         fontWeight: FontWeight.w700,
                         color: Colors.black54,
                       ),

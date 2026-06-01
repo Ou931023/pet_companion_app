@@ -562,6 +562,123 @@
 
 ---
 
+## CR-0012：App 完整度修正與穩定化（盤點，不新增功能）
+
+- 提出 agent：architecture-agent
+- 日期：2026-06-01
+- 狀態：⬜ 盤點完成、待裁決批次（**本輪只盤點，未改任何程式**）
+- 動機 / 問題：發表前盤點目前不穩定、不符正式展示、容易讓老師／使用者覺得「不完整」之處。今天不新增大型功能，只定位問題、分級、排修正順序。
+- 觸及 🔒？：本盤點 CR 本身否（純文件）。**下列建議批次中，今天可做的 Batch A/B 皆不觸 🔒**（不動 `realtime_voice_service.dart`、`server.js` 契約、schema、Care Alert 結構、`pubspec.yaml`）；Batch C 觸及 realtime-voice 範圍，Batch D 觸及原生設定，列 follow-up。
+
+### 盤點方法（實證，非臆測）
+- 三組唯讀探查（UI/UX 文案、資料隔離、build/Apple/Firebase）+ architecture-agent 親自查證 HIGH 級宣稱。
+- 穩定性實證：`flutter analyze lib/ test/` → **No issues found**；`flutter test`（全套）→ **258/258 passed**（含 Realtime `realtime_voice_service_test` 等套件）。
+- 機密紅線查證：`GoogleService-Info.plist` / `google-services.json` → `git ls-files` **未追蹤** 且 `git check-ignore` **命中 .gitignore**（安全，無洩漏）。
+
+### 問題清單（含嚴重度與 owner）
+
+| # | 分類 | 問題 | 證據 | 嚴重度 | Owner |
+|---|------|------|------|--------|-------|
+| P1 | 資料隔離 | `check_in_storage_service`(`checkin.dates/lastDate`)、`inventory_storage_service`(`inventory.items`)、`care_alert_storage_service`(`careAlerts`)、`reminder_service`(`careReminders`) **皆用全域 key、無 `setUserId`**，且對應 controller 只在啟動 `load()` 一次、帳號切換不重載 → 跨帳號殘留（A 帳號簽到/背包/提醒/本地 alert 會出現在 B 帳號） | 四檔 `static const _key...`、`app.dart` `applyAccount` 未對這四者 setUserId/reload | **high**（與 CR-0009 主打的「帳號隔離」相矛盾；僅在真實多帳號切換時顯現，demo 單一 default_user 不顯） | frontend-ux-agent |
+| P2 | 穩定性 | 帳號切換時 `ConversationController`（partial/final transcript、draft、busy/recording 旗標）與 `VoiceAgentController`（petMood/expression、pending realtime 暫態）**未 reset**，上一帳號殘留暫態可能短暫顯示 | `conversation_controller.dart` 暫態欄位、`voice_agent_controller.dart` 未在切換時清 | **medium** | realtime-voice-agent（暫態歸屬該 agent） |
+| P3 | UI 工程字 | `native_tool_executor_service.dart:70` `message: '工具執行失敗：$error'` 把原始例外字串串進使用者訊息（工具呼叫失敗路徑才觸發） | grep 確認 | **medium** | frontend-ux-agent（白話化字串） |
+| P4 | UI 字級 | 首頁 header 標語 `fontSize 14`（次要文字，但在主畫面 header）、寵物狀態 label `fontSize 12` | `home_screen.dart:625`、`pet_status_panel.dart:154` | **low** | frontend-ux-agent |
+| P5 | build/原生 | `ios/Runner/Info.plist` 的 `CFBundleURLTypes` **硬寫單一 Firebase 專案的 REVERSED_CLIENT_ID**（公開識別碼、非機密）；換 Firebase 專案會失效。真機 Google 登入回呼（SceneDelegate 架構）尚未實機驗證 | `Info.plist` 含 1 行 reversed client id | **low/medium**（對「目前這個專案」可動；換專案/CI 才壞） | 原生設定（沿用 CR-0006 4c-2） |
+| P6 | Apple 登入 | Apple 鈕點擊顯示「Apple 登入準備中，敬請期待。」軟性 placeholder（不假裝成功、不 crash） | `login_screen.dart:129-131` | **low**（合理；可選擇 demo 時隱藏鈕） | frontend-ux-agent |
+
+### 已查證為「通過、無需修」的項目（記錄以免重工）
+- 登入 / 註冊 / 登出流程：白話、大字大鈕、登出有確認對話框並回登入頁，**通過**。
+- 新手導覽 `feature_tour.dart`（6 頁）+ onboarding 命名：白話、可「再看一次」，**通過**。
+- 首頁寵物顯示、語音按鈕白話狀態（我在聽 / 正在想 / 連線怪怪的點我再試），**通過**。
+- 英文錯誤訊息：Auth / 記憶 / 麥克風 / 商城錯誤皆白話繁中，**未見裸 English / stack trace**，**通過**。
+- Firebase init 失敗：try/catch + 3 秒 timeout，**不擋 Demo**，Demo 登入恆可用，**通過**。
+- Google/Email 登入失敗：全白話訊息、取消（canceled）走柔性中止非死路，**通過**。
+- 寵物外觀 / 寵物名 / profile / 長期記憶 / petStats：已依 elderId namespace 並在切換時重載，**隔離正確，通過**。
+- Android：`com.google.gms.google-services` plugin 已套、`minSdk maxOf(...,23)`、deployment target 15.0，**通過**。
+- 機密檔（plist/json）：未進 git、已 gitignore，**通過**。
+- debug/demo 字樣：`SHOW_DEV_PANELS` / `SHOW_DEMO_LOGIN` 預設 false 才隱藏，正式 build 不顯，**通過**。
+
+### 建議修正順序 + 批次 + 由誰負責
+
+> 鐵則：每批小範圍、可獨立驗證、補/更新測試、不刪既有測試、不碰 `.env`/token、不寫 runtime `data/*.json`、不 commit/push（除非另行指示）。
+
+1. **Batch A〔今天可做〕資料隔離補完（P1）— frontend-ux-agent，high、不觸 🔒**
+   - 為四個 storage service 加 elderId namespace（沿用 CR-0009 既有 `_k()` 慣例）+ `setUserId()`；`app.dart applyAccount()` 補四者 `setUserId` 與對應 controller 重載（checkin/inventory/careAlert(local)/reminder）。
+   - 風險低：有 CR-0009/0011 既成 pattern；純前端；保留 default_user 全域行為（Demo 不破）。補 `local_storage_isolation`-style 測試。
+2. **Batch B〔今天可做〕UI 白話 / 字級小修（P3、P4）— frontend-ux-agent，medium/low、不觸 🔒**
+   - `native_tool_executor_service.dart:70` 改白話（如「這個動作暫時沒辦法完成，待會再試一次好嗎？」），原始 `$error` 只留 `debugPrint`。
+   - 首頁標語 14→16/18；（選擇性）狀態 label 微調。純字串/字級，補 widget 斷言。
+3. **Batch C〔follow-up〕帳號切換暫態清理（P2）— realtime-voice-agent，medium**
+   - 切換帳號時 reset transcript/draft/voice 暫態。**因觸及 realtime-voice 範圍**，須由該 agent 評估清理點，不得動 Realtime/SDP 主流程；非今天。
+4. **Batch D〔follow-up〕iOS URL scheme + 真機 Google 登入（P5）— 原生設定**
+   - 評估 reversed client id 是否改為由 plist 動態取得；真機 Google 回呼驗證。併入既有 **CR-0006 4c-2**（原生＋真機）追蹤，非今天。
+5. **Batch E〔follow-up / 產品決策〕Apple 入口（P6）— frontend-ux-agent**
+   - demo 是否隱藏 Apple 鈕，或維持「準備中」placeholder。low，等使用者決定。
+
+### 今天可修 vs follow-up（摘要）
+- **今天可修（建議）**：Batch A（資料隔離，high，最高 CP 值且有先例）、Batch B（UI 白話/字級，快）。兩者皆 frontend-ux-agent、低風險、不觸 🔒。
+- **列 follow-up**：Batch C（realtime-voice 暫態，需該 agent）、Batch D（原生/真機，併 4c-2）、Batch E（Apple 入口決策）。
+
+- architecture-agent 裁決：⬜ **盤點完成、待使用者選定要執行的批次**。建議先放行 Batch A + B（今天可做、low risk、不觸 🔒）；Batch C/D/E 轉 follow-up（見 FU-0005 ~ FU-0007）。
+- 完成狀態：盤點 ✅；**Batch A ✅（已 commit `0842357`）**；**Batch B ✅（已 review 通過，見下）**；Batch C/D/E 為 follow-up（FU-0005~0007）。
+
+#### Checkpoint Review（architecture-agent，2026-06-01）— CR-0012 Batch A：剩餘 local storage 資料隔離補完
+
+- 範圍：frontend-ux-agent 執行；architecture-agent 獨立蒐證（grep + analyze + full test）。觸及 🔒？**否**（純前端 storage / controller 接線；未動 🔒 鎖定檔）。風險 low。
+- 11 項逐項查證（**全數 PASS**）：
+
+| # | 項目 | 結果 |
+|---|------|------|
+| 1 | CheckIn 依 elderId namespace | ✅ `check_in_storage_service.dart`：`setUserId`＋`_k()`＋讀寫全走 `_k()`（`getStringList/getString/setStringList/remove/setString`） |
+| 2 | Inventory / Backpack namespace | ✅ `inventory_storage_service.dart`：`_k(_keyInventory)` 讀寫一致 |
+| 3 | 本地 CareAlert namespace | ✅ `care_alert_storage_service.dart`：`_k(_key)` 讀寫一致 |
+| 4 | Reminder namespace | ✅ `reminder_service.dart`：`_k(_key)` 讀寫一致 |
+| 5 | OS notification 切帳號先 cancelAll 再重排 | ✅ `notification_service.dart` `rescheduleAll`：`initialize → cancelAll → schedule each`（新增 `cancelAll()`；只被 `ReminderController.load()` 呼叫） |
+| 6 | Demo default_user 仍用全域 key | ✅ 四檔皆 `_k = (userId==default_user) ? key : 'u:$_userId:$key'`；`setUserId(null/'')→default_user`。新測「Demo 既有全域資料不被正式帳號破壞」鎖住 |
+| 7 | 正式帳號用 `u:<elderId>:` 前綴 | ✅ 同上規則 else 分支 |
+| 8 | app.dart 切 elderId 重載 controller | ✅ `applyAccount()` 對六 storage `setUserId`＋重載 `checkIn/inventory/careAlert/reminder` controller；啟動段已移除原本獨立 load（無雙載、切換即重載） |
+| 9 | 未改 backend / Realtime / Firebase 原生 / pubspec / .env | ✅ git status 程式檔僅 `app.dart`＋5 services＋1 新測試；未見 `realtime_voice_service`/`voice_agent_controller`/`server.js`/`migrate`/`pubspec`/`.plist`/`google-services.json`/`.env` |
+| 10 | flutter analyze | ✅ No issues found |
+| 11 | flutter test 全套 | ✅ **263/263 passed**（原 258＋新增 5 隔離測試，零回歸） |
+
+- 至此**所有本機 SharedPreferences 都已依帳號隔離**（含先前 CR-0009 的 Local/PetStats）。reminder 額外補上 OS 排程層隔離，徹底滿足「A 的提醒不會在 B 響起」。
+- 裁決：✅ **通過驗收**，視為乾淨、可獨立回復的 checkpoint。
+- **建議 commit**：✅。commit message 建議：`fix: namespace check-in/inventory/care-alert/reminder local storage per account`。
+- **commit 範圍須顯式挑檔**：
+  - 修改：`lib/app.dart`、`lib/services/check_in_storage_service.dart`、`lib/services/inventory_storage_service.dart`、`lib/services/care_alert_storage_service.dart`、`lib/services/reminder_service.dart`、`lib/services/notification_service.dart`
+  - 新增：`test/services/care_data_isolation_test.dart`
+  - 文件（可另行 / 一併）：`docs/CHANGE_REVIEW.md`
+  - **排除**（與 Batch A 無關 / 既有遺留 / 噪音）：`caregiver_web/care_alert_display.test.js`、`lib/screens/care_alert_screen.dart`、`test/screens/care_alert_screen_test.dart`（先前遺留）、`docs/DEMO_SCRIPT.md`、`backend/stt_proxy/data/*.json`（runtime）、`ios/...Runner.xcscheme`、`repomix-output.xml`、`devtools_options.yaml`、`.claude/worktrees/`、`assets/pets_raw/`
+- 後續：Batch B（`native_tool_executor` 白話化＋字級，frontend-ux）可逕行；Batch C（FU-0005，realtime-voice 暫態 reset）、D（FU-0006）、E（FU-0007）維持 follow-up。
+
+#### Checkpoint Review（architecture-agent，2026-06-01）— CR-0012 Batch B：白話小修與字級微調
+
+- 範圍：frontend-ux-agent 執行；architecture-agent 獨立蒐證（grep + analyze + full test）。觸及 🔒？**否**（純前端字串/字級）。風險 low。
+- 9 項逐項查證（**全數 PASS**）：
+
+| # | 項目 | 結果 |
+|---|------|------|
+| 1 | native tool 不再顯示 exception / stack trace / error object | ✅ `native_tool_executor_service.dart` catch 區回固定白話句，整檔掃 `$error`/`工具執行失敗` 僅剩 line 68 的 debugPrint |
+| 2 | UI-facing message 改白話 | ✅ `message: '這個動作暫時沒辦法完成，待會再試一次好嗎？'` |
+| 3 | debugPrint 只留開發者、不外露 | ✅ 原始 `$error\n$stackTrace` 僅在 `debugPrint`，並加註解「絕不顯示給長者」 |
+| 4 | 首頁標語 14→16 | ✅ `home_screen.dart:625` `fontSize: 16`（Expanded+maxLines:1+ellipsis，頂列已 clamp 1.0） |
+| 5 | 寵物狀態 label 12→14 | ✅ `pet_status_panel.dart` label `fontSize: 14`（數值字 15 仍主導 Row 高度） |
+| 6 | 小螢幕 / 放大字級不 overflow | ✅ `home_screen_layout_test`（含 1.3 字級不溢位）全綠；改動皆 ellipsis+maxLines:1 |
+| 7 | 未改 backend / caregiver_web / Realtime / Firebase 原生 / pubspec / .env | ✅ 本批程式檔僅 `home_screen.dart`、`native_tool_executor_service.dart`、`pet_status_panel.dart` ＋對應測試；未見 `realtime_voice_service`/`voice_agent_controller`/`server.js`/`migrate`/`pubspec`/`.plist`/`google-services.json`/`.env` |
+| 8 | flutter analyze | ✅ No issues found |
+| 9 | flutter test 全套 | ✅ **264/264 passed**（Batch A 後 263 ＋新增 1 例外測試，零回歸） |
+
+- 新測試「工具丟例外時回白話、不洩漏」斷言 message 不含 `secret-stack-detail`/`Exception`/`error`/`failed`/`工具執行失敗`/`$error`，有效鎖住 P3。
+- 裁決：✅ **通過驗收**，乾淨、可獨立回復的 checkpoint。
+- **建議 commit**：✅。commit message 建議：`fix: soften native tool failure message and enlarge home secondary text`。
+- **commit 範圍須顯式挑檔**：
+  - 修改：`lib/services/native_tool_executor_service.dart`、`lib/screens/home_screen.dart`、`lib/widgets/pet_status_panel.dart`、`test/services/native_tool_executor_service_test.dart`
+  - 文件（可另行 / 一併）：`docs/CHANGE_REVIEW.md`
+  - **排除**（與 Batch B 無關 / 既有遺留 / 噪音）：`caregiver_web/care_alert_display.test.js`、`lib/screens/care_alert_screen.dart`、`test/screens/care_alert_screen_test.dart`（先前遺留）、`docs/DEMO_SCRIPT.md`、`backend/stt_proxy/data/*.json`（runtime）、`ios/...Runner.xcscheme`、`repomix-output.xml`、`devtools_options.yaml`、`.claude/worktrees/`、`assets/pets_raw/`
+- 後續：Batch C（FU-0005）、D（FU-0006）、E（FU-0007）維持 follow-up。
+
+---
+
 ## 待釐清項目 / 後續（Follow-ups）
 
 ### FU-0001：移除 legacy 容錯（待四級資料穩定後另開 CR）
@@ -594,5 +711,20 @@
 - 背景：`repomix-output.xml`、`.claude/worktrees/`、`.claude/scheduled_tasks.lock`、`devtools_options.yaml` 目前**未被 ignore**，blanket `git add -A` 會誤收。
 - 待辦：以獨立小 commit 將上述加入 `.gitignore`（符合 [[commit_hygiene]] 原則）。
 - 狀態：⬜ 待排程（非緊急）
+
+### FU-0005：帳號切換暫態清理（CR-0012 P2 / Batch C）
+- 背景：帳號切換時 `ConversationController`（transcript/draft/旗標）與 `VoiceAgentController`（petMood/pending realtime）暫態未 reset，可能短暫殘留上一帳號畫面狀態。
+- 待辦：由 realtime-voice-agent 評估清理點，切換時 reset；**不得動 Realtime/SDP 主流程**。
+- 狀態：⬜ 待排程（medium）
+
+### FU-0006：iOS URL scheme 硬編碼 + 真機 Google 登入（CR-0012 P5）
+- 背景：`ios/Runner/Info.plist` 的 `CFBundleURLTypes` 硬寫單一 Firebase 專案 REVERSED_CLIENT_ID（公開識別碼非機密），換專案會失效；SceneDelegate 下 Google 回呼尚未實機驗證。
+- 待辦：併入 **CR-0006 Batch 4c-2**（原生設定＋真機）一起處理。
+- 狀態：⬜ 待排程（low/medium，需真機）
+
+### FU-0007：Apple 登入入口決策（CR-0012 P6）
+- 背景：Apple 鈕為「準備中」軟性 placeholder（不假成功、不 crash）。
+- 待辦：demo 時是否隱藏 Apple 鈕，或維持 placeholder；由使用者決定。
+- 狀態：⬜ 待決策（low）
 
 <!-- 新提案請往下加 CR-0004 ... -->

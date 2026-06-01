@@ -64,10 +64,11 @@ class NativeToolExecutorService {
           )),
       };
     } catch (error, stackTrace) {
+      // 原始錯誤只留給開發者除錯，絕不顯示給長者。
       debugPrint('[NativeToolExecutorService] ${intent.toolName} failed: $error\n$stackTrace');
       return AgentToolExecutionResult.failed(
         toolName: intent.toolName,
-        message: '工具執行失敗：$error',
+        message: '這個動作暫時沒辦法完成，待會再試一次好嗎？',
       );
     }
   }

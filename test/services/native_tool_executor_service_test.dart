@@ -77,6 +77,32 @@ void main() {
     expect(reminderController.createdText, '提醒我晚上八點吃藥');
   });
 
+  test('工具丟例外時回白話訊息，不洩漏 exception / 原始錯誤', () async {
+    final service = NativeToolExecutorService(launch: (_, __) async => true);
+    final result = await service.execute(
+      intent: _intent(
+        'create_reminder',
+        arguments: {'text': '提醒我吃藥'},
+      ),
+      reminderController: _ThrowingReminderController(),
+      searchService: SearchService(),
+      navigationController: AppNavigationController(),
+      memoryController: _memoryController(),
+    );
+
+    expect(result.success, isFalse);
+    expect(result.message, '這個動作暫時沒辦法完成，待會再試一次好嗎？');
+
+    // 使用者看到的訊息不可夾帶任何例外原文 / 工程字。
+    final msg = result.message;
+    expect(msg.contains('secret-stack-detail'), isFalse);
+    expect(msg.contains('Exception'), isFalse);
+    expect(msg.toLowerCase().contains('error'), isFalse);
+    expect(msg.toLowerCase().contains('failed'), isFalse);
+    expect(msg.contains('工具執行失敗'), isFalse);
+    expect(msg.contains('\$error'), isFalse);
+  });
+
   test('open app route uses navigation whitelist', () async {
     final navigation = AppNavigationController();
     final service = NativeToolExecutorService(launch: (_, __) async => true);
@@ -118,6 +144,19 @@ AgentToolIntent _intent(
 MemoryController _memoryController() {
   SharedPreferences.setMockInitialValues({});
   return MemoryController(MemoryService());
+}
+
+class _ThrowingReminderController extends ReminderController {
+  _ThrowingReminderController()
+      : super(
+          reminderService: ReminderService(),
+          notificationService: NotificationService(),
+        );
+
+  @override
+  Future<Reminder?> createFromVoice(String text) async {
+    throw Exception('secret-stack-detail');
+  }
 }
 
 class _FakeReminderController extends ReminderController {

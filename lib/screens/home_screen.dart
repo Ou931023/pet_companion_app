@@ -622,10 +622,10 @@ class _HomeHeader extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 14,
+                  fontSize: 16,
                   height: 1.2,
                   fontWeight: FontWeight.w600,
-                  color: Colors.black.withValues(alpha: 0.55),
+                  color: Colors.black.withValues(alpha: 0.6),
                 ),
               ),
             ],
