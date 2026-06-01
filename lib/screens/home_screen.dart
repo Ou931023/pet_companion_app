@@ -435,95 +435,122 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (dialogContext) => AnimatedBuilder(
         animation: checkInController,
-        builder: (context, _) => AlertDialog(
-          title: Text(
-            '${now.year}年${now.month}月　每日簽到',
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-          ),
-          content: SizedBox(
-            width: 360,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  '每天回來簽到拿金幣，有 🎁 的那天還會多送一個小禮物。',
-                  style: TextStyle(fontSize: 16, height: 1.35),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 360,
-                  child: GridView.builder(
-                    itemCount: daysInMonth + startWeekday - 1,
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 7,
-                      childAspectRatio: 0.62,
-                      mainAxisSpacing: 4,
-                      crossAxisSpacing: 4,
-                    ),
-                    itemBuilder: (_, index) {
-                      if (index < startWeekday - 1) {
-                        return const SizedBox.shrink();
-                      }
-                      final day = index - startWeekday + 2;
-                      final checked =
-                          checkInController.checkInDates.contains(dayKey(day));
-                      final isToday = day == now.day;
-                      final reward = checkInController.rewardForDay(day);
-                      return _CalendarDayCell(
-                        day: day,
-                        coins: reward?.coins,
-                        hasGift: reward?.hasGift ?? false,
-                        checked: checked,
-                        isToday: isToday,
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(height: 14),
-                if (!checkInController.hasCheckedInToday)
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
+        builder: (context, _) {
+          // 彈窗寬度約螢幕 90%，高度依內容自適應；內容可捲動避免小螢幕 overflow。
+          final dialogWidth = MediaQuery.sizeOf(context).width * 0.9;
+          return Dialog(
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: SizedBox(
+              width: dialogWidth,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      '${now.year}年${now.month}月　每日簽到',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 21,
+                        fontWeight: FontWeight.w800,
                       ),
-                      onPressed: () async {
-                        final ok = await checkInController.checkIn(
-                          walletController: context.read<WalletController>(),
-                          petStatsController:
-                              context.read<PetStatsController>(),
-                          inventoryController:
-                              context.read<InventoryController>(),
-                        );
-                        if (!dialogContext.mounted) return;
-                        ScaffoldMessenger.of(dialogContext).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              ok
-                                  ? _checkInSuccessMessage(
-                                      checkInController.lastClaim)
-                                  : '今天已經簽到過囉。',
-                            ),
-                          ),
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      '每天回來簽到拿金幣，有 🎁 的那天還會多送一個小禮物。',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 16, height: 1.4),
+                    ),
+                    const SizedBox(height: 24),
+                    GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: daysInMonth + startWeekday - 1,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 7,
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 10,
+                        childAspectRatio: 0.78,
+                      ),
+                      itemBuilder: (_, index) {
+                        if (index < startWeekday - 1) {
+                          return const SizedBox.shrink();
+                        }
+                        final day = index - startWeekday + 2;
+                        final checked = checkInController.checkInDates
+                            .contains(dayKey(day));
+                        final isToday = day == now.day;
+                        final reward = checkInController.rewardForDay(day);
+                        return _CalendarDayCell(
+                          day: day,
+                          coins: reward?.coins,
+                          hasGift: reward?.hasGift ?? false,
+                          checked: checked,
+                          isToday: isToday,
                         );
                       },
-                      child: const Text(
-                        '今天簽到',
-                        style: TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.w800),
-                      ),
                     ),
-                  )
-                else
-                  const Text(
-                    '今天已經簽到完成，明天再來喔！',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                  ),
-              ],
+                    const SizedBox(height: 28),
+                    if (!checkInController.hasCheckedInToday)
+                      SizedBox(
+                        height: 64,
+                        child: FilledButton(
+                          style: FilledButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(32),
+                            ),
+                          ),
+                          onPressed: () async {
+                            final ok = await checkInController.checkIn(
+                              walletController:
+                                  context.read<WalletController>(),
+                              petStatsController:
+                                  context.read<PetStatsController>(),
+                              inventoryController:
+                                  context.read<InventoryController>(),
+                            );
+                            if (!dialogContext.mounted) return;
+                            ScaffoldMessenger.of(dialogContext).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  ok
+                                      ? _checkInSuccessMessage(
+                                          checkInController.lastClaim)
+                                      : '今天已經簽到過囉。',
+                                ),
+                              ),
+                            );
+                          },
+                          child: const Text(
+                            '今天簽到',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      const Text(
+                        '今天已經簽到完成，明天再來喔！',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -659,55 +686,66 @@ class _CalendarDayCell extends StatelessWidget {
     final Color background = checked
         ? Colors.green.shade100
         : (isToday ? Colors.orange.shade50 : Colors.grey.shade100);
+    // 今日用較粗橘框；外圈留 2px margin，讓框不貼著內容。
     final Border border = isToday
-        ? Border.all(color: Colors.orange.shade400, width: 2)
+        ? Border.all(color: Colors.orange.shade400, width: 2.5)
         : Border.all(color: Colors.grey.shade200, width: 1);
 
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Container(
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: BorderRadius.circular(8),
-            border: border,
-          ),
-          padding: const EdgeInsets.symmetric(vertical: 2),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '$day',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: checked ? Colors.green.shade900 : Colors.black87,
-                ),
+    return Container(
+      margin: const EdgeInsets.all(1),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(12),
+        border: border,
+      ),
+      padding: const EdgeInsets.fromLTRB(4, 5, 4, 4),
+      child: Stack(
+        children: [
+          // 日期：上方置中。
+          Align(
+            alignment: Alignment.topCenter,
+            child: Text(
+              '$day',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: checked ? Colors.green.shade900 : Colors.black87,
               ),
-              if (coins != null)
-                Text(
-                  '🪙$coins',
-                  maxLines: 1,
-                  overflow: TextOverflow.clip,
-                  style: const TextStyle(fontSize: 11),
-                ),
-              if (hasGift)
-                const Text('🎁', style: TextStyle(fontSize: 12)),
-            ],
-          ),
-        ),
-        if (checked)
-          Positioned(
-            top: -2,
-            right: -2,
-            child: Icon(
-              Icons.check_circle,
-              size: 15,
-              color: Colors.green.shade600,
             ),
           ),
-      ],
+          // 金幣：卡片正中央（用 FittedBox 確保窄格也不會被裁切）。
+          if (coins != null)
+            Align(
+              alignment: Alignment.center,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  '🪙$coins',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          // 禮物：右下角，不壓到中央金幣。
+          if (hasGift)
+            const Align(
+              alignment: Alignment.bottomRight,
+              child: Text('🎁', style: TextStyle(fontSize: 13)),
+            ),
+          // 已領取：左下角小勾，避免和日期 / 禮物重疊。
+          if (checked)
+            Align(
+              alignment: Alignment.bottomLeft,
+              child: Icon(
+                Icons.check_circle,
+                size: 14,
+                color: Colors.green.shade600,
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

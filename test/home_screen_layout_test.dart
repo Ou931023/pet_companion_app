@@ -95,6 +95,36 @@ void main() {
     await _pumpHomeScreen(tester, harness);
   });
 
+  testWidgets('每日簽到彈窗在小螢幕（320 寬）不 overflow，且顯示標題與簽到按鈕',
+      (tester) async {
+    await binding.setSurfaceSize(const Size(320, 568));
+    addTearDown(() => binding.setSurfaceSize(null));
+    final harness = await _HomeHarness.create();
+    addTearDown(harness.dispose);
+    // 產生本月獎勵表，讓格子顯示金幣 / 禮物（更貼近實機畫面）。
+    await harness.checkInController.load();
+
+    await tester.pumpWidget(_homeHost(harness));
+    await tester.pump();
+
+    // 點首頁的簽到月曆入口開啟彈窗（有界 pump，不用 pumpAndSettle 以免卡在寵物動畫）。
+    await tester.tap(find.byTooltip('簽到月曆'));
+    await tester.pump();
+    // pump 滿 1 秒：完成彈窗開啟動畫，並觸發首頁寵物的 1 秒 rest→listen 計時器，
+    // 避免測試結束時殘留 pending timer（沿用 _pumpHomeScreen 慣例）。
+    await tester.pump(const Duration(seconds: 1));
+
+    // 開啟過程若 overflow，widget test 會拋例外導致失敗。
+    expect(tester.takeException(), isNull);
+    expect(find.textContaining('每日簽到'), findsOneWidget);
+    expect(find.text('今天簽到'), findsOneWidget);
+    expect(find.byType(GridView), findsOneWidget);
+
+    // 拆掉 widget 樹，取消 HomeScreen 的動畫 timer（沿用 _pumpHomeScreen 慣例）。
+    await tester.pumpWidget(const SizedBox.shrink());
+    harness.dispose();
+  });
+
   testWidgets('HomeScreen hides ASR route and emotion fusion debug text',
       (tester) async {
     await binding.setSurfaceSize(const Size(390, 844));
