@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../onboarding/coach_mark_controller.dart';
 import '../onboarding/coach_mark_keys.dart';
 import '../controllers/check_in_controller.dart';
 import '../controllers/agent_tool_controller.dart';
@@ -23,7 +24,6 @@ import '../routes/app_routes.dart';
 import '../widgets/bag_icon_button.dart';
 import '../widgets/coin_badge.dart';
 import '../widgets/conversation_bubble_stack.dart';
-import '../widgets/feature_tour.dart';
 import '../widgets/home_date_checkin_card.dart';
 import '../widgets/inventory_item_card.dart';
 import '../widgets/pet_avatar.dart';
@@ -171,7 +171,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       }),
                       onOpenCalendarTap: () =>
                           _openCalendarDialog(context, checkInController),
-                      onHelpTap: () => showFeatureTour(context),
+                      // 首頁「？」改為觸發 Spotlight 新手導覽（與首次進場相同）。
+                      // 已在首頁，requestReplay 後 CoachMarkHost 會立即開始導覽。
+                      onHelpTap: () =>
+                          context.read<CoachMarkController>().requestReplay(),
                       reminderKey: coachKeys.reminderKey,
                       onReminderTap: () =>
                           Navigator.of(context).pushNamed(AppRoute.reminders),
