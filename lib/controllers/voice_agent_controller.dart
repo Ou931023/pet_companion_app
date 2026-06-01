@@ -121,6 +121,24 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       _state != VoiceAgentState.idle &&
       _state != VoiceAgentState.error &&
       _state != VoiceAgentState.recovering;
+
+  /// 連續 Realtime session 的輪次控制核心：只有「未連線」（idle / error）時，
+  /// 才能開始一段新的語音對話 / 開始一次新的語音輸入。
+  /// 一旦進入 connecting…speaking…recovering 任何進行中的狀態，都視為對話已在進行，
+  /// 必須等寵物講完（回到 listening 待命）才可繼續，不可重複開始。
+  bool get canStartVoiceInput =>
+      _state == VoiceAgentState.idle || _state == VoiceAgentState.error;
+
+  /// 寵物正在回覆中：thinking（思考 / 工具處理）或 speaking（播放語音）。
+  /// 此時使用者要說話，必須先「打斷」（barge-in），不可悄悄插入新的一輪。
+  bool get isPetResponding =>
+      _state == VoiceAgentState.thinking ||
+      _state == VoiceAgentState.speaking;
+
+  /// 連續 session 待命中：寵物已準備好聽使用者說話，可直接開口（server VAD 接住）。
+  bool get isAwaitingUserSpeech =>
+      _state == VoiceAgentState.ready ||
+      _state == VoiceAgentState.listening;
   RealtimeFailureType get lastFailureType =>
       realtimeVoiceService.lastFailureType;
   String get backendHealthMessage {
@@ -136,10 +154,11 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     if (_isConnecting || realtimeVoiceService.isConnecting) {
       return;
     }
-    if (_state == VoiceAgentState.ready ||
-        _state == VoiceAgentState.listening ||
-        _state == VoiceAgentState.thinking ||
-        _state == VoiceAgentState.speaking) {
+    // 連續 session 模型：只要不是 idle / error（＝已連線或對話進行中），
+    // 就代表語音輪次已在進行，不可重複開始一段新的。
+    // 涵蓋 connecting / ready / listening / transcribing / thinking / speaking /
+    // recovering——避免使用者在寵物還沒講完時又觸發新的語音輸入造成混亂。
+    if (!canStartVoiceInput) {
       if (!realtimeVoiceService.isConnectionUsable) {
         _handleRealtimeRecoverableFailure('active_connection_unusable');
       }
@@ -206,6 +225,77 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// 在 Realtime 語音 session 連線中時，把使用者打字的文字注入「同一個」live session，
+  /// 讓寵物用語音在同一段對話裡回覆（而不是另外走 quickAction 產生平行回覆）。
+  ///
+  /// 回傳值語意：
+  /// - `true`：Realtime 已接手這句文字（已顯示使用者氣泡、已記錄 user turn、
+  ///   已透過 data channel 送出文字並觸發回覆）。UI 端不需再做任何事。
+  /// - `false`：Realtime 目前不可用（idle/error/recovering，或 data channel 未開），
+  ///   代表「沒接手」，UI 端應自行 fallback 回 quickAction。
+  Future<bool> sendTextDuringRealtime(String text) async {
+    final normalized = text.trim();
+    if (normalized.isEmpty) return false;
+    if (!isRealtimeReady || !realtimeVoiceService.isConnectionUsable) {
+      return false;
+    }
+
+    final decision = _turnCoordinator.acceptFinalTranscript(normalized);
+    if (!decision.accepted) {
+      // 同一句重複送出或目前已有未完成的 turn 在跑時，不重複注入，
+      // 但仍視為「已接手」避免 UI 退回 quickAction 產生平行回覆。
+      debugPrint(
+        '[VoiceAgentController] typed text rejected by turn coordinator reason=${decision.reason}',
+      );
+      return true;
+    }
+    final transcript = decision.transcript;
+    final turnId = decision.turnId;
+    _cancelTurnTimeouts();
+
+    // 與語音 final transcript 一致：顯示使用者氣泡、記錄 user turn，
+    // 確保接下來的寵物回覆能配對到同一個 turn 並寫進同一個 session 的對話紀錄。
+    conversationController.commitRealtimeFinalTranscript(
+      transcript,
+      awaitingPetReply: true,
+    );
+    _activeTurnId = turnId;
+    _partialTranscript = '';
+    _pendingRealtimeTurnId = turnId;
+    _latestCompanionTurnId = turnId;
+
+    _emotion = detectEmotion(transcript);
+    _pendingRealtimeUserText = transcript;
+    _pendingRealtimeEmotion = _emotion.name;
+    _applyEmotionToPet();
+    conversationController.appendExternalTurn(
+      ConversationTurn(
+        timestamp: DateTime.now(),
+        userText: transcript,
+        petReply: '',
+        toolName: 'realtime-user-text',
+        turnId: turnId,
+        emotionTag: _emotion.name,
+        asrSource: _currentLanguageRoute.strategyName,
+        languageHint: _currentLanguageRoute.languageHint.value,
+        routeReason: _currentLanguageRoute.routeReason,
+        replyLanguage: _currentLanguageRoute.replyLanguage.value,
+      ),
+    );
+
+    _transition(
+      VoiceAgentState.thinking,
+      'typed_text_injected',
+      turnId: turnId,
+    );
+    _startTimeout(RealtimeTimeoutType.responseTimeout, turnId: turnId);
+    unawaited(_analyzeCompanionTranscript(transcript, turnId));
+
+    await realtimeVoiceService.sendUserText(transcript);
+    notifyListeners();
+    return true;
+  }
+
   Future<void> stopRealtimeConversation() async {
     _userRequestedRealtime = false;
     _isConnecting = false;
@@ -222,6 +312,31 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     conversationController.clearRealtimeTranscriptState();
     _transition(VoiceAgentState.idle, 'manual_stop');
     petController.setMessage('我先在旁邊陪你。想不到要聊什麼也沒關係，要不要跟我說說今天最舒服的一刻？');
+  }
+
+  /// 使用者在寵物還在回覆（thinking / speaking）時，主動按下語音鈕表示「換我先講」。
+  ///
+  /// 維持同一個 Realtime session：送出 `response.cancel` 中斷寵物正在播的語音、
+  /// 放掉這一輪未完成的回覆，回到 listening 讓 server VAD 直接接住使用者接下來說的話。
+  /// 不重連、不 mock、不碰 Realtime SDP / WebRTC 主流程。
+  ///
+  /// 回傳值：`true` 代表已成功打斷並交回話語權；`false` 代表目前不是寵物回覆中
+  /// （非 thinking/speaking）或連線不可用，沒有任何打斷動作。
+  Future<bool> interruptPetForUserTurn() async {
+    if (!isPetResponding) return false;
+    if (!realtimeVoiceService.isConnectionUsable) {
+      _handleRealtimeRecoverableFailure('barge_in_connection_unusable');
+      return false;
+    }
+    debugPrint('[VOICE_TURN] user barge-in while pet responding');
+    // 略過這個被取消回覆隨後 response.done 可能帶出的（半截）assistant 文字，
+    // 避免打斷後還跳出一段沒講完的氣泡。沿用既有 navigation intent 的相同機制。
+    _skipNextAssistantText = true;
+    await realtimeVoiceService.cancelResponse();
+    _clearCurrentTurn();
+    _transition(VoiceAgentState.listening, 'user_barge_in');
+    petController.setMode(PetMode.listening);
+    return true;
   }
 
   void _handleRealtimeEvent(RealtimeVoiceEvent event) {
