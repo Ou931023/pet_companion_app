@@ -86,6 +86,9 @@ function analyzeCompanionTurn(input = {}) {
     searchIntent,
     sourceReferences: input.sourceReferences || [],
     languageHint: input.languageHint || "zh",
+    // 讓 planner 能依使用者實際說的內容判斷 reply approach
+    // （直接回答 / 追問事件 / 區分累 / 查記憶 / 交給工具 / 請再說一次）。
+    transcript,
   });
 
   return structuredResult({
