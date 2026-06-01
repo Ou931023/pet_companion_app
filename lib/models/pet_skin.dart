@@ -29,6 +29,23 @@ extension PetSkinX on PetSkin {
         PetSkin.fox => '狐狸',
       };
 
+  /// 一句話特色描述（純呈現，僅用於外觀選擇器，不影響任何陪伴邏輯）。
+  String get tagline => switch (this) {
+        PetSkin.dog => '溫暖陪伴型',
+        PetSkin.guineaPig => '可愛療癒型',
+        PetSkin.fox => '活潑聰明型',
+      };
+
+  /// 解鎖需要的金幣數（沿用既有 wallet / coins）。狗狗預設已擁有，免費。
+  int get unlockCost => switch (this) {
+        PetSkin.dog => 0,
+        PetSkin.guineaPig => 60,
+        PetSkin.fox => 80,
+      };
+
+  /// 是否為預設就擁有的外觀（狗狗）。其餘需購買 / 解鎖。
+  bool get ownedByDefault => this == PetSkin.dog;
+
   /// 從存檔字串還原；認不得（含 null / 舊資料）一律回預設狗狗，永不 crash。
   static PetSkin fromStorageId(String? id) {
     return switch (id) {

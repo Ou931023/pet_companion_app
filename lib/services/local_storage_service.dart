@@ -27,6 +27,7 @@ class LocalStorageService {
   static const _keyFamilyContacts = 'familyContactsList';
   static const _keyConversationHistory = 'conversationHistory';
   static const _keyPetSkin = 'petSkin';
+  static const _keyOwnedPetSkins = 'ownedPetSkins';
   static const _keyHomeCoachMarkDone = 'homeCoachMarkDone';
 
   static const String defaultUserId = 'default_user';
@@ -167,6 +168,25 @@ class LocalStorageService {
   Future<void> savePetSkin(PetSkin skin) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_k(_keyPetSkin), skin.storageId);
+  }
+
+  /// 載入目前帳號「已擁有 / 已解鎖」的外觀集合。沒存過 → 只有預設狗狗。
+  /// 狗狗一律視為已擁有（保底），避免任何資料異常造成沒有可用外觀。
+  Future<Set<PetSkin>> loadOwnedPetSkins() async {
+    final prefs = await SharedPreferences.getInstance();
+    final ids = prefs.getStringList(_k(_keyOwnedPetSkins)) ?? const [];
+    final owned = <PetSkin>{PetSkin.dog};
+    for (final id in ids) {
+      owned.add(PetSkinX.fromStorageId(id));
+    }
+    return owned;
+  }
+
+  /// 保存已擁有的外觀集合（依 [_k] 各帳號互不影響）。狗狗一律保底寫入。
+  Future<void> saveOwnedPetSkins(Set<PetSkin> skins) async {
+    final prefs = await SharedPreferences.getInstance();
+    final ids = {PetSkin.dog, ...skins}.map((s) => s.storageId).toList();
+    await prefs.setStringList(_k(_keyOwnedPetSkins), ids);
   }
 
   /// 首頁新手導覽（Coach Mark）是否已看過。依 [_k] 各帳號獨立，

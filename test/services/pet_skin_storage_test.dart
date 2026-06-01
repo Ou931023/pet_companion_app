@@ -54,4 +54,35 @@ void main() {
       expect(await storage.loadPetSkin(), PetSkin.fox); // Demo 不受影響
     });
   });
+
+  group('已擁有外觀本機保存', () {
+    test('沒存過 → 預設只擁有狗狗', () async {
+      final storage = LocalStorageService();
+      expect(await storage.loadOwnedPetSkins(), {PetSkin.dog});
+    });
+
+    test('保存後可讀回，且狗狗永遠保底在內', () async {
+      final storage = LocalStorageService();
+      await storage.saveOwnedPetSkins({PetSkin.fox});
+      expect(await storage.loadOwnedPetSkins(), {PetSkin.dog, PetSkin.fox});
+
+      await storage.saveOwnedPetSkins({PetSkin.guineaPig, PetSkin.fox});
+      expect(
+        await storage.loadOwnedPetSkins(),
+        {PetSkin.dog, PetSkin.guineaPig, PetSkin.fox},
+      );
+    });
+
+    test('不同 elderId 的已擁有外觀互不影響', () async {
+      final storage = LocalStorageService();
+      storage.setUserId('elder-A');
+      await storage.saveOwnedPetSkins({PetSkin.fox});
+
+      storage.setUserId('elder-B');
+      expect(await storage.loadOwnedPetSkins(), {PetSkin.dog});
+
+      storage.setUserId('elder-A');
+      expect(await storage.loadOwnedPetSkins(), {PetSkin.dog, PetSkin.fox});
+    });
+  });
 }

@@ -24,6 +24,7 @@ class PetController extends ChangeNotifier {
   String _expression = 'normal';
   String _action = 'idle';
   PetSkin _currentSkin = PetSkin.dog;
+  Set<PetSkin> _ownedSkins = {PetSkin.dog};
 
   PetState get state => _state;
   PetMode get mode => _state.mode;
@@ -35,22 +36,69 @@ class PetController extends ChangeNotifier {
   /// 目前寵物外觀，預設狗狗。
   PetSkin get currentSkin => _currentSkin;
 
-  /// 載入目前帳號（elderId）保存的外觀；沒有 storage 或沒存過就維持狗狗。
+  /// 已擁有 / 已解鎖的外觀（狗狗永遠在內）。未擁有的需購買 / 解鎖才能套用。
+  Set<PetSkin> get ownedSkins => Set.unmodifiable(_ownedSkins);
+
+  bool isOwned(PetSkin skin) => _ownedSkins.contains(skin);
+
+  /// 載入目前帳號（elderId）保存的外觀與已擁有清單；
+  /// 沒有 storage 或沒存過 → 狗狗、且只擁有狗狗。
+  /// 防呆：若存到的目前外觀不在已擁有清單內，退回狗狗。
   Future<void> loadSkin() async {
     final storage = _storageService;
     if (storage == null) return;
+    final owned = await storage.loadOwnedPetSkins();
     final skin = await storage.loadPetSkin();
-    if (skin == _currentSkin) return;
-    _currentSkin = skin;
+    _ownedSkins = {PetSkin.dog, ...owned};
+    final resolved = _ownedSkins.contains(skin) ? skin : PetSkin.dog;
+    if (resolved == _currentSkin && _ownedSkins.length == 1) return;
+    _currentSkin = resolved;
     notifyListeners();
   }
 
-  /// 立即切換外觀並保存（長者點一下就生效）。
-  Future<void> changeSkin(PetSkin skin) async {
-    if (skin == _currentSkin) return;
+  /// 立即套用外觀（長者點一下就生效）。**只有已擁有的外觀**才能套用；
+  /// 未擁有時回傳 false、不做任何事（未擁有要走 [purchaseAndApplySkin]）。
+  Future<bool> changeSkin(PetSkin skin) async {
+    if (!isOwned(skin)) return false;
+    if (skin == _currentSkin) return true;
     _currentSkin = skin;
     notifyListeners();
     await saveSkin();
+    return true;
+  }
+
+  /// 新手導覽「選夥伴」：免費把選到的外觀設成起始夥伴（解鎖 + 套用），不扣點。
+  Future<void> selectStarterSkin(PetSkin skin) async {
+    await _unlock(skin);
+    await changeSkin(skin);
+  }
+
+  /// 購買並套用未擁有的外觀：用注入的 [spendCoins] 扣點（沿用既有 wallet）。
+  /// - 已擁有 → 直接套用（[SkinPurchaseResult.applied]）。
+  /// - 點數足夠 → 扣點、解鎖、套用（[SkinPurchaseResult.purchasedAndApplied]）。
+  /// - 點數不足 → 不扣點、不解鎖（[SkinPurchaseResult.insufficientCoins]）。
+  ///
+  /// 「購買前確認」由 UI 在呼叫此方法前處理（避免直接扣點）。
+  Future<SkinPurchaseResult> purchaseAndApplySkin(
+    PetSkin skin, {
+    required Future<bool> Function(int cost) spendCoins,
+  }) async {
+    if (isOwned(skin)) {
+      await changeSkin(skin);
+      return SkinPurchaseResult.applied;
+    }
+    final paid = await spendCoins(skin.unlockCost);
+    if (!paid) return SkinPurchaseResult.insufficientCoins;
+    await _unlock(skin);
+    await changeSkin(skin);
+    return SkinPurchaseResult.purchasedAndApplied;
+  }
+
+  Future<void> _unlock(PetSkin skin) async {
+    if (_ownedSkins.contains(skin)) return;
+    _ownedSkins = {..._ownedSkins, skin};
+    notifyListeners();
+    await _storageService?.saveOwnedPetSkins(_ownedSkins);
   }
 
   /// 把目前外觀寫回目前帳號的本機資料。
@@ -121,4 +169,16 @@ class PetController extends ChangeNotifier {
     _idleTimer?.cancel();
     super.dispose();
   }
+}
+
+/// [PetController.purchaseAndApplySkin] 的結果，供 UI 顯示對應的長者友善訊息。
+enum SkinPurchaseResult {
+  /// 已擁有，直接套用。
+  applied,
+
+  /// 點數足夠 → 已扣點、解鎖並套用。
+  purchasedAndApplied,
+
+  /// 點數不足 → 沒有扣點、沒有解鎖。
+  insufficientCoins,
 }

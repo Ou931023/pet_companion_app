@@ -18,6 +18,15 @@ void main() {
       expect(PetSkin.guineaPig.storageId, 'guinea_pig');
     });
 
+    test('unlockCost：狗狗免費、天竺鼠與狐狸需要點數', () {
+      expect(PetSkin.dog.unlockCost, 0);
+      expect(PetSkin.dog.ownedByDefault, isTrue);
+      expect(PetSkin.guineaPig.unlockCost, greaterThan(0));
+      expect(PetSkin.fox.unlockCost, greaterThan(0));
+      expect(PetSkin.guineaPig.ownedByDefault, isFalse);
+      expect(PetSkin.fox.ownedByDefault, isFalse);
+    });
+
     test('fromStorageId 容錯：認不得一律回預設狗狗', () {
       expect(PetSkinX.fromStorageId('guinea_pig'), PetSkin.guineaPig);
       expect(PetSkinX.fromStorageId('fox'), PetSkin.fox);
