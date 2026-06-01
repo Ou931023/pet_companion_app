@@ -140,7 +140,11 @@ class PetCompanionApp extends StatelessWidget {
           update: (_, profile, walletController) =>
               walletController ?? WalletController(profile),
         ),
-        ChangeNotifierProvider(create: (_) => PetController()),
+        ChangeNotifierProvider(
+          create: (context) => PetController(
+            storageService: context.read<LocalStorageService>(),
+          ),
+        ),
         Provider(create: (_) => MockShopService()),
         Provider(create: (_) => WebSearchService()),
         ProxyProvider<WebSearchService, CompanionContentService>(
@@ -393,6 +397,7 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
       final conversationController = context.read<ConversationController>();
       final notificationService = context.read<NotificationService>();
       final memoryController = context.read<MemoryController>();
+      final petController = context.read<PetController>();
       final localStorageService = context.read<LocalStorageService>();
       final petStatsStorageService = context.read<PetStatsStorageService>();
 
@@ -411,6 +416,8 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
         petStatsStorageService.setUserId(elderId);
         memoryController.syncUserId(elderId);
         await profileController.load();
+        // CR-0011：每個 elderId 各自記住寵物外觀，換帳號 / 登出 / 還原時一起重載。
+        await petController.loadSkin();
         await petStatsController.load();
         await conversationController.loadHistory();
       }

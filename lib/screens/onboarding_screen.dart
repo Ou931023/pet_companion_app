@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../controllers/profile_controller.dart';
+import '../utils/asset_paths.dart';
 import '../widgets/feature_tour.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -73,7 +74,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       const SizedBox(height: 20),
                       Center(
                         child: Image.asset(
-                          'assets/pets/rest/dog_rest_01.png',
+                          AssetPaths.defaultRestImage,
                           width: 240,
                           height: 240,
                           errorBuilder: (_, __, ___) => Container(
@@ -81,7 +82,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             height: 240,
                             alignment: Alignment.center,
                             color: Colors.grey.shade200,
-                            child: const Text('請放置 dog_rest_01.png'),
+                            child: const Icon(
+                              Icons.pets,
+                              size: 96,
+                              color: Colors.grey,
+                            ),
                           ),
                         ),
                       ),

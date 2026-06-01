@@ -13,6 +13,7 @@ import '../controllers/voice_agent_controller.dart';
 import '../controllers/wallet_controller.dart';
 import '../models/inventory_item.dart';
 import '../models/language_route.dart';
+import '../models/pet_skin.dart';
 import '../models/pet_status.dart';
 import '../models/pet_stats.dart';
 import '../models/source_reference.dart';
@@ -25,6 +26,7 @@ import '../widgets/feature_tour.dart';
 import '../widgets/home_date_checkin_card.dart';
 import '../widgets/inventory_item_card.dart';
 import '../widgets/pet_avatar.dart';
+import '../widgets/pet_skin_picker.dart';
 import '../widgets/pet_status_panel.dart';
 import '../widgets/source_reference_list.dart';
 import '../widgets/text_conversation_bar.dart';
@@ -210,6 +212,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                   isPetDragHovering: _isPetDragHovering,
                                   showVoiceAura: showVoiceAura,
                                   petMode: petController.mode,
+                                  skin: petController.currentSkin,
+                                  onChangeSkin: () => _openSkinPicker(context),
                                   onPetTap: () {
                                     if (isDead) {
                                       ScaffoldMessenger.of(context)
@@ -465,6 +469,23 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: TextStyle(fontWeight: FontWeight.w700)),
           ],
         ),
+      ),
+    );
+  }
+
+  void _openSkinPicker(BuildContext context) {
+    // 帶著現有的 PetController 進 bottom sheet，確保彈窗內也能即時切換 / 顯示「使用中」。
+    final petController = context.read<PetController>();
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => ChangeNotifierProvider<PetController>.value(
+        value: petController,
+        child: const _SkinPickerSheet(),
       ),
     );
   }
@@ -848,6 +869,8 @@ class _PetStage extends StatelessWidget {
     required this.isPetDragHovering,
     required this.showVoiceAura,
     required this.petMode,
+    required this.skin,
+    required this.onChangeSkin,
     required this.onPetTap,
     required this.onDragHoverChanged,
     required this.onAcceptItem,
@@ -857,6 +880,8 @@ class _PetStage extends StatelessWidget {
   final bool isPetDragHovering;
   final bool showVoiceAura;
   final PetMode petMode;
+  final PetSkin skin;
+  final VoidCallback onChangeSkin;
   final VoidCallback onPetTap;
   final ValueChanged<bool> onDragHoverChanged;
   final ValueChanged<InventoryItem> onAcceptItem;
@@ -867,65 +892,169 @@ class _PetStage extends StatelessWidget {
       builder: (context, petConstraints) {
         final maxAvailable = petConstraints.biggest.shortestSide;
         if (maxAvailable <= 0) return const SizedBox.shrink();
-        final maxAvatarSize = maxAvailable.clamp(0.0, 430.0);
+        // CR-0011：寵物放大、減少留白。素材本身四周留白較多，直接吃滿可用的
+        // 最短邊（上限放寬到 520），讓寵物主體看起來更大；clamp 同時確保小螢幕
+        // 不會超出可用空間造成 overflow。
+        final maxAvatarSize = maxAvailable.clamp(0.0, 520.0);
         final avatarSize = maxAvailable < 72
             ? maxAvailable
-            : (maxAvailable * 0.92).clamp(72.0, maxAvatarSize);
+            : maxAvailable.clamp(72.0, maxAvatarSize);
         final auraSize = maxAvailable.clamp(0.0, avatarSize + 54);
 
-        return Center(
-          child: DragTarget<InventoryItem>(
-            onWillAcceptWithDetails: (_) {
-              onDragHoverChanged(true);
-              return true;
-            },
-            onLeave: (_) => onDragHoverChanged(false),
-            onAcceptWithDetails: (details) => onAcceptItem(details.data),
-            builder: (_, __, ___) => GestureDetector(
-              onTap: onPetTap,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                width: petConstraints.maxWidth,
-                height: petConstraints.maxHeight,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  border: isPetDragHovering
-                      ? Border.all(
-                          color: Colors.green,
-                          width: 3,
-                        )
-                      : null,
-                ),
-                child: ColorFiltered(
-                  colorFilter: isDead
-                      ? const ColorFilter.mode(
-                          Colors.grey,
-                          BlendMode.saturation,
-                        )
-                      : const ColorFilter.mode(
-                          Colors.transparent,
-                          BlendMode.srcOver,
-                        ),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      if (showVoiceAura)
-                        _VoiceListeningBubbles(
-                          size: auraSize,
-                        ),
-                      PetAvatar(
-                        mode: petMode,
-                        size: avatarSize,
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: Center(
+                child: DragTarget<InventoryItem>(
+                  onWillAcceptWithDetails: (_) {
+                    onDragHoverChanged(true);
+                    return true;
+                  },
+                  onLeave: (_) => onDragHoverChanged(false),
+                  onAcceptWithDetails: (details) => onAcceptItem(details.data),
+                  builder: (_, __, ___) => GestureDetector(
+                    onTap: onPetTap,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      width: petConstraints.maxWidth,
+                      height: petConstraints.maxHeight,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        border: isPetDragHovering
+                            ? Border.all(
+                                color: Colors.green,
+                                width: 3,
+                              )
+                            : null,
                       ),
-                    ],
+                      child: ColorFiltered(
+                        colorFilter: isDead
+                            ? const ColorFilter.mode(
+                                Colors.grey,
+                                BlendMode.saturation,
+                              )
+                            : const ColorFilter.mode(
+                                Colors.transparent,
+                                BlendMode.srcOver,
+                              ),
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            if (showVoiceAura)
+                              _VoiceListeningBubbles(
+                                size: auraSize,
+                              ),
+                            PetAvatar(
+                              mode: petMode,
+                              skin: skin,
+                              size: avatarSize,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
+            Positioned(
+              top: 0,
+              right: 0,
+              child: _ChangeSkinButton(onTap: onChangeSkin),
+            ),
+          ],
         );
       },
+    );
+  }
+}
+
+/// 首頁右上角「更換外觀」入口（疊在寵物舞台角落，不擋住寵物主體）。
+class _ChangeSkinButton extends StatelessWidget {
+  const _ChangeSkinButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: '更換外觀',
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        elevation: 1.5,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.pets,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 6),
+                const Text(
+                  '更換外觀',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 首頁「更換外觀」彈出視窗內容（標題 + 外觀選擇器 + 完成）。
+class _SkinPickerSheet extends StatelessWidget {
+  const _SkinPickerSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              '想換一隻夥伴嗎？',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '選好就會馬上換成牠陪你。',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: Colors.black.withValues(alpha: 0.55),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const PetSkinPicker(),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 52,
+              child: FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('完成'),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

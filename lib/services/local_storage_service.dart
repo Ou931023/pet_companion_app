@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/conversation_turn.dart';
+import '../models/pet_skin.dart';
 import '../models/user_profile.dart';
 
 class LocalStorageService {
@@ -25,6 +26,7 @@ class LocalStorageService {
   static const _keyManualAsrStrategy = 'manualAsrStrategy';
   static const _keyFamilyContacts = 'familyContactsList';
   static const _keyConversationHistory = 'conversationHistory';
+  static const _keyPetSkin = 'petSkin';
 
   static const String defaultUserId = 'default_user';
 
@@ -151,6 +153,19 @@ class LocalStorageService {
       _k(_keyConversationHistory),
       jsonEncode(cappedTurns.map((turn) => turn.toJson()).toList()),
     );
+  }
+
+  /// 載入目前帳號的寵物外觀。沒存過或認不得一律回預設狗狗。
+  /// 走 [_k] → `default_user`（Demo）用全域 key，正式帳號各自加 `u:<elderId>:` 前綴。
+  Future<PetSkin> loadPetSkin() async {
+    final prefs = await SharedPreferences.getInstance();
+    return PetSkinX.fromStorageId(prefs.getString(_k(_keyPetSkin)));
+  }
+
+  /// 保存目前帳號的寵物外觀（依 [_k] 各帳號互不影響）。
+  Future<void> savePetSkin(PetSkin skin) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_k(_keyPetSkin), skin.storageId);
   }
 
   Future<void> clearAll() async {

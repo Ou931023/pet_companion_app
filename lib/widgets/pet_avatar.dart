@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../models/pet_skin.dart';
 import '../models/pet_status.dart';
 import '../utils/asset_paths.dart';
 
@@ -9,10 +10,12 @@ class PetAvatar extends StatefulWidget {
   const PetAvatar({
     super.key,
     required this.mode,
+    this.skin = PetSkin.dog,
     this.size = 220,
   });
 
   final PetMode mode;
+  final PetSkin skin;
   final double size;
 
   @override
@@ -32,7 +35,8 @@ class _PetAvatarState extends State<PetAvatar> {
   @override
   void didUpdateWidget(covariant PetAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.mode != oldWidget.mode) {
+    // 換外觀或換狀態都要從第一張重新播，避免沿用上一隻寵物的 frame index。
+    if (widget.mode != oldWidget.mode || widget.skin != oldWidget.skin) {
       _frameIndex = 0;
       _setupAnimationTimer();
     }
@@ -50,17 +54,18 @@ class _PetAvatarState extends State<PetAvatar> {
 
   String _imagePath() {
     if (widget.mode == PetMode.talking) {
-      return AssetPaths
-          .talkingFrames[_frameIndex % AssetPaths.talkingFrames.length];
+      final frames = AssetPaths.talkingFrames(widget.skin);
+      // 用取餘數，guineaPig 只有 3 張也能安全循環，不會越界。
+      return frames[_frameIndex % frames.length];
     }
     if (widget.mode == PetMode.rest) {
-      return AssetPaths.restFrames[_frameIndex % AssetPaths.restFrames.length];
+      final frames = AssetPaths.restFrames(widget.skin);
+      return frames[_frameIndex % frames.length];
     }
     if (widget.mode == PetMode.listening) {
-      return AssetPaths.listening;
+      return AssetPaths.listening(widget.skin);
     }
-    return AssetPaths.staticModes[widget.mode] ??
-        AssetPaths.staticModes[PetMode.normal]!;
+    return AssetPaths.stateImage(widget.skin, widget.mode);
   }
 
   @override
@@ -78,26 +83,35 @@ class _PetAvatarState extends State<PetAvatar> {
       height: widget.size,
       fit: BoxFit.contain,
       errorBuilder: (_, __, ___) {
-        // If specific state images (such as dog_normal.png / dog_sad.png) are missing,
-        // safely fallback to dog_rest_01.png to avoid runtime crashes.
+        // 第一層 fallback：該外觀自己的 rest_01。
         return Image.asset(
-          'assets/pets/rest/dog_rest_01.png',
+          AssetPaths.skinRestPrimary(widget.skin),
           width: widget.size,
           height: widget.size,
           fit: BoxFit.contain,
           errorBuilder: (_, __, ___) {
-            return Container(
+            // 第二層 fallback：永遠存在的狗狗 rest_01。
+            return Image.asset(
+              AssetPaths.defaultRestImage,
               width: widget.size,
               height: widget.size,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade200,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Text(
-                '請放置寵物圖片素材',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-              ),
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) {
+                // 真的全缺時才顯示白話提示（不顯示任何 asset path）。
+                return Container(
+                  width: widget.size,
+                  height: widget.size,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Text(
+                    '寵物圖片載入中',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  ),
+                );
+              },
             );
           },
         );

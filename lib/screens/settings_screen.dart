@@ -11,6 +11,7 @@ import '../models/language_route.dart';
 import '../routes/app_routes.dart';
 import '../services/realtime_voice_service.dart';
 import '../widgets/companion_debug_panel.dart';
+import '../widgets/pet_skin_picker.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -87,6 +88,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           ),
+        ),
+        const SizedBox(height: 14),
+        const _SettingsSection(
+          title: '換一隻陪你的夥伴',
+          child: PetSkinPicker(),
         ),
         const SizedBox(height: 14),
         _SettingsSection(

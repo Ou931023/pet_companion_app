@@ -506,6 +506,62 @@
 
 ---
 
+### CR-0010：長者端新手導覽 + 功能說明入口（Checkpoint Review，architecture-agent 2026-06-01）
+
+- 範圍：新增 `lib/widgets/feature_tour.dart`（可重用多頁導覽 + 6 頁白話內容 + `showFeatureTour`）、`lib/screens/onboarding_screen.dart`（先導覽再命名）、`lib/screens/home_screen.dart`（首頁背包旁「？」入口 + header text-scale 夾制避免溢位）、`test/widgets/feature_tour_test.dart`（新）、`test/controllers/memory_controller_test.dart`（修正：問候測試注入假 service，不依賴後端是否在跑）。
+- 10 項唯讀驗證（**全數 PASS**）：
+  1. **長者友善文案** ✅（歡迎使用愛陪伴 / 點麥克風說話 / 我會記得你說的事 / 「需要時，系統會協助提醒照護人員，讓你不是一個人。」/「你可以看看寵物狀態，也可以使用背包裡的物品。」/「首頁右上角的問號，可以再看一次這份說明。」）。
+  2. **上一個 / 下一個 / 略過 / 開始使用** ✅（`_buildControls` + `finishLabel`，最後一頁顯示「開始使用」）。
+  3. **首頁「？」入口** ✅（`_HelpIconButton` 放背包左側、`Semantics(label:'功能說明')`、`onHelpTap → showFeatureTour`）。
+  4. **沿用 CR-0009 elderId namespace** ✅（**未改** `local_storage_service.dart` / `profile_controller.dart`；onboarding 狀態已依 elderId 隔離）。
+  5. **Demo default_user 未破壞** ✅（`default_user` 仍用全域 key）。
+  6. **無 debug/JSON/riskLevel/triggerSummary/監控/警報 字眼** ✅（僅出現在一行說明意圖的「註解」，非顯示文字；測試亦斷言禁字不出現）。
+  7. **未改 backend / caregiver_web / Realtime / voice_agent / Firebase 原生 / pubspec** ✅（`xcscheme`、`care_alert_display.test.js` 為先前遺留，非本批）。
+  8. **`flutter analyze lib/ test/`** → No issues found ✅。
+  9. **`flutter test`** → **237/237 pass** ✅。
+  10. **建議 commit** ✅（乾淨、可獨立回復）。
+- 裁決：✅ 通過驗收。**commit 範圍須顯式挑檔**：`lib/widgets/feature_tour.dart`、`lib/screens/{onboarding,home}_screen.dart`、`test/widgets/feature_tour_test.dart`、`test/controllers/memory_controller_test.dart`。**排除**：`docs/CHANGE_REVIEW.md`（另行）、`caregiver_web/**`（先前遺留）、`ios/...Runner.xcscheme`（Xcode 噪音）、runtime `data/*.json`、tooling 噪音、Firebase plist/json。
+- commit message 建議：`feat: add elder onboarding tour and home help entry`。
+
+---
+
+## CR-0011：寵物換皮 + 首頁寵物放大
+
+- 狀態：✅ 已完成（architecture-agent checkpoint review 通過，2026-06-01）
+- 目標：支援 dog / guineaPig / fox 三種外觀，預設 dog，每個 elderId 各自保存；首頁寵物放大
+- Step 1：素材整理（複製 + 改名到 `assets/pets/*`）— 完成
+- Step 2：換皮邏輯 + UI + 放大 + 測試 — 完成
+- 範圍：`lib/models/pet_skin.dart`（新）、`lib/widgets/pet_skin_picker.dart`（新）、`lib/utils/asset_paths.dart`、`lib/widgets/pet_avatar.dart`、`lib/controllers/pet_controller.dart`、`lib/services/local_storage_service.dart`、`lib/screens/{home,settings,login,onboarding}_screen.dart`、`lib/app.dart`、四個測試檔。
+
+### Checkpoint Review（architecture-agent 獨立蒐證：grep + analyze + test）
+
+| # | 項目 | 結果 |
+|---|------|------|
+| 1 | dog / guineaPig / fox 三外觀 | ✅ `enum PetSkin` 三值，預設 dog |
+| 2 | 不搬動既有 dog 圖 | ✅ dog states8/talk6/rest3/listening1 完整、無刪改 |
+| 3 | guinea_pig / fox 在 talk/rest/listening/states | ✅ 兩物種四資料夾齊全 |
+| 4 | PetSkin 三值 + 中文 label | ✅ 狗狗 / 天竺鼠 / 狐狸 |
+| 5 | AssetPaths 動態 skin 路徑 | ✅ `talkingFrames/restFrames/listening/stateImage(skin)` |
+| 6 | PetAvatar skin + fallback | ✅ `skin` 參數 + 三層 fallback（skin rest_01 → dog rest_01 → 白話佔位） |
+| 7 | PetController API | ✅ `currentSkin / changeSkin / loadSkin / saveSkin` |
+| 8 | LocalStorageService elderId namespace | ✅ `_k(_keyPetSkin)`：Demo=全域、正帳號加 `u:<elderId>:` |
+| 9 | 首頁更換外觀入口 | ✅ 舞台右上角「更換外觀」→ bottom sheet（不擋寵物主體） |
+| 10 | 設定頁外觀選擇 | ✅「換一隻陪你的夥伴」+ `PetSkinPicker` |
+| 11 | 首頁放大 + 小螢幕不 overflow | ✅ 上限 430→520、`clamp(72, 520)` 防溢；1.3 字級 layout test 綠 |
+| 12 | 未改 backend / Realtime / Firebase 原生 / pubspec / .env | ✅ 皆未動；`app.dart` 屬前端接線（非 🔒 鎖定檔），改動最小（provider 注入 + `loadSkin()`） |
+| 13 | flutter analyze | ✅ No issues found |
+| 14 | flutter test | ✅ 258/258 passed（exit 0） |
+
+- 裁決：✅ 通過驗收，建議 commit。
+- **commit 範圍須顯式挑檔**（[[commit_hygiene]]）：
+  - 新增：`lib/models/pet_skin.dart`、`lib/widgets/pet_skin_picker.dart`、`test/models/pet_skin_test.dart`、`test/services/pet_skin_storage_test.dart`、`test/controllers/pet_controller_skin_test.dart`、`test/widgets/pet_avatar_test.dart`
+  - 修改：`lib/app.dart`、`lib/utils/asset_paths.dart`、`lib/widgets/pet_avatar.dart`、`lib/controllers/pet_controller.dart`、`lib/services/local_storage_service.dart`、`lib/screens/{home,settings,login,onboarding}_screen.dart`、`docs/CHANGE_REVIEW.md`
+  - 新增素材：`assets/pets/{talk,rest,listening,states}/{guinea_pig,fox}_*.png`
+  - **排除**（與 CR-0011 無關 / 既有遺留 / 噪音）：`lib/screens/care_alert_screen.dart`、`test/screens/care_alert_screen_test.dart`、`backend/stt_proxy/data/*.json`（runtime）、`caregiver_web/**`、`ios/...Runner.xcscheme`、`docs/DEMO_SCRIPT.md`、`repomix-output.xml`、`devtools_options.yaml`、`.claude/worktrees/`、`assets/pets_raw/`（raw 暫存，不入正式 commit）。
+- commit message 建議：`feat: add pet skin switching (dog/guinea pig/fox) and enlarge home pet`。
+
+---
+
 ## 待釐清項目 / 後續（Follow-ups）
 
 ### FU-0001：移除 legacy 容錯（待四級資料穩定後另開 CR）

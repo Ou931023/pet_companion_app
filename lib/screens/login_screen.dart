@@ -5,6 +5,7 @@ import '../config/app_config.dart';
 import '../controllers/app_navigation_controller.dart';
 import '../controllers/auth_controller.dart';
 import '../routes/app_routes.dart';
+import '../utils/asset_paths.dart';
 import '../widgets/auth/auth_provider_button.dart';
 
 /// 登入頁。
@@ -170,7 +171,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(height: 12),
                       Center(
                         child: Image.asset(
-                          'assets/pets/rest/dog_rest_01.png',
+                          AssetPaths.defaultRestImage,
                           width: 180,
                           height: 180,
                           errorBuilder: (_, __, ___) => Container(
