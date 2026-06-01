@@ -264,6 +264,34 @@ void main() {
     expect(find.text('AI Agent 工具測試'), findsNothing);
   });
 
+  testWidgets('首頁「使用教學」入口存在且較淡，點擊會觸發重新觀看導覽（CR-0020）',
+      (tester) async {
+    await binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => binding.setSurfaceSize(null));
+    final harness = await _HomeHarness.create();
+    addTearDown(harness.dispose);
+    final coach = CoachMarkController();
+    addTearDown(coach.dispose);
+
+    await tester.pumpWidget(_homeHost(harness, coach: coach));
+    await tester.pump();
+
+    // 教學入口仍在（淡色小圓 help_outline），且沒有浮起的白色圓鈕陰影。
+    final help = find.byIcon(Icons.help_outline);
+    expect(help, findsOneWidget);
+    expect(coach.replayRequested, isFalse);
+
+    // 點擊後仍觸發重新觀看新手導覽。
+    await tester.tap(help);
+    await tester.pump();
+    expect(coach.replayRequested, isTrue);
+
+    // 讓首頁寵物的 1 秒 rest→listen 計時器跑完，避免殘留 pending timer。
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpWidget(const SizedBox.shrink());
+    harness.dispose();
+  });
+
   testWidgets('設定頁有「重新觀看新手導覽」入口，點擊會 replay 並切回首頁分頁',
       (tester) async {
     // 高螢幕，讓設定頁長列表的「重新觀看新手導覽」入口可穩定捲到、點到。
@@ -311,7 +339,11 @@ Future<void> _pumpHomeScreen(
   harness.dispose();
 }
 
-Widget _homeHost(_HomeHarness harness, {double textScale = 1.0}) {
+Widget _homeHost(
+  _HomeHarness harness, {
+  double textScale = 1.0,
+  CoachMarkController? coach,
+}) {
   return MultiProvider(
     providers: [
       ChangeNotifierProvider<ProfileController>.value(
@@ -345,6 +377,12 @@ Widget _homeHost(_HomeHarness harness, {double textScale = 1.0}) {
         value: harness.navigationController,
       ),
       Provider<CoachMarkKeys>(create: (_) => CoachMarkKeys()),
+      if (coach == null)
+        ChangeNotifierProvider<CoachMarkController>(
+          create: (_) => CoachMarkController(),
+        )
+      else
+        ChangeNotifierProvider<CoachMarkController>.value(value: coach),
     ],
     child: MaterialApp(
       builder: (context, child) {

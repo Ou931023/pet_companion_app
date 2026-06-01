@@ -946,7 +946,10 @@ class _HomeHeader extends StatelessWidget {
   }
 }
 
-/// 首頁「？」功能說明按鈕（放在背包旁；長者忘記怎麼用可隨時再看一次）。
+/// 首頁「使用教學」入口（放在頂部工具列；長者忘記怎麼用可隨時再看一次導覽）。
+///
+/// CR-0020：改成淡色、無陰影的小圓形 icon button，視覺收斂、和頂部其他按鈕一致，
+/// 不再像浮起的白色圓鈕那麼突兀；點擊行為不變（觸發重新觀看新手導覽）。
 class _HelpIconButton extends StatelessWidget {
   const _HelpIconButton({required this.onTap});
 
@@ -954,24 +957,25 @@ class _HelpIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
     return Semantics(
       button: true,
-      label: '功能說明',
+      label: '使用教學',
       child: Material(
-        color: Colors.white,
+        // 淡色底、無 elevation：柔和、像產品內的次要入口。
+        color: primary.withValues(alpha: 0.10),
         shape: const CircleBorder(),
-        elevation: 1.5,
+        clipBehavior: Clip.antiAlias,
         child: InkWell(
-          customBorder: const CircleBorder(),
           onTap: onTap,
           child: Container(
-            width: 42,
-            height: 42,
+            width: 38,
+            height: 38,
             alignment: Alignment.center,
             child: Icon(
               Icons.help_outline,
-              size: 24,
-              color: Theme.of(context).colorScheme.primary,
+              size: 20,
+              color: primary.withValues(alpha: 0.75),
             ),
           ),
         ),
