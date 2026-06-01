@@ -458,17 +458,27 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openSkinPicker(BuildContext context) {
-    // 帶著現有的 PetController 進 bottom sheet，確保彈窗內也能即時切換 / 顯示「使用中」。
+    // 帶著現有的 PetController / WalletController 進 bottom sheet，確保彈窗內也能
+    // 即時切換 / 顯示「使用中」，以及未擁有外觀的購買 / 解鎖（沿用既有 wallet）。
     final petController = context.read<PetController>();
+    final walletController = context.read<WalletController>();
     showModalBottomSheet<void>(
       context: context,
+      // 內容可能比預設 sheet 高（三張卡片 + 完成按鈕，且字體可放大）：開啟
+      // scroll 控制讓 sheet 自行決定高度，內容過高時可捲動、完成按鈕不被切掉。
+      isScrollControlled: true,
       showDragHandle: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (_) => ChangeNotifierProvider<PetController>.value(
-        value: petController,
+      builder: (_) => MultiProvider(
+        providers: [
+          ChangeNotifierProvider<PetController>.value(value: petController),
+          ChangeNotifierProvider<WalletController>.value(
+            value: walletController,
+          ),
+        ],
         child: const _SkinPickerSheet(),
       ),
     );
@@ -1307,39 +1317,61 @@ class _SkinPickerSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              '想換一隻夥伴嗎？',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+    // sheet 最高約佔螢幕 88%：內容夠短就貼合內容、過高則由中段列表捲動，
+    // 標題與底部「完成」按鈕固定不被捲走。
+    final maxHeight = MediaQuery.of(context).size.height * 0.88;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 標題區（固定）。
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  '想換一隻夥伴嗎？',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '選好就會馬上換成牠陪你。',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black.withValues(alpha: 0.55),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 4),
-            Text(
-              '選好就會馬上換成牠陪你。',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: Colors.black.withValues(alpha: 0.55),
+          ),
+          const SizedBox(height: 12),
+          // 卡片列表（可捲動）：內容過高時在這裡捲，不會把完成按鈕擠出畫面。
+          const Flexible(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(20, 0, 20, 4),
+              child: PetSkinPicker(compact: true),
+            ),
+          ),
+          // 完成按鈕（固定在底部，並避開 home indicator）。
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+              child: SizedBox(
+                height: 52,
+                child: FilledButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('完成'),
+                ),
               ),
             ),
-            const SizedBox(height: 16),
-            const PetSkinPicker(),
-            const SizedBox(height: 16),
-            SizedBox(
-              height: 52,
-              child: FilledButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('完成'),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
