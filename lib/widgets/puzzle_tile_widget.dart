@@ -2,75 +2,48 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-class PuzzleTileWidget extends StatelessWidget {
-  const PuzzleTileWidget({
+/// 顯示一張照片裡第 [index] 格（N×N 中的一塊）的小圖；會填滿父層給的大小。
+///
+/// 用「整張照片放大成 N 格大、再用 Positioned 平移露出該格」的方式裁出小塊，
+/// 不會變形（[BoxFit.cover]），也不需要事先把照片切檔。
+class PuzzlePieceImage extends StatelessWidget {
+  const PuzzlePieceImage({
     super.key,
     required this.imageFile,
     required this.gridSize,
-    required this.correctIndex,
-    required this.showNumberHint,
-    required this.onTap,
+    required this.index,
   });
 
   final File imageFile;
   final int gridSize;
-  final int correctIndex;
-  final bool showNumberHint;
-  final VoidCallback onTap;
+  final int index;
 
   @override
   Widget build(BuildContext context) {
-    final row = correctIndex ~/ gridSize;
-    final col = correctIndex % gridSize;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.all(2),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.white, width: 1.2),
-        ),
-        clipBehavior: Clip.hardEdge,
-        child: LayoutBuilder(
-          builder: (_, constraints) {
-            final tileW = constraints.maxWidth;
-            final tileH = constraints.maxHeight;
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                Positioned(
-                  left: -col * tileW,
-                  top: -row * tileH,
-                  child: Image.file(
-                    imageFile,
-                    width: tileW * gridSize,
-                    height: tileH * gridSize,
-                    fit: BoxFit.cover,
-                  ),
+    final row = index ~/ gridSize;
+    final col = index % gridSize;
+    return ClipRect(
+      child: LayoutBuilder(
+        builder: (_, constraints) {
+          final w = constraints.maxWidth;
+          final h = constraints.maxHeight;
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              Positioned(
+                left: -col * w,
+                top: -row * h,
+                child: Image.file(
+                  imageFile,
+                  width: w * gridSize,
+                  height: h * gridSize,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
                 ),
-                if (showNumberHint)
-                  Align(
-                    alignment: Alignment.topRight,
-                    child: Container(
-                      margin: const EdgeInsets.all(4),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 5, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '${correctIndex + 1}',
-                        style: const TextStyle(
-                            color: Colors.white, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ),
-              ],
-            );
-          },
-        ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
