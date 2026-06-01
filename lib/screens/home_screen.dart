@@ -857,18 +857,6 @@ class _HomeHeader extends StatelessWidget {
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(
-                '今天想跟$petName聊聊嗎？我都在這裡陪你',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 16,
-                  height: 1.2,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black.withValues(alpha: 0.6),
-                ),
-              ),
             ],
           ),
         ),
