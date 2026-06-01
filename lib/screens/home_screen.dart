@@ -21,6 +21,7 @@ import '../models/pet_status.dart';
 import '../models/pet_stats.dart';
 import '../models/source_reference.dart';
 import '../models/voice_agent_state.dart';
+import '../utils/voice_button_presentation.dart';
 import '../routes/app_routes.dart';
 import '../widgets/bag_icon_button.dart';
 import '../widgets/coin_badge.dart';
@@ -32,6 +33,7 @@ import '../widgets/pet_skin_picker.dart';
 import '../widgets/pet_status_panel.dart';
 import '../widgets/source_reference_list.dart';
 import '../widgets/text_conversation_bar.dart';
+import '../widgets/ui/primary_action_button.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -132,19 +134,11 @@ class _HomeScreenState extends State<HomeScreen> {
             : conversationController.isTaigiAsrProcessing
                 ? '台語辨識中'
                 : '開始台語短錄音'
-        : switch (voiceAgentController.state) {
-            VoiceAgentState.connecting => '正在連線，馬上就好',
-            VoiceAgentState.ready ||
-            VoiceAgentState.listening =>
-              '我在聽，你說',
-            VoiceAgentState.recovering => '正在重新連線',
-            VoiceAgentState.error => '連線怪怪的，點我再試一次',
-            VoiceAgentState.transcribing => '正在聽你說',
-            VoiceAgentState.thinking => '正在想怎麼回你',
-            VoiceAgentState.speaking => '正在跟你說話',
-            VoiceAgentState.idle =>
-              useTaigiRealtime ? '用台語跟我聊聊' : '想聊天就點我',
-          };
+        : realtimeVoiceButtonLabel(
+            voiceAgentController.state,
+            petName: profileController.petName,
+            taigiRealtime: useTaigiRealtime,
+          );
     final companionSources = _companionSourceReferences(
       voiceAgentController.currentCompanionContext?.sourceReferences,
     );
@@ -284,10 +278,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     SizedBox(height: compact ? 8 : 10),
                     KeyedSubtree(
                       key: coachKeys.voiceButtonKey,
-                      child: SizedBox(
-                      width: double.infinity,
-                      height: 54,
-                      child: FilledButton(
+                      child: PrimaryActionButton(
+                        icon: voiceIcon,
+                        label: voiceLabel,
+                        active: showVoiceAura,
                         onPressed: isDead
                             ? null
                             : () async {
@@ -331,34 +325,27 @@ class _HomeScreenState extends State<HomeScreen> {
                                   );
                                   return;
                                 }
-                                if (voiceAgentController.state ==
-                                        VoiceAgentState.idle ||
-                                    voiceAgentController.state ==
-                                        VoiceAgentState.error) {
+                                // 連續 Realtime session 的語音輪次控制：
+                                // - idle / error：開始 / 重試一段新的語音對話。
+                                // - 寵物回覆中（thinking / speaking）：按鈕＝換我先講，
+                                //   打斷寵物、把話語權交回使用者（barge-in）。
+                                // - 待命聆聽中（ready / listening）：按鈕＝結束這段語音對話。
+                                // - connecting / transcribing / recovering：連線或辨識中，
+                                //   稍候，不重複觸發避免混亂。
+                                if (voiceAgentController.canStartVoiceInput) {
                                   conversationController.startNewSession();
                                   await voiceAgentController
                                       .startRealtimeConversation();
-                                } else {
+                                } else if (voiceAgentController
+                                    .isPetResponding) {
+                                  await voiceAgentController
+                                      .interruptPetForUserTurn();
+                                } else if (voiceAgentController
+                                    .isAwaitingUserSpeech) {
                                   await voiceAgentController
                                       .stopRealtimeConversation();
                                 }
                               },
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(voiceIcon, size: 26),
-                            const SizedBox(width: 10),
-                            Flexible(
-                              child: Text(
-                                voiceLabel,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
                       ),
                     ),
                     if (useTaigiShortRecording &&
