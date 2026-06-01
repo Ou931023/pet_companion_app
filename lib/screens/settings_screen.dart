@@ -10,6 +10,7 @@ import '../controllers/profile_controller.dart';
 import '../controllers/voice_agent_controller.dart';
 import '../models/language_route.dart';
 import '../onboarding/coach_mark_controller.dart';
+import '../onboarding/coach_mark_keys.dart';
 import '../routes/app_routes.dart';
 import '../services/realtime_voice_service.dart';
 import '../widgets/companion_debug_panel.dart';
@@ -328,9 +329,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
         const SizedBox(height: 14),
-        _SettingsSection(
-          title: '家人聯絡人',
-          child: _FamilyContactsEditor(profile: profile),
+        KeyedSubtree(
+          // 新手導覽 Step 13 跨頁高亮用：切到設定頁時 spotlight「家人聯絡人」入口。
+          key: context.read<CoachMarkKeys>().settingsContactKey,
+          child: _SettingsSection(
+            title: '家人聯絡人',
+            child: _FamilyContactsEditor(profile: profile),
+          ),
         ),
         if (AppConfig.showDevPanels) ...[
           const SizedBox(height: 14),

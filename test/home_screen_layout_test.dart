@@ -17,6 +17,7 @@ import 'package:pet_companion_app/controllers/voice_agent_controller.dart';
 import 'package:pet_companion_app/controllers/wallet_controller.dart';
 import 'package:pet_companion_app/models/conversation_turn.dart';
 import 'package:pet_companion_app/models/source_reference.dart';
+import 'package:pet_companion_app/onboarding/coach_mark_controller.dart';
 import 'package:pet_companion_app/onboarding/coach_mark_keys.dart';
 import 'package:pet_companion_app/screens/home_screen.dart';
 import 'package:pet_companion_app/screens/settings_screen.dart';
@@ -262,6 +263,35 @@ void main() {
     expect(find.text('Companion Debug Panel'), findsNothing);
     expect(find.text('AI Agent 工具測試'), findsNothing);
   });
+
+  testWidgets('設定頁有「重新觀看新手導覽」入口，點擊會 replay 並切回首頁分頁',
+      (tester) async {
+    // 高螢幕，讓設定頁長列表的「重新觀看新手導覽」入口可穩定捲到、點到。
+    await binding.setSurfaceSize(const Size(420, 2400));
+    addTearDown(() => binding.setSurfaceSize(null));
+    final harness = await _HomeHarness.create();
+    addTearDown(harness.dispose);
+    final coachController = CoachMarkController();
+    addTearDown(coachController.dispose);
+    // 先切到設定分頁，驗證點擊後會切回首頁(0)。
+    harness.navigationController.selectShellIndex(3);
+
+    await tester.pumpWidget(_settingsHostWithCoach(harness, coachController));
+    await tester.pumpAndSettle();
+
+    final entry = find.widgetWithText(FilledButton, '重新觀看新手導覽');
+    expect(entry, findsOneWidget);
+    expect(coachController.replayRequested, isFalse);
+
+    await tester.ensureVisible(entry);
+    await tester.pumpAndSettle();
+    await tester.tap(entry);
+    await tester.pump();
+
+    // 點擊後：要求 replay + 切回首頁分頁（CoachMarkHost 會在首頁就緒後開始導覽）。
+    expect(coachController.replayRequested, isTrue);
+    expect(harness.navigationController.currentShellIndex, 0);
+  });
 }
 
 Future<void> _pumpHomeScreen(
@@ -351,6 +381,44 @@ Widget _settingsHost(_HomeHarness harness) {
       Provider<RealtimeVoiceService>.value(
         value: harness.realtimeVoiceService,
       ),
+      Provider<CoachMarkKeys>(create: (_) => CoachMarkKeys()),
+    ],
+    child: const MaterialApp(
+      home: Scaffold(
+        body: SettingsScreen(),
+      ),
+    ),
+  );
+}
+
+/// 設定頁 host，額外提供導覽 controller / 分頁 controller，讓「重新觀看新手導覽」
+/// 入口可被點擊並驗證（CR-0016b）。
+Widget _settingsHostWithCoach(
+  _HomeHarness harness,
+  CoachMarkController coachController,
+) {
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider<ProfileController>.value(
+        value: harness.profileController,
+      ),
+      ChangeNotifierProvider<PetController>.value(
+        value: harness.petController,
+      ),
+      ChangeNotifierProvider<ConversationController>.value(
+        value: harness.conversationController,
+      ),
+      ChangeNotifierProvider<VoiceAgentController>.value(
+        value: harness.voiceAgentController,
+      ),
+      Provider<RealtimeVoiceService>.value(
+        value: harness.realtimeVoiceService,
+      ),
+      ChangeNotifierProvider<AppNavigationController>.value(
+        value: harness.navigationController,
+      ),
+      ChangeNotifierProvider<CoachMarkController>.value(value: coachController),
+      Provider<CoachMarkKeys>(create: (_) => CoachMarkKeys()),
     ],
     child: const MaterialApp(
       home: Scaffold(

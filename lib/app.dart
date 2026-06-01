@@ -629,11 +629,19 @@ class _HomeNavigationBarState extends State<_HomeNavigationBar> {
 
   @override
   Widget build(BuildContext context) {
+    // 把導覽 key 掛在「整條底部列」的外層 KeyedSubtree 上（不論 Flutter
+    // NavigationBar 或 iOS 原生 UiKitView），讓新手導覽都能取得這條列的螢幕框，
+    // 再由 overlay 切出商城 / 紀錄 / 設定那一格高亮（CR-0016b：解決原生列拿不到
+    // 框、底部 tab 不會亮的實機問題）。
+    return KeyedSubtree(
+      key: context.read<CoachMarkKeys>().navBarKey,
+      child: _buildBar(context),
+    );
+  }
+
+  Widget _buildBar(BuildContext context) {
     if (!supportsLiquidGlassHomeBar) {
-      // 掛上導覽用 key，讓新手導覽能高亮底部導覽列（取最右邊的「設定」）。
-      // iOS 原生導覽列（下方 UiKitView）拿不到 Flutter 框，該步驟會降級為置中說明。
       return NavigationBar(
-        key: context.read<CoachMarkKeys>().navBarKey,
         selectedIndex: widget.selectedIndex,
         onDestinationSelected: widget.onDestinationSelected,
         destinations: _destinations,
