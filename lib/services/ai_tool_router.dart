@@ -200,6 +200,7 @@ class AiToolRouter {
     final checkedIn = await checkInController.checkIn(
       walletController: walletController,
       petStatsController: petStatsController,
+      inventoryController: inventoryController,
     );
     await taskController.completeTaskById(
       'dailyCheckIn',

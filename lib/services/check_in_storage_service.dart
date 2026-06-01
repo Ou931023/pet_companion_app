@@ -1,10 +1,14 @@
+import 'dart:convert';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/check_in_record.dart';
+import '../models/daily_reward.dart';
 
 class CheckInStorageService {
   static const _keyCheckInDates = 'checkin.dates';
   static const _keyLastCheckInDate = 'checkin.lastDate';
+  static const _keyRewardPrefix = 'checkin.rewards';
 
   static const String defaultUserId = 'default_user';
 
@@ -39,5 +43,30 @@ class CheckInStorageService {
     } else {
       await prefs.setString(_k(_keyLastCheckInDate), record.lastCheckInDate!);
     }
+  }
+
+  String _rewardKey(int year, int month) =>
+      '$_keyRewardPrefix.$year-${month.toString().padLeft(2, '0')}';
+
+  /// 讀取某帳號某月的獎勵表；沒存過回 null（呼叫端會產生並存回）。
+  Future<MonthlyRewardTable?> loadRewardTable(int year, int month) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_k(_rewardKey(year, month)));
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      return MonthlyRewardTable.fromJson(
+        Map<String, dynamic>.from(jsonDecode(raw) as Map),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveRewardTable(MonthlyRewardTable table) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _k(_rewardKey(table.year, table.month)),
+      jsonEncode(table.toJson()),
+    );
   }
 }
