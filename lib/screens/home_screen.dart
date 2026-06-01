@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/daily_reward.dart';
 import '../onboarding/coach_mark_controller.dart';
 import '../onboarding/coach_mark_keys.dart';
 import '../controllers/check_in_controller.dart';
@@ -426,145 +427,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _openCalendarDialog(
       BuildContext context, CheckInController checkInController) {
-    final now = DateTime.now();
-    final first = DateTime(now.year, now.month, 1);
-    final startWeekday = first.weekday;
-    final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
-
-    String dayKey(int day) =>
-        '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
-
     showDialog<void>(
       context: context,
-      builder: (dialogContext) => AnimatedBuilder(
-        animation: checkInController,
-        builder: (context, _) {
-          // 彈窗寬度約螢幕 90%，高度依內容自適應；內容可捲動避免小螢幕 overflow。
-          final dialogWidth = MediaQuery.sizeOf(context).width * 0.9;
-          return Dialog(
-            insetPadding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: SizedBox(
-              width: dialogWidth,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      '${now.year}年${now.month}月　每日簽到',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 21,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      '每天回來簽到拿金幣，有 🎁 的那天還會多送一個小禮物。',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 16, height: 1.4),
-                    ),
-                    const SizedBox(height: 24),
-                    GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: daysInMonth + startWeekday - 1,
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 7,
-                        mainAxisSpacing: 12,
-                        crossAxisSpacing: 10,
-                        childAspectRatio: 0.78,
-                      ),
-                      itemBuilder: (_, index) {
-                        if (index < startWeekday - 1) {
-                          return const SizedBox.shrink();
-                        }
-                        final day = index - startWeekday + 2;
-                        final checked = checkInController.checkInDates
-                            .contains(dayKey(day));
-                        final isToday = day == now.day;
-                        final reward = checkInController.rewardForDay(day);
-                        return _CalendarDayCell(
-                          day: day,
-                          coins: reward?.coins,
-                          hasGift: reward?.hasGift ?? false,
-                          checked: checked,
-                          isToday: isToday,
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 28),
-                    if (!checkInController.hasCheckedInToday)
-                      SizedBox(
-                        height: 64,
-                        child: FilledButton(
-                          style: FilledButton.styleFrom(
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(32),
-                            ),
-                          ),
-                          onPressed: () async {
-                            final ok = await checkInController.checkIn(
-                              walletController:
-                                  context.read<WalletController>(),
-                              petStatsController:
-                                  context.read<PetStatsController>(),
-                              inventoryController:
-                                  context.read<InventoryController>(),
-                            );
-                            if (!dialogContext.mounted) return;
-                            ScaffoldMessenger.of(dialogContext).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  ok
-                                      ? _checkInSuccessMessage(
-                                          checkInController.lastClaim)
-                                      : '今天已經簽到過囉。',
-                                ),
-                              ),
-                            );
-                          },
-                          child: const Text(
-                            '今天簽到',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      )
-                    else
-                      const Text(
-                        '今天已經簽到完成，明天再來喔！',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      ),
+      builder: (_) => _CheckInCalendarDialog(controller: checkInController),
     );
-  }
-
-  String _checkInSuccessMessage(CheckInClaim? claim) {
-    if (claim == null) return '簽到成功！';
-    final gift = claim.gift;
-    if (gift != null) {
-      return '簽到成功！得到 ${claim.coins} 個金幣，還有一份小禮物：${gift.emoji} ${gift.name}';
-    }
-    return '簽到成功！得到 ${claim.coins} 個金幣';
   }
 
   void _openSkinPicker(BuildContext context) {
@@ -668,86 +534,278 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-/// 簽到日曆的單一日期格：顯示日期、當天金幣、禮物日標記、今日高亮與已領取狀態。
+/// 每日簽到彈窗（乾淨版）。
+///
+/// 月曆格子只放日期；點選某天後，下方顯示「第 X 天獎勵：金幣 N」。
+/// 只負責畫面呈現，簽到 / 獎勵邏輯仍走 [CheckInController]（不改邏輯）。
+class _CheckInCalendarDialog extends StatefulWidget {
+  const _CheckInCalendarDialog({required this.controller});
+
+  final CheckInController controller;
+
+  @override
+  State<_CheckInCalendarDialog> createState() => _CheckInCalendarDialogState();
+}
+
+class _CheckInCalendarDialogState extends State<_CheckInCalendarDialog> {
+  final DateTime _now = DateTime.now();
+  late int _selectedDay = _now.day;
+
+  String _dayKey(int day) =>
+      '${_now.year.toString().padLeft(4, '0')}-${_now.month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: widget.controller,
+      builder: (context, _) {
+        final controller = widget.controller;
+        final first = DateTime(_now.year, _now.month, 1);
+        final startWeekday = first.weekday;
+        final daysInMonth = DateTime(_now.year, _now.month + 1, 0).day;
+        final dialogWidth = MediaQuery.sizeOf(context).width * 0.9;
+        final selectedReward = controller.rewardForDay(_selectedDay);
+
+        return Dialog(
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: SizedBox(
+            width: dialogWidth,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    '${_now.year}年${_now.month}月　每日簽到',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 21,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '點選日期可以看看那天的獎勵。',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 15,
+                      height: 1.4,
+                      color: Colors.black.withValues(alpha: 0.55),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: daysInMonth + startWeekday - 1,
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 7,
+                      mainAxisSpacing: 10,
+                      crossAxisSpacing: 10,
+                      childAspectRatio: 1, // 近正方形，避免文字互相壓住
+                    ),
+                    itemBuilder: (_, index) {
+                      if (index < startWeekday - 1) {
+                        return const SizedBox.shrink();
+                      }
+                      final day = index - startWeekday + 2;
+                      final reward = controller.rewardForDay(day);
+                      return _CalendarDayCell(
+                        day: day,
+                        hasGift: reward?.hasGift ?? false,
+                        checked:
+                            controller.checkInDates.contains(_dayKey(day)),
+                        isToday: day == _now.day,
+                        isSelected: day == _selectedDay,
+                        onTap: () => setState(() => _selectedDay = day),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 24),
+                  _RewardSummary(day: _selectedDay, reward: selectedReward),
+                  const SizedBox(height: 24),
+                  if (!controller.hasCheckedInToday)
+                    SizedBox(
+                      height: 64,
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(32),
+                          ),
+                        ),
+                        onPressed: () => _handleCheckIn(context, controller),
+                        child: const Text(
+                          '今天簽到',
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    const Text(
+                      '今天已經簽到完成，明天再來喔！',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _handleCheckIn(
+    BuildContext context,
+    CheckInController controller,
+  ) async {
+    final ok = await controller.checkIn(
+      walletController: context.read<WalletController>(),
+      petStatsController: context.read<PetStatsController>(),
+      inventoryController: context.read<InventoryController>(),
+    );
+    if (!context.mounted) return;
+    // 簽到後把選取日跳回今天，下方獎勵列同步顯示今天領到的內容。
+    setState(() => _selectedDay = _now.day);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok ? _successMessage(controller.lastClaim) : '今天已經簽到過囉。',
+        ),
+      ),
+    );
+  }
+
+  String _successMessage(CheckInClaim? claim) {
+    if (claim == null) return '簽到成功！';
+    final gift = claim.gift;
+    if (gift != null) {
+      return '簽到成功！得到 ${claim.coins} 個金幣，還有一份小禮物：${gift.emoji} ${gift.name}';
+    }
+    return '簽到成功！得到 ${claim.coins} 個金幣';
+  }
+}
+
+/// 月曆下方的獎勵摘要列：「第 X 天獎勵：金幣 N（＋小禮物）」。
+class _RewardSummary extends StatelessWidget {
+  const _RewardSummary({required this.day, required this.reward});
+
+  final int day;
+  final DailyReward? reward;
+
+  @override
+  Widget build(BuildContext context) {
+    final coinsText = reward != null ? '金幣 ${reward!.coins}' : '—';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.monetization_on, color: Colors.amber.shade700, size: 26),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              '第 $day 天獎勵：$coinsText',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+          ),
+          if (reward?.hasGift ?? false) ...[
+            const SizedBox(width: 8),
+            const Text('🎁', style: TextStyle(fontSize: 22)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 簽到日曆的單一日期格（乾淨版）：只顯示日期；禮物日右上角小 icon、
+/// 已簽到淡綠底＋勾、今天橘色外框、目前選取日淡橘底。
 class _CalendarDayCell extends StatelessWidget {
   const _CalendarDayCell({
     required this.day,
-    required this.coins,
     required this.hasGift,
     required this.checked,
     required this.isToday,
+    required this.isSelected,
+    required this.onTap,
   });
 
   final int day;
-  final int? coins;
   final bool hasGift;
   final bool checked;
   final bool isToday;
+  final bool isSelected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final Color background = checked
         ? Colors.green.shade100
-        : (isToday ? Colors.orange.shade50 : Colors.grey.shade100);
-    // 今日用較粗橘框；外圈留 2px margin，讓框不貼著內容。
+        : (isSelected ? Colors.orange.shade100 : Colors.grey.shade100);
     final Border border = isToday
-        ? Border.all(color: Colors.orange.shade400, width: 2.5)
-        : Border.all(color: Colors.grey.shade200, width: 1);
+        ? Border.all(color: Colors.orange.shade600, width: 2.5)
+        : (isSelected
+            ? Border.all(color: Colors.orange.shade300, width: 2)
+            : Border.all(color: Colors.grey.shade200, width: 1));
 
-    return Container(
-      margin: const EdgeInsets.all(1),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(12),
-        border: border,
-      ),
-      padding: const EdgeInsets.fromLTRB(4, 5, 4, 4),
-      child: Stack(
-        children: [
-          // 日期：上方置中。
-          Align(
-            alignment: Alignment.topCenter,
-            child: Text(
-              '$day',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-                color: checked ? Colors.green.shade900 : Colors.black87,
-              ),
-            ),
-          ),
-          // 金幣：卡片正中央（用 FittedBox 確保窄格也不會被裁切）。
-          if (coins != null)
-            Align(
-              alignment: Alignment.center,
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  '🪙$coins',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(12),
+          border: border,
+        ),
+        child: Stack(
+          children: [
+            // 日期置中（格子裡只有日期，保持乾淨）。
+            Center(
+              child: Text(
+                '$day',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: checked ? Colors.green.shade900 : Colors.black87,
                 ),
               ),
             ),
-          // 禮物：右下角，不壓到中央金幣。
-          if (hasGift)
-            const Align(
-              alignment: Alignment.bottomRight,
-              child: Text('🎁', style: TextStyle(fontSize: 13)),
-            ),
-          // 已領取：左下角小勾，避免和日期 / 禮物重疊。
-          if (checked)
-            Align(
-              alignment: Alignment.bottomLeft,
-              child: Icon(
-                Icons.check_circle,
-                size: 14,
-                color: Colors.green.shade600,
+            // 禮物日：右上角小 icon。
+            if (hasGift)
+              const Positioned(
+                top: 2,
+                right: 3,
+                child: Text('🎁', style: TextStyle(fontSize: 11)),
               ),
-            ),
-        ],
+            // 已簽到：右下角勾勾。
+            if (checked)
+              Positioned(
+                bottom: 1,
+                right: 2,
+                child: Icon(
+                  Icons.check_circle,
+                  size: 13,
+                  color: Colors.green.shade700,
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

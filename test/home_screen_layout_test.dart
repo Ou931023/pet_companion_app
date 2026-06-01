@@ -120,6 +120,16 @@ void main() {
     expect(find.text('今天簽到'), findsOneWidget);
     expect(find.byType(GridView), findsOneWidget);
 
+    // 乾淨版：格子裡不再放金幣（不出現 🪙），金幣只在下方獎勵摘要列。
+    expect(find.textContaining('🪙'), findsNothing);
+    // 預設選取今天，下方顯示「第 X 天獎勵：金幣 N」。
+    expect(find.textContaining('天獎勵：金幣'), findsOneWidget);
+
+    // 點第 4 天（禮物日）→ 下方獎勵摘要切換到第 4 天。
+    await tester.tap(find.text('4'));
+    await tester.pump();
+    expect(find.textContaining('第 4 天獎勵'), findsOneWidget);
+
     // 拆掉 widget 樹，取消 HomeScreen 的動畫 timer（沿用 _pumpHomeScreen 慣例）。
     await tester.pumpWidget(const SizedBox.shrink());
     harness.dispose();
