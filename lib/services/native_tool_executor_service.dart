@@ -15,24 +15,52 @@ typedef UrlLauncherCallback = Future<bool> Function(
   LaunchMode mode,
 );
 
+/// 需要跨子系統（Auth / Shop / Care Alert / 內容）的高影響工具，透過 optional callback
+/// 注入「既有真實流程」，讓 Native Tool 執行層與那些控制器解耦、且方便單元測試。
+/// 這些 callback 對應的工具都是 requiresConfirmation=true，只有在使用者確認後才會被呼叫。
+typedef AgentLogoutCallback = Future<void> Function();
+typedef AgentNotifyCaregiverCallback = Future<bool> Function({
+  required String reason,
+  required String riskLevel,
+});
+typedef AgentPurchaseSkinCallback = Future<bool> Function({
+  required String skinId,
+  required String skinName,
+});
+typedef AgentStoryProvider = Future<String> Function(String topic);
+
 class NativeToolExecutorService {
   NativeToolExecutorService({
     UrlLauncherCallback? launch,
     this.contactLookup,
+    this.onLogout,
+    this.onNotifyCaregiver,
+    this.onPurchaseSkin,
+    this.storyProvider,
   }) : _launch = launch ?? _defaultLaunch;
 
   final UrlLauncherCallback _launch;
   final ContactLookupService? contactLookup;
+  final AgentLogoutCallback? onLogout;
+  final AgentNotifyCaregiverCallback? onNotifyCaregiver;
+  final AgentPurchaseSkinCallback? onPurchaseSkin;
+  final AgentStoryProvider? storyProvider;
 
   static const Set<String> supportedToolNames = {
     'play_music',
     'open_phone_dialer',
+    'send_message',
     'create_email_draft',
     'create_reminder',
     'search_trusted_info',
     'open_app_route',
+    'tell_story',
     'save_memory',
     'retrieve_memory',
+    'notify_caregiver',
+    'delete_memory',
+    'logout',
+    'purchase_pet_skin',
   };
 
   Future<AgentToolExecutionResult> execute({
@@ -52,12 +80,18 @@ class NativeToolExecutorService {
       return await switch (intent.toolName) {
         'play_music' => _playMusic(intent),
         'open_phone_dialer' => _openPhoneDialer(intent),
+        'send_message' => _sendMessage(intent),
         'create_email_draft' => _createEmailDraft(intent),
         'create_reminder' => _createReminder(intent, reminderController),
         'search_trusted_info' => _searchTrustedInfo(intent, searchService),
         'open_app_route' => _openAppRoute(intent, navigationController),
+        'tell_story' => _tellStory(intent),
         'save_memory' => _saveMemory(intent, memoryController),
         'retrieve_memory' => _retrieveMemory(intent, memoryController),
+        'notify_caregiver' => _notifyCaregiver(intent),
+        'delete_memory' => _deleteMemory(intent, memoryController),
+        'logout' => _logout(intent),
+        'purchase_pet_skin' => _purchaseSkin(intent),
         _ => Future.value(AgentToolExecutionResult.failed(
             toolName: intent.toolName,
             message: '不支援的工具，已拒絕執行。',
@@ -115,6 +149,39 @@ class NativeToolExecutorService {
         : AgentToolExecutionResult.failed(
             toolName: intent.toolName,
             message: '目前無法開啟撥號畫面。',
+          );
+  }
+
+  /// 傳訊息：開啟系統簡訊 App 並預填收件人與內容，**不自動送出**（使用者在簡訊
+  /// App 內再按送出）。此工具 requiresConfirmation=true，已在確認後才到這裡。
+  Future<AgentToolExecutionResult> _sendMessage(AgentToolIntent intent) async {
+    var phoneNumber = _stringArg(intent, 'phoneNumber');
+    if (phoneNumber.isEmpty && contactLookup != null) {
+      final contactName = _stringArg(intent, 'contactName',
+          fallback: _stringArg(intent, 'recipient'));
+      if (contactName.isNotEmpty) {
+        final resolved = await contactLookup!.lookupPhoneNumber(contactName);
+        if (resolved != null && resolved.isNotEmpty) phoneNumber = resolved;
+      }
+    }
+    final body = _stringArg(intent, 'body');
+    final uri = Uri(
+      scheme: 'sms',
+      path: phoneNumber,
+      queryParameters: body.isEmpty ? null : {'body': body},
+    );
+    final ok = await _launch(uri, LaunchMode.externalApplication);
+    return ok
+        ? AgentToolExecutionResult.succeeded(
+            toolName: intent.toolName,
+            message: phoneNumber.isEmpty
+                ? '已幫你開啟訊息，請選擇收件人再送出。'
+                : '已幫你準備好訊息，確認後再送出就可以了。',
+            data: {'body': body},
+          )
+        : AgentToolExecutionResult.failed(
+            toolName: intent.toolName,
+            message: '目前無法開啟訊息。',
           );
   }
 
@@ -238,6 +305,95 @@ class NativeToolExecutorService {
       message: summary.isEmpty ? '目前沒有找到相關記憶。' : summary,
       data: context ?? const {},
     );
+  }
+
+  /// 說故事：低風險、直接執行。沿用既有內容服務（storyProvider）；在 Realtime 語音
+  /// 流程中，寵物本身也會把故事說出來，這裡回傳的文字供文字泡泡 / 字幕顯示。
+  Future<AgentToolExecutionResult> _tellStory(AgentToolIntent intent) async {
+    final topic = _stringArg(intent, 'topic');
+    final story = storyProvider == null ? '' : await storyProvider!(topic);
+    return AgentToolExecutionResult.succeeded(
+      toolName: intent.toolName,
+      message: story.isNotEmpty ? story : '好，我說一個小故事陪你。',
+      data: {'topic': topic},
+    );
+  }
+
+  /// 通知照護人員：高影響、需確認。沿用既有 Care Alert 通知流程（透過注入的
+  /// onNotifyCaregiver callback，內部呼叫既有 /api/care-alerts/notify），不另開新流程。
+  Future<AgentToolExecutionResult> _notifyCaregiver(
+    AgentToolIntent intent,
+  ) async {
+    final notify = onNotifyCaregiver;
+    if (notify == null) {
+      return AgentToolExecutionResult.failed(
+        toolName: intent.toolName,
+        message: '目前無法通知照護人員，待會再試一次好嗎？',
+      );
+    }
+    final reason = _stringArg(intent, 'reason', fallback: '長者希望聯絡照護人員');
+    final riskLevel = _stringArg(intent, 'riskLevel', fallback: 'high');
+    final ok = await notify(reason: reason, riskLevel: riskLevel);
+    return ok
+        ? AgentToolExecutionResult.succeeded(
+            toolName: intent.toolName,
+            message: '我已經通知照護人員了，他們會留意你的狀況。',
+          )
+        : AgentToolExecutionResult.failed(
+            toolName: intent.toolName,
+            message: '通知沒有送出去，待會再試一次好嗎？',
+          );
+  }
+
+  /// 刪除記憶：高影響、需確認。沿用既有 MemoryService（forgetRecentMemory）。
+  Future<AgentToolExecutionResult> _deleteMemory(
+    AgentToolIntent intent,
+    MemoryController memoryController,
+  ) async {
+    await memoryController.forgetRecentMemory();
+    return AgentToolExecutionResult.succeeded(
+      toolName: intent.toolName,
+      message: '好，我把最近記住的那件事刪掉了。',
+    );
+  }
+
+  /// 登出：高影響、需確認。沿用既有 AuthController.logout（透過注入的 onLogout）。
+  Future<AgentToolExecutionResult> _logout(AgentToolIntent intent) async {
+    final logout = onLogout;
+    if (logout == null) {
+      return AgentToolExecutionResult.failed(
+        toolName: intent.toolName,
+        message: '目前無法登出，待會再試一次好嗎？',
+      );
+    }
+    await logout();
+    return AgentToolExecutionResult.succeeded(
+      toolName: intent.toolName,
+      message: '已經幫你登出了。',
+    );
+  }
+
+  /// 購買寵物造型：高影響、需確認。沿用既有錢包 / 商城流程（透過注入的 onPurchaseSkin）。
+  Future<AgentToolExecutionResult> _purchaseSkin(AgentToolIntent intent) async {
+    final purchase = onPurchaseSkin;
+    if (purchase == null) {
+      return AgentToolExecutionResult.failed(
+        toolName: intent.toolName,
+        message: '購買要在商城裡完成，我帶你過去看看好嗎？',
+      );
+    }
+    final skinId = _stringArg(intent, 'skinId');
+    final skinName = _stringArg(intent, 'skinName', fallback: '新造型');
+    final ok = await purchase(skinId: skinId, skinName: skinName);
+    return ok
+        ? AgentToolExecutionResult.succeeded(
+            toolName: intent.toolName,
+            message: '買好囉，幫你換上$skinName。',
+          )
+        : AgentToolExecutionResult.failed(
+            toolName: intent.toolName,
+            message: '金幣好像不太夠，這個造型先幫你留著。',
+          );
   }
 
   String _stringArg(

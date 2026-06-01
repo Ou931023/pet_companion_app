@@ -120,6 +120,130 @@ void main() {
     expect(result.success, isTrue, reason: result.message);
     expect(navigation.currentShellRoute, AppRoute.shop);
   });
+
+  test('send_message opens sms scheme with body, does not auto-send', () async {
+    Uri? launched;
+    final service = NativeToolExecutorService(
+      launch: (uri, mode) async {
+        launched = uri;
+        return true;
+      },
+    );
+    final result = await service.execute(
+      intent: _intent(
+        'send_message',
+        riskLevel: AgentToolRiskLevel.high,
+        requiresConfirmation: true,
+        arguments: {'phoneNumber': '0912345678', 'body': '我今天很好'},
+      ),
+      reminderController: _FakeReminderController(),
+      searchService: SearchService(),
+      navigationController: AppNavigationController(),
+      memoryController: _memoryController(),
+    );
+
+    expect(result.success, isTrue, reason: result.message);
+    expect(launched?.scheme, 'sms');
+    expect(launched?.path, '0912345678');
+    expect(launched?.queryParameters['body'], '我今天很好');
+  });
+
+  test('logout delegates to injected onLogout callback', () async {
+    var loggedOut = false;
+    final service = NativeToolExecutorService(
+      launch: (_, __) async => true,
+      onLogout: () async {
+        loggedOut = true;
+      },
+    );
+    final result = await service.execute(
+      intent: _intent('logout',
+          riskLevel: AgentToolRiskLevel.high, requiresConfirmation: true),
+      reminderController: _FakeReminderController(),
+      searchService: SearchService(),
+      navigationController: AppNavigationController(),
+      memoryController: _memoryController(),
+    );
+
+    expect(loggedOut, isTrue);
+    expect(result.success, isTrue, reason: result.message);
+  });
+
+  test('notify_caregiver delegates to injected callback (reuses care alert)',
+      () async {
+    String? capturedReason;
+    final service = NativeToolExecutorService(
+      launch: (_, __) async => true,
+      onNotifyCaregiver: ({required reason, required riskLevel}) async {
+        capturedReason = reason;
+        return true;
+      },
+    );
+    final result = await service.execute(
+      intent: _intent(
+        'notify_caregiver',
+        riskLevel: AgentToolRiskLevel.high,
+        requiresConfirmation: true,
+        arguments: {'reason': '長者覺得不太舒服', 'riskLevel': 'high'},
+      ),
+      reminderController: _FakeReminderController(),
+      searchService: SearchService(),
+      navigationController: AppNavigationController(),
+      memoryController: _memoryController(),
+    );
+
+    expect(capturedReason, '長者覺得不太舒服');
+    expect(result.success, isTrue, reason: result.message);
+  });
+
+  test('delete_memory delegates to memory controller forgetRecent', () async {
+    final memory = _SpyMemoryController();
+    final service = NativeToolExecutorService(launch: (_, __) async => true);
+    final result = await service.execute(
+      intent: _intent('delete_memory',
+          riskLevel: AgentToolRiskLevel.high, requiresConfirmation: true),
+      reminderController: _FakeReminderController(),
+      searchService: SearchService(),
+      navigationController: AppNavigationController(),
+      memoryController: memory,
+    );
+
+    expect(memory.forgetCalled, isTrue);
+    expect(result.success, isTrue, reason: result.message);
+  });
+
+  test('tell_story returns story from provider', () async {
+    final service = NativeToolExecutorService(
+      launch: (_, __) async => true,
+      storyProvider: (topic) async => '從前從前有一隻小狗…',
+    );
+    final result = await service.execute(
+      intent: _intent('tell_story', arguments: {'topic': '小狗'}),
+      reminderController: _FakeReminderController(),
+      searchService: SearchService(),
+      navigationController: AppNavigationController(),
+      memoryController: _memoryController(),
+    );
+
+    expect(result.success, isTrue, reason: result.message);
+    expect(result.message, contains('小狗'));
+  });
+
+  test('purchase_pet_skin without wiring returns honest shop message (no fake success)',
+      () async {
+    final service = NativeToolExecutorService(launch: (_, __) async => true);
+    final result = await service.execute(
+      intent: _intent('purchase_pet_skin',
+          riskLevel: AgentToolRiskLevel.high, requiresConfirmation: true),
+      reminderController: _FakeReminderController(),
+      searchService: SearchService(),
+      navigationController: AppNavigationController(),
+      memoryController: _memoryController(),
+    );
+
+    expect(result.success, isFalse);
+    expect(result.message, contains('商城'));
+  });
 }
 
 AgentToolIntent _intent(
@@ -156,6 +280,17 @@ class _ThrowingReminderController extends ReminderController {
   @override
   Future<Reminder?> createFromVoice(String text) async {
     throw Exception('secret-stack-detail');
+  }
+}
+
+class _SpyMemoryController extends MemoryController {
+  _SpyMemoryController() : super(MemoryService());
+
+  bool forgetCalled = false;
+
+  @override
+  Future<void> forgetRecentMemory() async {
+    forgetCalled = true;
   }
 }
 

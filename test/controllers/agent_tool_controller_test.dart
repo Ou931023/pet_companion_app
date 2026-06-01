@@ -17,7 +17,7 @@ import 'package:pet_companion_app/services/search_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  test('high risk intent now also executes automatically without confirmation',
+  test('high impact intent waits for confirmation (does NOT auto-execute)',
       () async {
     final harness = await _Harness.create(
       router: _FakeRouter(
@@ -41,6 +41,40 @@ void main() {
       emotion: 'neutral',
       languageHint: 'zh-TW',
     );
+
+    // 高影響操作：不自動執行，保留 pending 等使用者確認。
+    expect(harness.executor.executedCount, 0);
+    expect(harness.controller.pendingIntent, isNotNull);
+    expect(harness.controller.pendingIntent!.requiresConfirmation, isTrue);
+    expect(harness.controller.executionResult, isNull);
+  });
+
+  test('high impact intent executes after explicit confirmation', () async {
+    final harness = await _Harness.create(
+      router: _FakeRouter(
+        AgentRouteResult(
+          hasToolIntent: true,
+          intent: _intent(
+            'open_phone_dialer',
+            riskLevel: AgentToolRiskLevel.high,
+            requiresConfirmation: true,
+          ),
+        ),
+      ),
+    );
+    addTearDown(harness.dispose);
+
+    await harness.controller.routeFromUserText(
+      '幫我打給女兒',
+      sessionId: 's',
+      turnId: 't',
+      petName: '小伴',
+      emotion: 'neutral',
+      languageHint: 'zh-TW',
+    );
+    expect(harness.executor.executedCount, 0);
+
+    await harness.controller.confirmAndExecute();
 
     expect(harness.executor.executedCount, 1);
     expect(harness.controller.executionResult?.success, isTrue);

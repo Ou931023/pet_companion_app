@@ -74,10 +74,19 @@ class AgentToolController extends ChangeNotifier {
             result.errorMessage.isEmpty ? null : result.errorMessage;
         return;
       }
-      _pendingIntent = result.intent;
+      final intent = result.intent!;
+      _pendingIntent = intent;
       _executionResult = null;
-      // Auto-execute every intent regardless of risk level — the pet is meant
-      // to act as an agent that just gets things done without prompts.
+      // 輪次控制 / 安全閘門：
+      // - 低風險操作（create_reminder / play_music / navigate / tell_story /
+      //   save_memory / retrieve_memory…）直接執行，不打斷使用者。
+      // - 高影響操作（make_call / send_message / notify_caregiver /
+      //   delete_memory / logout / purchase_pet_skin…）保留為 pending，等使用者
+      //   明確確認（confirmAndExecute）後才執行，絕不自動執行。
+      //   pendingIntent.userFacingMessage 即白話確認問句，供確認 UI / 寵物語音使用。
+      if (intent.requiresConfirmation) {
+        return;
+      }
       await _executeCurrentIntent();
     } catch (error) {
       _errorMessage = error.toString();
