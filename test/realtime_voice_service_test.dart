@@ -157,7 +157,8 @@ void main() {
       service.dispose();
     });
 
-    test('response done emits assistant text and returns to listening',
+    test(
+        'response done emits assistant text + done/audioEnd，turn-based 不再強制回 listening',
         () async {
       final service = RealtimeVoiceService();
       final events = <RealtimeVoiceEvent>[];
@@ -188,10 +189,18 @@ void main() {
         isTrue,
       );
       expect(
-        events
-            .lastWhere((event) => event.type == RealtimeEventType.state)
-            .payload,
-        'listening',
+        events.any(
+          (event) => event.type == RealtimeEventType.assistantAudioEnd,
+        ),
+        isTrue,
+      );
+      // Turn-based：response.done 之後不應再自動送出 state=listening，
+      // 由 controller 收回 idle，等使用者再次按鈕。
+      expect(
+        events.where((event) =>
+            event.type == RealtimeEventType.state &&
+            event.payload == 'listening'),
+        isEmpty,
       );
 
       await sub.cancel();
@@ -386,6 +395,56 @@ void main() {
         userId: 'user-1',
       );
       expect(attempts, 4);
+
+      service.dispose();
+    });
+
+    test('sendUserText injects conversation item then triggers response',
+        () async {
+      final sentPayloads = <String>[];
+      final service = RealtimeVoiceService(
+        eventSenderForTesting: (payload) async {
+          sentPayloads.add(payload);
+        },
+      );
+      service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
+      await pumpEventQueue();
+
+      await service.sendUserText('  今天有點累  ');
+      await pumpEventQueue();
+
+      expect(sentPayloads, hasLength(2));
+
+      final itemEvent = jsonDecode(sentPayloads[0]) as Map<String, dynamic>;
+      expect(itemEvent['type'], 'conversation.item.create');
+      final item = itemEvent['item'] as Map<String, dynamic>;
+      expect(item['type'], 'message');
+      expect(item['role'], 'user');
+      final content = item['content'] as List;
+      final part = content.single as Map<String, dynamic>;
+      expect(part['type'], 'input_text');
+      expect(part['text'], '今天有點累');
+
+      final responseEvent = jsonDecode(sentPayloads[1]) as Map<String, dynamic>;
+      expect(responseEvent['type'], 'response.create');
+
+      service.dispose();
+    });
+
+    test('sendUserText ignores empty or whitespace text', () async {
+      final sentPayloads = <String>[];
+      final service = RealtimeVoiceService(
+        eventSenderForTesting: (payload) async {
+          sentPayloads.add(payload);
+        },
+      );
+      service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
+      await pumpEventQueue();
+
+      await service.sendUserText('   ');
+      await pumpEventQueue();
+
+      expect(sentPayloads, isEmpty);
 
       service.dispose();
     });

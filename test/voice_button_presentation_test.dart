@@ -8,21 +8,21 @@ void main() {
     String label(VoiceAgentState state, {bool taigi = false}) =>
         realtimeVoiceButtonLabel(state, petName: '咕咕', taigiRealtime: taigi);
 
-    test('idle：可以開始說話', () {
-      expect(label(VoiceAgentState.idle), '想聊天就點我');
+    test('idle：按住說話', () {
+      expect(label(VoiceAgentState.idle), '按住說話');
     });
 
     test('idle 台語模式：顯示台語邀請', () {
-      expect(label(VoiceAgentState.idle, taigi: true), '用台語跟我聊聊');
+      expect(label(VoiceAgentState.idle, taigi: true), '用台語按住說話');
     });
 
     test('connecting：連線中提示', () {
       expect(label(VoiceAgentState.connecting), '正在連線，馬上就好');
     });
 
-    test('listening：待命聆聽，使用者可開口', () {
-      expect(label(VoiceAgentState.listening), '我在聽，你說');
-      expect(label(VoiceAgentState.ready), '我在聽，你說');
+    test('listening：正在聽你說這一句', () {
+      expect(label(VoiceAgentState.listening), '正在聽你說');
+      expect(label(VoiceAgentState.ready), '正在聽你說');
     });
 
     test('transcribing：正在把使用者的話轉文字', () {
@@ -30,11 +30,11 @@ void main() {
     });
 
     test('thinking：寵物正在想（帶寵物名字）', () {
-      expect(label(VoiceAgentState.thinking), '咕咕正在想，等一下');
+      expect(label(VoiceAgentState.thinking), '咕咕想一下');
     });
 
-    test('speaking：寵物正在說，並提示可點按鈕換自己說', () {
-      expect(label(VoiceAgentState.speaking), '咕咕正在說，想說話點我');
+    test('speaking：寵物正在說話（不可打斷，先聽完）', () {
+      expect(label(VoiceAgentState.speaking), '咕咕正在說話');
     });
 
     test('recovering：重新連線中', () {
@@ -42,26 +42,35 @@ void main() {
     });
 
     test('error：可重試', () {
-      expect(label(VoiceAgentState.error), '連線怪怪的，點我再試一次');
+      expect(label(VoiceAgentState.error), '再試一次');
     });
 
-    test('沒有任何工程字 / debug 字樣', () {
+    test('沒有任何工程字 / debug 字樣（state/realtime/session/VAD …）', () {
       for (final state in VoiceAgentState.values) {
         final text = label(state);
         expect(text, isNotEmpty);
-        expect(text.toLowerCase(), isNot(contains('error')));
-        expect(text.toLowerCase(), isNot(contains('state')));
+        final lower = text.toLowerCase();
+        for (final banned in [
+          'error',
+          'state',
+          'realtime',
+          'session',
+          'response.cancel',
+          'vad',
+        ]) {
+          expect(lower, isNot(contains(banned)));
+        }
         expect(text, isNot(contains('null')));
       }
     });
 
-    test('寵物名字為空時退回「我」，不會出現空字串拼接', () {
+    test('寵物名字為空時退回「咕咕」，不會出現空字串拼接', () {
       final text = realtimeVoiceButtonLabel(
         VoiceAgentState.speaking,
         petName: '   ',
         taigiRealtime: false,
       );
-      expect(text, '我正在說，想說話點我');
+      expect(text, '咕咕正在說話');
     });
   });
 }

@@ -139,6 +139,20 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   bool get isAwaitingUserSpeech =>
       _state == VoiceAgentState.ready ||
       _state == VoiceAgentState.listening;
+
+  /// Turn-based：是否已經在處理某一輪的寵物回覆（已收下使用者這句、正在生成 / 播放回覆）。
+  ///
+  /// 用來在「寵物回覆中」阻擋後續使用者語音事件與 server VAD 觸發的 listening /
+  /// transcribing 狀態切換。刻意用 [_activeTurnId] 是否已設定（而不是 thinking 狀態）
+  /// 來判斷：因為「使用者剛說完、final transcript 還沒被收下」的那一刻 server 也會送
+  /// thinking，但那一句必須被正常處理，不能誤擋。一旦 final transcript 收下（turnId
+  /// 設定）或寵物已在 speaking，才視為這一輪回覆進行中。
+  bool get _petReplyInProgress =>
+      _activeTurnId.isNotEmpty || _state == VoiceAgentState.speaking;
+
+  /// Turn-based：目前是否已有一條可用的 Realtime 連線（寵物說完回到 idle 後仍保留）。
+  /// 用來判斷「按鈕」要開新 session 重連，或只是同一條連線開始下一句。
+  bool get hasOpenRealtimeSession => realtimeVoiceService.isConnectionUsable;
   RealtimeFailureType get lastFailureType =>
       realtimeVoiceService.lastFailureType;
   String get backendHealthMessage {
@@ -151,6 +165,17 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> startRealtimeConversation() async {
     _userRequestedRealtime = true;
+    // Turn-based：上一句寵物說完後回到 idle，但同一條 Realtime 連線仍在。
+    // 此時再次按鈕＝開始「下一句」：只恢復麥克風 + 重新待命聆聽，
+    // **不重連、不重建 SDP、不另開 session**，維持對話脈絡連續。
+    if (_state == VoiceAgentState.idle &&
+        !_isConnecting &&
+        realtimeVoiceService.isConnectionUsable) {
+      realtimeVoiceService.resumeMicInput();
+      await realtimeVoiceService.startListening();
+      _transition(VoiceAgentState.listening, 'turn_based_next_turn');
+      return;
+    }
     if (_isConnecting || realtimeVoiceService.isConnecting) {
       return;
     }
@@ -314,32 +339,32 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     petController.setMessage('我先在旁邊陪你。想不到要聊什麼也沒關係，要不要跟我說說今天最舒服的一刻？');
   }
 
-  /// 使用者在寵物還在回覆（thinking / speaking）時，主動按下語音鈕表示「換我先講」。
+  /// Turn-based：寵物回覆中（thinking / speaking）**不可被打斷**。
   ///
-  /// 維持同一個 Realtime session：送出 `response.cancel` 中斷寵物正在播的語音、
-  /// 放掉這一輪未完成的回覆，回到 listening 讓 server VAD 直接接住使用者接下來說的話。
-  /// 不重連、不 mock、不碰 Realtime SDP / WebRTC 主流程。
+  /// 為了讓長者陪伴對話穩定（咳嗽、嗯一聲、背景音都不該中斷寵物），這裡一律
+  /// 不動作、不送 `response.cancel`、不改狀態，回傳 `false` 代表「沒有打斷」。
+  /// 使用者要說下一句，必須等寵物說完、回到 idle 後再按一次語音按鈕。
   ///
-  /// 回傳值：`true` 代表已成功打斷並交回話語權；`false` 代表目前不是寵物回覆中
-  /// （非 thinking/speaking）或連線不可用，沒有任何打斷動作。
+  /// 保留此方法只為相容既有呼叫點與測試；不再從 UI 觸發打斷。
   Future<bool> interruptPetForUserTurn() async {
-    if (!isPetResponding) return false;
-    if (!realtimeVoiceService.isConnectionUsable) {
-      _handleRealtimeRecoverableFailure('barge_in_connection_unusable');
-      return false;
-    }
-    debugPrint('[VOICE_TURN] user barge-in while pet responding');
-    // 略過這個被取消回覆隨後 response.done 可能帶出的（半截）assistant 文字，
-    // 避免打斷後還跳出一段沒講完的氣泡。沿用既有 navigation intent 的相同機制。
-    _skipNextAssistantText = true;
-    await realtimeVoiceService.cancelResponse();
-    _clearCurrentTurn();
-    _transition(VoiceAgentState.listening, 'user_barge_in');
-    petController.setMode(PetMode.listening);
-    return true;
+    debugPrint('[VOICE_TURN] barge-in disabled (turn-based); pet finishes first');
+    return false;
   }
 
   void _handleRealtimeEvent(RealtimeVoiceEvent event) {
+    // Turn-based 防護：寵物這一輪回覆進行中時，一律忽略使用者語音相關事件。
+    // 麥克風雖已暫停，這裡再做一層阻擋，確保任何殘留的咳嗽 / 雜音 event 都不會
+    // 觸發下一輪輸入或打斷寵物（即使技術上無法完全關閉 mic 也安全）。
+    if (_petReplyInProgress &&
+        (event.type == RealtimeEventType.userSpeechStarted ||
+            event.type == RealtimeEventType.userSpeechStopped ||
+            event.type == RealtimeEventType.partialTranscript ||
+            event.type == RealtimeEventType.finalTranscript)) {
+      debugPrint(
+        '[VOICE_TURN] ignore user speech event ${event.type.name} while pet reply in progress',
+      );
+      return;
+    }
     switch (event.type) {
       case RealtimeEventType.state:
         _applyStateFromPayload(event.payload);
@@ -392,14 +417,8 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
           );
           return;
         }
-        _transition(
-          VoiceAgentState.listening,
-          'realtime_response_done',
-          turnId: _responseTurnId,
-        );
-        _turnCoordinator.clearActiveTurn(_responseTurnId);
-        _activeTurnId = '';
-        _responseTurnId = '';
+        // Turn-based：寵物這一輪結束 → 回 idle（不是 listening），等使用者再按一次。
+        _finishPetTurn('realtime_response_done');
         break;
       case RealtimeEventType.assistantText:
         if (_skipNextAssistantText) {
@@ -441,11 +460,8 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
         break;
       case RealtimeEventType.assistantAudioEnd:
         _cancelTimeout(RealtimeTimeoutType.responseTimeout);
-        _transition(
-          VoiceAgentState.listening,
-          'speaking_completed',
-          turnId: _responseTurnId,
-        );
+        // Turn-based：寵物語音播放完成 → 回 idle，使用者要說下一句須再按一次。
+        _finishPetTurn('speaking_completed');
         break;
       case RealtimeEventType.dataChannelOpen:
         _cancelTimeout(RealtimeTimeoutType.connectionTimeout);
@@ -479,6 +495,17 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       'recovering' => VoiceAgentState.recovering,
       _ => VoiceAgentState.idle,
     };
+    // Turn-based：寵物回覆進行中時，server VAD 因使用者出聲而送來的
+    // listening / transcribing 一律忽略——不讓咳嗽 / 雜音把寵物從回覆中拉走。
+    // （寵物自身的 thinking / speaking 狀態事件不受影響，照常套用。）
+    if (_petReplyInProgress &&
+        (mapped == VoiceAgentState.listening ||
+            mapped == VoiceAgentState.transcribing)) {
+      debugPrint(
+        '[VOICE_TURN] ignore VAD state=$value while pet reply in progress',
+      );
+      return;
+    }
     if (mapped == VoiceAgentState.ready ||
         mapped == VoiceAgentState.listening) {
       _cancelTimeout(RealtimeTimeoutType.connectionTimeout);
@@ -932,7 +959,9 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       conversationController.showPetBubbleMessage(fallback);
     }
     _clearCurrentTurn();
-    _transition(plan.targetState, plan.reason);
+    // Turn-based：寵物這一輪沒有及時回覆 → 顯示白話 fallback 後回到 idle，
+    // 不自動回 listening，由使用者決定要不要再按一次重講。
+    _finishPetTurn(plan.reason);
   }
 
   void _clearCurrentTurn() {
@@ -946,6 +975,23 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     _turnCoordinator.reset();
     _cancelTurnTimeouts();
     conversationController.clearRealtimeTranscriptState();
+  }
+
+  /// Turn-based：寵物這一輪（思考 + 說話）結束的收尾。
+  ///
+  /// 暫停麥克風、清掉這一輪的 turn 狀態、回到 **idle**（不是 listening），保留同一條
+  /// Realtime 連線。使用者要說下一句，必須再次按語音按鈕（走 [startRealtimeConversation]
+  /// 的「下一句」分支）。對 `assistantAudioEnd` 與 `assistantResponseDone` 都呼叫，
+  /// 具冪等性：已在 idle 就不重複處理（避免兩個事件先後到達時互相覆蓋）。
+  void _finishPetTurn(String reason) {
+    if (_state == VoiceAgentState.idle) return;
+    _cancelTimeout(RealtimeTimeoutType.responseTimeout);
+    _turnCoordinator.clearActiveTurn(_responseTurnId);
+    _activeTurnId = '';
+    _responseTurnId = '';
+    _partialTranscript = '';
+    realtimeVoiceService.pauseMicInput();
+    _transition(VoiceAgentState.idle, reason);
   }
 
   bool _isActiveTurn(String turnId) {
@@ -974,29 +1020,42 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
         _petExpression = 'listening';
         _petAction = 'listen';
         petController.setMode(PetMode.listening);
+        // Turn-based：開始聽使用者這一句 → 開啟麥克風。
+        realtimeVoiceService.resumeMicInput();
         break;
       case VoiceAgentState.thinking:
         _petExpression = 'thinking';
         _petAction = 'idle';
         petController.setMode(PetMode.thinking);
+        // Turn-based：寵物開始回覆 → 關閉麥克風，避免雜音被當成新一輪。
+        realtimeVoiceService.pauseMicInput();
         break;
       case VoiceAgentState.transcribing:
         _petExpression = 'listening';
         _petAction = 'listen';
         petController.setMode(PetMode.listening);
+        realtimeVoiceService.resumeMicInput();
         break;
       case VoiceAgentState.speaking:
         _petExpression = 'speaking';
         _petAction = 'speak';
         petController.setMode(PetMode.talking, isSpeaking: true);
+        // Turn-based：寵物說話中 → 維持麥克風關閉，咳嗽 / 背景音都不打斷。
+        realtimeVoiceService.pauseMicInput();
         break;
       case VoiceAgentState.recovering:
         petController.setMode(PetMode.thinking);
+        realtimeVoiceService.pauseMicInput();
         break;
       case VoiceAgentState.error:
         petController.setMode(PetMode.sad);
+        realtimeVoiceService.pauseMicInput();
         break;
       case VoiceAgentState.idle:
+        // Turn-based：回到 idle（不論是寵物說完，或手動停止）→ 關閉麥克風待命，
+        // 等使用者再次按鈕才開始下一句。
+        realtimeVoiceService.pauseMicInput();
+        break;
       case VoiceAgentState.connecting:
       case VoiceAgentState.ready:
         // Keep current pet state during transition.

@@ -98,7 +98,8 @@ void main() {
     harness.dispose();
   });
 
-  test('寵物說話完成後維持連續 session，回到 listening（非 idle）；speaking 時不能重複開始', () async {
+  test('Turn-based：寵物說話完成後保留連線但回到 idle（非 listening）；speaking 時不能重複開始',
+      () async {
     final harness = await _Harness.create(_intent('play_music'));
     await harness.connect();
 
@@ -113,7 +114,9 @@ void main() {
 
     harness.realtime.handleDataChannelEventForTest('{"type":"response.done"}');
     await pumpEventQueue();
-    expect(harness.controller.state, VoiceAgentState.listening);
+    // 一人一句：寵物講完回到 idle，等使用者再按一次才開始下一句。
+    expect(harness.controller.state, VoiceAgentState.idle);
+    expect(harness.controller.canStartVoiceInput, isTrue);
 
     harness.dispose();
   });

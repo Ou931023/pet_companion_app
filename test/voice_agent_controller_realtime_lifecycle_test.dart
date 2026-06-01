@@ -283,12 +283,13 @@ void main() {
     await pumpEventQueue();
 
     expect(harness.conversationController.latestReply, '聽你這樣說我也很開心。');
-    expect(harness.controller.state, VoiceAgentState.listening);
+    // Turn-based：寵物回覆結束 → 回 idle（不是 listening），等使用者再按一次。
+    expect(harness.controller.state, VoiceAgentState.idle);
 
     harness.dispose();
   });
 
-  test('response timeout returns to listening', () async {
+  test('response timeout 後回到 idle（turn-based，不自動 listening）', () async {
     final realtimeService = RealtimeVoiceService(
       healthCheckImplementationForTesting: (_) async => _healthyBackend(),
       connectImplementationForTesting: (_) async {},
@@ -306,12 +307,12 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 30));
     await pumpEventQueue();
 
-    expect(harness.controller.state, VoiceAgentState.listening);
+    expect(harness.controller.state, VoiceAgentState.idle);
 
     harness.dispose();
   });
 
-  group('語音輪次控制（連續 session + UI 閘門）', () {
+  group('語音輪次控制（turn-based 一人一句 + mic 閘門）', () {
     test('idle 可以開始語音；連線後進入 listening 並標記為不可再次開始', () async {
       var attempts = 0;
       final service = RealtimeVoiceService(
@@ -404,7 +405,7 @@ void main() {
       harness.dispose();
     });
 
-    test('speaking 播放完成後回到 listening（連續 session 保持，可繼續說）', () async {
+    test('speaking 播放完成後回到 idle（turn-based，麥克風關閉、需再按一次）', () async {
       final service = RealtimeVoiceService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {},
@@ -412,16 +413,70 @@ void main() {
       final harness = await _VoiceControllerHarness.create(service);
       await _reachSpeaking(harness, service);
       expect(harness.controller.state, VoiceAgentState.speaking);
+      // 寵物說話時麥克風關閉，咳嗽 / 雜音不會被當成新一輪。
+      expect(service.isMicEnabled, isFalse);
 
       service.handleDataChannelEventForTest('{"type":"response.done"}');
       await pumpEventQueue();
 
-      expect(harness.controller.state, VoiceAgentState.listening);
+      // 回 idle（不是 listening），麥克風維持關閉，可再次開始下一句。
+      expect(harness.controller.state, VoiceAgentState.idle);
+      expect(service.isMicEnabled, isFalse);
+      expect(harness.controller.canStartVoiceInput, isTrue);
 
       harness.dispose();
     });
 
-    test('speaking 時按語音鈕打斷寵物 → 送出 response.cancel 並回到 listening', () async {
+    test('response.done 同時帶 done + audioEnd 兩個結束事件，冪等收斂在 idle（不回 listening）',
+        () async {
+      final service = RealtimeVoiceService(
+        healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+        connectImplementationForTesting: (_) async {},
+      );
+      final harness = await _VoiceControllerHarness.create(service);
+      await _reachSpeaking(harness, service);
+
+      // response.done 會先後送出 assistantResponseDone 與 assistantAudioEnd，
+      // 兩者都收尾到 idle；確認不會互相覆蓋、也不會被任何殘留事件拉回 listening。
+      service.handleDataChannelEventForTest('{"type":"response.done"}');
+      await pumpEventQueue();
+      expect(harness.controller.state, VoiceAgentState.idle);
+
+      // 再多 pump 幾次，確認沒有延遲的自動 listening。
+      await pumpEventQueue();
+      expect(harness.controller.state, VoiceAgentState.idle);
+
+      harness.dispose();
+    });
+
+    test('idle 後再按一次 → 同一條連線開始下一句（不重連），回到 listening', () async {
+      var attempts = 0;
+      final service = RealtimeVoiceService(
+        healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+        connectImplementationForTesting: (_) async {
+          attempts += 1;
+        },
+      );
+      final harness = await _VoiceControllerHarness.create(service);
+      await _reachSpeaking(harness, service);
+      service.handleDataChannelEventForTest('{"type":"response.done"}');
+      await pumpEventQueue();
+      expect(harness.controller.state, VoiceAgentState.idle);
+      expect(attempts, 1);
+
+      // 再按一次語音按鈕：不應重連（attempts 不變），恢復麥克風並回到 listening。
+      await harness.controller.startRealtimeConversation();
+      await pumpEventQueue();
+
+      expect(attempts, 1, reason: '同一條連線開始下一句，不重建連線');
+      expect(harness.controller.state, VoiceAgentState.listening);
+      expect(service.isMicEnabled, isTrue);
+
+      harness.dispose();
+    });
+
+    test('speaking 期間按語音鈕不打斷寵物：不送 response.cancel、狀態維持 speaking',
+        () async {
       final sentPayloads = <String>[];
       final service = RealtimeVoiceService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
@@ -434,20 +489,45 @@ void main() {
       await _reachSpeaking(harness, service);
       expect(harness.controller.state, VoiceAgentState.speaking);
 
+      // UI 在 speaking 時不會呼叫打斷；即使直接呼叫也一律 no-op。
       final interrupted = await harness.controller.interruptPetForUserTurn();
+      // 同時也不能透過 startRealtimeConversation 偷插一輪。
+      await harness.controller.startRealtimeConversation();
       await pumpEventQueue();
 
-      expect(interrupted, isTrue);
-      expect(harness.controller.state, VoiceAgentState.listening);
-      expect(
-        sentPayloads.where((p) => p.contains('response.cancel')),
-        hasLength(1),
-      );
+      expect(interrupted, isFalse);
+      expect(harness.controller.state, VoiceAgentState.speaking);
+      expect(sentPayloads.where((p) => p.contains('response.cancel')), isEmpty);
 
       harness.dispose();
     });
 
-    test('thinking 時也能打斷寵物 → 回到 listening', () async {
+    test('speaking 期間使用者語音事件被忽略：不觸發新一輪、不改狀態', () async {
+      final service = RealtimeVoiceService(
+        healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+        connectImplementationForTesting: (_) async {},
+      );
+      final harness = await _VoiceControllerHarness.create(service);
+      await _reachSpeaking(harness, service);
+      expect(harness.controller.state, VoiceAgentState.speaking);
+
+      // 模擬寵物說話時，使用者咳嗽 / 雜音被 server 當成語音輸入送上來。
+      service.handleDataChannelEventForTest(
+        '{"type":"input_audio_buffer.speech_started"}',
+      );
+      service.handleDataChannelEventForTest('''
+{"type":"conversation.item.input_audio_transcription.completed","transcript":"咳咳"}
+''');
+      await pumpEventQueue();
+
+      // 全部被忽略：仍在 speaking、沒有新增使用者 turn。
+      expect(harness.controller.state, VoiceAgentState.speaking);
+      expect(harness.conversationController.history, isEmpty);
+
+      harness.dispose();
+    });
+
+    test('thinking 時也不可打斷寵物：回傳 false、不送 cancel、維持 thinking', () async {
       final sentPayloads = <String>[];
       final service = RealtimeVoiceService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
@@ -465,17 +545,14 @@ void main() {
       final interrupted = await harness.controller.interruptPetForUserTurn();
       await pumpEventQueue();
 
-      expect(interrupted, isTrue);
-      expect(harness.controller.state, VoiceAgentState.listening);
-      expect(
-        sentPayloads.where((p) => p.contains('response.cancel')),
-        hasLength(1),
-      );
+      expect(interrupted, isFalse);
+      expect(harness.controller.state, VoiceAgentState.thinking);
+      expect(sentPayloads.where((p) => p.contains('response.cancel')), isEmpty);
 
       harness.dispose();
     });
 
-    test('待命聆聽中（listening）打斷無作用：回傳 false、不送 cancel', () async {
+    test('listening 待命中按打斷無作用：回傳 false、不送 cancel', () async {
       final sentPayloads = <String>[];
       final service = RealtimeVoiceService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),

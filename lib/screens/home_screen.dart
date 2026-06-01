@@ -332,14 +332,31 @@ class _HomeScreenState extends State<HomeScreen> {
                                 // - 待命聆聽中（ready / listening）：按鈕＝結束這段語音對話。
                                 // - connecting / transcribing / recovering：連線或辨識中，
                                 //   稍候，不重複觸發避免混亂。
+                                // Turn-based「一人一句」：
+                                // - idle/error 可開始：全新對話才開 session，
+                                //   同一條連線的下一句沿用既有 session、不重連。
+                                // - 寵物回覆中（thinking/speaking）：不打斷，
+                                //   提醒使用者先聽完。
+                                // - 正在聽這一句（listening/ready）：再按一次＝結束。
                                 if (voiceAgentController.canStartVoiceInput) {
-                                  conversationController.startNewSession();
+                                  if (!voiceAgentController
+                                      .hasOpenRealtimeSession) {
+                                    conversationController.startNewSession();
+                                  }
                                   await voiceAgentController
                                       .startRealtimeConversation();
                                 } else if (voiceAgentController
                                     .isPetResponding) {
-                                  await voiceAgentController
-                                      .interruptPetForUserTurn();
+                                  final name = profileController.petName
+                                          .trim()
+                                          .isEmpty
+                                      ? '咕咕'
+                                      : profileController.petName.trim();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('先聽$name說完，再換你說～'),
+                                    ),
+                                  );
                                 } else if (voiceAgentController
                                     .isAwaitingUserSpeech) {
                                   await voiceAgentController
@@ -369,6 +386,23 @@ class _HomeScreenState extends State<HomeScreen> {
                         '台語 Realtime 對話，可以直接用台語跟寵物說話',
                         textAlign: TextAlign.center,
                         maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.black.withValues(alpha: 0.56),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                    // Turn-based：寵物說完回到 idle 但連線仍在 → 提示「換你說囉」，
+                    // 讓長者清楚知道現在輪到自己，再按一次就能說下一句。
+                    if (!useTaigiShortRecording &&
+                        voiceAgentController.state == VoiceAgentState.idle &&
+                        voiceAgentController.hasOpenRealtimeSession) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        '換你說囉，按住再跟${profileController.petName.trim().isEmpty ? '咕咕' : profileController.petName.trim()}說話',
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: Colors.black.withValues(alpha: 0.56),

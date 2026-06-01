@@ -146,6 +146,7 @@ class RealtimeVoiceService {
   RTCPeerConnection? _peerConnection;
   RTCDataChannel? _eventsChannel;
   MediaStream? _localStream;
+  bool _micEnabled = true;
   MediaStream? _remoteStream;
   final RTCVideoRenderer _remoteAudioRenderer = RTCVideoRenderer();
   final Queue<String> _pendingEventPayloads = Queue<String>();
@@ -157,6 +158,7 @@ class RealtimeVoiceService {
   bool _isStopping = false;
   bool _isDisposed = false;
   bool _dataChannelOpen = false;
+  bool _forceConnectionUsableForTest = false;
   String _lastConnectionState = '';
   String _lastIceConnectionState = '';
   String _assistantBuffer = '';
@@ -172,11 +174,12 @@ class RealtimeVoiceService {
   bool get isConnecting => _connectInFlight != null;
   bool get isDataChannelOpen => _dataChannelOpen;
   bool get isConnectionUsable =>
-      _peerConnection != null &&
-      _dataChannelOpen &&
-      _isUsablePeerState(_lastConnectionState) &&
-      (_lastIceConnectionState.isEmpty ||
-          _isUsablePeerState(_lastIceConnectionState));
+      _forceConnectionUsableForTest ||
+      (_peerConnection != null &&
+          _dataChannelOpen &&
+          _isUsablePeerState(_lastConnectionState) &&
+          (_lastIceConnectionState.isEmpty ||
+              _isUsablePeerState(_lastIceConnectionState)));
   String get lastConnectionState => _lastConnectionState;
   String get lastIceConnectionState => _lastIceConnectionState;
   String get dataChannelState => _dataChannelOpen
@@ -514,6 +517,62 @@ class RealtimeVoiceService {
     }
   }
 
+  /// 目前麥克風輸入是否開啟（turn-based 輪次控制用）。
+  bool get isMicEnabled => _micEnabled;
+
+  /// Turn-based：寵物說話 / 思考時暫停麥克風輸入，使用者再次按鈕說下一句時恢復。
+  ///
+  /// 只切換本地 audio track 的 `enabled`，**不重建 peer connection、不動 SDP /
+  /// DataChannel**，因此同一條 Realtime 連線可以保留，不必每輪重連。關閉後 server
+  /// 端收到的是靜音，咳嗽 / 背景音不會被當成新一輪輸入或打斷寵物。
+  void pauseMicInput() => _setMicEnabled(false);
+
+  /// Turn-based：恢復麥克風輸入，讓使用者開始說下一句。
+  void resumeMicInput() => _setMicEnabled(true);
+
+  void _setMicEnabled(bool enabled) {
+    _micEnabled = enabled;
+    final stream = _localStream;
+    if (stream == null) return;
+    for (final track in stream.getAudioTracks()) {
+      track.enabled = enabled;
+    }
+  }
+
+  /// 把使用者打字的文字注入到「同一個」live realtime session，讓寵物用語音回覆。
+  ///
+  /// 流程沿用既有 `_sendEventPayload`（含 data channel 未開時排隊、closed/failed
+  /// 時回退排隊的保護），送出兩個事件：
+  /// 1. `conversation.item.create`：把這句話加進對話歷史，role=user、input_text。
+  /// 2. `response.create`：觸發寵物回覆；不指定 modalities，沿用 session 預設
+  ///    （語音 + 文字），因此回覆會跟純語音流程一樣經由既有事件處理產生語音與字幕。
+  ///
+  /// 不會改動既有純語音流程：純語音仍靠 server_vad 自動建立 response，
+  /// 這裡只是額外提供文字輸入入口。
+  Future<void> sendUserText(String text) async {
+    final normalized = text.trim();
+    if (normalized.isEmpty) return;
+    try {
+      await _sendEventPayload(jsonEncode({
+        'type': 'conversation.item.create',
+        'item': {
+          'type': 'message',
+          'role': 'user',
+          'content': [
+            {
+              'type': 'input_text',
+              'text': normalized,
+            },
+          ],
+        },
+      }));
+      await _sendEventPayload(jsonEncode({'type': 'response.create'}));
+      _log('Sent typed user text into realtime session');
+    } catch (error) {
+      _log('Unable to send typed user text: $error');
+    }
+  }
+
   Future<void> stop() async {
     _connectGeneration += 1;
     _isStopping = true;
@@ -551,6 +610,18 @@ class RealtimeVoiceService {
   @visibleForTesting
   Future<void> sendEventPayloadForTest(String payload) {
     return _sendEventPayload(payload);
+  }
+
+  /// 測試用：在不建立真正 WebRTC peer 的情況下，把 service 標記成「連線可用」，
+  /// 讓 [sendUserText] / [isConnectionUsable] 的整合測試能驗證打字注入流程。
+  @visibleForTesting
+  void forceConnectionUsableForTest({bool usable = true}) {
+    _forceConnectionUsableForTest = usable;
+    _dataChannelOpen = usable;
+    if (usable) {
+      _lastConnectionState = 'RTCPeerConnectionStateConnected';
+      _lastIceConnectionState = 'RTCIceConnectionStateConnected';
+    }
   }
 
   @visibleForTesting
@@ -661,9 +732,11 @@ class RealtimeVoiceService {
       _hasActiveAssistantResponse = false;
       _emit(RealtimeEventType.assistantResponseDone, '');
       _emit(RealtimeEventType.assistantAudioEnd, '');
+      // Turn-based「一人一句」：寵物這一輪講完後**不自動回 listening**。
+      // 保留同一條 Realtime 連線（不關閉、不重建 SDP / DataChannel），由
+      // VoiceAgentController 把狀態收回 idle，等使用者再次按鈕才開始說下一句。
       _log(
-          'response.done received; keep realtime connection and return to listening');
-      _emit(RealtimeEventType.state, 'listening');
+          'response.done received; keep connection, controller returns to idle (turn-based)');
       return;
     }
 
