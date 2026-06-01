@@ -181,12 +181,18 @@ class CoachMarkOverlay extends StatelessWidget {
     final card = _InstructionCard(controller: controller);
     final safeTop = media.padding.top + 16;
     final safeBottom = media.padding.bottom + 16;
+    // 卡片最高不超過可用高度的一半，避免小螢幕 / 放大字體時溢出底部安全區。
+    final maxCardHeight =
+        ((media.size.height - safeTop - safeBottom) * 0.5).clamp(160.0, 420.0);
     return Positioned(
       left: 20,
       right: 20,
       top: onTop ? safeTop : null,
       bottom: onTop ? null : safeBottom,
-      child: card,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxCardHeight),
+        child: card,
+      ),
     );
   }
 }
@@ -202,12 +208,17 @@ class _InstructionCard extends StatelessWidget {
     final isLast = controller.isLastStep;
     final canAdvance = !controller.isTyping;
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+      padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        // 奶油色圓角卡片，溫柔、像正式產品（不是工程測試畫面）。
+        color: const Color(0xFFFFFBF2),
+        borderRadius: BorderRadius.circular(22),
         boxShadow: const [
-          BoxShadow(color: Colors.black26, blurRadius: 18, offset: Offset(0, 6)),
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 22,
+            offset: Offset(0, 8),
+          ),
         ],
       ),
       child: Column(
@@ -216,26 +227,31 @@ class _InstructionCard extends StatelessWidget {
         children: [
           Text(
             '第 ${controller.currentIndex + 1} 步 / 共 ${controller.stepCount} 步',
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w700,
-              color: Colors.black.withValues(alpha: 0.45),
+              color: Color(0xFFB08642),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           // ValueKey(currentIndex) 讓換步驟時 TypewriterText 重建並重新逐字列印。
-          TypewriterText(
-            key: ValueKey<int>(controller.currentIndex),
-            text: step.text,
-            onCompleted: controller.markTypingDone,
-            style: const TextStyle(
-              fontSize: 19,
-              height: 1.45,
-              fontWeight: FontWeight.w600,
-              color: Colors.black87,
+          // 包一層可捲動：文字較長 / 字體放大時不會把卡片撐到溢出（小螢幕安全）。
+          Flexible(
+            child: SingleChildScrollView(
+              child: TypewriterText(
+                key: ValueKey<int>(controller.currentIndex),
+                text: step.text,
+                onCompleted: controller.markTypingDone,
+                style: const TextStyle(
+                  fontSize: 19,
+                  height: 1.5,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF3D3226),
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
           SizedBox(
             width: double.infinity,
             child: FilledButton(
@@ -265,7 +281,8 @@ class _SpotlightPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final full = Offset.zero & size;
-    final scrim = Paint()..color = Colors.black.withValues(alpha: 0.72);
+    // 暖色半透明遮罩（深褐而非純黑），柔和、不冰冷。
+    final scrim = Paint()..color = const Color(0xFF2A1E12).withValues(alpha: 0.66);
     final localHole = hole;
     if (localHole == null) {
       canvas.drawRect(full, scrim);

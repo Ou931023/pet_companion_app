@@ -79,4 +79,28 @@ void main() {
     expect(find.byType(FilledButton), findsNothing);
     expect(find.text('開始使用'), findsNothing);
   });
+
+  testWidgets('小螢幕 + 長文字：導覽卡片不溢出', (tester) async {
+    addTearDown(tester.view.reset);
+    // 小螢幕 iPhone（約 320x568）。
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1.0;
+
+    final longSteps = [
+      const CoachMarkStep(
+        text: '這是你的 AI 寵物，牠會陪你聊天，也會慢慢記得你喜歡什麼，'
+            '想說話、想設提醒、想說說今天的心情，都可以直接跟牠講，不用打字，'
+            '想一起玩的時候輕輕點牠就能開始，慢慢來、不用著急。',
+      ),
+      const CoachMarkStep(text: '最下面的「設定」可以調整帳號和導覽。'),
+    ];
+    final controller = CoachMarkController()..start(longSteps);
+
+    await tester.pumpWidget(_host(controller, CoachMarkKeys()));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
+
+    // 任何 RenderFlex overflow 都會讓 takeException 非 null。
+    expect(tester.takeException(), isNull);
+  });
 }
