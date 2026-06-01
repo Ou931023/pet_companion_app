@@ -25,11 +25,69 @@ test("music routes to low risk play music", () => {
   assert.equal(result.intent.requiresConfirmation, false);
 });
 
-test("reminder routes to medium risk reminder", () => {
+test("reminder routes to low risk reminder, executes directly (no confirmation)", () => {
   const result = routeAgentTool({ userText: "提醒我晚上八點吃藥" });
   assert.equal(result.intent.toolName, "create_reminder");
-  assert.equal(result.intent.riskLevel, "medium");
+  assert.equal(result.intent.riskLevel, "low");
+  assert.equal(result.intent.requiresConfirmation, false);
+});
+
+test("make_call routes to high risk dialer needing confirmation", () => {
+  const result = routeAgentTool({ userText: "幫我打給女兒" });
+  assert.equal(result.intent.toolName, "open_phone_dialer");
   assert.equal(result.intent.requiresConfirmation, true);
+  assert.equal(result.intent.arguments.contactName, "女兒");
+});
+
+test("send_message extracts recipient + body and needs confirmation", () => {
+  const result = routeAgentTool({ userText: "幫我跟兒子說我今天很好" });
+  assert.equal(result.intent.toolName, "send_message");
+  assert.equal(result.intent.riskLevel, "high");
+  assert.equal(result.intent.requiresConfirmation, true);
+  assert.equal(result.intent.arguments.recipient, "兒子");
+  assert.equal(result.intent.arguments.body, "我今天很好");
+});
+
+test("tell_story is low risk and executes directly", () => {
+  const result = routeAgentTool({ userText: "說一個故事給我聽" });
+  assert.equal(result.intent.toolName, "tell_story");
+  assert.equal(result.intent.requiresConfirmation, false);
+});
+
+test("save_memory is low risk and executes directly", () => {
+  const result = routeAgentTool({ userText: "幫我記住我女兒週末會回來" });
+  assert.equal(result.intent.toolName, "save_memory");
+  assert.equal(result.intent.requiresConfirmation, false);
+});
+
+test("navigate to game is low risk with natural reply", () => {
+  const result = routeAgentTool({ userText: "我要去玩遊戲" });
+  assert.equal(result.intent.toolName, "open_app_route");
+  assert.equal(result.intent.arguments.route, "/puzzle");
+  assert.equal(result.intent.requiresConfirmation, false);
+  assert.match(result.intent.userFacingMessage, /帶你去玩遊戲/);
+});
+
+test("logout / delete_memory / purchase / notify_caregiver are high risk + confirm", () => {
+  const cases = [
+    { text: "我要登出", tool: "logout" },
+    { text: "幫我刪掉這個記憶", tool: "delete_memory" },
+    { text: "我想買新的寵物造型", tool: "purchase_pet_skin" },
+    { text: "通知照護員我今天不太舒服", tool: "notify_caregiver" },
+  ];
+  for (const c of cases) {
+    const result = routeAgentTool({ userText: c.text });
+    assert.equal(result.intent.toolName, c.tool, `「${c.text}」應走 ${c.tool}`);
+    assert.equal(result.intent.riskLevel, "high", `${c.tool} 應為 high`);
+    assert.equal(result.intent.requiresConfirmation, true, `${c.tool} 應需確認`);
+  }
+});
+
+test("ambiguous / pure chat returns no tool intent (let companion handle)", () => {
+  for (const text of ["今天天氣真好", "那個…就是…", "我有點累"]) {
+    const result = routeAgentTool({ userText: text });
+    assert.equal(result.hasToolIntent, false, `「${text}」不應觸發工具`);
+  }
 });
 
 test("fraud news routes to trusted search", () => {

@@ -77,12 +77,20 @@ function buildSafeIntent(draft) {
   };
 }
 
+// 高影響操作的白話確認文字（給長者看 / 寵物口語確認；只問一個清楚問題）。
+const CONFIRMATION_MESSAGES = Object.freeze({
+  open_phone_dialer: "要幫你開啟撥號畫面嗎？不會自動撥出。",
+  send_message: "要幫你傳這則訊息嗎？傳出前你再確認一次內容。",
+  create_email_draft: "要幫你建立 Email 草稿嗎？不會自動寄出。",
+  notify_caregiver: "要我通知照護人員嗎？",
+  delete_memory: "要刪掉這個記憶嗎？刪掉就找不回來囉。",
+  logout: "要幫你登出嗎？",
+  purchase_pet_skin: "要購買這個寵物造型嗎？",
+});
+
 function defaultUserFacingMessage(toolName, definition) {
-  if (toolName === "open_phone_dialer") {
-    return "要幫你開啟撥號畫面嗎？不會自動撥出。";
-  }
-  if (toolName === "create_email_draft") {
-    return "要幫你建立 Email 草稿嗎？不會自動寄出。";
+  if (CONFIRMATION_MESSAGES[toolName]) {
+    return CONFIRMATION_MESSAGES[toolName];
   }
   if (definition.requiresConfirmation) {
     return `要執行「${definition.displayName}」嗎？`;
