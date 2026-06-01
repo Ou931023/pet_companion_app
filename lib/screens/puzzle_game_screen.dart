@@ -10,7 +10,7 @@ import '../services/photo_picker_service.dart';
 import '../widgets/puzzle_board.dart';
 import '../widgets/puzzle_tile_widget.dart';
 
-/// 傳統照片拼圖小遊戲：選一張照片 → 選難度 → 把下方打亂的小拼圖拖到上面正確位置。
+/// 回憶拼圖小遊戲：選一張照片 → 選難度 → 把下方打亂的 jigsaw 拼圖塊拖到上面正確位置。
 class PuzzleGameScreen extends StatefulWidget {
   const PuzzleGameScreen({super.key});
 
@@ -27,7 +27,7 @@ class _PuzzleGameScreenState extends State<PuzzleGameScreen> {
     return ChangeNotifierProvider(
       create: (_) => PuzzleGameController(),
       child: Scaffold(
-        appBar: AppBar(title: const Text('照片拼圖')),
+        appBar: AppBar(title: const Text('回憶拼圖')),
         body: Consumer<PuzzleGameController>(
           builder: (context, controller, _) {
             if (controller.isComplete && !_rewarded) {
@@ -60,8 +60,9 @@ class _PuzzleGameScreenState extends State<PuzzleGameScreen> {
                 size: 72, color: Colors.grey.shade400),
             const SizedBox(height: 16),
             const Text(
-              '選一張照片來玩拼圖',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+              '選一張照片，拼回屬於你的回憶。',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 20),
             FilledButton.icon(
@@ -194,14 +195,15 @@ class _PuzzleGameScreenState extends State<PuzzleGameScreen> {
   }
 
   Widget _buildTray(PuzzleGameController controller) {
-    const cell = 76.0;
+    const cell = 64.0;
+    final box = JigsawPiece.boxOf(cell);
     final pieces = controller.trayPieces;
     if (pieces.isEmpty) {
-      return const SizedBox(height: cell);
+      return SizedBox(height: box);
     }
     return Wrap(
-      spacing: 10,
-      runSpacing: 10,
+      spacing: 6,
+      runSpacing: 6,
       alignment: WrapAlignment.center,
       children: [
         for (final piece in pieces)
@@ -209,46 +211,19 @@ class _PuzzleGameScreenState extends State<PuzzleGameScreen> {
             data: piece,
             feedback: Material(
               color: Colors.transparent,
-              elevation: 8,
-              child: SizedBox(
-                width: cell * 1.08,
-                height: cell * 1.08,
-                child: PuzzlePieceImage(
-                  imageFile: _imageFile!,
-                  gridSize: controller.size,
-                  index: piece,
-                ),
-              ),
-            ),
-            childWhenDragging: Container(
-              width: cell,
-              height: cell,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey.shade300),
-              ),
-            ),
-            child: Container(
-              width: cell,
-              height: cell,
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.white, width: 1.5),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x22000000),
-                    blurRadius: 4,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: PuzzlePieceImage(
+              child: JigsawPiece(
                 imageFile: _imageFile!,
                 gridSize: controller.size,
                 index: piece,
+                cell: cell * 1.1,
               ),
+            ),
+            childWhenDragging: SizedBox(width: box, height: box),
+            child: JigsawPiece(
+              imageFile: _imageFile!,
+              gridSize: controller.size,
+              index: piece,
+              cell: cell,
             ),
           ),
       ],
@@ -298,7 +273,7 @@ class _PuzzleGameScreenState extends State<PuzzleGameScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text(
-          '太棒了，拼圖完成！',
+          '太棒了，回憶拼圖完成！',
           style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
         ),
         content: Text(

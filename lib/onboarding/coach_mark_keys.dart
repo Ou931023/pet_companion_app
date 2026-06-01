@@ -34,15 +34,24 @@ class CoachMarkKeys {
 ///
 /// 首頁底部 4 格：0 首頁、1 商城、2 紀錄、3 設定。用來把「商城 / 紀錄 / 設定」
 /// 那幾步的高亮框，對準該功能的分頁按鈕。
-Rect navBarSlot(Rect raw, int index, {int total = 4}) => Rect.fromLTWH(
-      raw.left + raw.width * index / total,
-      raw.top,
-      raw.width / total,
-      raw.height,
-    );
+/// 取底部導覽列第 [index] 格的高亮框。
+///
+/// CR-0023：整條底部列的框（[raw]）高度包含 iOS home indicator / bottom safe area，
+/// 直接用會讓高亮框往下多出一大截、沒對齊 tab。這裡把 [bottomInset]（safe area）扣掉，
+/// 並把高度夾在合理範圍（大約只包住 icon + label + 背景 capsule），上緣對齊 tab。
+Rect navBarSlot(Rect raw, int index, {int total = 4, double bottomInset = 0}) {
+  final usable = (raw.height - bottomInset).clamp(0.0, 88.0);
+  return Rect.fromLTWH(
+    raw.left + raw.width * index / total,
+    raw.top,
+    raw.width / total,
+    usable,
+  );
+}
 
 /// 取底部導覽列最右邊 1/4（= 4 格中的「設定」）。
-Rect settingsRightQuarter(Rect raw) => navBarSlot(raw, 3);
+Rect settingsRightQuarter(Rect raw, {double bottomInset = 0}) =>
+    navBarSlot(raw, 3, bottomInset: bottomInset);
 
 /// 首頁新手導覽的步驟，共 **13 步**（單一完整導覽，不再分快速 / 完整版）：
 ///
@@ -56,7 +65,10 @@ Rect settingsRightQuarter(Rect raw) => navBarSlot(raw, 3);
 /// - 第 13 步跨頁切到設定頁，高亮「家人聯絡人」入口。
 /// - 第 3 步是行為提示（先聽牠說完），無對應元件 → overlay 自動降級成置中說明卡。
 /// 任何 target 取不到時（還沒繪製 / 跨頁未就緒）都會安全降級成置中卡片，不 crash。
-List<CoachMarkStep> buildHomeCoachMarkSteps(CoachMarkKeys keys) {
+List<CoachMarkStep> buildHomeCoachMarkSteps(
+  CoachMarkKeys keys, {
+  double bottomNavInset = 0,
+}) {
   return [
     // 1：這是你的 AI 寵物。
     CoachMarkStep(
@@ -107,19 +119,20 @@ List<CoachMarkStep> buildHomeCoachMarkSteps(CoachMarkKeys keys) {
     // 10：商城可以購買或解鎖物品（高亮底部「商城」分頁）。
     CoachMarkStep(
       targetKey: keys.navBarKey,
-      rectTransform: (raw) => navBarSlot(raw, 1),
+      rectTransform: (raw) => navBarSlot(raw, 1, bottomInset: bottomNavInset),
       text: '最下面的「商城」可以用金幣解鎖外觀或其他物品。',
     ),
     // 11：記錄可以查看過去狀態（高亮底部「紀錄」分頁）。
     CoachMarkStep(
       targetKey: keys.navBarKey,
-      rectTransform: (raw) => navBarSlot(raw, 2),
+      rectTransform: (raw) => navBarSlot(raw, 2, bottomInset: bottomNavInset),
       text: '旁邊的「記錄」可以回顧以前的心情、提醒和互動。',
     ),
     // 12：設定可以改寵物名稱和語音方式（高亮底部「設定」分頁）。
     CoachMarkStep(
       targetKey: keys.navBarKey,
-      rectTransform: settingsRightQuarter,
+      rectTransform: (raw) =>
+          settingsRightQuarter(raw, bottomInset: bottomNavInset),
       text: '「設定」可以幫寵物改名字，也可以調整說話的語音方式。',
     ),
     // 13：設定可以新增聯絡人 → 跨頁切到設定頁、高亮「家人聯絡人」入口（最後一步）。

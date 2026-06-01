@@ -98,7 +98,11 @@ class _CoachMarkHostState extends State<CoachMarkHost> {
     }
     if (!mounted || !widget.homeVisible || _controller.isActive) return;
     _lastTabSwitchIndex = -1;
-    _controller.start(buildHomeCoachMarkSteps(keys));
+    // 把底部 safe area（home indicator）高度傳進去，底部 tab 高亮框才能排除它、對齊 tab。
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    _controller.start(
+      buildHomeCoachMarkSteps(keys, bottomNavInset: bottomInset),
+    );
   }
 
   @override

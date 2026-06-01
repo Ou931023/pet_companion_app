@@ -396,23 +396,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                     ],
-                    // Turn-based：寵物說完回到 idle 但連線仍在 → 提示「換你說囉」，
-                    // 讓長者清楚知道現在輪到自己，再按一次就能說下一句。
-                    if (!useTaigiShortRecording &&
-                        voiceAgentController.state == VoiceAgentState.idle &&
-                        voiceAgentController.hasOpenRealtimeSession) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        '換你說囉，按住再跟${profileController.petName.trim().isEmpty ? '咕咕' : profileController.petName.trim()}說話',
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.black.withValues(alpha: 0.56),
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
+                    // CR-0023：移除語音按鈕下方「換你說囉，按住再跟…說話」輔助提示字，
+                    // 讓首頁更乾淨；按鈕本身與按鈕文字、speaking 時的 toast 不受影響。
                   ],
                 ),
               ),

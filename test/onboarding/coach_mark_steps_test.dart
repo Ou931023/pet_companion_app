@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pet_companion_app/onboarding/coach_mark_keys.dart';
 
@@ -5,6 +7,26 @@ void main() {
   test('首頁新手導覽是單一完整導覽，共有 13 步', () {
     final steps = buildHomeCoachMarkSteps(CoachMarkKeys());
     expect(steps.length, 13);
+  });
+
+  test('navBarSlot 高亮框排除 bottom safe area、不往下多出一截（CR-0023）', () {
+    // 整條底部列：高度 120 含 34 的 home indicator / safe area。
+    const raw = Rect.fromLTWH(0, 700, 400, 120);
+    final slot = navBarSlot(raw, 1, bottomInset: 34);
+    // 寬度仍是 1/4 格、左緣對到該格、上緣對齊 tab。
+    expect(slot.left, 100);
+    expect(slot.width, 100);
+    expect(slot.top, raw.top);
+    // 高度排除 safe area（120-34=86），且明顯比整條列矮、不超出可視 tab。
+    expect(slot.height, lessThan(raw.height));
+    expect(slot.height, lessThanOrEqualTo(88));
+    expect(slot.bottom, lessThan(raw.bottom));
+  });
+
+  test('navBarSlot 高度會被夾在合理上限（過高的列也只包 tab）', () {
+    const raw = Rect.fromLTWH(0, 0, 400, 200);
+    final slot = navBarSlot(raw, 3, bottomInset: 0);
+    expect(slot.height, lessThanOrEqualTo(88));
   });
 
   test('每一步的文字都不重複（Step 內容不重複）', () {

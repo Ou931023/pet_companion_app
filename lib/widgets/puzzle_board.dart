@@ -5,9 +5,10 @@ import 'package:flutter/material.dart';
 import '../controllers/puzzle_game_controller.dart';
 import 'puzzle_tile_widget.dart';
 
-/// 上方拼圖板：N×N 格。空格可接收拖曳；放對的格顯示照片小塊並鎖定。
+/// 上方拼圖板：N×N 格。空格可接收拖曳；放對的格顯示 jigsaw 拼圖塊並鎖定。
 ///
-/// 放對 → 吸附；放錯 → [onWrong] 回呼（讓畫面提示「會回到下面」），塊留在下方。
+/// 用 Stack 疊放，讓拼圖塊的凸起能鼓進相鄰格、看起來像真的接合。
+/// 放對 → 吸附；放錯 → [onWrong] 回呼（提示「會回到下面」），塊留在下方。
 class PuzzleBoard extends StatelessWidget {
   const PuzzleBoard({
     super.key,
@@ -27,46 +28,52 @@ class PuzzleBoard extends StatelessWidget {
       builder: (context, constraints) {
         final side = constraints.maxWidth;
         final cell = side / n;
+        final k = JigsawPiece.knobOf(cell);
+        final emptySlots = <Widget>[];
+        final placedPieces = <Widget>[];
+        for (var slot = 0; slot < n * n; slot++) {
+          final row = slot ~/ n;
+          final col = slot % n;
+          final placed = controller.pieceAt(slot);
+          if (placed == null) {
+            emptySlots.add(Positioned(
+              left: col * cell,
+              top: row * cell,
+              width: cell,
+              height: cell,
+              child: _emptyTarget(slot),
+            ));
+          } else {
+            placedPieces.add(Positioned(
+              left: col * cell - k,
+              top: row * cell - k,
+              width: cell + 2 * k,
+              height: cell + 2 * k,
+              // 已放對：鎖定、不擋拖曳（讓凸起底下的空格仍可接收）。
+              child: IgnorePointer(
+                child: JigsawPiece(
+                  imageFile: imageFile,
+                  gridSize: n,
+                  index: placed,
+                  cell: cell,
+                ),
+              ),
+            ));
+          }
+        }
         return SizedBox(
           width: side,
           height: side,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (var row = 0; row < n; row++)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (var col = 0; col < n; col++)
-                      SizedBox(
-                        width: cell,
-                        height: cell,
-                        child: _slot(context, row * n + col),
-                      ),
-                  ],
-                ),
-            ],
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [...emptySlots, ...placedPieces],
           ),
         );
       },
     );
   }
 
-  Widget _slot(BuildContext context, int slot) {
-    final placed = controller.pieceAt(slot);
-    if (placed != null) {
-      // 已放對：顯示照片小塊、鎖定（不可再拖）。
-      return Container(
-        decoration: BoxDecoration(
-          border: Border.all(color: Colors.white, width: 1),
-        ),
-        child: PuzzlePieceImage(
-          imageFile: imageFile,
-          gridSize: controller.size,
-          index: placed,
-        ),
-      );
-    }
+  Widget _emptyTarget(int slot) {
     return DragTarget<int>(
       onWillAcceptWithDetails: (_) => true,
       onAcceptWithDetails: (details) {
