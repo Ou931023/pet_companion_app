@@ -152,36 +152,138 @@ function isSensitiveGreetingMemory(memory) {
   return /身分證|身份證|宗教|政黨|投票|診斷|確診/.test(text);
 }
 
+// 只有語助詞 / 沒有陪伴價值的片段，不可拿來當首頁開場。
+const GREETING_FILLER = new Set([
+  "好", "好的", "嗯", "嗯嗯", "對", "對啊", "是", "是的", "沒有", "不知道",
+  "我不知道", "不曉得", "可以", "都可以", "隨便", "沒事", "那個", "所有的",
+  "還好", "算了", "不用", "沒關係", "也沒有",
+]);
+
+// 像分類標籤 / 內部欄位的內容（理論上不該進到使用者內容，保險過濾）。
+const GREETING_METADATA_PATTERN =
+  /可能需要(陪伴感|情緒支持|懷舊陪伴|安定陪伴|照護|陪伴)|情緒支持|risk_?level|emotion|category|summary|metadata|payload|toolName|pgvector/i;
+
+function stripGreetingPunct(text) {
+  return (text || "")
+    .toString()
+    .replace(/[「」『』“”"'，。、！？!?,.\s…：:；;~～()（）]/g, "")
+    .trim();
+}
+
+// 從記憶取出「可以自然對使用者說的內容」：去掉「使用者提到/偏好/近期…：」「『…』」
+// 這類後端摘要包裝，只留下使用者實際說的事，避免把摘要原文或分類標籤講出來。
+function extractMemoryContent(memory) {
+  const text = (memory.memoryText || memory.memorySummary || "").toString().trim();
+  const quoted = text.match(/「([^」]+)」/);
+  if (quoted && quoted[1].trim()) return quoted[1].trim();
+  const colon = text.match(/[:：]\s*([\s\S]+)$/);
+  if (colon && colon[1].trim()) {
+    return colon[1].replace(/[，。、！？!?,.]+$/, "").trim();
+  }
+  return text
+    .replace(/^使用者(提到|說|表示|的)?[:：，、]?\s*/, "")
+    .replace(/[，。、！？!?,.]+$/, "")
+    .trim();
+}
+
+// 低品質記憶不可進入首頁開場：太短 / 純語助詞 / 像標籤或內部欄位 / 信心過低。
+function isLowQualityGreetingMemory(memory) {
+  if (!memory) return true;
+  const content = extractMemoryContent(memory);
+  const bare = stripGreetingPunct(content);
+  if (!bare) return true;
+  if (GREETING_FILLER.has(bare)) return true;
+  if (chineseCharCount(bare) < 4) return true;
+  if (GREETING_METADATA_PATTERN.test(content)) return true;
+  if (memory.confidence != null && Number(memory.confidence) < 0.55) return true;
+  return false;
+}
+
+// 溫和開場（情緒類記憶用）：影響語氣但不回放內容、不貼標籤。
+const GENTLE_GREETINGS = [
+  "今天也想陪你慢慢聊聊。你現在心情還好嗎？",
+  "我在這裡陪你，今天想先聊聊什麼？",
+  "今天想輕鬆聊聊，還是先休息一下？",
+];
+
+function pickGentleGreeting(seed) {
+  const idx = Math.abs(Number(seed) || 0) % GENTLE_GREETINGS.length;
+  return GENTLE_GREETINGS[idx];
+}
+
+const EMOTIONAL_GREETING_TYPES = new Set([
+  "emotion", "emotion_event", "reminiscence", "health_lifestyle",
+]);
+const EMOTIONAL_GREETING_PATTERN =
+  /孤單|寂寞|難過|想哭|低落|焦慮|擔心|害怕|睡不?好|睡不著|沒精神|很累|疲倦|不想活|活著好累|頭暈|想念|懷念/;
+const REMINDER_GREETING_TYPES = new Set(["care_need", "reminder"]);
+const PREFERENCE_GREETING_TYPES = new Set(["preference", "story_preference"]);
+
+// 把高品質記憶轉成自然的寵物語氣開場（不出現「使用者提到 / 情緒支持」等工程感語句）。
 function greetingFromMemory(memory) {
-  const text = memory.memorySummary || memory.memoryText || "";
-  if (/睡不好|睡眠|沒精神|很累|疲倦/.test(text)) {
-    return "最近睡眠比較辛苦的話，我今天也會陪你慢慢放鬆。";
+  const content = extractMemoryContent(memory);
+  const type = (memory.memoryType || "").toString();
+
+  // 情緒 / 健康狀態類：只用溫和開場，不回放內容、不貼標籤。
+  if (EMOTIONAL_GREETING_TYPES.has(type) || EMOTIONAL_GREETING_PATTERN.test(content)) {
+    return pickGentleGreeting(content.length + chineseCharCount(content));
   }
-  if (/台灣地方故事|地方故事|真實故事|故事/.test(text)) {
-    return "你之前喜歡台灣地方故事，等等我也可以說一個給你聽。";
+  // 照護提醒：不假裝已經設好提醒，改成詢問是否要提醒。
+  if (REMINDER_GREETING_TYPES.has(type) || /吃藥|喝水|回診|醫院|運動|提醒/.test(content)) {
+    return `你之前提過${compact(content, 24)}，今天需要我晚點提醒你嗎？`;
   }
-  if (/孤單|難過|低落|焦慮|擔心/.test(text)) {
-    return "如果今天心裡有點悶，我會在旁邊陪你慢慢說。";
+  // 喜好。
+  if (PREFERENCE_GREETING_TYPES.has(type) || /喜歡|不喜歡/.test(content)) {
+    return `你之前說${compact(content, 24)}，今天想聊聊這個嗎？`;
   }
-  if (/喝水|吃藥|運動|提醒/.test(text)) {
-    return "今天我也會溫柔陪你照顧自己，慢慢來就好。";
+  // 生活習慣 / 近期狀況。
+  if (type === "routine" || /每天|常常|最近|晚上|早上/.test(content)) {
+    return `你之前說${compact(content, 24)}，今天也慢慢來，想聊聊嗎？`;
   }
-  return `我還記得${compact(text, 28)}，今天也陪你慢慢聊。`;
+  // 其他高品質（家人 / 近期事件等）。
+  return `你之前說${compact(content, 24)}，今天也想陪你慢慢聊聊。`;
+}
+
+const GREETING_TYPE_RANK = {
+  preference: 5,
+  story_preference: 5,
+  care_need: 4,
+  reminder: 4,
+  routine: 4,
+  reminiscence: 3,
+  health_lifestyle: 2,
+  emotion: 1,
+  emotion_event: 1,
+};
+
+function greetingTypeRank(memory) {
+  const rank = GREETING_TYPE_RANK[(memory.memoryType || "").toString()];
+  return rank == null ? 3 : rank;
+}
+
+// 從候選記憶挑出最適合開場的一筆（過濾低品質 / 封存 / 敏感；偏好具體正向類型）。
+// 純函式、不碰 store，方便測試；找不到合格記憶回 null（呼叫端走一般 fallback 問候）。
+function pickGreetingMemory(memories = []) {
+  const eligible = (memories || [])
+    .filter((memory) => memory && memory.isActive !== false)
+    .filter((memory) => Number(memory.importance || 0) >= 3)
+    .filter((memory) => !isSensitiveGreetingMemory(memory))
+    .filter((memory) => !isLowQualityGreetingMemory(memory));
+  if (!eligible.length) return null;
+  eligible.sort((a, b) => {
+    const rank = greetingTypeRank(b) - greetingTypeRank(a);
+    if (rank !== 0) return rank;
+    const importance = Number(b.importance || 0) - Number(a.importance || 0);
+    if (importance !== 0) return importance;
+    return String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
+  });
+  return eligible[0];
 }
 
 async function buildMemoryGreeting({ userId = "default_user" } = {}) {
   try {
     const result = await listMemories(userId);
-    const memories = result.memories
-      .filter((memory) => memory.isActive !== false)
-      .filter((memory) => Number(memory.importance || 0) >= 3)
-      .filter((memory) => !isSensitiveGreetingMemory(memory))
-      .sort((a, b) => {
-        const importance = Number(b.importance || 0) - Number(a.importance || 0);
-        if (importance !== 0) return importance;
-        return String(b.createdAt).localeCompare(String(a.createdAt));
-      });
-    const memory = memories[0];
+    const memory = pickGreetingMemory(result.memories);
     if (!memory) {
       return {
         greeting: "",
@@ -216,4 +318,8 @@ module.exports = {
   recencyScore,
   buildPromptBlock,
   buildMemoryGreeting,
+  extractMemoryContent,
+  isLowQualityGreetingMemory,
+  greetingFromMemory,
+  pickGreetingMemory,
 };
