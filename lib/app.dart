@@ -400,6 +400,10 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
       final petController = context.read<PetController>();
       final localStorageService = context.read<LocalStorageService>();
       final petStatsStorageService = context.read<PetStatsStorageService>();
+      final checkInStorageService = context.read<CheckInStorageService>();
+      final inventoryStorageService = context.read<InventoryStorageService>();
+      final careAlertStorageService = context.read<CareAlertStorageService>();
+      final reminderService = context.read<ReminderService>();
 
       // CR-0009：依「目前帳號的 elderId」切換本機資料命名空間 + 重載該帳號狀態。
       // 監聽 AuthController：登入 / 換帳號 / 登出 / 還原時，只要 currentElderId 變了，
@@ -414,25 +418,32 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
         lastElderId = elderId;
         localStorageService.setUserId(elderId);
         petStatsStorageService.setUserId(elderId);
+        // CR-0012：簽到 / 背包 / 本地 Care Alert / 提醒的本機快取也依帳號隔離。
+        checkInStorageService.setUserId(elderId);
+        inventoryStorageService.setUserId(elderId);
+        careAlertStorageService.setUserId(elderId);
+        reminderService.setUserId(elderId);
         memoryController.syncUserId(elderId);
         await profileController.load();
         // CR-0011：每個 elderId 各自記住寵物外觀，換帳號 / 登出 / 還原時一起重載。
         await petController.loadSkin();
         await petStatsController.load();
         await conversationController.loadHistory();
+        // CR-0012：換帳號 / 登出 / 還原時，這四項也重載成「目前帳號自己的資料」，
+        // 避免上一個正式帳號的簽到、背包、提醒、本地 alert 殘留到別的帳號（或 Demo）。
+        await checkInController.load();
+        await inventoryController.load();
+        await careAlertController.loadAlerts();
+        await reminderController.load();
       }
 
       _elderIdSyncListener = () {
         applyAccount();
       };
       authController.addListener(_elderIdSyncListener!);
-      await applyAccount(); // 初次（多為 default_user）
+      await applyAccount(); // 初次（多為 default_user）；上面已含四項本機快取重載
 
       authController.restore();
-      checkInController.load();
-      inventoryController.load();
-      reminderController.load();
-      careAlertController.loadAlerts();
       notificationService.initialize();
     });
   }

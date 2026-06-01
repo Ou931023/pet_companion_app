@@ -58,8 +58,18 @@ class NotificationService {
     await _plugin.cancel(id: _notificationId(id));
   }
 
+  Future<void> cancelAll() async {
+    await _plugin.cancelAll();
+  }
+
+  /// 重新排程「目前這份清單」的提醒。
+  ///
+  /// CR-0012：先 [cancelAll] 清掉所有已排程通知，再排目前帳號的提醒。
+  /// 這樣切換帳號 / 登出回 Demo 時，上一個帳號排進系統的提醒不會繼續在
+  /// 別的帳號身上響起（資料層已依 elderId 隔離，這裡補上 OS 排程層的隔離）。
   Future<void> rescheduleAll(List<Reminder> reminders) async {
     await initialize();
+    await cancelAll();
     for (final reminder in reminders) {
       await scheduleReminder(reminder);
     }
