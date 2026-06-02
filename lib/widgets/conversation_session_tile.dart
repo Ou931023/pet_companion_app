@@ -7,16 +7,21 @@ class ConversationSessionTile extends StatelessWidget {
     super.key,
     required this.summary,
     required this.onTap,
+    this.onLongPress,
   });
 
   final ConversationSessionSummary summary;
   final VoidCallback onTap;
+
+  /// 長按整則卡片（CR-0027）：用來刪除這一則對話紀錄。null 時不啟用長按。
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
     return Card(
       child: ListTile(
         onTap: onTap,
+        onLongPress: onLongPress,
         title:
             Text(summary.title, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Text(

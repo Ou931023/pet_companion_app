@@ -14,6 +14,7 @@ import '../models/source_reference.dart';
 import '../services/ai_navigation_service.dart';
 import '../services/ai_tool_router.dart';
 import '../services/companion_reply_strategy_service.dart';
+import '../services/conversation_title_service.dart';
 import '../services/emotion_services.dart';
 import '../services/local_storage_service.dart';
 import '../services/language_routing_service.dart';
@@ -50,6 +51,7 @@ class ConversationController extends ChangeNotifier {
     required this.languageRoutingService,
     required this.taigiAsrService,
     this.timeoutConfig = const RealtimeTimeoutConfig(),
+    this.titleService = const ConversationTitleService(),
   });
 
   final ProfileController profileController;
@@ -70,8 +72,12 @@ class ConversationController extends ChangeNotifier {
   final LanguageRoutingService languageRoutingService;
   final TaigiAsrService taigiAsrService;
   final RealtimeTimeoutConfig timeoutConfig;
+  final ConversationTitleService titleService;
 
   final List<ConversationTurn> _history = [];
+  // CR-0027：LLM 產生的對話標題快取（sessionId → title），持久化、各帳號獨立。
+  final Map<String, String> _sessionTitles = {};
+  final Set<String> _titleInFlight = {};
   String _activeSessionId = _newSessionId();
   bool _isRecording = false;
   bool _isBusy = false;
@@ -105,15 +111,10 @@ class ConversationController extends ChangeNotifier {
     }
     final summaries = map.entries.map((entry) {
       final turns = entry.value;
-      final firstUser = turns.firstWhere(
-        (t) => t.userText.trim().isNotEmpty,
-        orElse: () => turns.first,
-      );
-      final firstText = firstUser.userText.trim();
-      final titleBase = firstText.isEmpty
-          ? '語音對話'
-          : firstText.substring(
-              0, firstText.length > 12 ? 12 : firstText.length);
+      // 標題優先序（CR-0027）：① LLM 快取標題 → ② 本地 fallback（第一則使用者
+      // 訊息 → 第一則訊息 → 「未命名對話」）。
+      final cached = _sessionTitles[entry.key]?.trim() ?? '';
+      final title = cached.isNotEmpty ? cached : _fallbackTitle(turns);
       final updatedAt = turns.last.timestamp;
       final lastPreview = turns.last.petReply.trim().isNotEmpty
           ? turns.last.petReply.trim()
@@ -126,7 +127,7 @@ class ConversationController extends ChangeNotifier {
           .emotionTag;
       return ConversationSessionSummary(
         sessionId: entry.key,
-        title: titleBase,
+        title: title,
         updatedAt: updatedAt,
         lastPreview: lastPreview.isEmpty ? '語音對話' : lastPreview,
         emotionTag: emotion,
@@ -134,6 +135,97 @@ class ConversationController extends ChangeNotifier {
     }).toList();
     summaries.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     return summaries;
+  }
+
+  /// 還沒有 LLM 標題時的本地 fallback：第一則使用者訊息 → 第一則任何訊息 →
+  /// 「未命名對話」，整理成 ≤14 字短句（去換行、去頭尾空白；不含情緒 metadata）。
+  String _fallbackTitle(List<ConversationTurn> turns) {
+    var firstUser = '';
+    var firstAny = '';
+    for (final t in turns) {
+      final u = t.userText.trim();
+      final p = t.petReply.trim();
+      if (firstAny.isEmpty) firstAny = u.isNotEmpty ? u : p;
+      if (u.isNotEmpty) {
+        firstUser = u;
+        break;
+      }
+    }
+    final base = firstUser.isNotEmpty ? firstUser : firstAny;
+    final shortened = _shortenTitle(base);
+    return shortened.isEmpty ? '未命名對話' : shortened;
+  }
+
+  String _shortenTitle(String text) {
+    final cleaned = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (cleaned.isEmpty) return '';
+    final runes = cleaned.runes.toList();
+    if (runes.length <= 14) return cleaned;
+    return String.fromCharCodes(runes.take(14));
+  }
+
+  /// 開「對話紀錄」頁時呼叫：為還沒有 LLM 標題、且有內容的 session 產生標題，
+  /// 結果快取＋持久化，並 notify 讓卡片即時從 fallback 更新成 LLM 標題。
+  /// 失敗安靜略過（卡片續用 fallback）。
+  Future<void> ensureSessionTitles() async {
+    final map = <String, List<ConversationTurn>>{};
+    for (final turn in _history) {
+      final id = turn.sessionId.isEmpty ? 'legacy' : turn.sessionId;
+      map.putIfAbsent(id, () => []).add(turn);
+    }
+    for (final entry in map.entries) {
+      final id = entry.key;
+      if ((_sessionTitles[id]?.trim().isNotEmpty ?? false)) continue;
+      if (_titleInFlight.contains(id)) continue;
+      final firstUserText = entry.value
+          .firstWhere(
+            (t) => t.userText.trim().isNotEmpty,
+            orElse: () => entry.value.first,
+          )
+          .userText
+          .trim();
+      final conversationText = entry.value
+          .map((t) {
+            final u = t.userText.trim();
+            final p = t.petReply.trim();
+            return [if (u.isNotEmpty) '我：$u', if (p.isNotEmpty) '寵物：$p']
+                .join('\n');
+          })
+          .where((line) => line.isNotEmpty)
+          .take(6)
+          .join('\n');
+      if (firstUserText.isEmpty && conversationText.isEmpty) continue;
+      _titleInFlight.add(id);
+      final title = await titleService.generateTitle(
+        firstUserText: firstUserText,
+        conversationText: conversationText,
+      );
+      _titleInFlight.remove(id);
+      if (title != null && title.trim().isNotEmpty) {
+        _sessionTitles[id] = title.trim();
+        await storageService.saveConversationTitles(_sessionTitles);
+        notifyListeners();
+      }
+    }
+  }
+
+  /// 刪除「對話紀錄列表」中的一整則紀錄（某個 session 的所有 turn）+ 其標題快取。
+  /// 只動本機對話歷史，**不影響長期記憶、Care Alert、DailyCareTask**。
+  /// 找不到該則 → 回 false。
+  Future<bool> deleteConversationSession(String sessionId) async {
+    final before = _history.length;
+    _history.removeWhere(
+      (t) => (t.sessionId.isEmpty ? 'legacy' : t.sessionId) == sessionId,
+    );
+    final removed = _history.length != before;
+    final hadTitle = _sessionTitles.remove(sessionId) != null;
+    if (!removed && !hadTitle) return false;
+    await _persistHistory();
+    if (hadTitle) {
+      await storageService.saveConversationTitles(_sessionTitles);
+    }
+    notifyListeners();
+    return removed;
   }
 
   bool get isRecording => _isRecording;
@@ -251,6 +343,10 @@ class ConversationController extends ChangeNotifier {
     _history
       ..clear()
       ..addAll(turns);
+    final titles = await storageService.loadConversationTitles();
+    _sessionTitles
+      ..clear()
+      ..addAll(titles);
     // CR-0009：換帳號時一併清掉上一個帳號殘留的「最新回覆」顯示狀態。
     // （問候 / 部分回覆用 saveToHistory:false，不進 _history 卻會設 _latestReply，
     //  loadHistory 若只清 _history，主對話泡泡會還顯示前一帳號的寵物名/內容。）

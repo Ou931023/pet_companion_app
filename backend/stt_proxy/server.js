@@ -1123,6 +1123,63 @@ ${memoryLines}
   }
 });
 
+// 對話標題（CR-0027）：用 LLM 為一段對話產生簡短自然的繁中標題。
+// 純新增端點，不更動既有 API 契約。無金鑰 / 失敗時退回本地短標題，
+// 前端再依序退回「第一則訊息 → 未命名對話」，畫面永遠不卡。
+function localShortTitle(text) {
+  const cleaned = (text || "")
+    .toString()
+    .replace(/\s+/g, " ")
+    .replace(/^[\s，。、！？!?,.…~～]+/, "")
+    .trim();
+  if (!cleaned) return "";
+  return cleaned.length > 14 ? cleaned.slice(0, 14) : cleaned;
+}
+
+function sanitizeConversationTitle(raw) {
+  let title = (raw || "").toString();
+  title = title.replace(/[\r\n]+/g, " ").trim();
+  // 去掉前後引號與結尾標點。
+  title = title.replace(/^["'「『（(]+/, "").replace(/["'」』）)]+$/, "").trim();
+  title = title.replace(/[。．.!！?？,，、；;：:~～\s]+$/g, "").trim();
+  if (title.length > 16) title = title.slice(0, 16);
+  return title;
+}
+
+app.post("/api/conversation/title", async (req, res) => {
+  const firstUserText = (req.body?.firstUserText || "").toString();
+  const conversationText = (req.body?.conversationText || "").toString();
+  const source = (conversationText.trim() || firstUserText.trim()).slice(0, 800);
+  const fallback = localShortTitle(firstUserText || conversationText);
+  try {
+    if (!process.env.OPENAI_API_KEY || !source) {
+      return res.json({ title: fallback });
+    }
+    const response = await client.chat.completions.create({
+      model: process.env.CONVERSATION_TITLE_MODEL || "gpt-4o-mini",
+      temperature: 0.3,
+      messages: [
+        {
+          role: "system",
+          content:
+            "你是幫長者與寵物的對話下標題的助手。用 6 到 14 個繁體中文字，下一個簡短、自然、好辨識的標題。標題要描述「使用者這次主要在說什麼或什麼心情」，以使用者說的內容為主，不要只寫寵物的安慰。只輸出標題本身：不要標點符號、不要引號、不要英文、不要情緒標籤（例如 lonely、neutral）、不要『情緒：』『寵物心情：』這類欄位字。",
+        },
+        {
+          role: "user",
+          content: `使用者第一句話：${firstUserText || "（無）"}\n完整對話：\n${source}\n請以使用者說的內容為主，給一個簡短標題。`,
+        },
+      ],
+    });
+    const title =
+      sanitizeConversationTitle(response.choices?.[0]?.message?.content) ||
+      fallback;
+    return res.json({ title });
+  } catch (error) {
+    logError("conversation title failed", { error: error?.message || error });
+    return res.json({ title: fallback, error: error?.message || "title failed" });
+  }
+});
+
 app.post("/api/memory/forget-recent", async (req, res) => {
   try {
     const userId = (req.body?.userId || "local_user").toString();

@@ -26,6 +26,7 @@ class LocalStorageService {
   static const _keyManualAsrStrategy = 'manualAsrStrategy';
   static const _keyFamilyContacts = 'familyContactsList';
   static const _keyConversationHistory = 'conversationHistory';
+  static const _keyConversationTitles = 'conversationTitles';
   static const _keyPetSkin = 'petSkin';
   static const _keyOwnedPetSkins = 'ownedPetSkins';
   static const _keyHomeCoachMarkDone = 'homeCoachMarkDone';
@@ -155,6 +156,25 @@ class LocalStorageService {
       _k(_keyConversationHistory),
       jsonEncode(cappedTurns.map((turn) => turn.toJson()).toList()),
     );
+  }
+
+  /// 載入目前帳號快取的對話標題（sessionId → title，CR-0027）。
+  Future<Map<String, String>> loadConversationTitles() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_k(_keyConversationTitles));
+    if (raw == null || raw.trim().isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      return decoded.map((key, value) => MapEntry(key, value.toString()));
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// 保存目前帳號快取的對話標題（依 [_k] 各帳號互不影響）。
+  Future<void> saveConversationTitles(Map<String, String> titles) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_k(_keyConversationTitles), jsonEncode(titles));
   }
 
   /// 載入目前帳號的寵物外觀。沒存過或認不得一律回預設狗狗。

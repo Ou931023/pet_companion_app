@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:pet_companion_app/models/conversation_turn.dart';
 import 'package:pet_companion_app/screens/conversation_detail_screen.dart';
+import 'package:pet_companion_app/screens/history_screen.dart';
+import 'package:pet_companion_app/services/conversation_title_service.dart';
 import 'package:pet_companion_app/controllers/app_navigation_controller.dart';
 import 'package:pet_companion_app/controllers/check_in_controller.dart';
 import 'package:pet_companion_app/controllers/conversation_controller.dart';
@@ -455,10 +457,184 @@ void main() {
       expect(find.text('保留的訊息'), findsOneWidget);
     });
   });
+
+  group('對話紀錄標題與刪除（CR-0027）', () {
+    setUp(() => SharedPreferences.setMockInitialValues({}));
+
+    ConversationTurn makeTurn(
+            String sid, DateTime ts, String user, String pet,
+            {String emotion = 'neutral'}) =>
+        ConversationTurn(
+          timestamp: ts,
+          userText: user,
+          petReply: pet,
+          toolName: '',
+          sessionId: sid,
+          emotionTag: emotion,
+        );
+
+    test('有 LLM 標題時，列表顯示該標題', () async {
+      final controller = _createConversationController(
+        titleService: const _FakeTitleService('睡不好與孤單感'),
+      );
+      addTearDown(controller.dispose);
+      controller.startNewSession();
+      final sid = controller.activeSessionId;
+      controller.appendExternalTurn(
+          makeTurn(sid, DateTime(2026, 1, 1), '我覺得很累，又睡不著，常常一個人', '我陪你'));
+
+      await controller.ensureSessionTitles();
+
+      expect(controller.sessionSummaries.first.title, '睡不好與孤單感');
+    });
+
+    test('沒有標題時，從第一則使用者訊息產生 fallback 標題', () async {
+      final controller =
+          _createConversationController(titleService: const _FakeTitleService(null));
+      addTearDown(controller.dispose);
+      controller.startNewSession();
+      final sid = controller.activeSessionId;
+      controller
+          .appendExternalTurn(makeTurn(sid, DateTime(2026, 1, 1), '我想聽音樂', '好啊'));
+
+      expect(controller.sessionSummaries.first.title, '我想聽音樂');
+    });
+
+    test('長句 fallback 會被整理成 ≤14 字短標題', () async {
+      final controller =
+          _createConversationController(titleService: const _FakeTitleService(null));
+      addTearDown(controller.dispose);
+      controller.startNewSession();
+      final sid = controller.activeSessionId;
+      controller.appendExternalTurn(makeTurn(sid, DateTime(2026, 1, 1),
+          '我今天去公園散步又買菜還煮了晚餐然後看了電視覺得有點累', '辛苦了'));
+
+      final title = controller.sessionSummaries.first.title;
+      expect(title.runes.length, lessThanOrEqualTo(14));
+      expect(title, isNot(contains('未命名')));
+    });
+
+    test('完全沒有內容時顯示「未命名對話」', () async {
+      final controller =
+          _createConversationController(titleService: const _FakeTitleService(null));
+      addTearDown(controller.dispose);
+      controller.startNewSession();
+      final sid = controller.activeSessionId;
+      controller.appendExternalTurn(makeTurn(sid, DateTime(2026, 1, 1), '', ''));
+
+      expect(controller.sessionSummaries.first.title, '未命名對話');
+    });
+
+    test('標題不含英文 mood label，也不含「情緒：」「寵物心情：」metadata', () async {
+      final controller =
+          _createConversationController(titleService: const _FakeTitleService(null));
+      addTearDown(controller.dispose);
+      controller.startNewSession();
+      final sid = controller.activeSessionId;
+      controller.appendExternalTurn(makeTurn(
+          sid, DateTime(2026, 1, 1), '我想出去走走', '好啊',
+          emotion: 'lonely'));
+
+      final title = controller.sessionSummaries.first.title;
+      expect(title.contains('lonely'), isFalse);
+      expect(title.contains('neutral'), isFalse);
+      expect(title.contains('情緒：'), isFalse);
+      expect(title.contains('寵物心情：'), isFalse);
+    });
+
+    test('刪除一則 session：只移除該則，其他保留', () async {
+      final controller =
+          _createConversationController(titleService: const _FakeTitleService(null));
+      addTearDown(controller.dispose);
+      controller.startNewSession();
+      final a = controller.activeSessionId;
+      controller.appendExternalTurn(makeTurn(a, DateTime(2026, 1, 1), 'A第一', 'a'));
+      controller.appendExternalTurn(makeTurn(a, DateTime(2026, 1, 2), 'A第二', 'a2'));
+      controller.startNewSession();
+      final b = controller.activeSessionId;
+      controller.appendExternalTurn(makeTurn(b, DateTime(2026, 1, 3), 'B第一', 'b'));
+
+      final ok = await controller.deleteConversationSession(a);
+
+      expect(ok, isTrue);
+      expect(controller.turnsForSession(a), isEmpty);
+      expect(controller.turnsForSession(b).length, 1);
+      expect(controller.sessionSummaries.length, 1);
+    });
+
+    test('刪除不存在的 session 回 false', () async {
+      final controller =
+          _createConversationController(titleService: const _FakeTitleService(null));
+      addTearDown(controller.dispose);
+      controller.startNewSession();
+      final sid = controller.activeSessionId;
+      controller.appendExternalTurn(makeTurn(sid, DateTime(2026, 1, 1), '在', 'ok'));
+
+      final ok = await controller.deleteConversationSession('no_such_session');
+
+      expect(ok, isFalse);
+      expect(controller.turnsForSession(sid).length, 1);
+    });
+
+    testWidgets('長按列表卡片 → 確認視窗；取消不刪；刪除只移除該則', (tester) async {
+      final controller =
+          _createConversationController(titleService: const _FakeTitleService(null));
+      addTearDown(controller.dispose);
+      controller.startNewSession();
+      final a = controller.activeSessionId;
+      controller.appendExternalTurn(makeTurn(a, DateTime(2026, 1, 1), '想刪的對話', 'x'));
+      controller.startNewSession();
+      final b = controller.activeSessionId;
+      controller.appendExternalTurn(makeTurn(b, DateTime(2026, 1, 2), '保留的對話', 'y'));
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<ConversationController>.value(
+          value: controller,
+          child: const MaterialApp(home: Scaffold(body: HistoryScreen())),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('想刪的對話'), findsOneWidget);
+      expect(find.text('保留的對話'), findsOneWidget);
+
+      // 長按卡片 → 出現刪除確認（不直接刪）。
+      await tester.longPress(find.text('想刪的對話'));
+      await tester.pumpAndSettle();
+      expect(find.text('刪除這則對話？'), findsOneWidget);
+
+      // 取消 → 不刪。
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(find.text('想刪的對話'), findsOneWidget);
+
+      // 再長按 → 刪除 → 只移除該則，其他保留。
+      await tester.longPress(find.text('想刪的對話'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('刪除'));
+      await tester.pumpAndSettle();
+      expect(find.text('想刪的對話'), findsNothing);
+      expect(find.text('保留的對話'), findsOneWidget);
+    });
+  });
+}
+
+/// 測試用假標題服務：回傳預設標題（或 null 走 fallback），不打網路。
+class _FakeTitleService extends ConversationTitleService {
+  const _FakeTitleService(this._title);
+
+  final String? _title;
+
+  @override
+  Future<String?> generateTitle({
+    required String firstUserText,
+    required String conversationText,
+  }) async =>
+      _title;
 }
 
 ConversationController _createConversationController({
   TaigiAsrService? taigiAsrService,
+  ConversationTitleService? titleService,
 }) {
   final localStorage = LocalStorageService();
   final profileController = ProfileController(localStorage);
@@ -512,6 +688,7 @@ ConversationController _createConversationController({
       ),
     ),
     taigiAsrService: taigiAsrService ?? TaigiAsrService(),
+    titleService: titleService ?? const ConversationTitleService(),
   );
 }
 
