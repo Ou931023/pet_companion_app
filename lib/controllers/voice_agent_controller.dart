@@ -18,6 +18,7 @@ import '../services/language_routing_service.dart';
 import '../services/realtime_timeout_registry.dart';
 import '../services/realtime_turn_coordinator.dart';
 import '../services/realtime_voice_service.dart';
+import '../utils/zh_convert.dart';
 import 'app_navigation_controller.dart';
 import 'agent_tool_controller.dart';
 import 'care_alert_controller.dart';
@@ -76,6 +77,9 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   String _pendingRealtimeUserText = '';
   String _pendingRealtimeEmotion = 'neutral';
   String _pendingRealtimeTurnId = '';
+  // 寵物回覆中才抵達的「本輪使用者 final transcript」去重（同一句可能由
+  // transcription.completed 與 conversation.item.done 各送一次）。
+  String _lastBackgroundUserTranscript = '';
   String _activeTurnId = '';
   String _responseTurnId = '';
   String _latestCompanionTurnId = '';
@@ -360,6 +364,15 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
             event.type == RealtimeEventType.userSpeechStopped ||
             event.type == RealtimeEventType.partialTranscript ||
             event.type == RealtimeEventType.finalTranscript)) {
+      // server VAD 設了 create_response，寵物常在「使用者這句轉錄完成」前就先開口，
+      // 導致本輪 final transcript 比 response 晚到。這筆是使用者自己這句、不是插話，
+      // 仍要記錄對話 + 送分析（情緒 / 長期記憶 / Care Alert），但**不打斷寵物、
+      // 不重新觸發回覆**。其餘（新插話 / 雜音 / partial）照舊忽略。
+      if (event.type == RealtimeEventType.finalTranscript) {
+        _cancelTimeout(RealtimeTimeoutType.transcriptTimeout);
+        unawaited(_captureUserTranscriptDuringPetReply(event.payload));
+        return;
+      }
       debugPrint(
         '[VOICE_TURN] ignore user speech event ${event.type.name} while pet reply in progress',
       );
@@ -431,9 +444,11 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
         // bubble empty.
         final responseTurnId =
             _responseTurnId.isEmpty ? _pendingRealtimeTurnId : _responseTurnId;
+        // 寵物回覆已指示用繁體，這裡再保險轉一次，確保對話紀錄全繁體。
+        final assistantReply = toTraditional(event.payload);
         unawaited(petStatsController.markRealtimeConversationCompleted());
         conversationController.handleRealtimeAssistantReply(
-          event.payload,
+          assistantReply,
           turnId: responseTurnId,
         );
         if (_pendingRealtimeUserText.isNotEmpty &&
@@ -443,7 +458,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
               sessionId: conversationController.activeSessionId,
               turnId: _pendingRealtimeTurnId,
               userText: _pendingRealtimeUserText,
-              aiReply: event.payload.trim(),
+              aiReply: assistantReply.trim(),
               emotion: _pendingRealtimeEmotion,
             ),
           );
@@ -515,7 +530,8 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _handleFinalTranscript(String realtimeTranscript) async {
-    final normalizedRealtimeTranscript = realtimeTranscript.trim();
+    // Realtime 轉錄常回簡體；顯示與送後端前先統一轉台灣繁體。
+    final normalizedRealtimeTranscript = toTraditional(realtimeTranscript.trim());
     if (normalizedRealtimeTranscript.isEmpty) {
       _partialTranscript = '';
       conversationController.clearRealtimeTranscriptState();
@@ -685,10 +701,57 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     } catch (_) {}
   }
 
+  /// 寵物回覆進行中才抵達的「本輪使用者 final transcript」的旁路處理。
+  ///
+  /// server VAD 的 `create_response` 讓寵物常在使用者這句轉錄完成前就先開口，導致
+  /// 本輪 final transcript 比 response 晚到、被 turn-based 守衛擋掉，連帶讓對話紀錄
+  /// 的使用者文字空白、情緒/長期記憶/Care Alert 全失效。這裡把這筆「使用者自己的話」
+  /// 接住：設定待配對欄位、設定 `_latestUserText`（讓寵物回覆落地時配對成完整一筆，
+  /// 不會空白也不重複），並送 companion 分析（情緒 / 後端長期記憶 / Care Alert）。
+  /// 刻意**不改語音狀態機、不路由工具 / 導頁、不重新觸發寵物回覆、不清掉寵物正在
+  /// 播放的回覆泡泡**——只做旁路記錄與分析。
+  Future<void> _captureUserTranscriptDuringPetReply(
+    String realtimeTranscript,
+  ) async {
+    // 同上：背景接住的使用者句也統一轉繁體再顯示 / 分析 / 記憶。
+    final transcript = toTraditional(realtimeTranscript.trim());
+    if (transcript.isEmpty) return;
+    // 同一句去重（transcription.completed 與 conversation.item.done 可能各送一次）。
+    if (transcript == _lastBackgroundUserTranscript) return;
+    _lastBackgroundUserTranscript = transcript;
+
+    final turnId = _pendingRealtimeTurnId.isNotEmpty
+        ? _pendingRealtimeTurnId
+        : 'rt_bg_${DateTime.now().microsecondsSinceEpoch}';
+    _pendingRealtimeTurnId = turnId;
+    _pendingRealtimeUserText = transcript;
+    _emotion = detectEmotion(transcript);
+    _pendingRealtimeEmotion = _emotion.name;
+    _latestCompanionTurnId = turnId;
+
+    // 設定 _latestUserText（不另外新增 turn、不清掉寵物正在播放的回覆）→ 等寵物回覆
+    // 落地（assistantText）時，handleRealtimeAssistantReply 會配對成「使用者這句 +
+    // 寵物回覆」一筆完整紀錄。
+    conversationController.showUserBubbleMessage(
+      transcript,
+      awaitingPetReply: true,
+      clearPetReply: false,
+    );
+
+    debugPrint(
+      '[VOICE_TURN] capture user final during pet reply turn=$turnId text="$transcript"',
+    );
+    unawaited(
+      _analyzeCompanionTranscript(transcript, turnId, applyPetState: false),
+    );
+    notifyListeners();
+  }
+
   Future<void> _analyzeCompanionTranscript(
     String transcript,
-    String turnId,
-  ) async {
+    String turnId, {
+    bool applyPetState = true,
+  }) async {
     try {
       final result = await companionEngineService.analyze(
         sttProxyUrl: profileController.sttProxyUrl,
@@ -724,12 +787,16 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       }
       _currentCompanionContext = result;
       _maybeCreateCareAlert(result, transcript, turnId);
-      _emotion = _emotionFromEngine(result.emotion);
-      _pendingRealtimeEmotion = result.emotion;
-      _applyCompanionPetState(result);
-      unawaited(realtimeVoiceService.updateCompanionContext(
-        _companionContextPrompt(result),
-      ));
+      // 背景捕捉（寵物正在回覆同一句的轉錄）時不動寵物表情 / 狀態 / 即時 session
+      // context，避免打斷正在播放的回覆；情緒與記憶配對已在捕捉端用本地分析設好。
+      if (applyPetState) {
+        _emotion = _emotionFromEngine(result.emotion);
+        _pendingRealtimeEmotion = result.emotion;
+        _applyCompanionPetState(result);
+        unawaited(realtimeVoiceService.updateCompanionContext(
+          _companionContextPrompt(result),
+        ));
+      }
       debugPrint(
         '[COMPANION_ENGINE] turn=$turnId emotion=${result.emotion} need=${result.companionNeed} strategy=${result.replyStrategy}',
       );
@@ -990,6 +1057,8 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     _activeTurnId = '';
     _responseTurnId = '';
     _partialTranscript = '';
+    // 這一輪結束 → 重置背景捕捉去重，下一輪即使說同一句也能正常記錄。
+    _lastBackgroundUserTranscript = '';
     realtimeVoiceService.pauseMicInput();
     _transition(VoiceAgentState.idle, reason);
   }

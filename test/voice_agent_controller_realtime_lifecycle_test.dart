@@ -405,6 +405,38 @@ void main() {
       harness.dispose();
     });
 
+    test('寵物回覆中抵達的使用者 final transcript 仍被接住記錄（不被守衛丟掉）',
+        () async {
+      // 迴歸：server VAD 的 create_response 讓寵物常在使用者這句轉錄完成前就先開口，
+      // 本輪 final transcript 比 response 晚到。修正前會被 turn-based 守衛整個丟掉，
+      // 導致對話紀錄使用者文字空白、情緒/長期記憶/Care Alert 全失效。
+      final service = RealtimeVoiceService(
+        healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+        connectImplementationForTesting: (_) async {},
+      );
+      final harness = await _VoiceControllerHarness.create(service);
+      await _reachSpeaking(harness, service);
+      expect(harness.controller.state, VoiceAgentState.speaking);
+
+      // 寵物正在說話時，使用者這句的 final transcript 才回來。
+      service.handleDataChannelEventForTest(
+        '{"type":"conversation.item.input_audio_transcription.completed",'
+        '"transcript":"我的心情不好覺得很累"}',
+      );
+      await pumpEventQueue();
+
+      // 修正後：被旁路接住 → 設定 latestUserText（讓寵物回覆能配對成完整一筆、
+      // 並觸發 companion 分析 / Care Alert）。
+      expect(
+        harness.conversationController.latestUserText,
+        '我的心情不好覺得很累',
+      );
+      // 不可打斷寵物：仍停在 speaking。
+      expect(harness.controller.state, VoiceAgentState.speaking);
+
+      harness.dispose();
+    });
+
     test('speaking 播放完成後回到 idle（turn-based，麥克風關閉、需再按一次）', () async {
       final service = RealtimeVoiceService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
