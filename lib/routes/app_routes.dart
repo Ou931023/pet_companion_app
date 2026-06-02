@@ -6,6 +6,7 @@ class AppRoute {
   static const String history = '/history';
   static const String settings = '/settings';
   static const String reminders = '/reminders';
+  static const String dailyCareTasks = '/daily-care-tasks';
   static const String memories = '/memories';
   static const String album = '/album';
   static const String notification = '/notification';

@@ -75,6 +75,18 @@ const {
   mockAllowed: authMockAllowed,
 } = require("./services/auth/sessionService");
 const authFirebaseAdmin = require("./services/auth/firebaseAdmin");
+const {
+  createTask: createDailyCareTask,
+  listTasks: listDailyCareTasks,
+  getTaskById: getDailyCareTaskById,
+  updateTaskStatus: updateDailyCareTaskStatus,
+  recordSubmission: recordDailyCareTaskSubmission,
+  getSubmissionById: getDailyCareTaskSubmissionById,
+  listTasksForAdmin: listDailyCareTasksForAdmin,
+} = require("./services/dailyCareTask/dailyCareTaskStore");
+const {
+  verifyProof: verifyDailyCareTaskProof,
+} = require("./services/dailyCareTask/dailyCareTaskVisionService");
 const adminAnalysis = require("./services/admin/adminAnalysisService");
 
 const app = express();
@@ -531,6 +543,181 @@ app.post("/api/auth/delete", async (req, res) => {
   } catch (error) {
     logError("auth delete exception", { error: error?.message || error });
     return res.status(500).json({ success: false, error: "auth_delete_failed" });
+  }
+});
+
+// CR-0025 日常照護任務（Daily Care Task）：長者端拍照打卡 + AI 影像確認 +
+// 管理者端追蹤。與既有遊戲化 CareTask 不同功能，獨立 daily care task 命名。
+// 只新增路由，不改既有路由形狀。資料走 JSON store（runtime、不進版控）。
+
+// 長者端：取得某長者的日常任務列表。
+app.get("/api/daily-care-tasks", async (req, res) => {
+  try {
+    const elderId =
+      typeof req.query.elderId === "string" && req.query.elderId.trim()
+        ? req.query.elderId.trim()
+        : null;
+    const status =
+      typeof req.query.status === "string" && req.query.status.trim()
+        ? req.query.status.trim()
+        : null;
+    const tasks = await listDailyCareTasks({ elderId, status });
+    return res.json({ success: true, tasks });
+  } catch (error) {
+    logError("daily care tasks list exception", {
+      error: error?.message || error,
+    });
+    return res
+      .status(500)
+      .json({ success: false, error: "daily_care_tasks_list_failed" });
+  }
+});
+
+// 建立任務（Agent / 管理者 / 種子資料可用）。
+app.post("/api/daily-care-tasks", async (req, res) => {
+  const body = req.body || {};
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  if (!title) {
+    return res.status(400).json({ success: false, error: "invalid_payload" });
+  }
+  try {
+    const task = await createDailyCareTask(body);
+    return res.json({ success: true, task });
+  } catch (error) {
+    logError("daily care task create exception", {
+      error: error?.message || error,
+    });
+    return res
+      .status(500)
+      .json({ success: false, error: "daily_care_task_create_failed" });
+  }
+});
+
+// 長者端：上傳完成照片 → AI Vision 確認 → 更新任務狀態。
+// AI 不確定 / 失敗 / 缺 key → needs_review（不 fake passed、不 crash）。
+app.post(
+  "/api/daily-care-tasks/:id/submit",
+  upload.single("photo"),
+  async (req, res) => {
+    const taskId = req.params.id;
+    const cleanup = () => {
+      // 驗證失敗或找不到任務時清掉暫存檔；成功時保留供管理者查看（uploads/ 不進版控）。
+      if (req.file) fs.unlink(req.file.path, () => {});
+    };
+    try {
+      const task = await getDailyCareTaskById(taskId);
+      if (!task) {
+        cleanup();
+        return res
+          .status(404)
+          .json({ success: false, error: "task_not_found" });
+      }
+      if (!req.file) {
+        return res
+          .status(400)
+          .json({ success: false, error: "photo_required" });
+      }
+
+      const verification = await verifyDailyCareTaskProof({
+        taskType: task.type,
+        imagePath: req.file.path,
+        mimeType: req.file.mimetype,
+      });
+
+      const result = await recordDailyCareTaskSubmission(taskId, {
+        proofImagePath: req.file.path,
+        proofMimeType: req.file.mimetype,
+        verification,
+        note: typeof req.body?.note === "string" ? req.body.note : "",
+      });
+
+      return res.json({
+        success: true,
+        task: result.task,
+        submission: result.submission,
+      });
+    } catch (error) {
+      cleanup();
+      logError("daily care task submit exception", {
+        error: error?.message || error,
+      });
+      return res
+        .status(500)
+        .json({ success: false, error: "daily_care_task_submit_failed" });
+    }
+  },
+);
+
+// 管理者 / 系統：更新任務狀態（如人工查看後 completed / rejected）。
+app.patch("/api/daily-care-tasks/:id/status", async (req, res) => {
+  const status =
+    typeof req.body?.status === "string" ? req.body.status.trim() : "";
+  try {
+    const result = await updateDailyCareTaskStatus(req.params.id, status);
+    if (!result.success) {
+      const code = result.error === "not_found" ? 404 : 400;
+      return res.status(code).json({ success: false, error: result.error });
+    }
+    return res.json({ success: true, task: result.task });
+  } catch (error) {
+    logError("daily care task status exception", {
+      error: error?.message || error,
+    });
+    return res
+      .status(500)
+      .json({ success: false, error: "daily_care_task_status_failed" });
+  }
+});
+
+// 管理者端：列出所有任務 + 每筆最新 submission（含 AI 結果），供 caregiver_web。
+app.get("/api/admin/daily-care-tasks", async (req, res) => {
+  try {
+    const elderId =
+      typeof req.query.elderId === "string" && req.query.elderId.trim()
+        ? req.query.elderId.trim()
+        : null;
+    const status =
+      typeof req.query.status === "string" && req.query.status.trim()
+        ? req.query.status.trim()
+        : null;
+    const tasks = await listDailyCareTasksForAdmin({ elderId, status });
+    return res.json({ success: true, tasks });
+  } catch (error) {
+    logError("admin daily care tasks exception", {
+      error: error?.message || error,
+    });
+    return res
+      .status(500)
+      .json({ success: false, error: "admin_daily_care_tasks_failed" });
+  }
+});
+
+// 照片證明檢視入口（長者預覽 / 管理者查看）。只回 uploads/ 內的安全路徑。
+app.get("/api/daily-care-tasks/proof/:submissionId", async (req, res) => {
+  try {
+    const submission = await getDailyCareTaskSubmissionById(
+      req.params.submissionId,
+    );
+    if (!submission || !submission.proofImagePath) {
+      return res.status(404).json({ success: false, error: "proof_not_found" });
+    }
+    const resolved = path.resolve(submission.proofImagePath);
+    const uploadsRoot = path.resolve(path.join(__dirname, "uploads"));
+    // 安全：只允許讀 uploads/ 內的檔案，避免路徑穿越。
+    if (!resolved.startsWith(uploadsRoot + path.sep)) {
+      return res.status(404).json({ success: false, error: "proof_not_found" });
+    }
+    if (!fs.existsSync(resolved)) {
+      return res.status(404).json({ success: false, error: "proof_not_found" });
+    }
+    return res.sendFile(resolved);
+  } catch (error) {
+    logError("daily care task proof exception", {
+      error: error?.message || error,
+    });
+    return res
+      .status(500)
+      .json({ success: false, error: "daily_care_task_proof_failed" });
   }
 });
 

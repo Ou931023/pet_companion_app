@@ -447,6 +447,22 @@
   var healthLoaded = false;
   var activeElderId = null;
 
+  // CR-0025 日常任務追蹤 view 的元素參照。
+  var elT = {
+    tabTasks: document.getElementById("tab-tasks"),
+    viewTasks: document.getElementById("view-tasks"),
+    tasksRefresh: document.getElementById("tasks-refresh"),
+    tasksFilter: document.getElementById("tasks-filter"),
+    tasksStatus: document.getElementById("tasks-status"),
+    taskList: document.getElementById("task-list"),
+    statTotal: document.getElementById("task-stat-total"),
+    statCompleted: document.getElementById("task-stat-completed"),
+    statPending: document.getElementById("task-stat-pending"),
+    statReview: document.getElementById("task-stat-review"),
+    statMissed: document.getElementById("task-stat-missed"),
+  };
+  var tasksLoaded = false;
+
   function adminUrl(path) {
     return getApiBase() + "/admin" + path;
   }
@@ -496,17 +512,188 @@
   }
 
   function showView(name) {
-    var isHealth = name === "health";
-    elH.viewAlerts.classList.toggle("hidden", isHealth);
-    elH.viewHealth.classList.toggle("hidden", !isHealth);
-    elH.viewHealth.setAttribute("aria-hidden", isHealth ? "false" : "true");
-    elH.tabAlerts.classList.toggle("is-active", !isHealth);
-    elH.tabHealth.classList.toggle("is-active", isHealth);
-    if (isHealth && !healthLoaded) {
+    var views = {
+      alerts: { view: elH.viewAlerts, tab: elH.tabAlerts },
+      health: { view: elH.viewHealth, tab: elH.tabHealth },
+      tasks: { view: elT.viewTasks, tab: elT.tabTasks },
+    };
+    Object.keys(views).forEach(function (key) {
+      var active = key === name;
+      var entry = views[key];
+      if (entry.view) {
+        entry.view.classList.toggle("hidden", !active);
+        entry.view.setAttribute("aria-hidden", active ? "false" : "true");
+      }
+      if (entry.tab) entry.tab.classList.toggle("is-active", active);
+    });
+    if (name === "health" && !healthLoaded) {
       healthLoaded = true;
       loadHealthOverview();
       loadElderList();
     }
+    if (name === "tasks" && !tasksLoaded) {
+      tasksLoaded = true;
+      loadDailyTasks();
+    }
+  }
+
+  // ---- CR-0025 日常任務追蹤 ----
+
+  function dailyTaskTypeLabel(type) {
+    if (type === "hydration") return "喝水";
+    if (type === "exercise") return "運動";
+    return "吃藥";
+  }
+
+  function dailyTaskStatusLabel(status) {
+    switch (status) {
+      case "completed":
+        return "已完成";
+      case "submitted":
+        return "已送出";
+      case "needs_review":
+        return "等待查看";
+      case "rejected":
+        return "未通過";
+      case "missed":
+        return "已逾時";
+      default:
+        return "待完成";
+    }
+  }
+
+  // AI 影像驗證狀態 → 中文。注意：只描述照片是否符合，不宣稱藥物 / 劑量正確。
+  function dailyTaskVerificationLabel(status) {
+    switch (status) {
+      case "passed":
+        return "照片相符";
+      case "failed":
+        return "照片不符";
+      default:
+        return "需人工確認";
+    }
+  }
+
+  function summarizeDailyTasks(tasks) {
+    var s = { total: tasks.length, completed: 0, pending: 0, review: 0, missed: 0 };
+    tasks.forEach(function (t) {
+      if (t.status === "completed") s.completed += 1;
+      else if (t.status === "needs_review") s.review += 1;
+      else if (t.status === "missed") s.missed += 1;
+      else s.pending += 1; // pending / submitted / rejected 都算未完成
+    });
+    return s;
+  }
+
+  function dailyTaskProofUrl(submissionId) {
+    return (
+      getApiBase() +
+      "/daily-care-tasks/proof/" +
+      encodeURIComponent(submissionId)
+    );
+  }
+
+  function renderDailyTaskRow(task) {
+    var sub = task.latestSubmission;
+    var v = sub && sub.verification ? sub.verification : null;
+    var aiStatus = v ? dailyTaskVerificationLabel(v.verificationStatus) : "—";
+    var aiConfidence =
+      v && typeof v.confidence === "number"
+        ? Math.round(Math.max(0, Math.min(1, v.confidence)) * 100) + "%"
+        : "—";
+    var aiReason = v && v.reason ? escapeHtml(v.reason) : "—";
+    var completedAt = task.status === "completed" && sub ? formatTime(sub.submittedAt) : "—";
+    var proof =
+      sub && sub.id
+        ? '<a class="task-proof-link" href="' +
+          escapeHtml(dailyTaskProofUrl(sub.id)) +
+          '" target="_blank" rel="noopener">查看照片</a>'
+        : "—";
+
+    return (
+      '<div class="task-row" data-status="' +
+      escapeHtml(task.status || "pending") +
+      '">' +
+      '<div class="task-row-main">' +
+      '<span class="task-type">' +
+      escapeHtml(dailyTaskTypeLabel(task.type)) +
+      "</span>" +
+      '<span class="task-title">' +
+      escapeHtml(task.title || "") +
+      "</span>" +
+      '<span class="task-elder">長者：' +
+      escapeHtml(task.elderId || "—") +
+      "</span>" +
+      "</div>" +
+      '<div class="task-row-meta">' +
+      '<span class="task-badge">' +
+      escapeHtml(dailyTaskStatusLabel(task.status)) +
+      "</span>" +
+      "<span>完成時間：" +
+      escapeHtml(completedAt) +
+      "</span>" +
+      "<span>AI 判斷：" +
+      escapeHtml(aiStatus) +
+      "</span>" +
+      "<span>信心：" +
+      escapeHtml(aiConfidence) +
+      "</span>" +
+      "<span>原因：" +
+      aiReason +
+      "</span>" +
+      "<span>照片：" +
+      proof +
+      "</span>" +
+      "</div>" +
+      "</div>"
+    );
+  }
+
+  function renderDailyTasks(tasks) {
+    var s = summarizeDailyTasks(tasks);
+    elT.statTotal.textContent = s.total;
+    elT.statCompleted.textContent = s.completed;
+    elT.statPending.textContent = s.pending;
+    elT.statReview.textContent = s.review;
+    elT.statMissed.textContent = s.missed;
+
+    if (!tasks.length) {
+      elT.taskList.innerHTML =
+        '<p class="empty">目前沒有符合條件的任務。</p>';
+      return;
+    }
+    elT.taskList.innerHTML = tasks.map(renderDailyTaskRow).join("");
+  }
+
+  // GET /api/admin/daily-care-tasks → 任務 + 最新 submission（含 AI 結果）。
+  // 後端連不到時 mock-safe：顯示白話訊息、清空統計，不 crash、不假裝有資料。
+  function loadDailyTasks() {
+    var filter = elT.tasksFilter ? elT.tasksFilter.value : "";
+    var url = adminUrl("/daily-care-tasks");
+    if (filter) url += "?status=" + encodeURIComponent(filter);
+    if (elT.tasksStatus) elT.tasksStatus.textContent = "載入中…";
+
+    fetch(url)
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        var tasks = data && Array.isArray(data.tasks) ? data.tasks : [];
+        renderDailyTasks(tasks);
+        if (elT.tasksStatus) elT.tasksStatus.textContent = "";
+      })
+      .catch(function () {
+        ["statTotal", "statCompleted", "statPending", "statReview", "statMissed"].forEach(
+          function (k) {
+            if (elT[k]) elT[k].textContent = "—";
+          }
+        );
+        if (elT.taskList) elT.taskList.innerHTML = "";
+        if (elT.tasksStatus) {
+          elT.tasksStatus.textContent = "目前連不到後端，待會再重新整理看看。";
+        }
+      });
   }
 
   // GET /api/admin/overview → 六指標
@@ -859,6 +1046,19 @@
       loadHealthOverview();
       loadElderList();
     });
+
+    // CR-0025 日常任務追蹤分頁。
+    if (elT.tabTasks) {
+      elT.tabTasks.addEventListener("click", function () {
+        showView("tasks");
+      });
+    }
+    if (elT.tasksRefresh) {
+      elT.tasksRefresh.addEventListener("click", loadDailyTasks);
+    }
+    if (elT.tasksFilter) {
+      elT.tasksFilter.addEventListener("change", loadDailyTasks);
+    }
 
     loadAlerts();
   }

@@ -16,11 +16,14 @@ import 'controllers/memory_controller.dart';
 import 'controllers/pet_controller.dart';
 import 'controllers/pet_stats_controller.dart';
 import 'controllers/profile_controller.dart';
+import 'controllers/daily_care_task_controller.dart';
 import 'controllers/reminder_controller.dart';
 import 'controllers/task_controller.dart';
 import 'controllers/voice_agent_controller.dart';
 import 'controllers/wallet_controller.dart';
 import 'routes/app_routes.dart';
+import 'theme/app_theme.dart';
+import 'utils/platform_liquid_glass.dart';
 import 'screens/album_screen.dart';
 import 'screens/care_alert_screen.dart';
 import 'screens/conversation_detail_screen.dart';
@@ -32,6 +35,7 @@ import 'screens/notification_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/puzzle_game_screen.dart';
 import 'screens/register_screen.dart';
+import 'screens/daily_care_task_screen.dart';
 import 'screens/reminder_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/shop_screen.dart';
@@ -46,6 +50,7 @@ import 'services/check_in_storage_service.dart';
 import 'services/companion_content_service.dart';
 import 'services/companion_engine_service.dart';
 import 'services/contact_lookup_service.dart';
+import 'models/care_alert.dart';
 import 'services/companion_reply_strategy_service.dart';
 import 'services/emotion_services.dart';
 import 'services/inventory_storage_service.dart';
@@ -66,7 +71,6 @@ import 'services/taigi_asr_strategy.dart';
 import 'services/taigi_asr_service.dart';
 import 'services/text_to_speech_service.dart';
 import 'services/web_search_service.dart';
-import 'utils/platform_liquid_glass.dart';
 
 class PetCompanionApp extends StatelessWidget {
   const PetCompanionApp({super.key});
@@ -101,13 +105,6 @@ class PetCompanionApp extends StatelessWidget {
           create: (context) =>
               ProfileController(context.read<LocalStorageService>()),
         ),
-        ProxyProvider<ProfileController, NativeToolExecutorService>(
-          update: (_, profile, previous) =>
-              previous ??
-              NativeToolExecutorService(
-                contactLookup: ContactLookupService(profile),
-              ),
-        ),
         ChangeNotifierProvider(
           create: (context) =>
               PetStatsController(context.read<PetStatsStorageService>()),
@@ -133,6 +130,8 @@ class PetCompanionApp extends StatelessWidget {
             notificationService: context.read<NotificationService>(),
           ),
         ),
+        // CR-0025 日常照護任務（與遊戲化 CareTask 不同功能）。
+        ChangeNotifierProvider(create: (_) => DailyCareTaskController()),
         ChangeNotifierProxyProvider<ProfileController, TaskController>(
           create: (context) =>
               TaskController(context.read<ProfileController>()),
@@ -184,6 +183,48 @@ class PetCompanionApp extends StatelessWidget {
             webSearchService: context.read<WebSearchService>(),
             mockAiService: context.read<MockAiService>(),
             companionContentService: context.read<CompanionContentService>(),
+          ),
+        ),
+        // Native Tool 執行層：放在所需控制器之後建立，讓高影響工具能沿用既有真實流程
+        // （登出 / Care Alert 通知 / 說故事內容），不另開新架構、不加 demo-only 假成功。
+        // 這些 callback 對應的工具皆 requiresConfirmation=true，只有使用者確認後才被呼叫。
+        Provider<NativeToolExecutorService>(
+          create: (context) => NativeToolExecutorService(
+            contactLookup:
+                ContactLookupService(context.read<ProfileController>()),
+            onLogout: () => context.read<AuthController>().logout(),
+            onNotifyCaregiver: ({required reason, required riskLevel}) async {
+              // 先同步取出所需服務，避免 await 後再用 context。
+              final careAlertController = context.read<CareAlertController>();
+              final notifyService =
+                  context.read<CareAlertNotificationService>();
+              final sttProxyUrl =
+                  context.read<ProfileController>().sttProxyUrl;
+              final alert = CareAlert(
+                id: 'agent_notify_${DateTime.now().microsecondsSinceEpoch}',
+                createdAt: DateTime.now(),
+                riskLevel: CareAlertRiskLevel.fromJson(riskLevel),
+                category: CareAlertCategory.other,
+                triggerSummary: reason,
+                transcriptSnippet: reason,
+                source: 'agent_tool',
+                isRead: false,
+              );
+              await careAlertController.addAlert(alert);
+              await notifyService.notify(
+                sttProxyUrl: sttProxyUrl,
+                alert: alert,
+              );
+              return true;
+            },
+            storyProvider: (topic) async {
+              final result =
+                  await context.read<CompanionContentService>().createContent(
+                userText: topic.isEmpty ? '說個故事' : '說一個關於$topic的故事',
+                preferences: const ['story'],
+              );
+              return result.message;
+            },
           ),
         ),
         ChangeNotifierProvider(
@@ -301,11 +342,7 @@ class PetCompanionApp extends StatelessWidget {
             title: '愛陪伴',
             navigatorKey: navigation.navigatorKey,
             debugShowCheckedModeBanner: false,
-            theme: ThemeData(
-              colorSchemeSeed: Colors.indigo,
-              useMaterial3: true,
-              scaffoldBackgroundColor: const Color(0xFFF7F8FC),
-            ),
+            theme: AppTheme.light(),
             builder: (context, child) {
               final mediaQuery = MediaQuery.of(context);
               return MediaQuery(
@@ -332,6 +369,7 @@ class PetCompanionApp extends StatelessWidget {
           AppRoute.notification => const NotificationScreen(),
           AppRoute.careAlerts => const CareAlertScreen(),
           AppRoute.reminders => const ReminderScreen(),
+          AppRoute.dailyCareTasks => const DailyCareTaskScreen(),
           AppRoute.memories => const MemoryManagementScreen(),
           AppRoute.puzzle => const PuzzleGameScreen(),
           AppRoute.conversationDetail => _conversationDetail(settings),
@@ -398,6 +436,7 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
       final checkInController = context.read<CheckInController>();
       final inventoryController = context.read<InventoryController>();
       final reminderController = context.read<ReminderController>();
+      final dailyCareTaskController = context.read<DailyCareTaskController>();
       final careAlertController = context.read<CareAlertController>();
       final conversationController = context.read<ConversationController>();
       final notificationService = context.read<NotificationService>();
@@ -428,6 +467,9 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
         inventoryStorageService.setUserId(elderId);
         careAlertStorageService.setUserId(elderId);
         reminderService.setUserId(elderId);
+        // CR-0025：日常照護任務也依帳號隔離；任務列表在進入「今日任務」頁時才向
+        // 後端載入（避免每次啟動都打 API），這裡只切換命名空間。
+        dailyCareTaskController.setElderId(elderId);
         memoryController.syncUserId(elderId);
         await profileController.load();
         // CR-0011：每個 elderId 各自記住寵物外觀，換帳號 / 登出 / 還原時一起重載。
@@ -541,6 +583,11 @@ class _AuthLoadingView extends StatelessWidget {
 
 String _dateKey() => DateTime.now().toIso8601String().split('T').first;
 
+/// iOS 26 原生 Liquid Glass 底部列（UiKitView）容器高度（不含底部安全區）。
+/// 原本 84 會讓浮動列顯得漂在畫面中間、離底部太遠；調小讓它更貼近螢幕底部，
+/// 同時保留原生 Liquid Glass 材質（不動 Swift）。內容避讓的 padding 也沿用此值。
+const double _kNativeHomeBarHeight = 56;
+
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
 
@@ -563,7 +610,7 @@ class _MainShellState extends State<MainShell> {
         navigation.currentShellIndex < 0 ? 0 : navigation.currentShellIndex;
     final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
     final bottomContentPadding = supportsLiquidGlassHomeBar && !keyboardOpen
-        ? 84 + MediaQuery.paddingOf(context).bottom
+        ? _kNativeHomeBarHeight + MediaQuery.paddingOf(context).bottom
         : 0.0;
     // CoachMarkHost 包住整個 shell：首次進首頁自動跑新手導覽，並把 spotlight
     // 疊在最上層（含底部導覽列）。導覽邏輯集中於 CoachMarkHost / CoachMarkController。
@@ -629,10 +676,10 @@ class _HomeNavigationBarState extends State<_HomeNavigationBar> {
 
   @override
   Widget build(BuildContext context) {
-    // 把導覽 key 掛在「整條底部列」的外層 KeyedSubtree 上（不論 Flutter
+    // 把導覽用 key 掛在「整條底部列」的外層 KeyedSubtree 上（不論 Flutter
     // NavigationBar 或 iOS 原生 UiKitView），讓新手導覽都能取得這條列的螢幕框，
-    // 再由 overlay 切出商城 / 紀錄 / 設定那一格高亮（CR-0016b：解決原生列拿不到
-    // 框、底部 tab 不會亮的實機問題）。
+    // 再由 overlay 切出商城 / 紀錄 / 設定那一格高亮（CR-0016 v2：解決原生列
+    // 拿不到框、底部 tab 不會亮的實機問題）。
     return KeyedSubtree(
       key: context.read<CoachMarkKeys>().navBarKey,
       child: _buildBar(context),
@@ -649,7 +696,7 @@ class _HomeNavigationBarState extends State<_HomeNavigationBar> {
     }
 
     return SizedBox(
-      height: 84 + MediaQuery.paddingOf(context).bottom,
+      height: _kNativeHomeBarHeight + MediaQuery.paddingOf(context).bottom,
       child: UiKitView(
         key: ValueKey('native_home_bar_${widget.selectedIndex}'),
         viewType: 'native_home_bar',

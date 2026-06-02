@@ -28,6 +28,9 @@
         <button id="tab-health" class="view-tab" type="button" role="tab">
           健康分析
         </button>
+        <button id="tab-tasks" class="view-tab" type="button" role="tab">
+          日常任務
+        </button>
       </nav>
 
       <div id="view-alerts">
@@ -206,6 +209,54 @@
             </div>
           </div>
         </div>
+      </section>
+
+      <!-- 日常任務追蹤 view（CR-0025）：吃藥 / 喝水 / 運動拍照打卡 + AI 影像確認 -->
+      <section id="view-tasks" class="view-tasks hidden" aria-hidden="true">
+        <section class="panel">
+          <div class="panel-head">
+            <h2 class="section-title">日常任務追蹤</h2>
+            <div class="row">
+              <label class="field-label" for="tasks-filter">狀態篩選</label>
+              <select id="tasks-filter" class="select">
+                <option value="">全部</option>
+                <option value="pending">待完成</option>
+                <option value="completed">已完成</option>
+                <option value="needs_review">等待查看</option>
+                <option value="missed">已逾時</option>
+                <option value="rejected">未通過</option>
+              </select>
+              <button id="tasks-refresh" class="btn">重新整理</button>
+            </div>
+          </div>
+
+          <!-- 任務統計：今日數 / 已完成 / 未完成 / 逾時 / 等待查看 -->
+          <div class="stat-grid">
+            <div class="stat-card">
+              <div class="stat-label">今日任務</div>
+              <div id="task-stat-total" class="stat-value">—</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">已完成</div>
+              <div id="task-stat-completed" class="stat-value">—</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">未完成</div>
+              <div id="task-stat-pending" class="stat-value">—</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">等待查看</div>
+              <div id="task-stat-review" class="stat-value">—</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">已逾時</div>
+              <div id="task-stat-missed" class="stat-value">—</div>
+            </div>
+          </div>
+
+          <p id="tasks-status" class="status-message"></p>
+          <div id="task-list" class="task-list"></div>
+        </section>
       </section>
 
       <!-- 後端連線設定（次要，平常收合） -->
