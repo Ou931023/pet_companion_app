@@ -45,6 +45,8 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>需要使用相機，才能拍下吃藥、喝水、運動的完成照片。</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>需要連線到同一個 Wi-Fi 內的語音服務，才能使用即時語音陪伴功能。</string>
 	<key>NSMicrophoneUsageDescription</key>
