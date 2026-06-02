@@ -165,6 +165,29 @@ class ConversationController extends ChangeNotifier {
     return true;
   }
 
+  /// 刪除某一筆紀錄中的「單一則」訊息：[deleteUser] 為 true 只刪使用者那句，
+  /// false 只刪寵物那句。若刪掉後該筆兩側都空了 → 整筆移除。
+  ///
+  /// 與 [deleteConversationTurn] 一樣只動本機對話歷史，**不影響長期記憶**。
+  /// 找不到該筆 → 回傳 false。
+  Future<bool> deleteConversationMessage(
+    ConversationTurn turn, {
+    required bool deleteUser,
+  }) async {
+    final index = _history.indexOf(turn);
+    if (index < 0) return false;
+    final updated =
+        deleteUser ? turn.copyWith(userText: '') : turn.copyWith(petReply: '');
+    if (updated.userText.trim().isEmpty && updated.petReply.trim().isEmpty) {
+      _history.removeAt(index);
+    } else {
+      _history[index] = updated;
+    }
+    await _persistHistory();
+    notifyListeners();
+    return true;
+  }
+
   bool get isBusy => _isBusy;
   bool get isAwaitingPetReply => _isAwaitingPetReply;
   String get activeSessionId => _activeSessionId;

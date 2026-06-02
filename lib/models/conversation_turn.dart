@@ -53,6 +53,40 @@ class ConversationTurn {
   final String routeReason;
   final String replyLanguage;
 
+  /// 複製一筆紀錄並覆寫指定欄位。目前用於「只刪一則」時把使用者那句或寵物那句
+  /// 清空（其餘欄位原樣保留）。
+  ConversationTurn copyWith({
+    String? userText,
+    String? petReply,
+  }) {
+    return ConversationTurn(
+      timestamp: timestamp,
+      userText: userText ?? this.userText,
+      petReply: petReply ?? this.petReply,
+      toolName: toolName,
+      turnId: turnId,
+      sessionId: sessionId,
+      emotionTag: emotionTag,
+      petMood: petMood,
+      toolUsed: toolUsed,
+      searchMode: searchMode,
+      searchProvider: searchProvider,
+      sources: sources,
+      memoryExtracted: memoryExtracted,
+      memorySaved: memorySaved,
+      savedMemoryIds: savedMemoryIds,
+      memoryExtractionReason: memoryExtractionReason,
+      memoryUsed: memoryUsed,
+      usedMemoryIds: usedMemoryIds,
+      memoryContextSummary: memoryContextSummary,
+      memoryProvider: memoryProvider,
+      asrSource: asrSource,
+      languageHint: languageHint,
+      routeReason: routeReason,
+      replyLanguage: replyLanguage,
+    );
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'timestamp': timestamp.toIso8601String(),

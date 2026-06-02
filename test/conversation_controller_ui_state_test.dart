@@ -310,12 +310,84 @@ void main() {
       expect(controller.turnsForSession(sid).length, 1);
     });
 
-    testWidgets('長按 → 確認視窗；取消不刪；刪除移除該筆、保留其他', (tester) async {
+    test('只刪一則：刪使用者那句，寵物回覆保留', () async {
       final controller = _createConversationController();
       addTearDown(controller.dispose);
       controller.startNewSession();
       final sid = controller.activeSessionId;
-      controller.appendExternalTurn(makeTurn(sid, DateTime(2026, 1, 1), '想刪的訊息', 'A'));
+      controller
+          .appendExternalTurn(makeTurn(sid, DateTime(2026, 1, 1), '我的話', '寵物的回覆'));
+
+      final ok = await controller.deleteConversationMessage(
+        controller.turnsForSession(sid).first,
+        deleteUser: true,
+      );
+
+      expect(ok, isTrue);
+      final after = controller.turnsForSession(sid);
+      expect(after.length, 1, reason: '整段還在，只是少了使用者那句');
+      expect(after.first.userText, '');
+      expect(after.first.petReply, '寵物的回覆');
+    });
+
+    test('只刪一則：刪寵物那句，使用者那句保留', () async {
+      final controller = _createConversationController();
+      addTearDown(controller.dispose);
+      controller.startNewSession();
+      final sid = controller.activeSessionId;
+      controller
+          .appendExternalTurn(makeTurn(sid, DateTime(2026, 1, 1), '我的話', '寵物的回覆'));
+
+      final ok = await controller.deleteConversationMessage(
+        controller.turnsForSession(sid).first,
+        deleteUser: false,
+      );
+
+      expect(ok, isTrue);
+      final after = controller.turnsForSession(sid);
+      expect(after.length, 1);
+      expect(after.first.userText, '我的話');
+      expect(after.first.petReply, '');
+    });
+
+    test('只刪一則：兩側都空了 → 整段移除', () async {
+      final controller = _createConversationController();
+      addTearDown(controller.dispose);
+      controller.startNewSession();
+      final sid = controller.activeSessionId;
+      controller
+          .appendExternalTurn(makeTurn(sid, DateTime(2026, 1, 1), '只有我這句', ''));
+
+      final ok = await controller.deleteConversationMessage(
+        controller.turnsForSession(sid).first,
+        deleteUser: true,
+      );
+
+      expect(ok, isTrue);
+      expect(controller.turnsForSession(sid), isEmpty);
+    });
+
+    test('只刪一則：找不到該筆回 false', () async {
+      final controller = _createConversationController();
+      addTearDown(controller.dispose);
+      controller.startNewSession();
+      final sid = controller.activeSessionId;
+      controller.appendExternalTurn(makeTurn(sid, DateTime(2026, 1, 1), 'A', 'B'));
+
+      final ghost = makeTurn(sid, DateTime(2030, 1, 1), '不存在', '');
+      final ok = await controller.deleteConversationMessage(ghost, deleteUser: true);
+
+      expect(ok, isFalse);
+      expect(controller.turnsForSession(sid).length, 1);
+    });
+
+    testWidgets('長按使用者泡泡 → 只刪那一句，寵物回覆與其他訊息保留', (tester) async {
+      final controller = _createConversationController();
+      addTearDown(controller.dispose);
+      controller.startNewSession();
+      final sid = controller.activeSessionId;
+      controller.appendExternalTurn(
+          makeTurn(sid, DateTime(2026, 1, 1), '想刪的訊息', '對應的回覆'));
       controller.appendExternalTurn(makeTurn(sid, DateTime(2026, 1, 2), '保留的訊息', 'B'));
 
       await tester.pumpWidget(
@@ -328,25 +400,58 @@ void main() {
       );
       await tester.pump();
       expect(find.text('想刪的訊息'), findsOneWidget);
-      expect(find.text('保留的訊息'), findsOneWidget);
+      expect(find.text('對應的回覆'), findsOneWidget);
 
-      // 長按 → 出現確認視窗（不會直接刪除）。
+      // 長按使用者泡泡 → 出現「只刪這一句」確認視窗。
       await tester.longPress(find.text('想刪的訊息'));
       await tester.pumpAndSettle();
-      expect(find.text('要刪除這筆紀錄嗎？'), findsOneWidget);
+      expect(find.text('要刪掉這一句嗎？'), findsOneWidget);
 
-      // 點「取消」→ 不刪除。
+      // 取消 → 不刪。
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
-      expect(find.text('要刪除這筆紀錄嗎？'), findsNothing);
       expect(find.text('想刪的訊息'), findsOneWidget);
 
-      // 再長按 → 點「刪除」→ 只移除該筆，其他保留。
+      // 再長按 → 刪除 → 只移除使用者那句，寵物回覆與其他訊息都還在。
       await tester.longPress(find.text('想刪的訊息'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('刪除'));
       await tester.pumpAndSettle();
       expect(find.text('想刪的訊息'), findsNothing);
+      expect(find.text('對應的回覆'), findsOneWidget);
+      expect(find.text('保留的訊息'), findsOneWidget);
+    });
+
+    testWidgets('長按情緒列 → 刪整段（使用者與寵物兩句一起移除）', (tester) async {
+      final controller = _createConversationController();
+      addTearDown(controller.dispose);
+      controller.startNewSession();
+      final sid = controller.activeSessionId;
+      controller
+          .appendExternalTurn(makeTurn(sid, DateTime(2026, 1, 1), '整段想刪', '一起刪'));
+      controller.appendExternalTurn(makeTurn(sid, DateTime(2026, 1, 2), '保留的訊息', 'B'));
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<ConversationController>.value(
+          value: controller,
+          child: MaterialApp(
+            home: ConversationDetailScreen(sessionId: sid, title: '紀錄'),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // 長按情緒列（含「長按這行刪整段」）→ 出現刪整段確認。
+      await tester.longPress(
+        find.text('情緒：neutral｜寵物心情：neutral　·　長按這行刪整段').first,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('要刪除整段對話嗎？'), findsOneWidget);
+
+      await tester.tap(find.text('刪除'));
+      await tester.pumpAndSettle();
+      expect(find.text('整段想刪'), findsNothing);
+      expect(find.text('一起刪'), findsNothing);
       expect(find.text('保留的訊息'), findsOneWidget);
     });
   });
