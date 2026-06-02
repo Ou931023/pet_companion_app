@@ -25,6 +25,10 @@ class SessionApiService {
   Uri get _sessionUri =>
       Uri.parse('${AppConfig.backendBaseUrl}/api/auth/session');
 
+  /// 刪除帳號端點：`$backendBaseUrl/api/auth/delete`。
+  Uri get _deleteUri =>
+      Uri.parse('${AppConfig.backendBaseUrl}/api/auth/delete');
+
   Future<AuthSession> createSession({
     required String firebaseUid,
     required String idToken,
@@ -67,6 +71,40 @@ class SessionApiService {
       // 含 timeout / 連線錯誤 / JSON 解析失敗：吞掉，回 fallback。
       debugPrint('[AUTH_SESSION] createSession 失敗，改用 demo fallback session：$error');
       return AuthSession.mockFallback();
+    }
+  }
+
+  /// 呼叫後端 `POST /api/auth/delete`，移除該帳號在後端的所有資料
+  /// （使用者 / 長者 / 長期記憶 / Care Alert）。
+  ///
+  /// 設計同 [createSession]：**不丟例外**。成功回 `true`，任何失敗
+  /// （非 2xx、連線錯誤、解析失敗）回 `false`——讓「帳號刪除」不被後端
+  /// 連線問題擋住（Firebase 帳號與本機資料仍會照常清除）。
+  Future<bool> deleteAccount({
+    required String firebaseUid,
+    required String idToken,
+  }) async {
+    try {
+      final response = await _client
+          .post(
+            _deleteUri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'firebaseUid': firebaseUid,
+              'idToken': idToken,
+            }),
+          )
+          .timeout(_timeout);
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        debugPrint('[AUTH_DELETE] 後端刪除回非 2xx：${response.statusCode}（已忽略）');
+        return false;
+      }
+      final decoded = jsonDecode(response.body);
+      return decoded is Map<String, dynamic> && decoded['success'] == true;
+    } catch (error) {
+      debugPrint('[AUTH_DELETE] 後端刪除失敗（已忽略，仍會清本機與 Firebase）：$error');
+      return false;
     }
   }
 }

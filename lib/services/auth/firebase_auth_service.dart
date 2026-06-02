@@ -233,4 +233,99 @@ class FirebaseAuthService {
       // 忽略：登出失敗不影響本機登出流程。
     }
   }
+
+  /// 刪除目前登入的 Firebase 帳號（讓同一個 Email 之後可以重新註冊）。
+  ///
+  /// - Firebase 不可用 / 沒有目前使用者（如 Demo 登入）→ 安全 no-op，
+  ///   交給上層只做本機清除。
+  /// - 失敗丟 [EmailAuthException]（已轉應用層 code，不外洩 Firebase 型別）。
+  ///   常見 `requires-recent-login`：登入太久需要重新登入後再刪除。
+  ///   上層應在刪除前先呼叫 [reauthenticateWithPassword] /
+  ///   [reauthenticateWithGoogle]，避免落入此錯誤。
+  Future<void> deleteCurrentUser() async {
+    if (!_initializer.isAvailable) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      await user.delete();
+    } on FirebaseAuthException catch (error) {
+      throw EmailAuthException(error.code);
+    } catch (_) {
+      throw const EmailAuthException('unknown');
+    }
+  }
+
+  /// 目前是否有登入中的 Firebase user。Demo / Firebase 不可用時為 false。
+  bool get hasCurrentUser =>
+      _initializer.isAvailable && FirebaseAuth.instance.currentUser != null;
+
+  /// 取得目前 Firebase user 的 uid + 新 idToken，供後端刪除該帳號資料用。
+  ///
+  /// **必須在 `deleteCurrentUser()` 之前呼叫**（帳號刪除後就拿不到 token）。
+  /// 沒有目前使用者（Demo / 不可用）→ 回 null，上層只做本機 / 後端略過。
+  Future<({String uid, String idToken})?> currentUserAuthInfo() async {
+    if (!_initializer.isAvailable) return null;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return null;
+    try {
+      final idToken = await user.getIdToken() ?? '';
+      return (uid: user.uid, idToken: idToken);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 用 Email 密碼重新驗證（刪除帳號等敏感操作前，Firebase 會要求近期登入）。
+  ///
+  /// - Firebase 不可用 / 沒有目前使用者 → 安全 no-op。
+  /// - 密碼錯誤等失敗丟 [EmailAuthException]（如 `wrong-password` /
+  ///   `invalid-credential`），由上層轉白話。
+  Future<void> reauthenticateWithPassword(String password) async {
+    if (!_initializer.isAvailable) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final email = user.email;
+    if (email == null || email.isEmpty) {
+      throw const EmailAuthException('requires-recent-login');
+    }
+    try {
+      final credential =
+          EmailAuthProvider.credential(email: email, password: password);
+      await user.reauthenticateWithCredential(credential);
+    } on FirebaseAuthException catch (error) {
+      throw EmailAuthException(error.code);
+    } catch (_) {
+      throw const EmailAuthException('unknown');
+    }
+  }
+
+  /// 用 Google 重新驗證（重新跑一次 Google 登入並驗證目前帳號）。
+  ///
+  /// - Firebase 不可用 / 沒有目前使用者 → 安全 no-op。
+  /// - 使用者取消丟 `EmailAuthException('canceled')`（上層視為柔性中止）；
+  ///   其餘失敗丟 [EmailAuthException]。
+  Future<void> reauthenticateWithGoogle() async {
+    if (!_initializer.isAvailable) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      await _ensureGoogleInitialized();
+      final account = await GoogleSignIn.instance.authenticate();
+      final googleIdToken = account.authentication.idToken;
+      if (googleIdToken == null || googleIdToken.isEmpty) {
+        throw const EmailAuthException('unknown');
+      }
+      final credential = GoogleAuthProvider.credential(idToken: googleIdToken);
+      await user.reauthenticateWithCredential(credential);
+    } on GoogleSignInException catch (error) {
+      final mapped = _mapGoogleCode(error.code);
+      throw EmailAuthException(mapped == 'canceled' ? 'canceled' : 'unknown');
+    } on FirebaseAuthException catch (error) {
+      throw EmailAuthException(error.code);
+    } on EmailAuthException {
+      rethrow;
+    } catch (_) {
+      throw const EmailAuthException('unknown');
+    }
+  }
 }

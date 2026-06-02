@@ -284,8 +284,89 @@ async function createSession(input = {}, options = {}) {
   return upsertJson(upsertInput, authMode, options);
 }
 
+// ---- 刪除帳號（CR-0024）----
+
+async function deleteUserByFirebaseUidPostgres(firebaseUid) {
+  const found = await postgres.query(
+    `SELECT id, elder_id FROM users WHERE firebase_uid = $1 LIMIT 1`,
+    [firebaseUid],
+  );
+  const row = found.rows[0];
+  if (!row) {
+    return { user: 0, elder: 0, userId: null, elderId: null };
+  }
+  const userId = row.id;
+  const elderId = row.elder_id;
+  const userDel = await postgres.query(`DELETE FROM users WHERE id = $1`, [userId]);
+  let elderDel = { rowCount: 0 };
+  if (elderId != null) {
+    elderDel = await postgres.query(`DELETE FROM elders WHERE id = $1`, [elderId]);
+  }
+  return {
+    user: userDel.rowCount,
+    elder: elderDel.rowCount,
+    userId,
+    elderId,
+  };
+}
+
+async function deleteUserByFirebaseUidJson(firebaseUid, options) {
+  const usersFile = resolveUsersFile(options);
+  const eldersFile = resolveEldersFile(options);
+
+  const users = await readJsonArray(usersFile);
+  const existing = users.find((u) => u.firebaseUid === firebaseUid);
+  if (!existing) {
+    return { user: 0, elder: 0, userId: null, elderId: null };
+  }
+  const userId = existing.id;
+  const elderId = existing.elderId ?? existing.elder_id ?? null;
+
+  const remainingUsers = users.filter((u) => u.firebaseUid !== firebaseUid);
+  await writeJsonArray(usersFile, remainingUsers);
+
+  let elderRemoved = 0;
+  if (elderId != null) {
+    const elders = await readJsonArray(eldersFile);
+    const remainingElders = elders.filter((e) => e.id !== elderId);
+    elderRemoved = elders.length - remainingElders.length;
+    if (elderRemoved > 0) {
+      await writeJsonArray(eldersFile, remainingElders);
+    }
+  }
+
+  return {
+    user: users.length - remainingUsers.length,
+    elder: elderRemoved,
+    userId,
+    elderId,
+  };
+}
+
+// 以 firebaseUid 刪除 user + 對應 elder（1:1）。
+// 回傳 { user, elder, userId, elderId }（刪除筆數 + 被刪 user 的 id/elderId，
+// 供呼叫端再去刪該 userId/elderId 的記憶與 Care Alert）。
+// 找不到 → 全 0 / null（idempotent）。Postgres 優先、失敗 fallback JSON。
+async function deleteUserByFirebaseUid(firebaseUid, options = {}) {
+  const uid = typeof firebaseUid === "string" ? firebaseUid.trim() : "";
+  if (!uid) return { user: 0, elder: 0, userId: null, elderId: null };
+
+  if (await postgres.isPostgresAvailable()) {
+    try {
+      return await deleteUserByFirebaseUidPostgres(uid);
+    } catch (error) {
+      console.error(
+        "[auth-store] postgres delete failed, falling back to json",
+        error?.message || error,
+      );
+    }
+  }
+  return deleteUserByFirebaseUidJson(uid, options);
+}
+
 module.exports = {
   createSession,
+  deleteUserByFirebaseUid,
   // 測試/工具用
   bindingDeadlineDays,
   mockAllowed,

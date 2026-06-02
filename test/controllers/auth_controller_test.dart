@@ -70,6 +70,45 @@ class _StubEmailAuthService extends AuthService {
   }
 }
 
+/// 登入用 [_StubEmailAuthService]，但 deleteAccount 一律丟「需重新登入」，
+/// 用來驗證刪除失敗時 controller 維持登入並回白話訊息。
+class _StubDeleteFailingAuthService extends _StubEmailAuthService {
+  _StubDeleteFailingAuthService({super.session});
+
+  @override
+  Future<void> deleteAccount({String? password, String? provider}) async {
+    throw const EmailAuthException('requires-recent-login');
+  }
+}
+
+/// 記錄 deleteAccount 收到的參數，並可選擇丟出指定錯誤，
+/// 用來驗證 controller 有把密碼 / provider 正確往下傳、以及取消的柔性中止。
+class _StubDeleteRecordingAuthService extends _StubEmailAuthService {
+  _StubDeleteRecordingAuthService({super.session, this.throwError});
+
+  final Object? throwError;
+  String? receivedPassword;
+  String? receivedProvider;
+  int deleteCalls = 0;
+
+  @override
+  Future<void> deleteAccount({String? password, String? provider}) async {
+    deleteCalls++;
+    receivedPassword = password;
+    receivedProvider = provider;
+    if (throwError != null) throw throwError!;
+  }
+}
+
+const _googleSession = AuthSession(
+  userId: 'user-google-1',
+  elderId: 'elder-google-1',
+  bindingStatus: 'bound',
+  authMode: 'firebase',
+  provider: 'google',
+  isNewUser: false,
+);
+
 const _firebaseSession = AuthSession(
   userId: 'user-email-1',
   elderId: 'elder-email-1',
@@ -205,6 +244,99 @@ void main() {
     await controller.logout();
     expect(controller.status, AuthStatus.unauthenticated);
     expect(controller.currentElderId, 'default_user');
+  });
+
+  group('刪除帳號', () {
+    test('deleteAccount 成功 → unauthenticated、elderId 回 default_user', () async {
+      final controller = AuthController(
+        authService: _StubEmailAuthService(session: _firebaseSession),
+      );
+      await controller.signInWithEmail(
+        email: 'grandma@example.com',
+        password: 'secret1',
+      );
+      expect(controller.isAuthenticated, true);
+
+      // _StubEmailAuthService 未覆寫 deleteAccount → 走真 AuthService，但測試環境
+      // Firebase 不可用 → deleteCurrentUser no-op，只清本機 session。
+      final result = await controller.deleteAccount();
+
+      expect(result, isNull);
+      expect(controller.status, AuthStatus.unauthenticated);
+      expect(controller.currentElderId, 'default_user');
+    });
+
+    test('deleteAccount 需要重新登入 → 回白話訊息、維持登入、不露原文', () async {
+      final controller = AuthController(
+        authService: _StubDeleteFailingAuthService(session: _firebaseSession),
+      );
+      await controller.signInWithEmail(
+        email: 'grandma@example.com',
+        password: 'secret1',
+      );
+      expect(controller.isAuthenticated, true);
+
+      final result = await controller.deleteAccount();
+
+      expect(result, isNotNull);
+      expect(result, contains('重新登入'));
+      expect(result, isNot(contains('requires-recent-login')));
+      // 失敗時維持登入，讓使用者可重新登入後再刪。
+      expect(controller.status, AuthStatus.authenticated);
+    });
+
+    test('deleteAccount 會把密碼與 provider 往下傳給 AuthService', () async {
+      final service = _StubDeleteRecordingAuthService(session: _firebaseSession);
+      final controller = AuthController(authService: service);
+      await controller.signInWithEmail(
+        email: 'grandma@example.com',
+        password: 'secret1',
+      );
+
+      final result = await controller.deleteAccount(password: 'mypassword');
+
+      expect(result, isNull);
+      expect(service.receivedPassword, 'mypassword');
+      expect(service.receivedProvider, 'email');
+      expect(controller.status, AuthStatus.unauthenticated);
+    });
+
+    test('Google 帳號刪除被取消 → 回 null 且維持登入（柔性中止、不清資料）',
+        () async {
+      final service = _StubDeleteRecordingAuthService(
+        session: _googleSession,
+        throwError: const EmailAuthException('canceled'),
+      );
+      final controller = AuthController(authService: service);
+      await controller.signInWithGoogle();
+      expect(controller.isAuthenticated, true);
+
+      final result = await controller.deleteAccount();
+
+      // 取消不是錯誤：回 null，但狀態維持登入，呼叫端據此不清本機資料。
+      expect(result, isNull);
+      expect(service.receivedProvider, 'google');
+      expect(controller.status, AuthStatus.authenticated);
+      expect(controller.isAuthenticated, true);
+    });
+
+    test('密碼錯誤 → 白話提示、維持登入、不露 Firebase code', () async {
+      final service = _StubDeleteRecordingAuthService(
+        session: _firebaseSession,
+        throwError: const EmailAuthException('wrong-password'),
+      );
+      final controller = AuthController(authService: service);
+      await controller.signInWithEmail(
+        email: 'grandma@example.com',
+        password: 'secret1',
+      );
+
+      final result = await controller.deleteAccount(password: 'wrongpass');
+
+      expect(result, '密碼不太對喔，再輸入一次就可以刪除帳號。');
+      expect(result, isNot(contains('wrong-password')));
+      expect(controller.status, AuthStatus.authenticated);
+    });
   });
 
   group('Email 登入 / 註冊（CR-0006 Batch 4b）', () {

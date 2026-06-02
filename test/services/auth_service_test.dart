@@ -18,11 +18,51 @@ SessionApiService _apiReturning(Map<String, dynamic> responseJson) {
 
 /// 假的 Firebase 層：覆寫 Email 方法，回傳 canned 結果或丟錯，**不碰真 Firebase**。
 class _FakeFirebaseAuthService extends FirebaseAuthService {
-  _FakeFirebaseAuthService({this.result, this.googleResult, this.error});
+  _FakeFirebaseAuthService({
+    this.result,
+    this.googleResult,
+    this.error,
+    this.deleteError,
+    this.reauthError,
+    this.authInfo,
+  });
 
   final FirebaseSignInResult? result;
   final FirebaseSignInResult? googleResult;
   final Object? error;
+  final Object? deleteError;
+  final Object? reauthError;
+
+  /// 若設定，`currentUserAuthInfo()` 會回傳它（模擬有登入中的 Firebase user）。
+  final ({String uid, String idToken})? authInfo;
+
+  bool deleteCalled = false;
+  bool reauthPasswordCalled = false;
+  bool reauthGoogleCalled = false;
+  String? reauthPassword;
+
+  @override
+  Future<void> deleteCurrentUser() async {
+    deleteCalled = true;
+    if (deleteError != null) throw deleteError!;
+  }
+
+  @override
+  Future<({String uid, String idToken})?> currentUserAuthInfo() async =>
+      authInfo;
+
+  @override
+  Future<void> reauthenticateWithPassword(String password) async {
+    reauthPasswordCalled = true;
+    reauthPassword = password;
+    if (reauthError != null) throw reauthError!;
+  }
+
+  @override
+  Future<void> reauthenticateWithGoogle() async {
+    reauthGoogleCalled = true;
+    if (reauthError != null) throw reauthError!;
+  }
 
   @override
   Future<FirebaseSignInResult> signInWithEmail({
@@ -113,6 +153,200 @@ void main() {
 
     await service.logout();
     expect(await service.restoreSession(), isNull);
+  });
+
+  test('deleteAccount 成功 → 刪 Firebase 帳號並清本機 session', () async {
+    final fakeFirebase = _FakeFirebaseAuthService(result: _firebaseResult);
+    final service = AuthService(
+      sessionApiService: _apiReturning({
+        'success': true,
+        'userId': 'user-123',
+        'elderId': 'elder-456',
+        'bindingStatus': 'bound',
+        'isNewUser': false,
+        'authMode': 'firebase',
+      }),
+      firebaseAuthService: fakeFirebase,
+    );
+
+    await service.signInWithEmail(email: 'a@b.c', password: 'secret1');
+    expect(await service.restoreSession(), isNotNull);
+
+    await service.deleteAccount();
+
+    expect(fakeFirebase.deleteCalled, isTrue);
+    expect(await service.restoreSession(), isNull);
+  });
+
+  test('deleteAccount Firebase 失敗 → 丟出且本機 session 保留（可重新登入後再刪）',
+      () async {
+    final fakeFirebase = _FakeFirebaseAuthService(
+      result: _firebaseResult,
+      deleteError: const EmailAuthException('requires-recent-login'),
+    );
+    final service = AuthService(
+      sessionApiService: _apiReturning({
+        'success': true,
+        'userId': 'user-123',
+        'elderId': 'elder-456',
+        'bindingStatus': 'bound',
+        'isNewUser': false,
+        'authMode': 'firebase',
+      }),
+      firebaseAuthService: fakeFirebase,
+    );
+
+    await service.signInWithEmail(email: 'a@b.c', password: 'secret1');
+    expect(await service.restoreSession(), isNotNull);
+
+    await expectLater(
+      service.deleteAccount(),
+      throwsA(isA<EmailAuthException>()),
+    );
+    // 失敗時本機 session 仍在，不會被清掉。
+    expect(await service.restoreSession(), isNotNull);
+  });
+
+  test('deleteAccount（Email）→ 用密碼重新驗證 + 呼叫後端刪資料 + 刪 Firebase + 清本機',
+      () async {
+    Uri? hitUri;
+    Map<String, dynamic>? deleteBody;
+    final fakeFirebase = _FakeFirebaseAuthService(
+      result: _firebaseResult,
+      authInfo: (uid: 'fb-uid-1', idToken: 'fresh-id-token'),
+    );
+    final service = AuthService(
+      sessionApiService: SessionApiService(
+        client: MockClient((request) async {
+          if (request.url.path.endsWith('/api/auth/delete')) {
+            hitUri = request.url;
+            deleteBody = jsonDecode(request.body) as Map<String, dynamic>;
+            return http.Response(
+              jsonEncode({
+                'success': true,
+                'deleted': {'user': 1, 'elder': 1, 'memories': 3, 'careAlerts': 1},
+              }),
+              200,
+            );
+          }
+          // 其餘（建立 session）一律成功。
+          return http.Response(
+            jsonEncode({
+              'success': true,
+              'userId': 'user-123',
+              'elderId': 'elder-456',
+              'bindingStatus': 'bound',
+              'isNewUser': false,
+              'authMode': 'firebase',
+            }),
+            200,
+          );
+        }),
+      ),
+      firebaseAuthService: fakeFirebase,
+    );
+
+    await service.signInWithEmail(email: 'a@b.c', password: 'secret1');
+    expect(await service.restoreSession(), isNotNull);
+
+    await service.deleteAccount(password: 'mypassword', provider: 'email');
+
+    // 1. 用密碼重新驗證（不會誤跑 Google 重新驗證）。
+    expect(fakeFirebase.reauthPasswordCalled, isTrue);
+    expect(fakeFirebase.reauthPassword, 'mypassword');
+    expect(fakeFirebase.reauthGoogleCalled, isFalse);
+    // 2. 後端刪除有被呼叫，且帶上 uid + 新 idToken。
+    expect(hitUri, isNotNull);
+    expect(deleteBody!['firebaseUid'], 'fb-uid-1');
+    expect(deleteBody!['idToken'], 'fresh-id-token');
+    // 3. Firebase 帳號被刪。
+    expect(fakeFirebase.deleteCalled, isTrue);
+    // 4. 本機 session 清掉。
+    expect(await service.restoreSession(), isNull);
+  });
+
+  test('deleteAccount（Google）→ 重新跑 Google 驗證', () async {
+    final fakeFirebase = _FakeFirebaseAuthService(
+      googleResult: _googleResult,
+      authInfo: (uid: 'fb-uid-g', idToken: 'g-token'),
+    );
+    final service = AuthService(
+      sessionApiService: _apiReturning({'success': true}),
+      firebaseAuthService: fakeFirebase,
+    );
+    await service.signInWithGoogle();
+
+    await service.deleteAccount(provider: 'google');
+
+    expect(fakeFirebase.reauthGoogleCalled, isTrue);
+    expect(fakeFirebase.reauthPasswordCalled, isFalse);
+    expect(fakeFirebase.deleteCalled, isTrue);
+    expect(await service.restoreSession(), isNull);
+  });
+
+  test('deleteAccount 後端不可達 → 仍刪 Firebase 帳號並清本機（best-effort）',
+      () async {
+    final fakeFirebase = _FakeFirebaseAuthService(
+      result: _firebaseResult,
+      authInfo: (uid: 'fb-uid-1', idToken: 'tok'),
+    );
+    final service = AuthService(
+      // 後端刪除回 500 → deleteAccount 不丟例外、照常刪 Firebase + 清本機。
+      sessionApiService: SessionApiService(
+        client: MockClient((request) async {
+          if (request.url.path.endsWith('/api/auth/delete')) {
+            return http.Response('err', 500);
+          }
+          return http.Response(
+            jsonEncode({
+              'success': true,
+              'userId': 'u',
+              'elderId': 'e',
+              'bindingStatus': 'bound',
+              'isNewUser': false,
+              'authMode': 'firebase',
+            }),
+            200,
+          );
+        }),
+      ),
+      firebaseAuthService: fakeFirebase,
+    );
+    await service.signInWithEmail(email: 'a@b.c', password: 'secret1');
+
+    await service.deleteAccount(password: 'pw', provider: 'email');
+
+    expect(fakeFirebase.deleteCalled, isTrue);
+    expect(await service.restoreSession(), isNull);
+  });
+
+  test('deleteAccount 重新驗證失敗（密碼錯）→ 丟出、不清本機 session、不刪 Firebase',
+      () async {
+    final fakeFirebase = _FakeFirebaseAuthService(
+      result: _firebaseResult,
+      authInfo: (uid: 'fb-uid-1', idToken: 'tok'),
+      reauthError: const EmailAuthException('wrong-password'),
+    );
+    final service = AuthService(
+      sessionApiService: _apiReturning({
+        'success': true,
+        'userId': 'user-123',
+        'elderId': 'elder-456',
+        'bindingStatus': 'bound',
+        'isNewUser': false,
+        'authMode': 'firebase',
+      }),
+      firebaseAuthService: fakeFirebase,
+    );
+    await service.signInWithEmail(email: 'a@b.c', password: 'secret1');
+
+    await expectLater(
+      service.deleteAccount(password: 'wrong', provider: 'email'),
+      throwsA(isA<EmailAuthException>()),
+    );
+    // 重新驗證就失敗 → 不會走到刪除 Firebase，本機 session 也保留可重試。
+    expect(fakeFirebase.deleteCalled, isFalse);
+    expect(await service.restoreSession(), isNotNull);
   });
 
   test('無持久化時 restoreSession 回 null', () async {

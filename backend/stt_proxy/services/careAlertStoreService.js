@@ -165,11 +165,33 @@ async function updateAlertStatus(id, status, options = {}) {
   }
 }
 
+// 刪除某位長者的所有 Care Alert（帳號刪除時清資料用）。
+// 回傳實際刪除筆數；elderId 為空 / 讀寫失敗時回 0，不丟例外。
+async function deleteAlertsByElderId(elderId, options = {}) {
+  if (elderId == null || elderId === "") return 0;
+  const filePath = resolveFile(options.filePath);
+  try {
+    const alerts = await readAll(filePath);
+    const remaining = alerts.filter((a) => a.elderId !== elderId);
+    const removed = alerts.length - remaining.length;
+    if (removed > 0) {
+      await writeAll(filePath, remaining);
+    }
+    return removed;
+  } catch (error) {
+    console.error("[care-alert-store] deleteAlertsByElderId failed", {
+      error: error?.message || error,
+    });
+    return 0;
+  }
+}
+
 module.exports = {
   saveAlert,
   listAlerts,
   getAlertById,
   updateAlertStatus,
+  deleteAlertsByElderId,
   normalizeAlert,
   normalizeRiskLevel,
   RISK_LEVEL_LABELS,

@@ -54,6 +54,10 @@ class AuthController extends ChangeNotifier {
   /// 目前 userId（規則同 [currentElderId]）。
   String get currentUserId => _resolveDownstreamId(_session?.userId);
 
+  /// 目前登入方式（'mock' | 'email' | 'google' | 'apple'），未登入為 null。
+  /// 供 UI 決定刪除帳號時是否要先請使用者輸入密碼（Email）或重新 Google 驗證。
+  String? get currentProvider => _session?.provider;
+
   /// 是否為「正式帳號」（以登入方式判斷）。
   bool get _isRealAccount {
     final provider = _session?.provider;
@@ -235,6 +239,52 @@ class AuthController extends ChangeNotifier {
     _session = null;
     _errorMessage = null;
     _setStatus(AuthStatus.unauthenticated);
+  }
+
+  /// 刪除帳號：重新驗證 → 後端刪資料 → 刪 Firebase 帳號 → 清本機，回到未登入。
+  ///
+  /// - 成功回 `null` 且狀態切 unauthenticated（AuthGate 會回到登入頁）。
+  /// - 失敗回白話訊息且**維持登入狀態**（例如密碼錯誤、需重新登入），UI 不會看到
+  ///   Firebase 原文。
+  /// - 使用者**取消** Google 重新驗證 → 柔性中止：回 `null` 但**維持登入**
+  ///   （狀態不變），呼叫端應依 [isAuthenticated] 判斷是否真的要清本機資料。
+  /// - Demo 帳號沒有 Firebase user → 等同登出，回 `null`。
+  ///
+  /// [password]：Email 帳號刪除前重新驗證用的密碼（Email 帳號必填，否則 Firebase
+  /// 會回 `requires-recent-login`）。
+  Future<String?> deleteAccount({String? password}) async {
+    try {
+      await _authService.deleteAccount(
+        password: password,
+        provider: _session?.provider,
+      );
+    } on EmailAuthException catch (error) {
+      // 使用者自己取消 Google 重新驗證：不是錯誤，柔性中止、維持登入。
+      if (error.code == 'canceled') return null;
+      return _friendlyDeleteError(error.code);
+    } catch (error) {
+      debugPrint('[AUTH] deleteAccount 失敗：$error');
+      return _friendlyDeleteError('unknown');
+    }
+    _session = null;
+    _errorMessage = null;
+    _setStatus(AuthStatus.unauthenticated);
+    return null;
+  }
+
+  /// 刪除帳號錯誤 code → 長者看得懂的白話訊息。
+  String _friendlyDeleteError(String code) {
+    switch (code) {
+      case 'wrong-password':
+      case 'invalid-credential':
+        return '密碼不太對喔，再輸入一次就可以刪除帳號。';
+      case 'requires-recent-login':
+        return '為了帳號安全，請先登出再重新登入一次，然後馬上刪除帳號喔。';
+      case 'network-request-failed':
+        return '現在網路好像不太穩，待會再試一次好嗎？';
+      default:
+        return '現在沒辦法刪除帳號，待會再試一次好嗎？';
+    }
   }
 
   void _setStatus(AuthStatus next) {

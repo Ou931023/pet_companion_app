@@ -28,6 +28,7 @@ const {
   listMemories,
   searchMemoriesByEmbedding,
   archiveMemory,
+  deleteMemoriesByUserId,
   normalizeEmbedding,
   normalizeLimit,
 } = require("./services/memory/memoryStore");
@@ -61,13 +62,19 @@ const {
   listAlerts: listCareAlerts,
   getAlertById: getCareAlertById,
   updateAlertStatus: updateCareAlertStatus,
+  deleteAlertsByElderId,
   normalizeRiskLevel,
 } = require("./services/careAlertStoreService");
 const {
   canSendTelegram,
   markTelegramSent,
 } = require("./services/careAlertCooldown");
-const { createSession } = require("./services/auth/sessionService");
+const {
+  createSession,
+  deleteUserByFirebaseUid,
+  mockAllowed: authMockAllowed,
+} = require("./services/auth/sessionService");
+const authFirebaseAdmin = require("./services/auth/firebaseAdmin");
 const adminAnalysis = require("./services/admin/adminAnalysisService");
 
 const app = express();
@@ -457,6 +464,73 @@ app.post("/api/auth/session", async (req, res) => {
   } catch (error) {
     logError("auth session exception", { error: error?.message || error });
     return res.status(500).json({ success: false, error: "auth_session_failed" });
+  }
+});
+
+// CR-0024：刪除帳號並清除該使用者後端所有資料（user / elder / 長期記憶 / Care
+// Alert）。驗證邏輯比照 /api/auth/session：firebase configured → 驗 idToken 取
+// 權威 uid；否則（允許 mock）採信傳入 firebaseUid。找不到 user → idempotent 回
+// 成功（deleted 全 0）。前端在使用者刪除帳號時呼叫，best-effort（前端不因此擋住
+// Firebase 帳號刪除）。只新增路由、不改既有路由形狀。
+app.post("/api/auth/delete", async (req, res) => {
+  const body = req.body || {};
+  const rawUid =
+    typeof body.firebaseUid === "string" ? body.firebaseUid.trim() : "";
+  const idToken = typeof body.idToken === "string" ? body.idToken.trim() : "";
+  if (!rawUid || !idToken) {
+    return res.status(400).json({ success: false, error: "invalid_payload" });
+  }
+
+  try {
+    // 決定權威 uid（與 createSession 一致）。
+    let firebaseUid = rawUid;
+    const configured = (() => {
+      try {
+        return authFirebaseAdmin.isConfigured();
+      } catch (_) {
+        return false;
+      }
+    })();
+    if (configured) {
+      const decoded = await authFirebaseAdmin.verifyIdToken(idToken);
+      if (!decoded || !decoded.uid) {
+        return res
+          .status(401)
+          .json({ success: false, error: "invalid_id_token" });
+      }
+      firebaseUid = decoded.uid; // 以驗證後的 uid 為權威，避免偽造。
+    } else if (!authMockAllowed()) {
+      return res
+        .status(401)
+        .json({ success: false, error: "invalid_id_token" });
+    }
+
+    // 1. 刪 user + elder，取回被刪的 userId / elderId 以級聯刪除其資料。
+    const userResult = await deleteUserByFirebaseUid(firebaseUid);
+
+    // 2. 級聯刪除長期記憶（依 userId）與 Care Alert（依 elderId）。
+    //    找不到 user 時 userId/elderId 為 null → 級聯為 0（idempotent）。
+    let memories = 0;
+    let careAlerts = 0;
+    if (userResult.userId != null) {
+      memories = await deleteMemoriesByUserId(userResult.userId);
+    }
+    if (userResult.elderId != null) {
+      careAlerts = await deleteAlertsByElderId(userResult.elderId);
+    }
+
+    return res.json({
+      success: true,
+      deleted: {
+        user: userResult.user,
+        elder: userResult.elder,
+        memories,
+        careAlerts,
+      },
+    });
+  } catch (error) {
+    logError("auth delete exception", { error: error?.message || error });
+    return res.status(500).json({ success: false, error: "auth_delete_failed" });
   }
 });
 

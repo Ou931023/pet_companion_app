@@ -672,6 +672,36 @@ async function recordMemoryEvent(memoryId, eventType, detail = null) {
   }
 }
 
+// 永久刪除某位使用者的所有長期記憶（帳號刪除時清資料用）。
+// 與 archiveMemory（軟刪：is_active=false）不同，這裡是硬刪整批。
+// 回傳實際刪除筆數。Postgres 優先、失敗 fallback JSON（比照其他操作）。
+async function deleteMemoriesByUserId(userId = "default_user") {
+  const normalizedUserId = normalizeUserId(userId);
+
+  if (await postgres.isPostgresAvailable()) {
+    try {
+      const result = await postgres.query(
+        `DELETE FROM companion_memories WHERE user_id = $1 RETURNING id`,
+        [normalizedUserId],
+      );
+      return result.rowCount;
+    } catch (error) {
+      console.error(
+        "[memory-store] postgres delete-by-user failed, falling back to json",
+        error?.message || error,
+      );
+    }
+  }
+
+  const memories = await getJsonMemories();
+  const remaining = memories.filter((item) => item.userId !== normalizedUserId);
+  const removed = memories.length - remaining.length;
+  if (removed > 0) {
+    await saveJsonMemories(remaining);
+  }
+  return removed;
+}
+
 module.exports = {
   PROVIDER_POSTGRES,
   PROVIDER_JSON,
@@ -686,6 +716,7 @@ module.exports = {
   recordMemoryEvent,
   markMemoriesUsed,
   findDuplicateMemory,
+  deleteMemoriesByUserId,
   normalizeLimit,
   normalizeEmbedding,
   toVectorLiteral,

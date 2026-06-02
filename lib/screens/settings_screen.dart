@@ -303,32 +303,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
         const SizedBox(height: 14),
-        _SettingsSection(
-          title: '新手導覽',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                '不熟悉首頁功能嗎？可以再看一次首頁的逐步介紹。',
-                style: TextStyle(fontSize: 16, height: 1.35),
-              ),
-              const SizedBox(height: 10),
-              FilledButton.icon(
-                onPressed: () {
-                  // 要求重看，並切回首頁；CoachMarkHost 會在首頁就緒後開始導覽。
-                  context.read<CoachMarkController>().requestReplay();
-                  context.read<AppNavigationController>().selectShellIndex(0);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('帶你回首頁，再看一次介紹。')),
-                  );
-                },
-                icon: const Icon(Icons.school_outlined),
-                label: const Text('重新觀看新手導覽'),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
         KeyedSubtree(
           // 新手導覽 Step 13 跨頁高亮用：切到設定頁時 spotlight「家人聯絡人」入口。
           key: context.read<CoachMarkKeys>().settingsContactKey,
@@ -401,6 +375,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
         const SizedBox(height: 14),
         _SettingsSection(
+          title: '新手導覽',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                '想再認識一次首頁的功能嗎？可以從這裡重新看一遍導覽。',
+                style: TextStyle(fontSize: 16, height: 1.4),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => _replayCoachMark(context),
+                icon: const Icon(Icons.menu_book_outlined, size: 24),
+                label: const Text(
+                  '重新觀看新手導覽',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _SettingsSection(
           title: '帳號',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -429,12 +431,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               ),
+              const SizedBox(height: 18),
+              const Divider(height: 1),
+              const SizedBox(height: 16),
+              const Text(
+                '刪除帳號會清除這個帳號的所有資料，且無法復原。需要時可以重新註冊。',
+                style: TextStyle(fontSize: 16, height: 1.4),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton.icon(
+                  onPressed: _handleDeleteAccount,
+                  icon: const Icon(Icons.delete_forever_outlined, size: 26),
+                  label: const Text(
+                    '刪除帳號',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                  ),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    foregroundColor: const Color(0xFFB91C1C),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
         const SizedBox(height: 24),
       ],
     );
+  }
+
+  /// 「重新觀看新手導覽」：請求 replay 並切回首頁分頁。實際開始播放由
+  /// CoachMarkHost 在回到首頁、目標 widget 就緒後觸發（與首頁「？」相同機制），
+  /// 不重設註冊狀態、也不會跳回首次註冊流程。
+  void _replayCoachMark(BuildContext context) {
+    context.read<CoachMarkController>().requestReplay();
+    context.read<AppNavigationController>().selectShellIndex(0);
   }
 
   Future<void> _handleLogout() async {
@@ -476,6 +509,172 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // 只要把狀態切成未登入，app.dart 的 AuthGate 會自動回到 LoginScreen，
     // 不需要在這裡手動導航。
     await context.read<AuthController>().logout();
+  }
+
+  /// 刪除帳號（二次確認以免誤刪）：兩次都按確定才會真的刪除。
+  /// 成功後 AuthGate 會自動回到登入頁；失敗顯示白話訊息、維持登入。
+  Future<void> _handleDeleteAccount() async {
+    // 第一次確認。
+    final first = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text(
+            '要刪除帳號嗎？',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+          ),
+          content: const Text(
+            '刪除後，這個帳號的寵物、紀錄與設定都會清除，無法復原。需要時可以再重新註冊。',
+            style: TextStyle(fontSize: 18, height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('取消', style: TextStyle(fontSize: 18)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text(
+                '繼續',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFB91C1C),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    if (first != true || !mounted) return;
+
+    // 第二次確認（最後再問一次，避免誤觸）。
+    final second = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text(
+            '最後確認',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+          ),
+          content: const Text(
+            '真的要刪除帳號嗎？這個動作沒辦法復原喔。',
+            style: TextStyle(fontSize: 18, height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('先不要', style: TextStyle(fontSize: 18)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text(
+                '確定刪除',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFB91C1C),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    if (second != true || !mounted) return;
+
+    final auth = context.read<AuthController>();
+    final profile = context.read<ProfileController>();
+
+    // Email 帳號：Firebase 要求刪除前先用密碼重新驗證，先請使用者輸入一次。
+    // （Google 帳號會在刪除流程中自動重新跑一次 Google 驗證；Demo 不需要。）
+    String? password;
+    if (auth.currentProvider == 'email') {
+      password = await _promptDeletePassword();
+      if (password == null || !mounted) return; // 取消輸入 → 中止，不刪。
+    }
+
+    final error = await auth.deleteAccount(password: password);
+    if (!mounted) return;
+    if (error != null) {
+      // 失敗（如密碼錯誤、需重新登入）：維持登入，給白話提示，不清本機資料。
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error, style: const TextStyle(fontSize: 18)),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+    // 只有真的刪除成功（已登出）才清本機資料；若使用者取消了 Google 重新驗證，
+    // 狀態仍是登入中 → 不動本機資料。
+    if (!auth.isAuthenticated) {
+      await profile.clearAllData();
+    }
+  }
+
+  /// 刪除 Email 帳號前，請使用者再輸入一次密碼以重新驗證。
+  /// 回傳輸入的密碼；使用者取消或留空則回 `null`（呼叫端視為中止）。
+  Future<String?> _promptDeletePassword() async {
+    final controller = TextEditingController();
+    try {
+      return await showDialog<String>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text(
+              '請再輸入一次密碼',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '為了確認是您本人，刪除帳號前請再輸入一次登入密碼。',
+                  style: TextStyle(fontSize: 18, height: 1.4),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: controller,
+                  obscureText: true,
+                  autofocus: true,
+                  style: const TextStyle(fontSize: 20),
+                  decoration: const InputDecoration(
+                    labelText: '密碼',
+                    labelStyle: TextStyle(fontSize: 18),
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('取消', style: TextStyle(fontSize: 18)),
+              ),
+              TextButton(
+                onPressed: () {
+                  final value = controller.text;
+                  Navigator.of(dialogContext).pop(value.isEmpty ? null : value);
+                },
+                child: const Text(
+                  '確定刪除',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFFB91C1C),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    } finally {
+      controller.dispose();
+    }
   }
 
   Future<void> _confirmRenamePet(
