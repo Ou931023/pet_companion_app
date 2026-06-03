@@ -43,3 +43,36 @@ test("篩選下拉提供四級選項", () => {
     assert.ok(indexHtml.includes(label), `風險篩選應含「${label}」`);
   }
 });
+
+test("首頁標題像長照管理端（非 debug 頁）", () => {
+  assert.ok(
+    indexHtml.includes("長者關懷管理中心"),
+    "header 應有『長者關懷管理中心』標題"
+  );
+});
+
+test("儀表板四張統計卡齊全（新提醒 / 需通知 / 緊急 / 已處理）", () => {
+  for (const label of ["新提醒", "需通知", "緊急", "已處理"]) {
+    assert.ok(indexHtml.includes(label), `儀表板應含『${label}』統計卡`);
+  }
+  for (const id of ["stat-new", "stat-high", "stat-urgent", "stat-resolved"]) {
+    assert.ok(indexHtml.includes(id), `應有 #${id} 統計值`);
+    assert.ok(appJs.includes(id), `app.js 應更新 #${id}`);
+  }
+});
+
+test("詳情顯示關懷對象（長者）", () => {
+  assert.ok(appJs.includes("elderName"), "app.js 應有 elderName 來源");
+  assert.ok(appJs.includes("長者"), "detail 應顯示『長者』");
+});
+
+test("管理端顯示非醫療診斷提示（CR-0028）", () => {
+  assert.ok(
+    indexHtml.includes("care-disclaimer"),
+    "應有 care-disclaimer 提示區塊"
+  );
+  assert.ok(
+    indexHtml.includes("非醫療診斷") || indexHtml.includes("並非醫療診斷"),
+    "提示應明確說明非醫療診斷"
+  );
+});

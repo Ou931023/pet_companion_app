@@ -146,6 +146,18 @@ body {
   color: var(--muted);
 }
 
+/* 非醫療診斷提示：避免長照人員把風險分級誤解成醫療判定 */
+.care-disclaimer {
+  margin: 0 0 14px;
+  padding: 8px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  background: #f4f6fb;
+  border-left: 3px solid var(--border);
+  border-radius: 6px;
+}
+
 code {
   background: #eef1f8;
   padding: 1px 5px;

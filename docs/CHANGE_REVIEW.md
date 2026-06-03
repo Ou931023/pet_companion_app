@@ -727,4 +727,27 @@
 - 待辦：demo 時是否隱藏 Apple 鈕，或維持 placeholder；由使用者決定。
 - 狀態：⬜ 待決策（low）
 
+### CR-0028：正式版情緒辨識與 Care Alert 分析（文件化＋管理端非醫療提示，2026-06-03）
+- 提出 agent：companion-memory-agent（文件）＋ frontend-ux-agent（caregiver_web 文案）
+- 動機 / 問題：情緒辨識與 Care Alert 流程其實已完整實作，但缺正式文件可向評審說明，且
+  caregiver_web 缺「非醫療診斷」提示，易被誤解為醫療判定。
+- 盤點結論（現況已具備，未改邏輯）：
+  - 文字語意情緒辨識（`emotion_classifier`）＋語音特徵融合（`emotion_fusion_service` / `voice_feature_service`）。
+  - 四級風險（`safety_guard`：low/medium/high/urgent）＋白話非診斷照護摘要（`buildCareAlertSummary`）。
+  - 資料流已接通：Flutter `_maybeCreateCareAlert()`（voice_agent_controller.dart:812）僅在
+    `needsHumanSupport`（high/urgent）建立 Care Alert，並 `POST /api/care-alerts/notify`；
+    Telegram 僅 high/urgent 且有 cooldown。
+- 影響範圍（檔案）：
+  - 新增 `docs/EMOTION_RECOGNITION.md`（方法論＋評審 Q&A＋驗證步驟）。
+  - `caregiver_web/index.html`：新增兩處 `.care-disclaimer` 非醫療提示。
+  - `caregiver_web/styles.css`：新增 `.care-disclaimer` 樣式。
+  - `caregiver_web/care_alert_display.test.js`：新增提示存在的斷言。
+- 觸及 🔒？：否（未改 server.js 路由/response、未改 DB schema、未改 Care Alert 資料結構、
+  未改 realtime 主流程、未改依賴）。純文件＋前端文案＋測試。
+- 風險等級：low（無行為變更，僅文件 + 顯示文案 + 測試）。
+- 測試計畫：`node --test caregiver_web/care_alert_display.test.js`、`admin_dashboard.test.js`；
+  後端 `cd backend/stt_proxy && npm test` 確認既有情緒/care alert 測試不受影響。
+- architecture-agent 裁決：✅ 自核（low risk，未觸 🔒）
+- 完成狀態：✅ 完成
+
 <!-- 新提案請往下加 CR-0004 ... -->

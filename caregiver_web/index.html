@@ -34,6 +34,10 @@
       </nav>
 
       <div id="view-alerts">
+      <!-- 非醫療診斷提示：風險分級僅供照護參考，避免被誤解為醫療判定 -->
+      <p class="hint care-disclaimer">
+        情緒辨識與風險分級由系統依對話內容自動產生，僅供照護參考，並非醫療診斷。緊急狀況請直接聯絡長者或撥打緊急電話。
+      </p>
       <!-- 儀表板：四張關懷統計卡 -->
       <section class="dashboard">
         <h2 class="section-title">關懷概況</h2>
@@ -196,6 +200,9 @@
               </section>
               <section class="panel">
                 <h3 class="analysis-title">情緒分析歷史</h3>
+                <p class="hint care-disclaimer">
+                  情緒辨識以對話文字語意分析為主、語音特徵（語速、停頓、音量）為輔，結果僅供陪伴與關懷參考，非醫療診斷。
+                </p>
                 <div id="emotion-body"></div>
               </section>
               <section class="panel">
