@@ -784,4 +784,46 @@
 - architecture-agent 裁決：✅ 自核（medium risk，純加性、測試覆蓋齊全、未改既有契約形狀）
 - 完成狀態：✅ 完成
 
+### CR-0030：正式版管理者端健康分析儀表板（資料真實性誠實標註，2026-06-03）
+- 提出 agent：backend-agent（分析聚合 dataSource）＋ frontend-ux-agent（健康頁顯示）
+- 動機：健康分析儀表板（生理/心理/情緒/遊戲/摘要）雖已存在，但生理/情緒/遊戲皆由確定性
+  產生器供給（看起來真但非真實）。CR-0030 要求誠實標註、優先真實來源、資料不足顯示「資料不足」、
+  不可捏造。使用者決策＝Option A（誠實標註 + 資料不足）。
+- 盤點結論：真實＝長者名單（PG/JSON/種子）、Care Alert；非真實＝生理/情緒/遊戲（healthMetrics
+  確定性產生器）。`emotion_history` / `elder_health_metrics` / `game_cognitive_metrics` 三表存在但
+  零寫入。
+- 設計：
+  - **示範種子長者** → 保留可重現指標，標 `dataSource:"reference"`（示範參考資料）。
+  - **真實長者** → 生理/情緒/遊戲回空序列 + `dataSource:"insufficient"`（前端顯示「資料不足」，不捏造）。
+  - Care Alert 維持真實顯示；個人分析新增 `emotionDataSource`。
+  - `dataSource` 值用乾淨字（reference/insufficient/measured），不踩「demo/fake/mock」紅線。
+- 修改檔案：
+  - `backend/stt_proxy/services/admin/adminAnalysisService.js`（新增 isSeedElder + resolve* 包一層 dataSource）
+  - `backend/stt_proxy/services/admin/adminAnalysisService.test.js`（更新真實長者測試 + 新增種子 reference 測試）
+  - `caregiver_web/index.html`、`app.js`、`styles.css`（非醫療+資料來源橫幅、資料來源標籤、資料不足空狀態）
+- 新增檔案：`docs/ADMIN_HEALTH_ANALYTICS.md`、`caregiver_web/admin_health_analytics.test.js`
+- 資料庫變更：無（沿用既有表；未新增 migration）。
+- 觸及 🔒？：是——admin 分析 API response 形狀（新增加性欄位 `dataSource` / `emotionDataSource`，
+  真實長者序列改為空）。屬加性 + 誠實化，未移除既有欄位、未改路由。`healthMetrics` 產生器未動。
+- 風險等級：medium（碰 admin 分析契約，但加性且測試覆蓋）。
+- 是否動到 Realtime：否。Care Alert：否（維持真實顯示）。Telegram：否。長期記憶：否。
+  情緒辨識：否（即時辨識邏輯未動）。登入註冊：否。CR-0029 使用者管理：否。
+- 是否新增 fake data / hardcode demo analytics：否（反而把非真實資料誠實降級標註）。
+- 是否仍有 JSON fallback：是（elders 來源；已於文件誠實記錄，未宣稱全 PostgreSQL 化）。
+- 測試結果：後端 `npm test` 177/177 通過（淨 +1）；caregiver_web 38/38 通過（新增 5）。
+- architecture-agent 裁決：✅ 自核（medium risk，加性誠實化、未改既有契約欄位與路由）
+- 完成狀態：✅ 完成
+
+### CR-0031：管理者端使用者姓名 fallback（email 前綴當預設名，2026-06-03）
+- 提出 agent：backend-agent（CR-0029 後續微調）
+- 動機：email 帳號註冊不收姓名 → `display_name` 為空，後台「使用者管理」姓名欄一排空白。
+- 作法：`adminUsersService.deriveDisplayName()`——有 display_name 用之；email 帳號無名字時用
+  email `@` 前綴當預設名（例 `kikigay1109`）；皆無回 null（前端顯示「—」）。純顯示用，不竄改 DB、
+  不改登入流程；Google 帳號維持原名。
+- 影響檔案：`backend/stt_proxy/services/admin/adminUsersService.js`、`adminUsersService.test.js`
+- 觸及 🔒？：否（CR-0029 既有服務內部加 fallback，未改路由 / response 欄位集 / DB）。
+- 風險等級：low。
+- 測試：`adminUsersService.test.js` 新增 deriveDisplayName 案例；後端測試全綠。
+- 完成狀態：✅ 完成
+
 <!-- 新提案請往下加 CR-0004 ... -->

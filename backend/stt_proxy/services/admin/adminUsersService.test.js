@@ -8,6 +8,7 @@ const { test } = require("node:test");
 const {
   listSafeUsers,
   maskEmail,
+  deriveDisplayName,
   toSafeUser,
   SELECT_SAFE_USERS_SQL,
 } = require("./adminUsersService");
@@ -48,6 +49,16 @@ test("maskEmail 對空值 / 非 email 回空字串（不外漏原值）", () => 
   assert.equal(maskEmail(undefined), "");
   assert.equal(maskEmail("not-an-email"), "");
   assert.equal(maskEmail("name@"), "");
+});
+
+test("deriveDisplayName：有名字用名字；email 帳號無名字用 @ 前綴；皆無回 null", () => {
+  assert.equal(deriveDisplayName({ display_name: "王小明", email: "wang@gmail.com" }), "王小明");
+  // email 帳號常無 display_name → 用 @ 前綴當預設名
+  assert.equal(deriveDisplayName({ display_name: null, email: "kikigay1109@gmail.com" }), "kikigay1109");
+  assert.equal(deriveDisplayName({ display_name: "  ", email: "abc@x.com" }), "abc");
+  // 名字與 email 皆無 → null（前端顯示「—」）
+  assert.equal(deriveDisplayName({ display_name: null, email: null }), null);
+  assert.equal(deriveDisplayName({ display_name: "", email: "" }), null);
 });
 
 test("toSafeUser 只輸出安全欄位、遮蔽 email、丟棄敏感欄位", () => {

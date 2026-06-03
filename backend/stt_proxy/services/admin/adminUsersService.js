@@ -34,11 +34,25 @@ function maskEmail(email) {
   return `${visible}***@${domain}`;
 }
 
+// 顯示名稱：優先用真實 display_name；email 帳號常無名字，退而用 email 的 @ 前綴當預設名
+// （例如 wang@gmail.com → wang），避免後台姓名欄一排空白。皆無則回 null（前端顯示「—」）。
+function deriveDisplayName(row = {}) {
+  const name = (row.display_name == null ? "" : String(row.display_name)).trim();
+  if (name) return name;
+  const email = (row.email == null ? "" : String(row.email)).trim();
+  const atIndex = email.indexOf("@");
+  if (atIndex > 0) {
+    const local = email.slice(0, atIndex).trim();
+    if (local) return local;
+  }
+  return null;
+}
+
 // 將 DB row 轉成「只含安全欄位」的對外格式（第二層保護：即便 SQL 誤選敏感欄位也不外漏）。
 function toSafeUser(row = {}) {
   return {
     id: row.id,
-    displayName: row.display_name ?? null,
+    displayName: deriveDisplayName(row),
     emailMasked: maskEmail(row.email),
     authProvider: row.auth_provider ?? null,
     emailVerified: Boolean(row.email_verified),
@@ -59,6 +73,7 @@ async function listSafeUsers({ queryFn } = {}) {
 module.exports = {
   listSafeUsers,
   maskEmail,
+  deriveDisplayName,
   toSafeUser,
   SELECT_SAFE_USERS_SQL,
 };

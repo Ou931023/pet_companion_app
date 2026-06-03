@@ -15,6 +15,45 @@ const careAlertStore = require("../careAlertStoreService");
 // 高風險判定：權威 riskLevel 為 high / urgent。
 const HIGH_RISK_LEVELS = new Set(["high", "urgent"]);
 
+// CR-0030：資料真實性標註（誠實原則）。
+// dataSource 對外值（皆為乾淨字，不含 demo/fake/mock 等工程字樣）：
+//   - "reference"   ：示範種子長者的可重現參考指標（非真實量測，僅供畫面展示）。
+//   - "insufficient"：真實長者目前尚無此類真實資料 → 前端顯示「資料不足」，不捏造。
+// 註：生理 / 情緒歷史 / 遊戲退化目前無真實寫入流程；真實的長者訊號為 Care Alert（careAlerts）。
+const SEED_ELDER_IDS = new Set(eldersSource.SEED_ELDERS.map((e) => e.id));
+function isSeedElder(elderId) {
+  return SEED_ELDER_IDS.has(elderId);
+}
+
+// 各類健康指標：示範長者用可重現參考資料，真實長者無真實資料時回「資料不足」。
+function resolvePhysio(elderId, options = {}) {
+  if (isSeedElder(elderId)) {
+    return { ...healthMetrics.getPhysio(elderId, options), dataSource: "reference" };
+  }
+  return { series: [], summary: null, dataSource: "insufficient" };
+}
+
+function resolveEmotion(elderId, options = {}) {
+  if (isSeedElder(elderId)) {
+    return { ...healthMetrics.getEmotion(elderId, options), dataSource: "reference" };
+  }
+  return { series: [], dominantEmotion: null, abnormal: false, dataSource: "insufficient" };
+}
+
+function resolveGame(elderId, options = {}) {
+  if (isSeedElder(elderId)) {
+    return { ...healthMetrics.getGameMetrics(elderId, options), dataSource: "reference" };
+  }
+  return { series: [], trend: "stable", abnormal: false, dataSource: "insufficient" };
+}
+
+function resolvePsych(elderId, options = {}) {
+  if (isSeedElder(elderId)) {
+    return { ...healthMetrics.buildPsych(elderId, options), dataSource: "reference" };
+  }
+  return { summary: null, dominantEmotion: null, abnormal: false, dataSource: "insufficient" };
+}
+
 function isToday(iso, anchorIso) {
   if (!iso) return false;
   const day = String(iso).slice(0, 10);
@@ -37,9 +76,9 @@ async function careAlertsForElder(elderId, options = {}) {
 // 計算單一長者的摘要列（給 /elders 與 /overview 使用）。
 async function summarizeElder(elder, options = {}) {
   const alerts = await careAlertsForElder(elder.id, options);
-  const emotion = healthMetrics.getEmotion(elder.id, options);
-  const game = healthMetrics.getGameMetrics(elder.id, options);
-  const physio = healthMetrics.getPhysio(elder.id, options);
+  const emotion = resolveEmotion(elder.id, options);
+  const game = resolveGame(elder.id, options);
+  const physio = resolvePhysio(elder.id, options);
 
   // 最近一筆 care alert 的風險（新到舊已排序，取第一筆）；無則回 null。
   const latestRiskLevel = alerts.length ? alerts[0].riskLevel : null;
@@ -126,10 +165,10 @@ async function getElderAnalysis(elderId, options = {}) {
   if (!elder) return null;
 
   const alerts = await careAlertsForElder(elderId, options);
-  const physio = healthMetrics.getPhysio(elderId, options);
-  const psych = healthMetrics.buildPsych(elderId, options);
-  const emotion = healthMetrics.getEmotion(elderId, options);
-  const game = healthMetrics.getGameMetrics(elderId, options);
+  const physio = resolvePhysio(elderId, options);
+  const psych = resolvePsych(elderId, options);
+  const emotion = resolveEmotion(elderId, options);
+  const game = resolveGame(elderId, options);
 
   return {
     profile: {
@@ -143,6 +182,8 @@ async function getElderAnalysis(elderId, options = {}) {
     physio,
     psych,
     emotionHistory: emotion.series,
+    // 情緒歷史的資料真實性標註（reference / insufficient），供前端顯示「示範 / 資料不足」。
+    emotionDataSource: emotion.dataSource,
     gameMetrics: game,
   };
 }
@@ -151,19 +192,19 @@ async function getElderAnalysis(elderId, options = {}) {
 async function getElderPhysio(elderId, options = {}) {
   const elder = await eldersSource.getElder(elderId, options);
   if (!elder) return null;
-  return healthMetrics.getPhysio(elderId, options);
+  return resolvePhysio(elderId, options);
 }
 
 async function getElderEmotion(elderId, options = {}) {
   const elder = await eldersSource.getElder(elderId, options);
   if (!elder) return null;
-  return healthMetrics.getEmotion(elderId, options);
+  return resolveEmotion(elderId, options);
 }
 
 async function getElderGameMetrics(elderId, options = {}) {
   const elder = await eldersSource.getElder(elderId, options);
   if (!elder) return null;
-  return healthMetrics.getGameMetrics(elderId, options);
+  return resolveGame(elderId, options);
 }
 
 module.exports = {

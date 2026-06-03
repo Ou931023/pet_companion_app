@@ -950,7 +950,7 @@
         renderProfile(a.profile || {});
         renderPhysio(a.physio || {});
         renderPsych(a.psych || {});
-        renderEmotion(a.emotionHistory || []);
+        renderEmotion(a.emotionHistory || [], a.emotionDataSource);
         renderGame(a.gameMetrics || {});
         renderHealthAlerts(a.careAlerts || []);
         elH.elderAnalysis.classList.remove("hidden");
@@ -959,6 +959,30 @@
         elH.healthStatus.textContent =
           "暫時讀不到這位長者的健康分析，請稍後再試。";
       });
+  }
+
+  // CR-0030：資料真實性標籤。reference=示範參考、measured=真實紀錄、其餘不顯示。
+  function dataSourceBadge(dataSource) {
+    if (dataSource === "reference") {
+      return '<span class="data-tag data-reference">示範參考資料</span>';
+    }
+    if (dataSource === "measured") {
+      return '<span class="data-tag data-measured">真實紀錄</span>';
+    }
+    return "";
+  }
+
+  // 資料不足空狀態（不捏造資料）。
+  function insufficientBlock(hint) {
+    return (
+      '<p class="muted data-insufficient">資料不足，待累積更多真實紀錄後再顯示' +
+      (hint ? "（" + escapeHtml(hint) + "）" : "") +
+      "。</p>"
+    );
+  }
+
+  function isInsufficient(dataSource, series) {
+    return dataSource === "insufficient" || !series || series.length === 0;
   }
 
   function renderProfile(p) {
@@ -977,8 +1001,13 @@
   function renderPhysio(physio) {
     var s = physio.summary || {};
     var series = physio.series || [];
+    if (isInsufficient(physio.dataSource, series)) {
+      elH.physioBody.innerHTML = insufficientBlock("尚無生理 / 生活紀錄來源");
+      return;
+    }
     var latest = series.length ? series[series.length - 1] : {};
     var html =
+      dataSourceBadge(physio.dataSource) +
       '<div class="metric-grid">' +
       metricCard(
         "平均睡眠",
@@ -1017,8 +1046,13 @@
 
   // 心理健康分析：情緒穩定度 / 風險訊號 / 摘要 / 建議照護行動
   function renderPsych(psych) {
+    if (psych.dataSource === "insufficient" || !psych.summary) {
+      elH.psychBody.innerHTML = insufficientBlock("尚無足夠情緒紀錄可分析");
+      return;
+    }
     var stable = !psych.abnormal;
     var html =
+      dataSourceBadge(psych.dataSource) +
       '<div class="psych-head"><span class="psych-state ' +
       (stable ? "state-ok" : "state-warn") +
       '">情緒穩定度：' +
@@ -1045,13 +1079,14 @@
   }
 
   // 情緒分析歷史：原生時間軸（不引入 chart 套件）
-  function renderEmotion(history) {
-    if (!history.length) {
-      elH.emotionBody.innerHTML = '<p class="muted">目前沒有情緒紀錄。</p>';
+  function renderEmotion(history, dataSource) {
+    if (isInsufficient(dataSource, history)) {
+      elH.emotionBody.innerHTML = insufficientBlock("尚無情緒歷史紀錄");
       return;
     }
     var recent = history.slice(-8).reverse();
     elH.emotionBody.innerHTML =
+      dataSourceBadge(dataSource) +
       '<ul class="emotion-timeline">' +
       recent
         .map(function (e) {
@@ -1075,9 +1110,14 @@
   // 遊戲認知退化指標：認知分數 / 正確率 / 平均時長 / 趨勢 / 是否需關注
   function renderGame(game) {
     var series = game.series || [];
+    if (isInsufficient(game.dataSource, series)) {
+      elH.gameBody.innerHTML = insufficientBlock("尚無小遊戲紀錄");
+      return;
+    }
     var latest = series.length ? series[series.length - 1] : {};
     var declining = game.trend === "declining" || game.abnormal;
     var html =
+      dataSourceBadge(game.dataSource) +
       '<div class="metric-grid">' +
       metricCard(
         "認知分數",

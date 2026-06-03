@@ -213,7 +213,7 @@ test("listElderSummaries 回每位長者一列且欄位齊全", async () => {
   }
 });
 
-test("getElderAnalysis 個人完整分析形狀正確", async () => {
+test("getElderAnalysis 個人完整分析形狀正確（真實長者無真實健康資料時為資料不足）", async () => {
   const options = baseOptions();
   const analysis = await service.getElderAnalysis("elder-a", options);
   assert.ok(analysis);
@@ -221,9 +221,36 @@ test("getElderAnalysis 個人完整分析形狀正確", async () => {
   assert.equal(analysis.profile.displayName, "陳奶奶");
   assert.ok(Array.isArray(analysis.careAlerts));
   assert.ok(Array.isArray(analysis.emotionHistory));
-  assert.ok(analysis.physio.series.length > 0);
-  assert.ok(typeof analysis.psych.summary === "string");
+  // CR-0030：真實長者目前無真實生理/情緒/遊戲資料 → 標記 insufficient、不捏造序列。
+  assert.equal(analysis.physio.dataSource, "insufficient");
+  assert.equal(analysis.physio.series.length, 0);
+  assert.equal(analysis.psych.dataSource, "insufficient");
+  assert.equal(analysis.emotionDataSource, "insufficient");
+  assert.equal(analysis.emotionHistory.length, 0);
+  assert.equal(analysis.gameMetrics.dataSource, "insufficient");
   assert.ok(["stable", "declining"].includes(analysis.gameMetrics.trend));
+});
+
+test("CR-0030 示範種子長者顯示參考資料（dataSource=reference，序列非空、無工程字樣）", async () => {
+  const { SEED_ELDERS } = require("./eldersSource");
+  const seedId = SEED_ELDERS[0].id;
+  const options = {
+    eldersFilePath: writeEldersFile([]), // 空 → 走示範種子
+    usersFilePath: writeUsersFile([]),
+    careAlertsFilePath: emptyCareAlertsFile(),
+  };
+  const analysis = await service.getElderAnalysis(seedId, options);
+  assert.ok(analysis);
+  assert.equal(analysis.physio.dataSource, "reference");
+  assert.ok(analysis.physio.series.length > 0);
+  assert.equal(analysis.emotionDataSource, "reference");
+  assert.ok(analysis.emotionHistory.length > 0);
+  assert.equal(analysis.gameMetrics.dataSource, "reference");
+  assert.ok(["stable", "declining"].includes(analysis.gameMetrics.trend));
+  const blob = JSON.stringify(analysis).toLowerCase();
+  for (const banned of ["demo", "fake", "mock", "debug"]) {
+    assert.ok(!blob.includes(banned), `不得出現工程字樣：${banned}`);
+  }
 });
 
 test("未知 elderId → 個人分析回 null", async () => {
