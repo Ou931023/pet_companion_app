@@ -826,4 +826,19 @@
 - 測試：`adminUsersService.test.js` 新增 deriveDisplayName 案例；後端測試全綠。
 - 完成狀態：✅ 完成
 
+### CR-0032：新帳號完成設定後自動播放新手導覽（修設計矛盾，2026-06-03）
+- 提出 agent：frontend-ux-agent
+- 問題：onboarding 設計本意是「功能導覽由首次進首頁的 Spotlight（CoachMarkHost）自動負責」，
+  但 `_startUsing()` 在完成帳號設定當下就 `saveHomeCoachMarkDone(true)`，把首頁導覽預先標記
+  「已看過」→ 新使用者反而永遠看不到自動導覽（與設計自相矛盾）。
+- 作法：移除完成設定時的預先標記，讓新帳號首次進首頁時 CoachMarkHost 自動播放一次導覽
+  （播完才由 overlay 記錄已看過，不會重播）；移除變成未使用的 import。
+- 影響檔案：`lib/screens/onboarding_screen.dart`、`test/screens/onboarding_screen_test.dart`
+- 觸及 🔒？：否（純前端 onboarding 流程；未碰 Realtime / 後端 / DB）。
+- 風險等級：low。
+- 測試：`onboarding_screen_test` + `home_screen_layout_test` 全綠；`flutter analyze` 無問題。
+- 注意：已存在、已完成設定的舊帳號其 coachMarkDone 已是 true，不會回溯自動播放；可由
+  「設定 → 重新觀看新手導覽」手動觸發。新帳號才會自動播放。
+- 完成狀態：✅ 完成
+
 <!-- 新提案請往下加 CR-0004 ... -->

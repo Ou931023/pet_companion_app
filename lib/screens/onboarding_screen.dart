@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../controllers/pet_controller.dart';
 import '../controllers/profile_controller.dart';
 import '../models/pet_status.dart';
-import '../services/local_storage_service.dart';
 import '../utils/asset_paths.dart';
 import '../widgets/auth/auth_visuals.dart';
 import '../widgets/pet_skin_picker.dart';
@@ -420,14 +419,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   Future<void> _startUsing() async {
     if (_isSubmitting) return;
     setState(() => _isSubmitting = true);
-    final storage = context.read<LocalStorageService>();
     final profile = context.read<ProfileController>();
-    // 註冊完成後**不要**自動跳出首頁新手導覽：先把「已看過」記起來，
-    // 只有使用者主動在設定頁「重新觀看新手導覽」或首頁「？」時才會再播放。
-    await storage.saveHomeCoachMarkDone(true);
+    // 完成帳號設定後**不**預先標記「已看過」：讓新帳號首次進首頁時，由 CoachMarkHost
+    // 自動播放一次新手導覽（Spotlight），導覽播完才會自行記錄已看過。
     await profile.completeOnboarding(_confirmedName);
     // completeOnboarding 會 notifyListeners，AuthGate 會把本頁換成 MainShell，
-    // 不需要在這裡再做導頁。
+    // 首次進首頁時 CoachMarkHost 會自動開始新手導覽。
   }
 }
 

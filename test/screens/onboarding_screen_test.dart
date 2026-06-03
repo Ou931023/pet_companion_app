@@ -7,8 +7,8 @@ import 'package:pet_companion_app/controllers/profile_controller.dart';
 import 'package:pet_companion_app/screens/onboarding_screen.dart';
 import 'package:pet_companion_app/services/local_storage_service.dart';
 
-/// 不碰真實儲存，並記錄 saveHomeCoachMarkDone 是否被呼叫（驗證註冊完成後
-/// 不會自動跳出首頁 coach mark）。
+/// 不碰真實儲存，並記錄 saveHomeCoachMarkDone 是否被呼叫（驗證完成帳號設定後
+/// **不**預先標記已看過，讓新帳號首次進首頁能自動播放新手導覽）。
 class _FakeStorage extends LocalStorageService {
   bool? savedCoachMarkDone;
 
@@ -117,8 +117,9 @@ void main() {
     await tester.pump();
     expect(profile.completedName, '小可愛');
 
-    // 完成註冊後不會自動顯示舊 coach mark：已寫入「已看過」旗標。
-    expect(storage.savedCoachMarkDone, isTrue);
+    // 完成帳號設定後**不**預先標記「已看過」，讓新帳號首次進首頁時自動播放新手導覽
+    // （由 CoachMarkHost 播完後才記錄）。因此這裡不應呼叫 saveHomeCoachMarkDone。
+    expect(storage.savedCoachMarkDone, isNull);
   });
 
   testWidgets('第二步未取名按下一步 → 白話提醒、停在取名步驟、不呼叫 completeOnboarding',
