@@ -624,65 +624,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// 刪除 Email 帳號前，請使用者再輸入一次密碼以重新驗證。
   /// 回傳輸入的密碼；使用者取消或留空則回 `null`（呼叫端視為中止）。
-  Future<String?> _promptDeletePassword() async {
-    final controller = TextEditingController();
-    try {
-      return await showDialog<String>(
-        context: context,
-        builder: (dialogContext) {
-          return AlertDialog(
-            title: const Text(
-              '請再輸入一次密碼',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '為了確認是您本人，刪除帳號前請再輸入一次登入密碼。',
-                  style: TextStyle(fontSize: 18, height: 1.4),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: controller,
-                  obscureText: true,
-                  autofocus: true,
-                  style: const TextStyle(fontSize: 20),
-                  decoration: const InputDecoration(
-                    labelText: '密碼',
-                    labelStyle: TextStyle(fontSize: 18),
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text('取消', style: TextStyle(fontSize: 18)),
-              ),
-              TextButton(
-                onPressed: () {
-                  final value = controller.text;
-                  Navigator.of(dialogContext).pop(value.isEmpty ? null : value);
-                },
-                child: const Text(
-                  '確定刪除',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFFB91C1C),
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      );
-    } finally {
-      controller.dispose();
-    }
+  Future<String?> _promptDeletePassword() {
+    // 用 StatefulWidget 對話框管理 TextEditingController 生命週期：controller 在
+    // 對話框 State.dispose()（關閉動畫結束後）才釋放，避免「showDialog 一返回就 dispose、
+    // 但關閉動畫仍 rebuild TextField」造成 use-after-dispose 紅屏。
+    return showDialog<String>(
+      context: context,
+      builder: (_) => const _DeletePasswordDialog(),
+    );
   }
 
   Future<void> _confirmRenamePet(
@@ -1124,6 +1073,82 @@ class _FamilyContactsEditorState extends State<_FamilyContactsEditor> {
           onPressed: _addRow,
           icon: const Icon(Icons.add),
           label: const Text('新增聯絡人'),
+        ),
+      ],
+    );
+  }
+}
+
+/// 刪除帳號前的密碼重新驗證對話框。
+///
+/// 用獨立 StatefulWidget 持有 [TextEditingController]，在 [dispose]（對話框關閉動畫
+/// 結束後）才釋放，避免 use-after-dispose 紅屏。回傳輸入的密碼；取消或留空回 `null`。
+class _DeletePasswordDialog extends StatefulWidget {
+  const _DeletePasswordDialog();
+
+  @override
+  State<_DeletePasswordDialog> createState() => _DeletePasswordDialogState();
+}
+
+class _DeletePasswordDialogState extends State<_DeletePasswordDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final value = _controller.text;
+    Navigator.of(context).pop(value.isEmpty ? null : value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text(
+        '請再輸入一次密碼',
+        style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '為了確認是您本人，刪除帳號前請再輸入一次登入密碼。',
+            style: TextStyle(fontSize: 18, height: 1.4),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _controller,
+            obscureText: true,
+            autofocus: true,
+            style: const TextStyle(fontSize: 20),
+            onSubmitted: (_) => _submit(),
+            decoration: const InputDecoration(
+              labelText: '密碼',
+              labelStyle: TextStyle(fontSize: 18),
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消', style: TextStyle(fontSize: 18)),
+        ),
+        TextButton(
+          onPressed: _submit,
+          child: const Text(
+            '確定刪除',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFFB91C1C),
+            ),
+          ),
         ),
       ],
     );

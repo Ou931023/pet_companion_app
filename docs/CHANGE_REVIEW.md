@@ -841,4 +841,19 @@
   「設定 → 重新觀看新手導覽」手動觸發。新帳號才會自動播放。
 - 完成狀態：✅ 完成
 
+### CR-0033：修刪除帳號紅屏（TextEditingController use-after-dispose，2026-06-03）
+- 提出 agent：frontend-ux-agent
+- 問題：刪除帳號的密碼重新驗證對話框 `_promptDeletePassword` 在 `await showDialog` 一返回就
+  `finally { controller.dispose() }`，但對話框關閉動畫仍會 rebuild TextField → 「TextEditingController
+  used after being disposed」紅屏（後續 Duplicate GlobalKey / RenderFlex 溢位皆為連鎖）。此紅屏會
+  中斷整個刪除流程 → 後端沒收到刪除請求、帳號未被清除（用 PostgreSQL 觀察到帳號殘留）。
+- 作法：把密碼對話框改為獨立 StatefulWidget `_DeletePasswordDialog`，由其 `State.dispose()`
+  （對話框關閉動畫結束後）釋放 controller，消除 use-after-dispose。
+- 影響檔案：`lib/screens/settings_screen.dart`
+- 觸及 🔒？：否（純前端對話框生命週期；未碰 Realtime / 後端 / DB / 刪除邏輯本身）。
+- 風險等級：low。
+- 驗證：`flutter analyze` 無問題；`home_screen_layout_test`（含刪除帳號流程）全綠；實機 release
+  端到端驗證——刪除不再紅屏、PostgreSQL 舊帳號被清除、同 email 可重新註冊。
+- 完成狀態：✅ 完成
+
 <!-- 新提案請往下加 CR-0004 ... -->
