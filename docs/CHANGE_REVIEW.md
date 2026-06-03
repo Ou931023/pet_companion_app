@@ -878,4 +878,21 @@
 - 備註：找新聞要回真實結果需後端設定 `TAVILY_API_KEY`（非本 CR 範圍，屬環境設定）。
 - 完成狀態：✅ 完成（實機語音體驗待驗證）
 
+### CR-0035：搜尋來源政策改為「盡量不限制，只擋成人內容」（2026-06-03）
+- 提出 agent：backend-agent（依使用者產品決策）
+- 動機：原 `trusted_source_filter` 採白名單（只放行 gov/edu/cna/pts/rti…），Tavily 回的主流新聞
+  （reuters / nbcnews / cbsnews / udn…）被全數濾掉 → 「找新聞」永遠 fallback。實測確認 Tavily 有回 4 筆
+  新聞但被白名單擋光。
+- 使用者決策：除限制級 / 成人內容外，一律不過濾。
+- 作法：`filterTrustedSources` 從「白名單才放行」改為「全部放行、只擋成人內容」
+  （`isAdultSource`：成人網域清單 + 網址/標題關鍵字）。保留 `TRUSTED_DOMAINS` / `isTrustedSource`
+  作為「特別可信」標記用途（非過濾門檻）。
+- 影響檔案：`backend/search/trusted_source_filter.js`、`backend/search/search_service.test.js`
+- 觸及 🔒？：否（搜尋來源過濾模組內部邏輯；未改 server.js 路由 / response 形狀 / DB）。
+- 風險等級：low–medium（放寬內容來源；以成人內容阻擋為唯一限制，符合長者陪伴情境）。
+- 註：此政策刻意放寬原 CLAUDE.md「可信來源優先」設計，依使用者明確決策。
+- 驗證：`search_service.test.js` 5 項全綠；實打 `/api/search`（news）→ `provider=web_search`、
+  回 4 筆真實新聞 + 長輩版摘要。需後端 `TAVILY_API_KEY`（使用者已設定）。
+- 完成狀態：✅ 完成
+
 <!-- 新提案請往下加 CR-0004 ... -->

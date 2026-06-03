@@ -16,13 +16,20 @@ test("ordinary companion chat does not trigger search", () => {
   assert.equal(intent.needsSearch, false);
 });
 
-test("trusted source filter removes unknown domains", () => {
+test("來源過濾：一般來源全部放行，只擋成人內容", () => {
   const filtered = filterTrustedSources([
     { title: "官方防詐", url: "https://165.npa.gov.tw/article", sourceType: "government" },
-    { title: "來源不明", url: "https://random-blog.example/post" },
+    { title: "一般新聞", url: "https://www.reuters.com/world/asia" },
+    { title: "個人部落格", url: "https://random-blog.example/post" },
+    { title: "成人內容", url: "https://www.pornhub.com/view" },
   ]);
-  assert.equal(filtered.length, 1);
-  assert.equal(filtered[0].title, "官方防詐");
+  const urls = filtered.map((s) => s.url);
+  // 官方、主流新聞、一般部落格都應保留（政策：盡量不限制）。
+  assert.ok(urls.includes("https://165.npa.gov.tw/article"));
+  assert.ok(urls.includes("https://www.reuters.com/world/asia"));
+  assert.ok(urls.includes("https://random-blog.example/post"));
+  // 只有限制級 / 成人內容被擋掉。
+  assert.ok(!urls.some((u) => u.includes("pornhub")));
 });
 
 test("knowledge search returns sourceReferences for fraud query", async () => {
