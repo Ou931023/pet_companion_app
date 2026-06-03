@@ -31,6 +31,9 @@
         <button id="tab-tasks" class="view-tab" type="button" role="tab">
           日常任務
         </button>
+        <button id="tab-users" class="view-tab" type="button" role="tab">
+          使用者管理
+        </button>
       </nav>
 
       <div id="view-alerts">
@@ -263,6 +266,43 @@
 
           <p id="tasks-status" class="status-message"></p>
           <div id="task-list" class="task-list"></div>
+        </section>
+      </section>
+
+      <!-- 使用者管理 view（CR-0029）：從 PostgreSQL 透過 Admin API 查詢帳戶清單 -->
+      <section id="view-users" class="view-users hidden" aria-hidden="true">
+        <section class="list-section">
+          <div class="list-head">
+            <h2 class="section-title">使用者帳戶</h2>
+            <span id="users-count" class="list-count"></span>
+          </div>
+          <p class="hint care-disclaimer">
+            帳戶資料來自後端 PostgreSQL（非本機假資料），透過受權限保護的 Admin API 查詢。
+            為保護個資，Email 一律遮蔽顯示，且不會顯示密碼、Token 或驗證碼。
+          </p>
+
+          <!-- 管理者權杖：不寫死、不進 Git，僅存在此瀏覽器 localStorage -->
+          <div class="users-toolbar">
+            <label class="field-label" for="admin-token">管理者權杖（Admin Token）</label>
+            <div class="row">
+              <input
+                id="admin-token"
+                type="password"
+                class="text-input"
+                placeholder="貼上 ADMIN_API_TOKEN"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <button id="save-admin-token" class="btn">儲存權杖</button>
+              <button id="users-refresh" class="btn btn-primary">重新整理</button>
+            </div>
+            <p class="hint">
+              權杖只存在本機瀏覽器，不會上傳或寫入程式碼。正式產品應改為管理者登入 + JWT 權限控管。
+            </p>
+          </div>
+
+          <p id="users-status" class="status-message"></p>
+          <div id="users-table-wrap" class="users-table-wrap"></div>
         </section>
       </section>
 

@@ -7,6 +7,8 @@
 
   var API_BASE_KEY = "caregiver_api_base";
   var DEFAULT_API_BASE = "http://127.0.0.1:3001/api";
+  // CR-0029：管理者權杖只存在本機 localStorage，不寫死、不進 Git。
+  var ADMIN_TOKEN_KEY = "caregiver_admin_token";
 
   // 同時支援權威四級（low/medium/high/urgent）與舊代碼（normal/attention）。
   var RISK_LABELS = {
@@ -463,6 +465,19 @@
   };
   var tasksLoaded = false;
 
+  // CR-0029 使用者管理 view 元素參照。
+  var elU = {
+    tabUsers: document.getElementById("tab-users"),
+    viewUsers: document.getElementById("view-users"),
+    adminToken: document.getElementById("admin-token"),
+    saveAdminToken: document.getElementById("save-admin-token"),
+    usersRefresh: document.getElementById("users-refresh"),
+    usersStatus: document.getElementById("users-status"),
+    usersCount: document.getElementById("users-count"),
+    usersTableWrap: document.getElementById("users-table-wrap"),
+  };
+  var usersLoaded = false;
+
   function adminUrl(path) {
     return getApiBase() + "/admin" + path;
   }
@@ -516,6 +531,7 @@
       alerts: { view: elH.viewAlerts, tab: elH.tabAlerts },
       health: { view: elH.viewHealth, tab: elH.tabHealth },
       tasks: { view: elT.viewTasks, tab: elT.tabTasks },
+      users: { view: elU.viewUsers, tab: elU.tabUsers },
     };
     Object.keys(views).forEach(function (key) {
       var active = key === name;
@@ -535,6 +551,125 @@
       tasksLoaded = true;
       loadDailyTasks();
     }
+    if (name === "users" && !usersLoaded) {
+      usersLoaded = true;
+      loadUsers();
+    }
+  }
+
+  // ---- CR-0029 使用者管理 ----
+
+  function getAdminToken() {
+    return (localStorage.getItem(ADMIN_TOKEN_KEY) || "").trim();
+  }
+
+  // 帶 Admin token 的 fetch headers（無 token 時不帶，由後端回 401）。
+  function adminAuthHeaders() {
+    var token = getAdminToken();
+    return token ? { Authorization: "Bearer " + token } : {};
+  }
+
+  function authProviderLabel(provider) {
+    switch ((provider || "").toLowerCase()) {
+      case "google":
+        return "Google";
+      case "apple":
+        return "Apple";
+      case "email":
+        return "Email";
+      default:
+        return provider || "—";
+    }
+  }
+
+  function emailVerifiedLabel(verified) {
+    return verified ? "已驗證" : "未驗證";
+  }
+
+  function lastLoginLabel(value) {
+    if (!value) return "尚未登入或無紀錄";
+    return formatTime(value);
+  }
+
+  // 後端已遮蔽 email；前端直接顯示 emailMasked，缺值時不顯示原始資料。
+  function renderUsers(users) {
+    if (!users.length) {
+      elU.usersTableWrap.innerHTML = "";
+      setUsersStatus("目前尚無使用者帳戶資料", "");
+      elU.usersCount.textContent = "";
+      return;
+    }
+    setUsersStatus("", "");
+    elU.usersCount.textContent = "共 " + users.length + " 筆";
+    var rows = users
+      .map(function (u) {
+        return (
+          "<tr>" +
+          '<td class="user-id">' + escapeHtml(u.id) + "</td>" +
+          "<td>" + escapeHtml(u.displayName || "—") + "</td>" +
+          "<td>" + escapeHtml(u.emailMasked || "—") + "</td>" +
+          "<td>" + escapeHtml(authProviderLabel(u.authProvider)) + "</td>" +
+          '<td>' +
+          '<span class="verify-badge ' +
+          (u.emailVerified ? "is-verified" : "is-unverified") +
+          '">' +
+          escapeHtml(emailVerifiedLabel(u.emailVerified)) +
+          "</span></td>" +
+          "<td>" + escapeHtml(formatTime(u.createdAt)) + "</td>" +
+          "<td>" + escapeHtml(lastLoginLabel(u.lastLoginAt)) + "</td>" +
+          "</tr>"
+        );
+      })
+      .join("");
+    elU.usersTableWrap.innerHTML =
+      '<table class="users-table"><thead><tr>' +
+      "<th>使用者 ID</th><th>姓名</th><th>Email</th><th>登入方式</th>" +
+      "<th>驗證狀態</th><th>註冊時間</th><th>最近登入</th>" +
+      "</tr></thead><tbody>" +
+      rows +
+      "</tbody></table>";
+  }
+
+  function setUsersStatus(message, kind) {
+    elU.usersStatus.textContent = message || "";
+    elU.usersStatus.classList.toggle("error", kind === "error");
+  }
+
+  function loadUsers() {
+    elU.usersTableWrap.innerHTML = "";
+    elU.usersCount.textContent = "";
+    if (!getAdminToken()) {
+      setUsersStatus("請先在下方輸入管理者權杖（Admin Token），再重新整理。", "error");
+      return;
+    }
+    setUsersStatus("使用者資料載入中...", "");
+    fetch(adminUrl("/users"), { headers: adminAuthHeaders() })
+      .then(function (res) {
+        if (res.status === 401 || res.status === 403) {
+          throw new Error("unauthorized");
+        }
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      })
+      .then(function (body) {
+        if (!body || body.ok !== true || !Array.isArray(body.users)) {
+          throw new Error("bad_payload");
+        }
+        renderUsers(body.users);
+      })
+      .catch(function (err) {
+        if (err && err.message === "unauthorized") {
+          setUsersStatus(
+            "管理者權杖無效或未授權，請確認 Admin Token 是否正確。",
+            "error"
+          );
+        } else {
+          setUsersStatus(
+            "使用者資料載入失敗，請確認後端與資料庫是否已啟動。",
+            "error"
+          );
+        }
+      });
   }
 
   // ---- CR-0025 日常任務追蹤 ----
@@ -1058,6 +1193,28 @@
     }
     if (elT.tasksFilter) {
       elT.tasksFilter.addEventListener("change", loadDailyTasks);
+    }
+
+    // CR-0029 使用者管理分頁。
+    if (elU.tabUsers) {
+      elU.tabUsers.addEventListener("click", function () {
+        showView("users");
+      });
+    }
+    if (elU.adminToken) {
+      elU.adminToken.value = getAdminToken();
+    }
+    if (elU.saveAdminToken) {
+      elU.saveAdminToken.addEventListener("click", function () {
+        localStorage.setItem(
+          ADMIN_TOKEN_KEY,
+          (elU.adminToken.value || "").trim()
+        );
+        loadUsers();
+      });
+    }
+    if (elU.usersRefresh) {
+      elU.usersRefresh.addEventListener("click", loadUsers);
     }
 
     loadAlerts();

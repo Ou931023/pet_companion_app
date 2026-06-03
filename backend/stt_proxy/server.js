@@ -88,6 +88,8 @@ const {
   verifyProof: verifyDailyCareTaskProof,
 } = require("./services/dailyCareTask/dailyCareTaskVisionService");
 const adminAnalysis = require("./services/admin/adminAnalysisService");
+const requireAdmin = require("./services/admin/requireAdmin");
+const { listSafeUsers } = require("./services/admin/adminUsersService");
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -794,6 +796,19 @@ app.get("/api/admin/elders/:elderId/game-metrics", async (req, res) => {
   } catch (error) {
     logError("admin elder game metrics failed", { error: error?.message || error });
     return res.status(500).json({ success: false, error: "admin_game_failed" });
+  }
+});
+
+// CR-0029：管理者端使用者帳戶清單。受 requireAdmin 保護，資料只來自 PostgreSQL，
+// 只回安全欄位、Email 已遮蔽，不回傳 password_hash / provider_user_id / token。
+// 不使用 JSON fallback：PG 不可用即回 500 failed_to_load_users。
+app.get("/api/admin/users", requireAdmin, async (_req, res) => {
+  try {
+    const users = await listSafeUsers();
+    return res.json({ ok: true, users });
+  } catch (error) {
+    logError("admin users list failed", { error: error?.message || error });
+    return res.status(500).json({ ok: false, error: "failed_to_load_users" });
   }
 });
 

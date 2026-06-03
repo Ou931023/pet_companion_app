@@ -135,8 +135,9 @@ async function createUserPostgres(input) {
   const userResult = await postgres.query(
     `INSERT INTO users (
        firebase_uid, elder_id, role, email, display_name,
-       auth_provider, provider_user_id, binding_status, binding_deadline, updated_at
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, NOW())
+       auth_provider, provider_user_id, binding_status, binding_deadline,
+       updated_at, last_login_at
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, NOW(), NOW())
      RETURNING id, elder_id, role, binding_status, binding_deadline`,
     [
       input.firebaseUid,
@@ -156,6 +157,15 @@ async function createUserPostgres(input) {
 async function upsertPostgres(input, authMode) {
   const existing = await findUserByFirebaseUidPostgres(input.firebaseUid);
   if (existing) {
+    // 既有帳號再次登入：更新最近登入時間（供管理者端顯示）。失敗不影響登入。
+    try {
+      await postgres.query(
+        `UPDATE users SET last_login_at = NOW(), updated_at = NOW() WHERE id = $1`,
+        [existing.id],
+      );
+    } catch (_) {
+      // 忽略：last_login_at 僅為輔助欄位，更新失敗不應阻擋登入。
+    }
     return toSessionResult(existing, { isNewUser: false, authMode });
   }
   const created = await createUserPostgres(input);

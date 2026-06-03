@@ -750,4 +750,38 @@
 - architecture-agent 裁決：✅ 自核（low risk，未觸 🔒）
 - 完成狀態：✅ 完成
 
+### CR-0029：正式版管理者端使用者帳戶管理（Admin Users API + caregiver_web，2026-06-03）
+- 提出 agent：backend-agent（Admin API / DB / 權限）＋ frontend-ux-agent（caregiver_web 使用者管理頁）
+- 動機：讓管理者端能從 PostgreSQL 透過受權限保護的 Admin API 查使用者帳戶清單，並以安全方式
+  顯示（Email 遮蔽、不外漏敏感欄位），可向評審證明資料真的存在 DB、非本機假資料。
+- 盤點結論：`users` 表已存在（006），PG 連線 `db/postgres.js`、migration 機制、登入 upsert
+  到 PG 皆已具備；缺 requireAdmin、`/api/admin/users`、Email 遮蔽、caregiver_web 使用者管理頁、
+  `ADMIN_API_TOKEN`、`last_login_at`。
+- 修改檔案：
+  - `backend/stt_proxy/server.js`（新增 `GET /api/admin/users`，requireAdmin 保護；不動既有路由）
+  - `backend/stt_proxy/services/auth/sessionService.js`（PG 路徑寫入 / 更新 `last_login_at`）
+  - `backend/stt_proxy/package.json`（test / check 加入新檔）
+  - `backend/stt_proxy/.env.example`（新增 `ADMIN_API_TOKEN`、`PGVECTOR_ENABLED` 說明）
+  - `caregiver_web/index.html`、`caregiver_web/app.js`、`caregiver_web/styles.css`（使用者管理頁）
+- 新增檔案：
+  - `backend/stt_proxy/db/migrations/008_add_users_last_login_at.sql`
+  - `backend/stt_proxy/services/admin/requireAdmin.js`
+  - `backend/stt_proxy/services/admin/adminUsersService.js`
+  - `backend/stt_proxy/services/admin/adminUsersService.test.js`、`adminUsersEndpoint.test.js`
+  - `caregiver_web/admin_users.test.js`
+  - `docs/ADMIN_USER_MANAGEMENT.md`
+- 資料庫變更：沿用既有 `users` 表，新增冪等 migration（`last_login_at` 欄 + `created_at` 索引）；
+  使用者資料來源＝PostgreSQL；**不使用 JSON fallback**（PG 失敗回 `failed_to_load_users`）。
+- Admin API endpoint：`GET /api/admin/users`（Bearer ADMIN_API_TOKEN；401/403/200/500）。
+- 管理者端入口：caregiver_web 新增「使用者管理」分頁。
+- 觸及 🔒？：是——`server.js` 新增路由（API 契約）、DB schema（新增 migration）、`sessionService`
+  登入流程（最小、加性、try-catch 不阻擋登入）。皆為純新增 / 加性，未更動既有路由形狀與既有欄位。
+- 風險等級：medium（碰 API 契約 + schema + 登入流程，但均加性且有測試覆蓋）。
+- 是否動到 Realtime：否。Care Alert：否。Telegram：否。長期記憶：否。情緒辨識：否。
+- 是否動到登入註冊：是（僅在 PG 路徑加 last_login_at 寫入 / 更新，行為相容；JSON fallback 不變）。
+- 是否使用 JSON fallback：否。是否 hardcode demo users：否。是否回傳敏感欄位：否。
+- 測試結果：後端 `npm test` 176/176 通過（新增 9）；caregiver_web 33/33 通過（新增 7）。
+- architecture-agent 裁決：✅ 自核（medium risk，純加性、測試覆蓋齊全、未改既有契約形狀）
+- 完成狀態：✅ 完成
+
 <!-- 新提案請往下加 CR-0004 ... -->
