@@ -517,6 +517,30 @@ class RealtimeVoiceService {
     }
   }
 
+  /// 生活工具（找新聞 / 播音樂等）在語音模式執行後，讓寵物用語音「補一句」把結果念出來，
+  /// 使用者才不會覺得寵物沒聽懂。
+  ///
+  /// 只送一次性 `response.create` 並用 `response.instructions` 帶入這一句要說的內容；
+  /// **不建立 user 訊息**（不會產生假的使用者泡泡），也**不動純語音 server_vad 主流程**。
+  /// 沿用既有 `_sendEventPayload`（含 data channel 未開時排隊與錯誤保護）。
+  Future<void> speakToolOutcome(String line) async {
+    final normalized = line.trim();
+    if (normalized.isEmpty) return;
+    try {
+      await _sendEventPayload(jsonEncode({
+        'type': 'response.create',
+        'response': {
+          'instructions':
+              '請用溫暖、簡短、口語的方式對長輩說以下這件事，像剛幫他做完一樣自然，'
+                  '不要重複問問題、不要說自己是 AI：$normalized',
+        },
+      }));
+      _log('Sent tool outcome to realtime session for spoken reply');
+    } catch (error) {
+      _log('Unable to send tool outcome: $error');
+    }
+  }
+
   /// 目前麥克風輸入是否開啟（turn-based 輪次控制用）。
   bool get isMicEnabled => _micEnabled;
 
@@ -1000,7 +1024,14 @@ class RealtimeVoiceService {
       _lastFinalUserTranscript = transcript;
       _lastFinalTranscriptAt = now;
     }
-    debugPrint('[TRANSCRIPT] ${isFinal ? 'final' : 'partial'}=$transcript');
+    // partial 轉錄可能在多位元組（中文）字元中間被切斷，直接印原文會產生無效 UTF-8，
+    // 使 `flutter run` 的 stdout 解碼器崩潰（debug session 中斷）。partial 只印長度，
+    // final 為完整字串才印原文。
+    debugPrint(
+      isFinal
+          ? '[TRANSCRIPT] final=$transcript'
+          : '[TRANSCRIPT] partial(len=${transcript.length})',
+    );
     _emit(
       isFinal
           ? RealtimeEventType.finalTranscript

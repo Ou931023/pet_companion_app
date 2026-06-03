@@ -856,4 +856,26 @@
   端到端驗證——刪除不再紅屏、PostgreSQL 舊帳號被清除、同 email 可重新註冊。
 - 完成狀態：✅ 完成
 
+### CR-0034：語音模式工具用寵物聲音回應 + 修中文 partial 轉錄崩潰 debug log（2026-06-03）
+- 提出 agent：realtime-voice-agent
+- 問題：
+  1. 語音對話下，生活工具（找新聞 / 播音樂 / 打電話…）由 `agentToolController.routeFromUserText`
+     在背景判斷與執行，但結果**沒接回 Realtime 語音** → 寵物只閒聊、不講工具結果 → 使用者覺得「沒聽懂」。
+  2. `[TRANSCRIPT] partial=$transcript` 直接印中文 partial 轉錄，多位元組字被切斷會產生無效 UTF-8，
+     使 `flutter run` 的 stdout 解碼器崩潰（debug session 中斷，難以實機抓 log）。
+- 作法：
+  - `realtime_voice_service.dart` 新增 `speakToolOutcome(line)`：只送一次性 `response.create` +
+    `response.instructions` 讓寵物用語音念出該句；**不建立 user 訊息（無假泡泡）、不動 SDP / VAD
+    純語音主流程**，沿用既有 `_sendEventPayload`。
+  - `voice_agent_controller.dart`：`routeFromUserText` 完成後 `_maybeSpeakToolOutcome()`——低風險工具
+    念出執行結果；需確認的高影響工具念出確認問句（實際動作仍由確認 UI 完成，安全閘門不變）。
+  - `realtime_voice_service.dart`：`[TRANSCRIPT]` partial 只印長度、final 才印原文，避免無效 UTF-8。
+- 影響檔案：`lib/services/realtime_voice_service.dart`（🔒）、`lib/controllers/voice_agent_controller.dart`
+- 觸及 🔒？：是（`realtime_voice_service.dart`）——僅**新增 public 方法 + 修 debug log**，未改連線 /
+  SDP / DataChannel / server_vad 主流程、未改成 mock、無 demo fallback。
+- 風險等級：medium（碰 Realtime 檔，但屬純增量；純語音路徑不受影響）。
+- 驗證：`flutter analyze` 無問題；realtime / voice / agent_voice 整合測試 43 項全綠。實機語音回應待使用者驗證。
+- 備註：找新聞要回真實結果需後端設定 `TAVILY_API_KEY`（非本 CR 範圍，屬環境設定）。
+- 完成狀態：✅ 完成（實機語音體驗待驗證）
+
 <!-- 新提案請往下加 CR-0004 ... -->

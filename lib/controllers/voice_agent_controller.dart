@@ -586,30 +586,32 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       turnId: turnId,
     );
     _startTimeout(RealtimeTimeoutType.responseTimeout, turnId: turnId);
-    unawaited(
-      agentToolController?.routeFromUserText(
-        transcript,
-        sessionId: conversationController.activeSessionId,
-        turnId: turnId,
-        petName: profileController.petName,
-        emotion: _pendingRealtimeEmotion,
-        languageHint: _currentLanguageRoute.languageHint.value,
-        petState: {
-          'mood': petController.mood,
-          'expression': petController.expression,
-          'intimacy': petStatsController.intimacy,
-          'hunger': petStatsController.fullness,
-          'energy': petStatsController.moodValue,
-        },
-        recentTurns: conversationController.history.take(4).map((turn) {
-          return {
-            'userText': turn.userText,
-            'petReply': turn.petReply,
-            'emotionTag': turn.emotionTag,
-          };
-        }).toList(),
-      ),
+    final routing = agentToolController?.routeFromUserText(
+      transcript,
+      sessionId: conversationController.activeSessionId,
+      turnId: turnId,
+      petName: profileController.petName,
+      emotion: _pendingRealtimeEmotion,
+      languageHint: _currentLanguageRoute.languageHint.value,
+      petState: {
+        'mood': petController.mood,
+        'expression': petController.expression,
+        'intimacy': petStatsController.intimacy,
+        'hunger': petStatsController.fullness,
+        'energy': petStatsController.moodValue,
+      },
+      recentTurns: conversationController.history.take(4).map((turn) {
+        return {
+          'userText': turn.userText,
+          'petReply': turn.petReply,
+          'emotionTag': turn.emotionTag,
+        };
+      }).toList(),
     );
+    if (routing != null) {
+      // 工具（找新聞 / 播音樂等）執行完，讓寵物用語音把結果念出來（避免「沒聽懂」感）。
+      unawaited(routing.then((_) => _maybeSpeakToolOutcome()));
+    }
     unawaited(_analyzeCompanionTranscript(transcript, turnId));
 
     final navigationIntent = navigationService.detect(transcript);
@@ -804,6 +806,32 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     } catch (error) {
       debugPrint('[COMPANION_ENGINE] fallback: $error');
       _applyLocalCompanionFallback(transcript, turnId);
+    }
+  }
+
+  /// 生活工具（找新聞 / 播音樂等）在語音模式自動執行後，讓寵物用語音把結果念出來，
+  /// 使用者才不會覺得寵物沒聽懂。只處理「已成功執行的低風險工具」；需使用者確認的高影響
+  /// 工具仍走確認 UI，不在此自動朗讀。純附加，不影響 Realtime 連線 / SDP / 純語音主流程。
+  void _maybeSpeakToolOutcome() {
+    final controller = agentToolController;
+    if (controller == null) return;
+    // 1) 低風險工具（找新聞 / 播音樂…）已自動執行 → 用語音念出結果。
+    final result = controller.executionResult;
+    if (result != null && result.success) {
+      final line = result.message.trim();
+      if (line.isNotEmpty) {
+        unawaited(realtimeVoiceService.speakToolOutcome(line));
+      }
+      return;
+    }
+    // 2) 需確認的高影響工具（打電話 / 傳訊息…）不自動執行 → 用語音念出確認問句，
+    //    讓寵物有回應；實際動作仍由確認 UI 完成（安全閘門不變）。
+    final pending = controller.pendingIntent;
+    if (pending != null && pending.requiresConfirmation) {
+      final ask = pending.userFacingMessage.trim();
+      if (ask.isNotEmpty) {
+        unawaited(realtimeVoiceService.speakToolOutcome(ask));
+      }
     }
   }
 
