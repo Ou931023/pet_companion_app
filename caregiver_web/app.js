@@ -1186,6 +1186,293 @@
       .join("");
   }
 
+  // ---- 使用說明導覽（Guided Tour） ----
+  // 一步步用高亮 + 說明卡介紹四個分頁與主要操作；切換分頁沿用 showView()，
+  // 不另外動資料流。第一次造訪自動播放一次，之後可從右上「使用說明」重看。
+  var TOUR_DONE_KEY = "caregiver_tour_done";
+
+  // 每一步：view = 要切到哪個分頁；target = 高亮的元素選擇器（null 置中）。
+  var TOUR_STEPS = [
+    {
+      view: "alerts",
+      target: null,
+      title: "歡迎使用長者關懷管理中心",
+      body: "這裡讓家屬或長照人員，查看 AI 陪伴寵物在日常聊天中留意到的長者身心狀況。接下來用幾步帶您看過四個主要分頁。",
+    },
+    {
+      view: "alerts",
+      target: ".view-tabs",
+      title: "四個分頁",
+      body: "上方可切換「照護提醒、健康分析、日常任務、使用者管理」。平常最常看的是第一頁的照護提醒。",
+    },
+    {
+      view: "alerts",
+      target: "#stats",
+      title: "關懷概況",
+      body: "這四張卡是一眼可看的重點：新提醒、需通知、緊急、已處理的數量。數字會隨提醒進來即時更新。",
+    },
+    {
+      view: "alerts",
+      target: ".filters",
+      title: "篩選提醒",
+      body: "可依風險等級、處理狀態、顯示筆數篩選，再按「重新整理」。想先看緊急或待處理的提醒時很方便。",
+    },
+    {
+      view: "alerts",
+      target: ".list-section",
+      title: "提醒列表與處理",
+      body: "點任一張提醒卡可看詳情，裡面能把它標記為「已查看」或「已處理」。處理完的提醒會記錄起來，不會重複打擾。",
+    },
+    {
+      view: "health",
+      target: "#health-overview",
+      title: "健康分析",
+      body: "這裡彙整長者的活躍度、情緒與認知關注等指標。點左側長者列表中的某一位，右側會顯示完整的生理 / 心理 / 情緒分析。",
+    },
+    {
+      view: "tasks",
+      target: "#view-tasks .panel",
+      title: "日常任務追蹤",
+      body: "吃藥、喝水、運動等任務會由長者拍照打卡，系統用 AI 影像協助確認。「等待查看」的任務可以由您再確認一次。",
+    },
+    {
+      view: "users",
+      target: "#view-users .list-section",
+      title: "使用者帳戶管理",
+      body: "帳戶資料來自後端資料庫，需貼上管理者權杖才會載入。為保護個資，Email 會遮蔽，且不顯示密碼或驗證碼。",
+    },
+    {
+      view: "alerts",
+      target: ".settings",
+      title: "連線設定",
+      body: "用手機或其他電腦連線時，展開這裡把後端位址改成「http://<Mac區網IP>:3001/api」即可。設定會記在本機瀏覽器。",
+    },
+    {
+      view: "alerts",
+      target: null,
+      title: "就這樣，開始使用吧！",
+      body: "隨時可以點右上角的「💡 使用說明」再看一次這份導覽。祝您使用順利，陪伴長者更安心。",
+    },
+  ];
+
+  var tour = {
+    root: null,
+    spot: null,
+    tooltip: null,
+    index: 0,
+    startView: "alerts",
+    onKey: null,
+    onResize: null,
+  };
+
+  function activeViewName() {
+    if (elH.viewHealth && !elH.viewHealth.classList.contains("hidden")) {
+      return "health";
+    }
+    if (elT.viewTasks && !elT.viewTasks.classList.contains("hidden")) {
+      return "tasks";
+    }
+    if (elU.viewUsers && !elU.viewUsers.classList.contains("hidden")) {
+      return "users";
+    }
+    return "alerts";
+  }
+
+  function buildTourDom() {
+    var root = document.createElement("div");
+    root.className = "tour-root tour-hidden";
+    root.setAttribute("role", "dialog");
+    root.setAttribute("aria-modal", "true");
+    root.setAttribute("aria-label", "使用說明導覽");
+
+    var backdrop = document.createElement("div");
+    backdrop.className = "tour-backdrop";
+
+    var spot = document.createElement("div");
+    spot.className = "tour-spot";
+
+    var skip = document.createElement("button");
+    skip.type = "button";
+    skip.className = "tour-skip";
+    skip.textContent = "略過導覽";
+    skip.addEventListener("click", endTour);
+
+    var tooltip = document.createElement("div");
+    tooltip.className = "tour-tooltip";
+
+    root.appendChild(backdrop);
+    root.appendChild(spot);
+    root.appendChild(skip);
+    root.appendChild(tooltip);
+    document.body.appendChild(root);
+
+    tour.root = root;
+    tour.spot = spot;
+    tour.tooltip = tooltip;
+  }
+
+  function renderTooltip(step, index) {
+    var dots = "";
+    for (var i = 0; i < TOUR_STEPS.length; i++) {
+      dots += '<span class="tour-dot' + (i === index ? " is-active" : "") + '"></span>';
+    }
+    var isLast = index === TOUR_STEPS.length - 1;
+    var isFirst = index === 0;
+    tour.tooltip.innerHTML =
+      '<div class="tour-tip-step">第 ' +
+      (index + 1) +
+      " / " +
+      TOUR_STEPS.length +
+      " 步</div>" +
+      '<h3 class="tour-tip-title">' +
+      escapeHtml(step.title) +
+      "</h3>" +
+      '<p class="tour-tip-body">' +
+      escapeHtml(step.body) +
+      "</p>" +
+      '<div class="tour-tip-foot">' +
+      '<div class="tour-progress">' +
+      dots +
+      "</div>" +
+      '<div class="tour-actions">' +
+      (isFirst
+        ? ""
+        : '<button type="button" class="tour-btn" id="tour-prev">上一步</button>') +
+      '<button type="button" class="tour-btn tour-btn-primary" id="tour-next">' +
+      (isLast ? "完成" : "下一步") +
+      "</button>" +
+      "</div>" +
+      "</div>";
+
+    var prevBtn = document.getElementById("tour-prev");
+    if (prevBtn) prevBtn.addEventListener("click", function () { gotoStep(index - 1); });
+    var nextBtn = document.getElementById("tour-next");
+    if (nextBtn) {
+      nextBtn.addEventListener("click", function () {
+        if (isLast) endTour();
+        else gotoStep(index + 1);
+      });
+    }
+  }
+
+  function positionSpotlight(step) {
+    var spot = tour.spot;
+    var tip = tour.tooltip;
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var targetEl = step.target ? document.querySelector(step.target) : null;
+
+    if (!targetEl) {
+      // 置中（歡迎 / 結束）：遮罩全暗、卡片置中。
+      spot.classList.add("tour-spot-center");
+      tip.style.left = Math.max(18, (vw - tip.offsetWidth) / 2) + "px";
+      tip.style.top = Math.max(18, (vh - tip.offsetHeight) / 2) + "px";
+      return;
+    }
+
+    spot.classList.remove("tour-spot-center");
+    var pad = 8;
+    var r = targetEl.getBoundingClientRect();
+    var top = Math.max(pad, r.top - pad);
+    var left = Math.max(pad, r.left - pad);
+    var width = Math.min(vw - left - pad, r.width + pad * 2);
+    var height = r.height + pad * 2;
+    spot.style.top = top + "px";
+    spot.style.left = left + "px";
+    spot.style.width = width + "px";
+    spot.style.height = height + "px";
+
+    // 卡片優先放在高亮下方，空間不夠就放上方，再不夠就靠底部。
+    var tipW = tip.offsetWidth || 320;
+    var tipH = tip.offsetHeight || 160;
+    var tipLeft = Math.min(Math.max(pad, left), vw - tipW - pad);
+    var below = top + height + 14;
+    var tipTop;
+    if (below + tipH <= vh - pad) {
+      tipTop = below;
+    } else if (top - tipH - 14 >= pad) {
+      tipTop = top - tipH - 14;
+    } else {
+      tipTop = Math.max(pad, vh - tipH - pad);
+    }
+    tip.style.left = tipLeft + "px";
+    tip.style.top = tipTop + "px";
+  }
+
+  function gotoStep(index) {
+    if (index < 0 || index >= TOUR_STEPS.length) return;
+    tour.index = index;
+    var step = TOUR_STEPS[index];
+    showView(step.view);
+    renderTooltip(step, index);
+    // 切分頁 / 懶載入後讓版面安定，再量測定位。
+    var targetEl = step.target ? document.querySelector(step.target) : null;
+    if (targetEl && targetEl.scrollIntoView) {
+      targetEl.scrollIntoView({ block: "center", behavior: "auto" });
+    }
+    window.requestAnimationFrame(function () {
+      setTimeout(function () {
+        positionSpotlight(step);
+      }, 60);
+    });
+  }
+
+  function startTour() {
+    if (!tour.root) buildTourDom();
+    tour.startView = activeViewName();
+    tour.root.classList.remove("tour-hidden");
+
+    tour.onKey = function (e) {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        endTour();
+      } else if (e.key === "ArrowRight") {
+        gotoStep(tour.index + 1);
+      } else if (e.key === "ArrowLeft") {
+        gotoStep(tour.index - 1);
+      }
+    };
+    tour.onResize = function () {
+      positionSpotlight(TOUR_STEPS[tour.index]);
+    };
+    document.addEventListener("keydown", tour.onKey, true);
+    window.addEventListener("resize", tour.onResize);
+    window.addEventListener("scroll", tour.onResize, true);
+
+    gotoStep(0);
+  }
+
+  function endTour() {
+    if (tour.root) tour.root.classList.add("tour-hidden");
+    if (tour.onKey) document.removeEventListener("keydown", tour.onKey, true);
+    if (tour.onResize) {
+      window.removeEventListener("resize", tour.onResize);
+      window.removeEventListener("scroll", tour.onResize, true);
+    }
+    try {
+      localStorage.setItem(TOUR_DONE_KEY, "1");
+    } catch (err) {
+      /* localStorage 不可用時忽略，不影響導覽 */
+    }
+    // 回到使用者開始導覽前所在的分頁。
+    showView(tour.startView || "alerts");
+  }
+
+  function setupGuidedTour() {
+    var startBtn = document.getElementById("tour-start");
+    if (startBtn) startBtn.addEventListener("click", startTour);
+    // 第一次造訪自動播放一次（資料載入後稍等，畫面比較穩定）。
+    var done = "";
+    try {
+      done = localStorage.getItem(TOUR_DONE_KEY) || "";
+    } catch (err) {
+      done = "";
+    }
+    if (!done) {
+      setTimeout(startTour, 900);
+    }
+  }
+
   // ---- init ----
   function init() {
     el.apiBase.value = getApiBase();
@@ -1257,6 +1544,7 @@
       elU.usersRefresh.addEventListener("click", loadUsers);
     }
 
+    setupGuidedTour();
     loadAlerts();
   }
 

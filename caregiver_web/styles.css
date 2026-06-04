@@ -44,6 +44,26 @@ body {
 .header-inner {
   max-width: 960px;
   margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.header-actions {
+  flex: 0 0 auto;
+}
+
+/* 在漸層標題列上的半透明按鈕（「使用說明」導覽入口）。 */
+.btn-ghost {
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  color: #fff;
+}
+
+.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .brand {
@@ -1260,4 +1280,165 @@ code {
 }
 .data-insufficient {
   padding: 12px 0;
+}
+
+/* ============================================================
+   使用說明導覽（Guided Tour）
+   一個半透明遮罩 + 鏡頭高亮（spotlight）+ 說明卡，逐步介紹各分頁。
+   高亮用「透明方塊 + 超大 box-shadow」做出挖洞效果。
+   ============================================================ */
+.tour-root {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+.tour-root.tour-hidden {
+  display: none;
+}
+
+/* 點擊遮罩任一處不會誤觸底下畫面：由導覽按鈕控制流程。 */
+.tour-backdrop {
+  position: absolute;
+  inset: 0;
+  cursor: default;
+}
+
+/* 高亮框：本身透明，用超大外陰影把四周變暗。 */
+.tour-spot {
+  position: absolute;
+  border-radius: 14px;
+  box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.62);
+  border: 3px solid #ffd66b;
+  transition: top 0.25s ease, left 0.25s ease, width 0.25s ease,
+    height 0.25s ease;
+  pointer-events: none;
+}
+
+/* 無特定目標（歡迎 / 結束）時，遮罩全暗、不挖洞。 */
+.tour-spot.tour-spot-center {
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-color: transparent;
+}
+
+.tour-tooltip {
+  position: absolute;
+  max-width: 340px;
+  width: calc(100vw - 36px);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 16px;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.34);
+  padding: 18px 18px 16px;
+  transition: top 0.25s ease, left 0.25s ease;
+}
+
+.tour-tip-step {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary);
+  letter-spacing: 0.4px;
+}
+
+.tour-tip-title {
+  margin: 6px 0 8px;
+  font-size: 19px;
+  font-weight: 800;
+}
+
+.tour-tip-body {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+.tour-tip-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.tour-progress {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.tour-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.tour-dot.is-active {
+  background: var(--primary);
+}
+
+.tour-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.tour-btn {
+  font-size: 15px;
+  font-weight: 700;
+  padding: 9px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tour-btn:hover {
+  background: #f1f3fa;
+}
+
+.tour-btn-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.tour-btn-primary:hover {
+  background: var(--primary-dark);
+}
+
+.tour-skip {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  background: rgba(255, 255, 255, 0.92);
+  border: none;
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.2);
+}
+
+.tour-skip:hover {
+  background: #fff;
+}
+
+@media (max-width: 600px) {
+  /* 小螢幕：兩顆按鈕並排撐滿一行、各占一半，文字仍不換行。 */
+  .tour-actions {
+    justify-content: stretch;
+  }
+  .tour-actions .tour-btn {
+    flex: 1 1 0;
+    text-align: center;
+  }
 }
