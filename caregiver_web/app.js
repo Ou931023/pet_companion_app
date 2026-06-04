@@ -478,8 +478,81 @@
   };
   var usersLoaded = false;
 
+  // CR-0032 長照商品商城：商品管理 / 訂單管理 element 快取。
+  var elP = {
+    tabProducts: document.getElementById("tab-products"),
+    viewProducts: document.getElementById("view-products"),
+    adminToken: document.getElementById("products-admin-token"),
+    saveToken: document.getElementById("products-save-token"),
+    filter: document.getElementById("products-filter"),
+    refresh: document.getElementById("products-refresh"),
+    add: document.getElementById("product-add"),
+    status: document.getElementById("products-status"),
+    count: document.getElementById("products-count"),
+    tableWrap: document.getElementById("products-table-wrap"),
+    overlay: document.getElementById("product-overlay"),
+    formTitle: document.getElementById("product-form-title"),
+    form: document.getElementById("product-form"),
+    formClose: document.getElementById("product-form-close"),
+    formCancel: document.getElementById("product-form-cancel"),
+    formStatus: document.getElementById("product-form-status"),
+    fId: document.getElementById("pf-id"),
+    fName: document.getElementById("pf-name"),
+    fCategory: document.getElementById("pf-category"),
+    fDescription: document.getElementById("pf-description"),
+    fCenterName: document.getElementById("pf-center-name"),
+    fCenterId: document.getElementById("pf-center-id"),
+    fPrice: document.getElementById("pf-price"),
+    fStock: document.getElementById("pf-stock"),
+    fCommission: document.getElementById("pf-commission"),
+    fStatus: document.getElementById("pf-status"),
+    fImage: document.getElementById("pf-image"),
+  };
+  var productsLoaded = false;
+
+  var elO = {
+    tabOrders: document.getElementById("tab-orders"),
+    viewOrders: document.getElementById("view-orders"),
+    adminToken: document.getElementById("orders-admin-token"),
+    saveToken: document.getElementById("orders-save-token"),
+    filter: document.getElementById("orders-filter"),
+    refresh: document.getElementById("orders-refresh"),
+    status: document.getElementById("orders-status"),
+    count: document.getElementById("orders-count"),
+    list: document.getElementById("orders-list"),
+    overlay: document.getElementById("order-overlay"),
+    detailBody: document.getElementById("order-detail-body"),
+    detailClose: document.getElementById("order-detail-close"),
+  };
+  var ordersLoaded = false;
+
+  var ORDER_STATUS_LABELS = {
+    pending: "待處理",
+    confirmed: "已確認",
+    shipping: "配送中",
+    completed: "已完成",
+    cancelled: "已取消",
+  };
+  var ORDER_STATUS_FLOW = [
+    "pending",
+    "confirmed",
+    "shipping",
+    "completed",
+    "cancelled",
+  ];
+
   function adminUrl(path) {
     return getApiBase() + "/admin" + path;
+  }
+  // 長者端公開商城路由（非 /admin）。
+  function marketplaceUrl(path) {
+    return getApiBase() + "/marketplace" + path;
+  }
+  // NT$ 千分位金額。
+  function formatMoney(n) {
+    var num = Number(n);
+    if (!isFinite(num)) num = 0;
+    return "NT$ " + Math.round(num).toLocaleString("en-US");
   }
   function pct(v) {
     if (typeof v !== "number" || isNaN(v)) return "—";
@@ -532,6 +605,8 @@
       health: { view: elH.viewHealth, tab: elH.tabHealth },
       tasks: { view: elT.viewTasks, tab: elT.tabTasks },
       users: { view: elU.viewUsers, tab: elU.tabUsers },
+      products: { view: elP.viewProducts, tab: elP.tabProducts },
+      orders: { view: elO.viewOrders, tab: elO.tabOrders },
     };
     Object.keys(views).forEach(function (key) {
       var active = key === name;
@@ -554,6 +629,14 @@
     if (name === "users" && !usersLoaded) {
       usersLoaded = true;
       loadUsers();
+    }
+    if (name === "products" && !productsLoaded) {
+      productsLoaded = true;
+      loadProducts();
+    }
+    if (name === "orders" && !ordersLoaded) {
+      ordersLoaded = true;
+      loadOrders();
     }
   }
 
@@ -1242,6 +1325,18 @@
       body: "帳戶資料來自後端資料庫，需貼上管理者權杖才會載入。為保護個資，Email 會遮蔽，且不顯示密碼或驗證碼。",
     },
     {
+      view: "products",
+      target: "#view-products .list-section",
+      title: "商品管理",
+      body: "在這裡為長照商城上架商品：填寫名稱、分類、價格、庫存、所屬長照中心與平台抽成。上架中的商品會出現在長者端 App 的照護用品商城。",
+    },
+    {
+      view: "orders",
+      target: "#view-orders .list-section",
+      title: "訂單管理",
+      body: "長者在 App 下單後，訂單會出現在這裡。點開可看商品明細、總金額、平台抽成與長照中心實收，並更新「待處理 / 已確認 / 配送中 / 已完成」等狀態。",
+    },
+    {
       view: "alerts",
       target: ".settings",
       title: "連線設定",
@@ -1474,6 +1569,489 @@
   }
 
   // ---- init ----
+  // ===================================================================
+  // CR-0032 長照商品商城：商品管理 + 訂單管理
+  // ===================================================================
+
+  var productsCache = [];
+  var ordersCache = [];
+
+  // 帶 Admin token 的 JSON 寫入 headers。
+  function adminJsonHeaders() {
+    var h = { "Content-Type": "application/json" };
+    var token = getAdminToken();
+    if (token) h.Authorization = "Bearer " + token;
+    return h;
+  }
+
+  function setProductsStatus(msg, kind) {
+    if (!elP.status) return;
+    elP.status.textContent = msg || "";
+    elP.status.classList.toggle("error", kind === "error");
+  }
+
+  function loadProducts() {
+    var category = elP.filter ? elP.filter.value : "";
+    // status=all：管理端要同時看到上架 / 下架商品。
+    var url = marketplaceUrl("/products?status=all");
+    if (category) url += "&category=" + encodeURIComponent(category);
+    setProductsStatus("商品載入中…", "");
+    fetch(url)
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (body) {
+        if (!body || body.ok !== true || !Array.isArray(body.products)) {
+          throw new Error("bad_payload");
+        }
+        productsCache = body.products;
+        renderProducts(body.products);
+        setProductsStatus("", "");
+      })
+      .catch(function () {
+        if (elP.tableWrap) elP.tableWrap.innerHTML = "";
+        if (elP.count) elP.count.textContent = "";
+        setProductsStatus("目前連不到後端，待會再重新整理看看。", "error");
+      });
+  }
+
+  function productStatusBadge(status) {
+    var on = status === "active";
+    return (
+      '<span class="badge status ' +
+      (on ? "status-resolved" : "status-off") +
+      '">' +
+      (on ? "上架中" : "已下架") +
+      "</span>"
+    );
+  }
+
+  function renderProducts(products) {
+    if (elP.count) elP.count.textContent = "共 " + products.length + " 筆";
+    if (!products.length) {
+      elP.tableWrap.innerHTML =
+        '<p class="empty">目前沒有商品，點右上角「新增商品」開始上架。</p>';
+      return;
+    }
+    var rows = products
+      .map(function (p) {
+        return (
+          "<tr>" +
+          "<td>" + escapeHtml(p.name || "—") + "</td>" +
+          "<td>" + escapeHtml(p.category || "—") + "</td>" +
+          "<td>" + escapeHtml(p.center_name || "—") + "</td>" +
+          "<td>" + formatMoney(p.price) + "</td>" +
+          "<td>" + (Number(p.stock) || 0) + "</td>" +
+          "<td>" + Math.round((Number(p.commission_rate) || 0) * 100) + "%</td>" +
+          "<td>" + productStatusBadge(p.status) + "</td>" +
+          '<td class="row-actions">' +
+          '<button class="btn btn-sm" data-action="edit" data-id="' +
+          escapeHtml(p.id) +
+          '">編輯</button>' +
+          '<button class="btn btn-sm" data-action="toggle" data-id="' +
+          escapeHtml(p.id) +
+          '" data-status="' +
+          escapeHtml(p.status) +
+          '">' +
+          (p.status === "active" ? "下架" : "上架") +
+          "</button>" +
+          "</td>" +
+          "</tr>"
+        );
+      })
+      .join("");
+    elP.tableWrap.innerHTML =
+      '<table class="users-table"><thead><tr>' +
+      "<th>商品</th><th>分類</th><th>長照中心</th><th>價格</th><th>庫存</th><th>抽成</th><th>狀態</th><th>操作</th>" +
+      "</tr></thead><tbody>" +
+      rows +
+      "</tbody></table>";
+
+    var btns = elP.tableWrap.querySelectorAll("button[data-action]");
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].addEventListener("click", onProductAction);
+    }
+  }
+
+  function onProductAction(e) {
+    var btn = e.currentTarget;
+    var id = btn.getAttribute("data-id");
+    var action = btn.getAttribute("data-action");
+    if (action === "edit") {
+      var product = null;
+      for (var i = 0; i < productsCache.length; i++) {
+        if (productsCache[i].id === id) {
+          product = productsCache[i];
+          break;
+        }
+      }
+      openProductForm(product);
+    } else if (action === "toggle") {
+      var status = btn.getAttribute("data-status");
+      toggleProductStatus(id, status === "active" ? "inactive" : "active");
+    }
+  }
+
+  function productFormError(msg) {
+    if (!elP.formStatus) return;
+    elP.formStatus.textContent = msg;
+    elP.formStatus.classList.add("error");
+  }
+
+  function openProductForm(product) {
+    if (elP.form) elP.form.reset();
+    if (elP.formStatus) {
+      elP.formStatus.textContent = "";
+      elP.formStatus.classList.remove("error");
+    }
+    if (product) {
+      elP.formTitle.textContent = "編輯商品";
+      elP.fId.value = product.id || "";
+      elP.fName.value = product.name || "";
+      elP.fCategory.value = product.category || "照護用品";
+      elP.fDescription.value = product.description || "";
+      elP.fCenterName.value = product.center_name || "";
+      elP.fCenterId.value = product.center_id || "";
+      elP.fPrice.value = product.price != null ? product.price : "";
+      elP.fStock.value = product.stock != null ? product.stock : "";
+      elP.fCommission.value =
+        product.commission_rate != null ? product.commission_rate : "";
+      elP.fStatus.value = product.status || "active";
+      elP.fImage.value = product.image_url || "";
+    } else {
+      elP.formTitle.textContent = "新增商品";
+      elP.fId.value = "";
+      elP.fCategory.value = "照護用品";
+      elP.fStatus.value = "active";
+      elP.fCommission.value = "0.10";
+    }
+    elP.overlay.classList.remove("hidden");
+  }
+
+  function closeProductForm() {
+    if (elP.overlay) elP.overlay.classList.add("hidden");
+  }
+
+  function submitProductForm(e) {
+    if (e) e.preventDefault();
+    if (!getAdminToken()) {
+      productFormError("請先在上方輸入管理者權杖（Admin Token）。");
+      return;
+    }
+    var name = (elP.fName.value || "").trim();
+    if (!name) {
+      productFormError("請填寫商品名稱。");
+      return;
+    }
+    var id = (elP.fId.value || "").trim();
+    var payload = {
+      name: name,
+      category: elP.fCategory.value,
+      description: (elP.fDescription.value || "").trim(),
+      center_name: (elP.fCenterName.value || "").trim(),
+      center_id: (elP.fCenterId.value || "").trim(),
+      price: Number(elP.fPrice.value) || 0,
+      stock: Number(elP.fStock.value) || 0,
+      commission_rate: Number(elP.fCommission.value) || 0,
+      status: elP.fStatus.value,
+      image_url: (elP.fImage.value || "").trim(),
+    };
+    var method = id ? "PUT" : "POST";
+    var url = id
+      ? adminUrl("/marketplace/products/" + encodeURIComponent(id))
+      : adminUrl("/marketplace/products");
+    if (elP.formStatus) elP.formStatus.textContent = "儲存中…";
+    fetch(url, {
+      method: method,
+      headers: adminJsonHeaders(),
+      body: JSON.stringify(payload),
+    })
+      .then(function (r) {
+        if (r.status === 401 || r.status === 403) throw new Error("unauthorized");
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function () {
+        closeProductForm();
+        loadProducts();
+      })
+      .catch(function (err) {
+        if (err && err.message === "unauthorized") {
+          productFormError("管理者權杖無效或未授權。");
+        } else {
+          productFormError("儲存沒成功，請稍後再試。");
+        }
+      });
+  }
+
+  function toggleProductStatus(id, nextStatus) {
+    if (!getAdminToken()) {
+      setProductsStatus("請先輸入管理者權杖（Admin Token）。", "error");
+      return;
+    }
+    fetch(adminUrl("/marketplace/products/" + encodeURIComponent(id) + "/status"), {
+      method: "PATCH",
+      headers: adminJsonHeaders(),
+      body: JSON.stringify({ status: nextStatus }),
+    })
+      .then(function (r) {
+        if (r.status === 401 || r.status === 403) throw new Error("unauthorized");
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function () {
+        loadProducts();
+      })
+      .catch(function (err) {
+        if (err && err.message === "unauthorized") {
+          setProductsStatus("管理者權杖無效或未授權。", "error");
+        } else {
+          setProductsStatus("狀態更新沒成功，請稍後再試。", "error");
+        }
+      });
+  }
+
+  // ---- 訂單管理 ----
+
+  function setOrdersStatus(msg, kind) {
+    if (!elO.status) return;
+    elO.status.textContent = msg || "";
+    elO.status.classList.toggle("error", kind === "error");
+  }
+
+  function loadOrders() {
+    if (!getAdminToken()) {
+      setOrdersStatus("請先輸入管理者權杖（Admin Token），再重新整理。", "error");
+      if (elO.list) elO.list.innerHTML = "";
+      if (elO.count) elO.count.textContent = "";
+      return;
+    }
+    var status = elO.filter ? elO.filter.value : "";
+    var url = adminUrl("/marketplace/orders");
+    if (status) url += "?status=" + encodeURIComponent(status);
+    setOrdersStatus("訂單載入中…", "");
+    fetch(url, { headers: adminAuthHeaders() })
+      .then(function (r) {
+        if (r.status === 401 || r.status === 403) throw new Error("unauthorized");
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (body) {
+        if (!body || body.ok !== true || !Array.isArray(body.orders)) {
+          throw new Error("bad_payload");
+        }
+        ordersCache = body.orders;
+        renderOrders(body.orders);
+        setOrdersStatus("", "");
+      })
+      .catch(function (err) {
+        if (elO.list) elO.list.innerHTML = "";
+        if (elO.count) elO.count.textContent = "";
+        if (err && err.message === "unauthorized") {
+          setOrdersStatus("管理者權杖無效或未授權。", "error");
+        } else {
+          setOrdersStatus("目前連不到後端，待會再重新整理看看。", "error");
+        }
+      });
+  }
+
+  function orderStatusBadge(status) {
+    return (
+      '<span class="badge status order-' +
+      escapeHtml(status) +
+      '">' +
+      escapeHtml(ORDER_STATUS_LABELS[status] || status) +
+      "</span>"
+    );
+  }
+
+  function renderOrders(orders) {
+    if (elO.count) elO.count.textContent = "共 " + orders.length + " 筆";
+    if (!orders.length) {
+      elO.list.innerHTML = '<p class="empty">目前沒有符合條件的訂單。</p>';
+      return;
+    }
+    elO.list.innerHTML = orders
+      .map(function (o) {
+        var itemCount = Array.isArray(o.items) ? o.items.length : 0;
+        return (
+          '<div class="order-row" data-id="' +
+          escapeHtml(o.id) +
+          '">' +
+          '<div class="order-row-main">' +
+          '<span class="order-elder">' +
+          escapeHtml(o.elder_name || "長者") +
+          "</span>" +
+          '<span class="order-center">' +
+          escapeHtml(o.center_name || "—") +
+          "</span>" +
+          '<span class="order-items-count">' +
+          itemCount +
+          " 項商品</span>" +
+          "</div>" +
+          '<div class="order-row-meta">' +
+          orderStatusBadge(o.status) +
+          '<span class="order-amount">' +
+          formatMoney(o.total_amount) +
+          "</span>" +
+          "</div>" +
+          "</div>"
+        );
+      })
+      .join("");
+    var rows = elO.list.querySelectorAll(".order-row");
+    for (var i = 0; i < rows.length; i++) {
+      rows[i].addEventListener("click", function () {
+        openOrderDetail(this.getAttribute("data-id"));
+      });
+    }
+  }
+
+  function openOrderDetail(id) {
+    var order = null;
+    for (var i = 0; i < ordersCache.length; i++) {
+      if (ordersCache[i].id === id) {
+        order = ordersCache[i];
+        break;
+      }
+    }
+    if (!order) return;
+    renderOrderDetail(order);
+    elO.overlay.classList.remove("hidden");
+  }
+
+  function closeOrderDetail() {
+    if (elO.overlay) elO.overlay.classList.add("hidden");
+  }
+
+  function renderOrderDetail(order) {
+    var items = Array.isArray(order.items) ? order.items : [];
+    var itemRows = items
+      .map(function (it) {
+        return (
+          "<tr>" +
+          "<td>" + escapeHtml(it.product_name || "—") + "</td>" +
+          "<td>" + (Number(it.quantity) || 0) + "</td>" +
+          "<td>" + formatMoney(it.unit_price) + "</td>" +
+          "<td>" + formatMoney(it.subtotal) + "</td>" +
+          "</tr>"
+        );
+      })
+      .join("");
+
+    var statusOptions = ORDER_STATUS_FLOW.map(function (s) {
+      return (
+        '<option value="' +
+        s +
+        '"' +
+        (s === order.status ? " selected" : "") +
+        ">" +
+        ORDER_STATUS_LABELS[s] +
+        "</option>"
+      );
+    }).join("");
+
+    var commissionPct = Math.round((Number(order.commission_rate) || 0) * 100);
+
+    elO.detailBody.innerHTML =
+      '<div class="detail-row"><span class="detail-key">購買人 / 長者</span><span class="detail-val">' +
+      escapeHtml(order.elder_name || "—") +
+      "</span></div>" +
+      '<div class="detail-row"><span class="detail-key">長照中心</span><span class="detail-val">' +
+      escapeHtml(order.center_name || "—") +
+      "</span></div>" +
+      '<table class="users-table order-items-table"><thead><tr><th>商品</th><th>數量</th><th>單價</th><th>小計</th></tr></thead><tbody>' +
+      itemRows +
+      "</tbody></table>" +
+      '<div class="order-money">' +
+      '<div class="order-money-row"><span>商品總金額</span><strong>' +
+      formatMoney(order.total_amount) +
+      "</strong></div>" +
+      '<div class="order-money-row"><span>平台抽成（' +
+      commissionPct +
+      '%）</span><strong>' +
+      formatMoney(order.commission_amount) +
+      "</strong></div>" +
+      '<div class="order-money-row order-money-net"><span>長照中心實收</span><strong>' +
+      formatMoney(order.center_revenue) +
+      "</strong></div>" +
+      "</div>" +
+      '<div class="form-field"><label class="field-label" for="order-status-select">訂單狀態</label><select id="order-status-select" class="select">' +
+      statusOptions +
+      "</select></div>" +
+      '<div class="form-field"><label class="field-label" for="order-delivery-note">配送備註</label><textarea id="order-delivery-note" class="text-input" rows="2">' +
+      escapeHtml(order.delivery_note || "") +
+      "</textarea></div>" +
+      '<p id="order-detail-status" class="status-message"></p>' +
+      '<div class="form-actions"><button type="button" id="order-save" class="btn btn-primary">儲存更新</button></div>';
+
+    var saveBtn = document.getElementById("order-save");
+    if (saveBtn) {
+      saveBtn.addEventListener("click", function () {
+        updateOrderFromDetail(order.id);
+      });
+    }
+  }
+
+  function updateOrderFromDetail(id) {
+    var statusSel = document.getElementById("order-status-select");
+    var noteEl = document.getElementById("order-delivery-note");
+    var statusMsg = document.getElementById("order-detail-status");
+    if (!getAdminToken()) {
+      if (statusMsg) {
+        statusMsg.textContent = "請先輸入管理者權杖。";
+        statusMsg.classList.add("error");
+      }
+      return;
+    }
+    var payload = {
+      status: statusSel ? statusSel.value : "pending",
+      deliveryNote: noteEl ? noteEl.value : "",
+    };
+    if (statusMsg) {
+      statusMsg.textContent = "儲存中…";
+      statusMsg.classList.remove("error");
+    }
+    fetch(adminUrl("/marketplace/orders/" + encodeURIComponent(id) + "/status"), {
+      method: "PATCH",
+      headers: adminJsonHeaders(),
+      body: JSON.stringify(payload),
+    })
+      .then(function (r) {
+        if (r.status === 401 || r.status === 403) throw new Error("unauthorized");
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function () {
+        closeOrderDetail();
+        loadOrders();
+      })
+      .catch(function (err) {
+        if (statusMsg) {
+          statusMsg.textContent =
+            err && err.message === "unauthorized"
+              ? "管理者權杖無效或未授權。"
+              : "更新沒成功，請稍後再試。";
+          statusMsg.classList.add("error");
+        }
+      });
+  }
+
+  // 把目前 admin token 同步到所有分頁的權杖輸入框，存一次三頁通用。
+  function syncAdminTokenInputs() {
+    var token = getAdminToken();
+    if (elU.adminToken) elU.adminToken.value = token;
+    if (elP.adminToken) elP.adminToken.value = token;
+    if (elO.adminToken) elO.adminToken.value = token;
+  }
+
+  function saveAdminTokenFrom(inputEl, reload) {
+    localStorage.setItem(ADMIN_TOKEN_KEY, (inputEl.value || "").trim());
+    syncAdminTokenInputs();
+    if (reload) reload();
+  }
+
   function init() {
     el.apiBase.value = getApiBase();
 
@@ -1494,7 +2072,11 @@
       if (e.target === el.overlay) closeDetail();
     });
     document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape") closeDetail();
+      if (e.key === "Escape") {
+        closeDetail();
+        closeProductForm();
+        closeOrderDetail();
+      }
     });
 
     // 健康分析分頁：切到健康分析才載入（懶載入）。
@@ -1533,16 +2115,60 @@
     }
     if (elU.saveAdminToken) {
       elU.saveAdminToken.addEventListener("click", function () {
-        localStorage.setItem(
-          ADMIN_TOKEN_KEY,
-          (elU.adminToken.value || "").trim()
-        );
-        loadUsers();
+        saveAdminTokenFrom(elU.adminToken, loadUsers);
       });
     }
     if (elU.usersRefresh) {
       elU.usersRefresh.addEventListener("click", loadUsers);
     }
+
+    // CR-0032 商品管理分頁。
+    if (elP.tabProducts) {
+      elP.tabProducts.addEventListener("click", function () {
+        showView("products");
+      });
+    }
+    if (elP.refresh) elP.refresh.addEventListener("click", loadProducts);
+    if (elP.filter) elP.filter.addEventListener("change", loadProducts);
+    if (elP.add) {
+      elP.add.addEventListener("click", function () {
+        openProductForm(null);
+      });
+    }
+    if (elP.saveToken) {
+      elP.saveToken.addEventListener("click", function () {
+        saveAdminTokenFrom(elP.adminToken, loadProducts);
+      });
+    }
+    if (elP.form) elP.form.addEventListener("submit", submitProductForm);
+    if (elP.formClose) elP.formClose.addEventListener("click", closeProductForm);
+    if (elP.formCancel) elP.formCancel.addEventListener("click", closeProductForm);
+    if (elP.overlay) {
+      elP.overlay.addEventListener("click", function (e) {
+        if (e.target === elP.overlay) closeProductForm();
+      });
+    }
+
+    // CR-0032 訂單管理分頁。
+    if (elO.tabOrders) {
+      elO.tabOrders.addEventListener("click", function () {
+        showView("orders");
+      });
+    }
+    if (elO.refresh) elO.refresh.addEventListener("click", loadOrders);
+    if (elO.filter) elO.filter.addEventListener("change", loadOrders);
+    if (elO.saveToken) {
+      elO.saveToken.addEventListener("click", function () {
+        saveAdminTokenFrom(elO.adminToken, loadOrders);
+      });
+    }
+    if (elO.detailClose) elO.detailClose.addEventListener("click", closeOrderDetail);
+    if (elO.overlay) {
+      elO.overlay.addEventListener("click", function (e) {
+        if (e.target === elO.overlay) closeOrderDetail();
+      });
+    }
+    syncAdminTokenInputs();
 
     setupGuidedTour();
     loadAlerts();

@@ -1,20 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../controllers/inventory_controller.dart';
 import '../controllers/pet_stats_controller.dart';
 import '../controllers/wallet_controller.dart';
+import '../routes/app_routes.dart';
 import '../services/shop_service.dart';
 import '../widgets/coin_badge.dart';
 import '../widgets/shop_item_card.dart';
+import '../widgets/ui/section_card.dart';
 
 class ShopScreen extends StatelessWidget {
   const ShopScreen({super.key});
-
-  static final Uri _longTermCareShopUrl = Uri.parse(
-    'https://www.wellcare.com.tw/',
-  );
 
   @override
   Widget build(BuildContext context) {
@@ -23,22 +20,32 @@ class ShopScreen extends StatelessWidget {
     final inventory = context.watch<InventoryController>();
     final items = context.read<ShopService>().allItems();
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
+    return SafeArea(
+      bottom: false,
+      child: ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       children: [
         _ShopHeader(coins: wallet.coins),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
         _LongTermCareShopCard(
-          onTap: () => _confirmOpenLongTermCareShop(context),
+          onTap: () => Navigator.of(context).pushNamed(AppRoute.marketplace),
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 22),
         Text(
           '寵物用品',
           style: Theme.of(context).textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.w900,
               ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 4),
+        Text(
+          '餵牠吃點東西、陪牠玩，親密和心情都會變好。',
+          style: TextStyle(
+            color: Colors.black.withValues(alpha: 0.55),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 12),
         for (final item in items) ...[
           ShopItemCard(
             key: ValueKey('shop-item-${item.id}'),
@@ -59,42 +66,10 @@ class ShopScreen extends StatelessWidget {
           const SizedBox(height: 10),
         ],
       ],
-    );
-  }
-
-  Future<void> _confirmOpenLongTermCareShop(BuildContext context) async {
-    final agreed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('開啟外部長照商城？'),
-        content: const Text(
-          '接下來會離開 App，並透過外部網路開啟長照用品商城。請確認你同意連接外部網站後再繼續。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('先不要'),
-          ),
-          FilledButton.icon(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            icon: const Icon(Icons.open_in_new),
-            label: const Text('同意並前往'),
-          ),
-        ],
       ),
     );
-    if (agreed != true || !context.mounted) return;
-
-    final opened = await launchUrl(
-      _longTermCareShopUrl,
-      mode: LaunchMode.externalApplication,
-    );
-    if (!opened && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('目前無法開啟外部長照商城，請稍後再試。')),
-      );
-    }
   }
+
 }
 
 class _ShopHeader extends StatelessWidget {
@@ -143,61 +118,57 @@ class _LongTermCareShopCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.indigo.shade50,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                width: 54,
-                height: 54,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(
-                  Icons.health_and_safety,
-                  color: Colors.indigo.shade700,
-                  size: 30,
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '外部長照用品商城',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '查看照護用品、醫療耗材與生活輔具。開啟前會先徵求同意。',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.black.withValues(alpha: 0.62),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Icon(Icons.chevron_right, color: Colors.indigo.shade700),
-            ],
+    final scheme = Theme.of(context).colorScheme;
+    return SectionCard(
+      onTap: onTap,
+      color: scheme.primary.withValues(alpha: 0.06),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(
+              Icons.storefront,
+              color: scheme.primary,
+              size: 30,
+            ),
           ),
-        ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '照護用品商城',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '挑選需要的用品，我們會協助通知照護中心處理訂單。',
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.black.withValues(alpha: 0.62),
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Icon(Icons.chevron_right, color: scheme.primary),
+        ],
       ),
     );
   }

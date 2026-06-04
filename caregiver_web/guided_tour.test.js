@@ -31,8 +31,15 @@ test("app.js 有導覽核心函式與初始化掛載", () => {
   );
 });
 
-test("導覽涵蓋四個分頁", () => {
-  for (const view of ['view: "alerts"', 'view: "health"', 'view: "tasks"', 'view: "users"']) {
+test("導覽涵蓋所有分頁（含 CR-0032 商品 / 訂單管理）", () => {
+  for (const view of [
+    'view: "alerts"',
+    'view: "health"',
+    'view: "tasks"',
+    'view: "users"',
+    'view: "products"',
+    'view: "orders"',
+  ]) {
     assert.ok(appJs.includes(view), `導覽步驟應涵蓋 ${view}`);
   }
 });

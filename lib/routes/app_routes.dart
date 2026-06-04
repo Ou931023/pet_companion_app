@@ -3,6 +3,7 @@ class AppRoute {
 
   static const String home = '/home';
   static const String shop = '/shop';
+  static const String marketplace = '/marketplace';
   static const String history = '/history';
   static const String settings = '/settings';
   static const String reminders = '/reminders';

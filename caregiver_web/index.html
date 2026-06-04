@@ -39,6 +39,12 @@
         <button id="tab-users" class="view-tab" type="button" role="tab">
           使用者管理
         </button>
+        <button id="tab-products" class="view-tab" type="button" role="tab">
+          商品管理
+        </button>
+        <button id="tab-orders" class="view-tab" type="button" role="tab">
+          訂單管理
+        </button>
       </nav>
 
       <div id="view-alerts">
@@ -316,6 +322,102 @@
         </section>
       </section>
 
+      <!-- 商品管理 view（CR-0032）：長照商品商城平台的商品上架 / 編輯 / 上下架 -->
+      <section id="view-products" class="view-products hidden" aria-hidden="true">
+        <section class="list-section">
+          <div class="list-head">
+            <h2 class="section-title">商品管理</h2>
+            <span id="products-count" class="list-count"></span>
+          </div>
+          <p class="hint care-disclaimer">
+            在這裡上架長照、照護與生活輔助商品，長者端 App 的「照護用品商城」就會看到「上架中」的商品。
+            新增或修改商品需要管理者權杖。
+          </p>
+
+          <div class="users-toolbar">
+            <label class="field-label" for="products-admin-token">管理者權杖（Admin Token）</label>
+            <div class="row">
+              <input
+                id="products-admin-token"
+                type="password"
+                class="text-input"
+                placeholder="貼上 ADMIN_API_TOKEN"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <button id="products-save-token" class="btn">儲存權杖</button>
+            </div>
+          </div>
+
+          <div class="panel-head">
+            <div class="row">
+              <label class="field-label" for="products-filter">分類篩選</label>
+              <select id="products-filter" class="select">
+                <option value="">全部分類</option>
+                <option value="照護用品">照護用品</option>
+                <option value="復健輔具">復健輔具</option>
+                <option value="營養補充">營養補充</option>
+                <option value="清潔衛生">清潔衛生</option>
+                <option value="日常生活">日常生活</option>
+                <option value="其他">其他</option>
+              </select>
+              <button id="products-refresh" class="btn">重新整理</button>
+              <button id="product-add" class="btn btn-primary">＋ 新增商品</button>
+            </div>
+          </div>
+
+          <p id="products-status" class="status-message"></p>
+          <div id="products-table-wrap" class="users-table-wrap"></div>
+        </section>
+      </section>
+
+      <!-- 訂單管理 view（CR-0032）：查看長者下單、平台抽成與長照中心實收、更新訂單狀態 -->
+      <section id="view-orders" class="view-orders hidden" aria-hidden="true">
+        <section class="list-section">
+          <div class="list-head">
+            <h2 class="section-title">訂單管理</h2>
+            <span id="orders-count" class="list-count"></span>
+          </div>
+          <p class="hint care-disclaimer">
+            長者在 App 下單後，訂單會出現在這裡。點任一筆可看商品明細、總金額、平台抽成與長照中心實收，
+            並更新訂單狀態、填寫配送備註。查看訂單需要管理者權杖。
+          </p>
+
+          <div class="users-toolbar">
+            <label class="field-label" for="orders-admin-token">管理者權杖（Admin Token）</label>
+            <div class="row">
+              <input
+                id="orders-admin-token"
+                type="password"
+                class="text-input"
+                placeholder="貼上 ADMIN_API_TOKEN"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <button id="orders-save-token" class="btn">儲存權杖</button>
+            </div>
+          </div>
+
+          <div class="panel-head">
+            <div class="row">
+              <label class="field-label" for="orders-filter">狀態篩選</label>
+              <select id="orders-filter" class="select">
+                <option value="">全部</option>
+                <option value="pending">待處理</option>
+                <option value="confirmed">已確認</option>
+                <option value="shipping">配送中</option>
+                <option value="completed">已完成</option>
+                <option value="cancelled">已取消</option>
+              </select>
+              <button id="orders-refresh" class="btn">重新整理</button>
+            </div>
+          </div>
+
+          <p id="orders-status" class="status-message"></p>
+          <div id="orders-list" class="orders-list"></div>
+        </section>
+      </section>
+
       <!-- 後端連線設定（次要，平常收合） -->
       <details class="settings">
         <summary>連線設定</summary>
@@ -348,6 +450,89 @@
           <button id="detail-close" class="btn-close" aria-label="關閉">×</button>
         </div>
         <div id="detail-body" class="modal-body"></div>
+      </div>
+    </div>
+
+    <!-- 商品新增 / 編輯 modal（CR-0032） -->
+    <div id="product-overlay" class="overlay hidden">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="product-form-title">
+        <div class="modal-head">
+          <h2 id="product-form-title">新增商品</h2>
+          <button id="product-form-close" class="btn-close" aria-label="關閉">×</button>
+        </div>
+        <div class="modal-body">
+          <form id="product-form" autocomplete="off">
+            <input type="hidden" id="pf-id" />
+            <div class="form-grid">
+              <div class="form-field">
+                <label class="field-label" for="pf-name">商品名稱</label>
+                <input id="pf-name" type="text" class="text-input" required />
+              </div>
+              <div class="form-field">
+                <label class="field-label" for="pf-category">分類</label>
+                <select id="pf-category" class="select">
+                  <option value="照護用品">照護用品</option>
+                  <option value="復健輔具">復健輔具</option>
+                  <option value="營養補充">營養補充</option>
+                  <option value="清潔衛生">清潔衛生</option>
+                  <option value="日常生活">日常生活</option>
+                  <option value="其他">其他</option>
+                </select>
+              </div>
+              <div class="form-field form-field-full">
+                <label class="field-label" for="pf-description">商品說明</label>
+                <textarea id="pf-description" class="text-input" rows="2"></textarea>
+              </div>
+              <div class="form-field">
+                <label class="field-label" for="pf-center-name">長照中心名稱</label>
+                <input id="pf-center-name" type="text" class="text-input" />
+              </div>
+              <div class="form-field">
+                <label class="field-label" for="pf-center-id">長照中心代碼</label>
+                <input id="pf-center-id" type="text" class="text-input" placeholder="例：center-anxin" />
+              </div>
+              <div class="form-field">
+                <label class="field-label" for="pf-price">價格（NT$）</label>
+                <input id="pf-price" type="number" class="text-input" min="0" step="1" />
+              </div>
+              <div class="form-field">
+                <label class="field-label" for="pf-stock">庫存</label>
+                <input id="pf-stock" type="number" class="text-input" min="0" step="1" />
+              </div>
+              <div class="form-field">
+                <label class="field-label" for="pf-commission">平台抽成比例（0~1）</label>
+                <input id="pf-commission" type="number" class="text-input" min="0" max="1" step="0.01" placeholder="0.10" />
+              </div>
+              <div class="form-field">
+                <label class="field-label" for="pf-status">狀態</label>
+                <select id="pf-status" class="select">
+                  <option value="active">上架中</option>
+                  <option value="inactive">已下架</option>
+                </select>
+              </div>
+              <div class="form-field form-field-full">
+                <label class="field-label" for="pf-image">商品圖片 URL</label>
+                <input id="pf-image" type="text" class="text-input" placeholder="https://..." />
+              </div>
+            </div>
+            <p id="product-form-status" class="status-message"></p>
+            <div class="form-actions">
+              <button type="button" id="product-form-cancel" class="btn">取消</button>
+              <button type="submit" id="product-form-save" class="btn btn-primary">儲存商品</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- 訂單詳情 modal（CR-0032） -->
+    <div id="order-overlay" class="overlay hidden">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="order-detail-title">
+        <div class="modal-head">
+          <h2 id="order-detail-title">訂單詳情</h2>
+          <button id="order-detail-close" class="btn-close" aria-label="關閉">×</button>
+        </div>
+        <div id="order-detail-body" class="modal-body"></div>
       </div>
     </div>
 

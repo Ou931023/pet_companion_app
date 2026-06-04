@@ -31,7 +31,7 @@ void main() {
         ]));
   });
 
-  testWidgets('ShopScreen shows long-term care shop consent before opening',
+  testWidgets('ShopScreen opens the built-in care marketplace entry',
       (tester) async {
     await binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => binding.setSurfaceSize(null));
@@ -42,19 +42,17 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    expect(find.text('外部長照用品商城'), findsOneWidget);
+    // CR-0032：商城入口改成內建長照商城（不再是外部連結 / 同意離開 App 對話框）。
+    expect(find.text('照護用品商城'), findsOneWidget);
     expect(find.text('寵物用品'), findsOneWidget);
     expect(find.text('小餅乾'), findsOneWidget);
     expect(find.text('飯糰'), findsOneWidget);
 
-    await tester.tap(find.text('外部長照用品商城'));
+    await tester.tap(find.text('照護用品商城'));
     await tester.pumpAndSettle();
 
-    expect(find.text('開啟外部長照商城？'), findsOneWidget);
-    expect(find.text('同意並前往'), findsOneWidget);
-
-    await tester.tap(find.text('先不要'));
-    await tester.pumpAndSettle();
+    // 進到內建商城頁（stub），不再彈出外部連結確認框。
+    expect(find.text('MARKETPLACE_STUB'), findsOneWidget);
     expect(find.text('開啟外部長照商城？'), findsNothing);
   });
 
@@ -96,9 +94,16 @@ Widget _shopHost(_ShopHarness harness) {
       ),
       Provider<ShopService>.value(value: harness.shopService),
     ],
-    child: const MaterialApp(
-      home: Scaffold(
+    child: MaterialApp(
+      home: const Scaffold(
         body: ShopScreen(),
+      ),
+      // CR-0032：商城入口改成內建長照商城（pushNamed）；測試以 stub 驗證有導頁。
+      onGenerateRoute: (settings) => MaterialPageRoute<void>(
+        settings: settings,
+        builder: (_) => const Scaffold(
+          body: Center(child: Text('MARKETPLACE_STUB')),
+        ),
       ),
     ),
   );

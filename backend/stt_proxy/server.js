@@ -90,6 +90,7 @@ const {
 const adminAnalysis = require("./services/admin/adminAnalysisService");
 const requireAdmin = require("./services/admin/requireAdmin");
 const { listSafeUsers } = require("./services/admin/adminUsersService");
+const marketplaceStore = require("./services/marketplace/marketplaceStore");
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -811,6 +812,142 @@ app.get("/api/admin/users", requireAdmin, async (_req, res) => {
     return res.status(500).json({ ok: false, error: "failed_to_load_users" });
   }
 });
+
+// ---- CR-0032 長照商品商城（Marketplace）----
+//
+// 長者端（公開）：瀏覽商品、建立訂單。
+// 管理端（requireAdmin）：商品 CRUD / 上下架、訂單查詢 / 改狀態。
+// 金額一律由 store 依當下商品重算，前端帶入的價格不被信任。
+// 失敗只回 {ok:false,error}，長者端服務層會轉成白話訊息，不外洩工程細節。
+
+// 長者端商品列表。預設只回 active；?status=all/inactive 供管理端使用；?category 可篩分類。
+app.get("/api/marketplace/products", async (req, res) => {
+  try {
+    const products = await marketplaceStore.listProducts({
+      status: typeof req.query.status === "string" ? req.query.status : "",
+      category: typeof req.query.category === "string" ? req.query.category : "",
+    });
+    return res.json({ ok: true, products });
+  } catch (error) {
+    logError("marketplace list products failed", { error: error?.message || error });
+    return res.status(500).json({ ok: false, error: "failed_to_load_products" });
+  }
+});
+
+app.get("/api/marketplace/products/:id", async (req, res) => {
+  try {
+    const product = await marketplaceStore.getProductById(req.params.id);
+    if (!product) return res.status(404).json({ ok: false, error: "not_found" });
+    return res.json({ ok: true, product });
+  } catch (error) {
+    logError("marketplace get product failed", { error: error?.message || error });
+    return res.status(500).json({ ok: false, error: "failed_to_load_product" });
+  }
+});
+
+// 管理端：新增商品。
+app.post("/api/admin/marketplace/products", requireAdmin, async (req, res) => {
+  const result = await marketplaceStore.createProduct(req.body || {});
+  if (result.ok) return res.json(result);
+  const code = result.error === "invalid_payload" ? 400 : 500;
+  return res.status(code).json(result);
+});
+
+// 管理端：編輯商品（整筆更新）。
+app.put("/api/admin/marketplace/products/:id", requireAdmin, async (req, res) => {
+  const result = await marketplaceStore.updateProduct(req.params.id, req.body || {});
+  if (result.ok) return res.json(result);
+  const code = result.error === "not_found" ? 404 : 500;
+  return res.status(code).json(result);
+});
+
+// 管理端：商品上 / 下架。
+app.patch(
+  "/api/admin/marketplace/products/:id/status",
+  requireAdmin,
+  async (req, res) => {
+    const status = req.body && typeof req.body.status === "string" ? req.body.status : "";
+    const result = await marketplaceStore.setProductStatus(req.params.id, status);
+    if (result.ok) return res.json(result);
+    const code =
+      result.error === "not_found"
+        ? 404
+        : result.error === "invalid_status"
+          ? 400
+          : 500;
+    return res.status(code).json(result);
+  },
+);
+
+// 長者端：建立訂單。store 會重算金額、驗證庫存與同一長照中心、扣庫存。
+app.post("/api/marketplace/orders", async (req, res) => {
+  const body = req.body || {};
+  const result = await marketplaceStore.createOrder({
+    userId: body.userId,
+    elderName: body.elderName,
+    deliveryNote: body.deliveryNote,
+    items: Array.isArray(body.items) ? body.items : [],
+  });
+  if (result.ok) return res.json(result);
+  const clientErrors = new Set([
+    "empty_cart",
+    "invalid_item",
+    "product_not_found",
+    "product_unavailable",
+    "insufficient_stock",
+    "multiple_centers",
+  ]);
+  const code = clientErrors.has(result.error) ? 400 : 500;
+  return res.status(code).json(result);
+});
+
+// 管理端：訂單列表（?status 篩選）。
+app.get("/api/admin/marketplace/orders", requireAdmin, async (req, res) => {
+  try {
+    const orders = await marketplaceStore.listOrders({
+      status: typeof req.query.status === "string" ? req.query.status : "",
+    });
+    return res.json({ ok: true, orders });
+  } catch (error) {
+    logError("marketplace list orders failed", { error: error?.message || error });
+    return res.status(500).json({ ok: false, error: "failed_to_load_orders" });
+  }
+});
+
+// 管理端：訂單詳情。
+app.get("/api/admin/marketplace/orders/:id", requireAdmin, async (req, res) => {
+  try {
+    const order = await marketplaceStore.getOrderById(req.params.id);
+    if (!order) return res.status(404).json({ ok: false, error: "not_found" });
+    return res.json({ ok: true, order });
+  } catch (error) {
+    logError("marketplace get order failed", { error: error?.message || error });
+    return res.status(500).json({ ok: false, error: "failed_to_load_order" });
+  }
+});
+
+// 管理端：更新訂單狀態（可一併填配送備註）。
+app.patch(
+  "/api/admin/marketplace/orders/:id/status",
+  requireAdmin,
+  async (req, res) => {
+    const body = req.body || {};
+    const status = typeof body.status === "string" ? body.status : "";
+    const result = await marketplaceStore.updateOrderStatus(
+      req.params.id,
+      status,
+      { deliveryNote: body.deliveryNote },
+    );
+    if (result.ok) return res.json(result);
+    const code =
+      result.error === "not_found"
+        ? 404
+        : result.error === "invalid_status"
+          ? 400
+          : 500;
+    return res.status(code).json(result);
+  },
+);
 
 app.post("/api/companion/analyze", async (req, res) => {
   try {
@@ -1786,6 +1923,13 @@ app.post(
 );
 
 if (require.main === module) {
+  // CR-0032：實際啟動 server 時，若商城商品檔為空，寫入 Demo 種子商品，
+  // 方便展示（測試以 require 載入 app，require.main !== module，不會觸發）。
+  marketplaceStore
+    .seedDefaultProducts()
+    .catch((error) =>
+      logError("marketplace seed failed", { error: error?.message || error }),
+    );
   app.listen(port, host, () => {
     console.log(`STT Proxy listening on http://${host}:${port}`);
   });

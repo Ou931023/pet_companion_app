@@ -9,8 +9,10 @@ import 'controllers/app_navigation_controller.dart';
 import 'controllers/agent_tool_controller.dart';
 import 'controllers/auth_controller.dart';
 import 'controllers/care_alert_controller.dart';
+import 'controllers/cart_controller.dart';
 import 'controllers/conversation_controller.dart';
 import 'controllers/check_in_controller.dart';
+import 'controllers/marketplace_controller.dart';
 import 'controllers/inventory_controller.dart';
 import 'controllers/memory_controller.dart';
 import 'controllers/pet_controller.dart';
@@ -30,6 +32,7 @@ import 'screens/conversation_detail_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/marketplace/marketplace_screen.dart';
 import 'screens/memory_management_screen.dart';
 import 'screens/notification_screen.dart';
 import 'screens/onboarding_screen.dart';
@@ -56,6 +59,7 @@ import 'services/emotion_services.dart';
 import 'services/inventory_storage_service.dart';
 import 'services/local_storage_service.dart';
 import 'services/language_routing_service.dart';
+import 'services/marketplace_service.dart';
 import 'services/memory_service.dart';
 import 'services/mock_ai_service.dart';
 import 'services/mock_shop_service.dart';
@@ -85,6 +89,13 @@ class PetCompanionApp extends StatelessWidget {
         Provider(create: (_) => InventoryStorageService()),
         Provider(create: (_) => CareAlertStorageService()),
         Provider(create: (_) => const ShopService()),
+        // CR-0032 長照商品商城：商品服務 + 商品 / 購物車狀態。
+        Provider(create: (_) => MarketplaceService()),
+        ChangeNotifierProvider(
+          create: (context) =>
+              MarketplaceController(context.read<MarketplaceService>()),
+        ),
+        ChangeNotifierProvider(create: (_) => CartController()),
         Provider(create: (_) => MemoryService()),
         Provider(create: (_) => const CompanionEngineService()),
         Provider(create: (_) => const CompanionReplyStrategyService()),
@@ -366,6 +377,7 @@ class PetCompanionApp extends StatelessWidget {
       builder: (_) {
         return switch (settings.name) {
           AppRoute.album => const AlbumScreen(),
+          AppRoute.marketplace => const MarketplaceScreen(),
           AppRoute.notification => const NotificationScreen(),
           AppRoute.careAlerts => const CareAlertScreen(),
           AppRoute.reminders => const ReminderScreen(),
