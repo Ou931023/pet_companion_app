@@ -14,6 +14,7 @@ import '../controllers/pet_stats_controller.dart';
 import '../controllers/profile_controller.dart';
 import '../controllers/voice_agent_controller.dart';
 import '../controllers/wallet_controller.dart';
+import '../services/notification_service.dart';
 import '../models/inventory_item.dart';
 import '../models/language_route.dart';
 import '../models/pet_skin.dart';
@@ -690,11 +691,17 @@ class _CheckInCalendarDialogState extends State<_CheckInCalendarDialog> {
     BuildContext context,
     CheckInController controller,
   ) async {
+    final notificationService = context.read<NotificationService>();
     final ok = await controller.checkIn(
       walletController: context.read<WalletController>(),
       petStatsController: context.read<PetStatsController>(),
       inventoryController: context.read<InventoryController>(),
     );
+    // CR-0031：只有簽到成功才取消今天的提醒並排下一次（通常是明天 10:00）。
+    // 失敗 / 重複簽到不動通知排程，避免排錯。
+    if (ok) {
+      await notificationService.syncCheckInReminder(hasCheckedInToday: true);
+    }
     if (!context.mounted) return;
     // 簽到後把選取日跳回今天，下方獎勵列同步顯示今天領到的內容。
     setState(() => _selectedDay = _now.day);

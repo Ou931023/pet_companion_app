@@ -482,7 +482,19 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
         await inventoryController.load();
         await careAlertController.loadAlerts();
         await reminderController.load();
+        // CR-0031：每日簽到提醒一定排在 reminderController.load() 之後。
+        // reminderController.load() 內部 rescheduleAll 會先 cancelAll（清掉所有
+        // 已排程通知，含簽到提醒 10001），所以這裡最後再依「目前帳號今天是否已簽到」
+        // 重新同步一則 10:00 簽到提醒，避免被清掉或重複排程。
+        await notificationService.syncCheckInReminder(
+          hasCheckedInToday: checkInController.hasCheckedInToday,
+        );
       }
+
+      // CR-0031：點簽到提醒通知時導回首頁（不另開新路由，沿用底部分頁）。
+      notificationService.onCheckInReminderTapped = () {
+        context.read<AppNavigationController>().selectShellIndex(0);
+      };
 
       _elderIdSyncListener = () {
         applyAccount();
@@ -502,7 +514,13 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
     final currentDateKey = _dateKey();
     if (_lastDateKey == currentDateKey) return;
     _lastDateKey = currentDateKey;
-    context.read<CheckInController>().refreshForDateChange();
+    final checkInController = context.read<CheckInController>();
+    final notificationService = context.read<NotificationService>();
+    checkInController.refreshForDateChange();
+    // CR-0031：跨日回到 App 時，重新同步今天的 10:00 簽到提醒。
+    notificationService.syncCheckInReminder(
+      hasCheckedInToday: checkInController.hasCheckedInToday,
+    );
   }
 
   @override

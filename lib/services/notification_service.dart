@@ -3,6 +3,7 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
 import '../models/reminder.dart';
+import 'check_in_reminder_schedule.dart';
 
 class NotificationService {
   NotificationService() : _plugin = FlutterLocalNotificationsPlugin();
@@ -10,19 +11,160 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _plugin;
   bool _initialized = false;
 
+  /// CR-0031：點到「每日簽到提醒」通知時要做的事（例如導回首頁）。
+  /// 由 App 啟動處設定；沒設定就只會打開 App，不導頁。
+  void Function()? onCheckInReminderTapped;
+
   Future<void> initialize() async {
     if (_initialized) return;
-    tz.initializeTimeZones();
-    const android = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const ios = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
+    // CR-0031：初始化失敗（例如平台外掛尚未就緒）不得讓 App crash。
+    // 失敗時保持 _initialized = false，後續排程方法會安靜略過、下次再試。
+    try {
+      tz.initializeTimeZones();
+      const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const ios = DarwinInitializationSettings(
+        requestAlertPermission: true,
+        requestBadgePermission: true,
+        requestSoundPermission: true,
+      );
+      await _plugin.initialize(
+        settings: const InitializationSettings(android: android, iOS: ios),
+        onDidReceiveNotificationResponse: _handleNotificationResponse,
+      );
+      // CR-0031：Android 13 以下需要先建好通知 channel，10:00 簽到提醒才會正常出現。
+      await _ensureCheckInChannel();
+      _initialized = true;
+    } catch (_) {
+      // 不對使用者顯示工程錯誤；通知無法初始化時，App 其他功能仍可正常使用。
+    }
+  }
+
+  /// CR-0031：請求通知權限。權限被拒或發生例外時回傳 false，不對使用者顯示工程訊息。
+  Future<bool> requestPermissions() async {
+    try {
+      await initialize();
+      final ios = _plugin.resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin>();
+      if (ios != null) {
+        final granted = await ios.requestPermissions(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
+        return granted ?? false;
+      }
+      final android = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      if (android != null) {
+        final granted = await android.requestNotificationsPermission();
+        return granted ?? false;
+      }
+    } catch (_) {
+      // 權限流程失敗時保持安靜：不 crash、不顯示工程錯誤，回傳 false 即可。
+      return false;
+    }
+    return false;
+  }
+
+  // ── CR-0031 每日簽到提醒 ──────────────────────────────────────────────
+
+  /// 排程「下一次 10:00 簽到提醒」（id 固定 [CheckInReminderSchedule.notificationId]）。
+  ///
+  /// 現在早於今天 10:00 → 排今天 10:00；已過 10:00 → 排明天 10:00。
+  /// 採做法 B：排「一則一次性」通知，不用 daily repeat，避免已簽到當天仍洗版。
+  Future<void> scheduleDailyCheckInReminder({
+    bool hasCheckedInToday = false,
+  }) async {
+    await initialize();
+    if (!_initialized) return;
+    final wallClock = CheckInReminderSchedule.nextReminderTime(
+      now: DateTime.now(),
+      hasCheckedInToday: hasCheckedInToday,
     );
-    await _plugin.initialize(
-      settings: const InitializationSettings(android: android, iOS: ios),
+    final scheduled = tz.TZDateTime(
+      tz.local,
+      wallClock.year,
+      wallClock.month,
+      wallClock.day,
+      CheckInReminderSchedule.hour,
+      CheckInReminderSchedule.minute,
     );
-    _initialized = true;
+    // 先取消舊的，避免重複排程造成通知洗版。
+    await cancelTodayCheckInReminder();
+    await _plugin.zonedSchedule(
+      id: CheckInReminderSchedule.notificationId,
+      title: CheckInReminderSchedule.title,
+      body: CheckInReminderSchedule.body,
+      payload: CheckInReminderSchedule.payload,
+      scheduledDate: scheduled,
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          _checkInChannelId,
+          _checkInChannelName,
+          channelDescription: '提醒你每天回來看看 AI 寵物、完成今日簽到',
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+        iOS: DarwinNotificationDetails(),
+      ),
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+    );
+  }
+
+  /// 取消今天的簽到提醒（id 10001）。用於：已簽到、或 App 啟動發現今天已簽到。
+  Future<void> cancelTodayCheckInReminder() async {
+    await initialize();
+    if (!_initialized) return;
+    await _plugin.cancel(id: CheckInReminderSchedule.notificationId);
+  }
+
+  /// 先取消舊的 10001，再排下一次 10:00 簽到提醒。
+  Future<void> rescheduleNextCheckInReminder({
+    bool hasCheckedInToday = false,
+  }) async {
+    await cancelTodayCheckInReminder();
+    await scheduleDailyCheckInReminder(hasCheckedInToday: hasCheckedInToday);
+  }
+
+  /// CR-0031 最重要的方法：依「今天是否已簽到」同步簽到提醒。
+  ///
+  /// - 已簽到：取消今天通知，排下一次（通常是明天 10:00）。
+  /// - 未簽到：早於 10:00 排今天 10:00；已過 10:00 排明天 10:00。
+  ///
+  /// 兩種情況都先取消舊的再排，避免 App 重開造成重複排程。
+  Future<void> syncCheckInReminder({required bool hasCheckedInToday}) async {
+    await initialize();
+    await scheduleDailyCheckInReminder(hasCheckedInToday: hasCheckedInToday);
+  }
+
+  /// 取消所有通知（含簽到提醒）。
+  Future<void> cancelAllNotifications() async {
+    await initialize();
+    if (!_initialized) return;
+    await cancelAll();
+  }
+
+  void _handleNotificationResponse(NotificationResponse response) {
+    if (response.payload == CheckInReminderSchedule.payload) {
+      onCheckInReminderTapped?.call();
+    }
+  }
+
+  static const String _checkInChannelId = 'check_in_reminders';
+  static const String _checkInChannelName = '每日簽到提醒';
+
+  Future<void> _ensureCheckInChannel() async {
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (android == null) return;
+    await android.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _checkInChannelId,
+        _checkInChannelName,
+        description: '提醒你每天回來看看 AI 寵物、完成今日簽到',
+        importance: Importance.high,
+      ),
+    );
   }
 
   Future<void> scheduleReminder(Reminder reminder) async {
