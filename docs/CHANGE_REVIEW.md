@@ -1161,3 +1161,46 @@
 - 測試計畫：更新並執行 `flutter test test/voice_agent_controller_realtime_lifecycle_test.dart`（含行 70 斷言）＋ 既有 Realtime 套件（`realtime_voice_service_test.dart` 等）回歸；`flutter analyze` 須 0 issue；全量 `flutter test` 維持全綠（基線 476）。如改字串致其他斷言失敗，須一併對齊（不得為過測刪測）。
 - architecture-agent 裁決：**✅ 核准（單批字串替換）**。理由：違規明確且來源單一、僅改使用者可見字串常數、不觸連線主流程／契約／enum／狀態機，風險 low、可獨立 `git revert`；唯一前置條件為同步硬編字串測試斷言。
 - 完成狀態：⬜ 未開始（待 realtime-voice-agent 實作）
+
+---
+
+## CR-0033 — Production Audit
+
+### Goal
+Audit the entire project for production-readiness risks before converting the graduation-project demo into a formal App Store / Google Play ready system.
+
+### Summary
+- 純稽核 + 文件 CR，**無任何程式碼 / schema 改動**。
+- 反映現況（已計入 CR-0036/0037/0038、CR-P2A/P2B 既有修補，未重複列為未修）。
+- 全量測試維持全綠：flutter analyze 0 issue、flutter test 476 pass、backend npm run check 0、npm test 246 pass、caregiver_web 51 pass。
+- 整體結論：**尚非 production ready**。Realtime / 陪伴 / 情緒分級 / 醫療安全用語 / 長者友善 UI / consent gate 品質佳；阻斷集中在「照護端授權邊界」與「正式環境隔離」。
+
+### Key Findings
+- P0（4）：
+  - P0-1 多數 admin / elder 讀取 API 未驗證（住民情緒/生理/健康/遊戲指標外洩）。
+  - P0-2 Care Alert API 無驗證、無住民-照護者授權邊界（可讀全部 alert、改狀態、觸發 Telegram）。
+  - P0-3 後端 auth mock 模式預設開啟（Firebase 未設或 AUTH_ALLOW_MOCK!=='false' → 採信前端 firebaseUid）。
+  - P0-4 缺正式環境 fail-fast / build flavor，缺 env 時靜默降級 JSON fallback / mock auth。
+- P1（7）：CORS 預設 allow-all；單一共享 ADMIN_API_TOKEN 無 RBAC；Telegram 單一 chat 非授權推導；JSON fallback 仍為正式降級/唯一來源（marketplace、dailyCareTask 為 JSON-only）；iOS ATS 全關 + 預設 http localhost；caregiver_web token 存 localStorage 無正式登入；長者端顯示 "Mock STT" 工程字眼。
+- P2（6）：§3.3 多核心表缺 migration；demo/mock 種子資料進版控；Android applicationId/label 未正式化；memoryExtractor log 印 stack/input；Flutter mock service 未 flavor 隔離；mockFallback 仍存（已收斂至 Demo 路徑）。
+- P3（6）：pubspec description 含 "demo"；iOS 品牌名未定案；debugPrint 散布；Demo/Dev flag 預設安全；demo 文件待正式化；realtime 內部 log 含技術字（非使用者可見）。
+
+### Files Created / Updated
+- docs/PRODUCTION_AUDIT_CR0033.md（新建，完整稽核報告）
+- docs/CHANGE_REVIEW.md（本區段）
+
+### Tests / Commands Run
+- flutter analyze → No issues found
+- flutter test → All tests passed (476)
+- backend `npm run check` → EXIT 0
+- backend `npm test` → 246 pass / 0 fail
+- caregiver_web `node --test *.test.js` → 51 pass / 0 fail
+- 未跑：backend lint（無 script）、flutter release build（RC 前再驗證）
+
+### Production Blockers Identified
+- 照護端 / Care Alert API 未授權與無住民授權邊界（P0-1, P0-2）。
+- Auth mock 預設開啟（P0-3）。
+- 缺正式環境 fail-fast 與 dev 路徑隔離（P0-4）。
+
+### Recommended Next CR
+CR-0034 — Production Environment and Config
