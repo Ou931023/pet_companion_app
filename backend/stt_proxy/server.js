@@ -10,6 +10,13 @@ const OpenAI = require("openai");
 
 dotenv.config();
 
+// CR-0034 B1：集中化環境設定 + production 啟動 fail-fast。
+// 非 production / NODE_ENV=test 一律 no-op（不影響既有啟動與測試）；
+// production 缺必要設定 → 印安全訊息（只列變數名稱）後 process.exit(1)。
+// 啟動層行為，不改任何路由 request/response 契約。
+const { assertProductionEnvOrExit } = require("./config/env");
+assertProductionEnvOrExit(process.env, console);
+
 const { createEmbedding } = require("./services/embeddingService");
 const { extractAndStoreMemory } = require("./services/memoryExtractor");
 const {
