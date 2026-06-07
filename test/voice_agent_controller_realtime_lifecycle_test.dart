@@ -67,7 +67,7 @@ void main() {
 
     expect(attempts, 3);
     expect(harness.controller.state, VoiceAgentState.error);
-    expect(harness.petController.message, 'WebRTC SDP 交換失敗。');
+    expect(harness.petController.message, '連線不太穩，正在幫你重新連接。');
 
     harness.dispose();
   });
@@ -136,7 +136,7 @@ void main() {
 
     expect(attempts, 0);
     expect(harness.controller.state, VoiceAgentState.error);
-    expect(harness.petController.message, contains('後端'));
+    expect(harness.petController.message, '現在連不上線，我們正在幫你重新連接，請稍等一下。');
 
     harness.dispose();
   });

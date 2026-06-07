@@ -1124,3 +1124,40 @@
   - backend-agent 實作紅線：① 稽核/通知 log 寫入**一律 best-effort**——失敗只 `logError` + 回 `{success:false}`，**絕不丟例外、不拖垮通知或操作主流程**；② log **絕不含**完整對話原文 / `transcriptSnippet` / email / ip / chat_id / bot token / 含 token 的 URL（§8.8、§9.14）；③ 既有路由 request/response 形狀**零變更**、既有測試全綠；④ 錯誤**不回 stack trace**（細節只進 `logError`）；⑤ 不碰 `.env`、不把 runtime `data/*.json` 進 git；⑥ 無新增環境變數。
 - **Batch 2/3 正式放行（architecture-agent，2026-06-08）：✅ 放行（前置治理完成）。** 動工前置已完成——`PROJECT_ARCHITECTURE.md` 於 **§6.1「核心資料表（對映 CLAUDE.md §3.3）」** 正式列入 `notification_logs`、`audit_logs` 兩表（用途、欄位、「不存原文 / PII / token」紅線）；`notification_logs` 涵蓋 `/api/care-alerts/notify` **三結局**（sent / failed / skipped_*），`audit_logs` 先涵蓋**帳號刪除 / Care Alert 狀態變更 / consent 寫入**。backend-agent 可依 **B2（notification_logs）→ B3（audit_logs）** 執行，恪守上方實作紅線（best-effort、既有路由 request/response 形狀零變更、不含對話原文 / PII / token、不碰 `.env`、runtime `data/*.json` 不進 git、無新增環境變數）；**只要任一批次改動 `/notify` 或敏感路由 request/response 形狀即退回**。
 - 完成狀態：🚧 進行中（Batch 1 migration 012 ✅ 已 ship；Batch 2/3 ✅ **已實作**——`notificationLogService.js`（/notify 三結局 sent/failed/skipped_low_risk/skipped_cooldown 各一列）、`auditLogService.js`（帳號刪除 / Care Alert 狀態變更 / consent 寫入）皆 DB-only-best-effort、fire-and-forget 接入 server.js 既有路由，**未改任何 request/response 形狀**；新增 `notificationLogService.test.js` / `auditLogService.test.js` / `notificationAuditEndpoint.test.js`，`npm test` 225→**246 pass**（既有 225 一字未改）、`npm run check` 綠；無新增環境變數。待 dev DB 實連驗證 INSERT。）
+
+### CR-0038：Realtime 失敗訊息白話化（移除 UI 工程字眼）— ✅ 核准（2026-06-08 開立）
+- 提出 agent：architecture-agent（Phase 3 production 升級 / 治理）
+- 執行 owner：**realtime-voice-agent**（`lib/services/realtime_voice_service.dart` 唯一可主導修改者）
+- 動機 / 問題：`RealtimeFailureTypeLabel.message` getter 回傳的失敗字串會經 `_recordFailure` → `_lastFailureMessage` → `_emit(RealtimeEventType.error, failure.message)`（行 ~350-351、228、886、1126）**顯示給長者**，目前內含工程字眼，違反 `pet_companion_app/CLAUDE.md §5.9`（UI 不得出現 SDP / ICE / DataChannel / token / .env / backend / session / WebRTC / Realtime）。違規字串：backendUnavailable（含「後端」「Realtime backend」）、missingApiKey（含「OpenAI API Key」「backend .env」）、sessionCreateFailed（「Realtime session」）、sdpExchangeFailed（「WebRTC SDP」）、peerConnectionFailed（「WebRTC peer connection」）、dataChannelFailed（「Realtime data channel」）、responseTimeout（「Realtime」）、unknown（「Realtime」）。microphonePermissionDenied 已屬白話可操作，維持。
+- 現況查證（architecture-agent，read-only）：
+  - 違規來源唯一集中在 `realtime_voice_service.dart` 行 22-37 的 `message` getter（enum 行 9-20）。
+  - 這些字串確實面向使用者：`_emit(RealtimeEventType.error, failure.message)`（行 351）、`RealtimeFailureType.missingApiKey.message`（行 228）、`RealtimeFailureType.dataChannelFailed.message`（行 1126）皆把 getter 結果當對外 error 訊息傳出。
+  - **既有測試硬編字串需同步更新**：`test/voice_agent_controller_realtime_lifecycle_test.dart:70` 斷言 `expect(harness.petController.message, 'WebRTC SDP 交換失敗。')`（精確字串），改字串必同步改此斷言。
+  - 另注意（**不在本 CR 範圍，列為觀察**）：同檔 `lifecycle_test.dart:128/139` 的 `RealtimeHealthStatus.unavailable('後端未啟動')` + `expect(... contains('後端'))` 屬**測試注入的 health status fixture**，非 `message` getter；行 795 `'Realtime API 發生錯誤'` 屬 server error event 透傳字串。二者本 CR 不動；若日後確認其會直接顯示給長者，另開 follow-up（見 FU 備註）。
+- 影響範圍（檔案）：
+  - 改 `lib/services/realtime_voice_service.dart`（**僅** `message` getter 行 25-35 的回傳字串）。
+  - 改 `test/voice_agent_controller_realtime_lifecycle_test.dart`（行 70 斷言對齊新字串；如有其他斷言到舊字串一併更新）。
+- 觸及 🔒？：**是**（`realtime_voice_service.dart` 為 🔒 Realtime 主流程檔）。本 CR 僅改使用者可見字串常數，不碰連線流程／契約。
+- 牽涉哪些 agent：realtime-voice-agent（唯一實作者）；architecture-agent（審查）。frontend / backend / companion-memory 不需動。
+- 風險等級：**low**（純字串常數替換，無行為、無狀態機、無契約、無 enum 變更；唯一回歸風險為硬編字串測試需同步）。
+- 建議批次切分：**單批**（字串替換 + 同步測試斷言）。
+- 放行範圍（realtime-voice-agent 可改）：
+  - 僅 `RealtimeFailureTypeLabel.message` getter 內各 case 的「回傳字串」。
+  - 同步 `test/voice_agent_controller_realtime_lifecycle_test.dart` 對舊字串的精確斷言（建議改為新字串精確比對，或對中性詞 `contains('連線')` 之類，由 agent 擇一，但須真實對齊新值）。
+- 紅線（違反即退回）：
+  - **不得**改 `RealtimeFailureType` enum 成員（名稱、數量、順序）。
+  - **不得**改任何 WebRTC / SDP / ICE / peer connection / data channel 連線流程、`connect()`／重連邏輯、語音狀態機（idle/listening/thinking/speaking/error/reconnecting）、event parser、`_emit`／`_recordFailure` 的呼叫結構與對外事件型別。
+  - **不得**改對外行為（回傳值型別、event type、failure type 對映關係不變）。
+  - 內部 `_log` / `debugPrint` / `toString()`（行 47、795-799、1108-1109）含技術細節**可保留**（不顯示給長者者不在此限）。
+  - 不碰 `.env`／token；不寫入 runtime `data/*.json`；不 commit／push（除非另行指示）。
+  - 新字串須長者友善、溫暖、零工程字眼（不得出現 SDP/ICE/DataChannel/token/.env/backend/後端/session/WebRTC/Realtime/API Key 等）。
+- 建議白話版本（realtime-voice-agent 可微調語氣，但須符合上述紅線）：
+  - backendUnavailable → 「現在連不上線，我們正在幫你重新連接，請稍等一下。」
+  - missingApiKey → 「語音服務暫時還沒準備好，請稍後再試一次。」
+  - sessionCreateFailed / sdpExchangeFailed / peerConnectionFailed / dataChannelFailed → 統一「連線不太穩，正在幫你重新連接。」
+  - responseTimeout → 「剛剛沒聽清楚，我回到聆聽狀態了，請再說一次好嗎？」
+  - unknown → 「連線出了點小狀況，我們正在處理，請稍候再試。」
+  - microphonePermissionDenied → 維持白話可操作；可選軟化為「我聽不到你的聲音耶，請到手機設定打開麥克風權限，這樣才聽得到你說話喔。」
+- 測試計畫：更新並執行 `flutter test test/voice_agent_controller_realtime_lifecycle_test.dart`（含行 70 斷言）＋ 既有 Realtime 套件（`realtime_voice_service_test.dart` 等）回歸；`flutter analyze` 須 0 issue；全量 `flutter test` 維持全綠（基線 476）。如改字串致其他斷言失敗，須一併對齊（不得為過測刪測）。
+- architecture-agent 裁決：**✅ 核准（單批字串替換）**。理由：違規明確且來源單一、僅改使用者可見字串常數、不觸連線主流程／契約／enum／狀態機，風險 low、可獨立 `git revert`；唯一前置條件為同步硬編字串測試斷言。
+- 完成狀態：⬜ 未開始（待 realtime-voice-agent 實作）

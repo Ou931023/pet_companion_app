@@ -23,16 +23,15 @@ extension RealtimeFailureTypeLabel on RealtimeFailureType {
   String get message {
     return switch (this) {
       RealtimeFailureType.none => '',
-      RealtimeFailureType.backendUnavailable => '後端未啟動，請先啟動 Realtime backend。',
-      RealtimeFailureType.missingApiKey =>
-        'OpenAI API Key 未設定，請檢查 backend .env。',
-      RealtimeFailureType.sessionCreateFailed => 'Realtime session 建立失敗。',
-      RealtimeFailureType.sdpExchangeFailed => 'WebRTC SDP 交換失敗。',
-      RealtimeFailureType.peerConnectionFailed => 'WebRTC peer connection 失敗。',
-      RealtimeFailureType.dataChannelFailed => 'Realtime data channel 未開啟。',
-      RealtimeFailureType.responseTimeout => 'Realtime 回應逾時，已回到聆聽狀態。',
-      RealtimeFailureType.microphonePermissionDenied => '麥克風權限被拒絕，請到系統設定開啟權限。',
-      RealtimeFailureType.unknown => 'Realtime 連線發生未知錯誤。',
+      RealtimeFailureType.backendUnavailable => '現在連不上線，我們正在幫你重新連接，請稍等一下。',
+      RealtimeFailureType.missingApiKey => '語音服務暫時還沒準備好，請稍後再試一次。',
+      RealtimeFailureType.sessionCreateFailed => '連線不太穩，正在幫你重新連接。',
+      RealtimeFailureType.sdpExchangeFailed => '連線不太穩，正在幫你重新連接。',
+      RealtimeFailureType.peerConnectionFailed => '連線不太穩，正在幫你重新連接。',
+      RealtimeFailureType.dataChannelFailed => '連線不太穩，正在幫你重新連接。',
+      RealtimeFailureType.responseTimeout => '剛剛沒聽清楚，我回到聆聽狀態了，請再說一次好嗎？',
+      RealtimeFailureType.microphonePermissionDenied => '我聽不到你的聲音耶，請到手機設定打開麥克風權限，這樣才聽得到你說話喔。',
+      RealtimeFailureType.unknown => '連線出了點小狀況，我們正在處理，請稍候再試。',
     };
   }
 }
