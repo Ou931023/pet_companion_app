@@ -10,6 +10,7 @@ import 'controllers/agent_tool_controller.dart';
 import 'controllers/auth_controller.dart';
 import 'controllers/care_alert_controller.dart';
 import 'controllers/cart_controller.dart';
+import 'controllers/consent_controller.dart';
 import 'controllers/conversation_controller.dart';
 import 'controllers/check_in_controller.dart';
 import 'controllers/marketplace_controller.dart';
@@ -28,6 +29,7 @@ import 'theme/app_theme.dart';
 import 'utils/platform_liquid_glass.dart';
 import 'screens/album_screen.dart';
 import 'screens/care_alert_screen.dart';
+import 'screens/consent_screen.dart';
 import 'screens/conversation_detail_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/home_screen.dart';
@@ -109,6 +111,8 @@ class PetCompanionApp extends StatelessWidget {
         Provider(create: (_) => CoachMarkKeys()),
         ChangeNotifierProvider(create: (_) => CoachMarkController()),
         ChangeNotifierProvider(create: (_) => AppNavigationController()),
+        // 知情同意 gate：純前端、只存本機，啟動時於 AppRoot 載入。
+        ChangeNotifierProvider(create: (_) => ConsentController()),
         ChangeNotifierProvider(
           create: (_) => AuthController(authService: AuthService()),
         ),
@@ -442,6 +446,8 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
     _initialized = true;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
+      // 知情同意狀態與帳號無關，啟動時先載入，決定是否先擋同意流程。
+      context.read<ConsentController>().load();
       final authController = context.read<AuthController>();
       final profileController = context.read<ProfileController>();
       final petStatsController = context.read<PetStatsController>();
@@ -537,8 +543,33 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    // 登入 gate 只在最前面加一層；authenticated 後落回既有 onboarding/MainShell 分流。
-    return const AuthGate();
+    // 同意 gate 在最前面：未同意當前版本條款時，先擋住知情同意流程；
+    // 同意後才落到既有登入 gate（authenticated → onboarding / MainShell）。
+    return const ConsentGate();
+  }
+}
+
+/// 知情同意 gate：依 [ConsentController.status] 分流。
+///
+/// - loading → 沿用溫暖等待畫面（不閃現同意流程）。
+/// - needsConsent → ConsentScreen（同意後才能繼續）。
+/// - granted → 落到既有 [AuthGate]，一字不動既有登入 / onboarding 流程。
+class ConsentGate extends StatelessWidget {
+  const ConsentGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final consent = context.watch<ConsentController>();
+    switch (consent.status) {
+      case ConsentStatus.loading:
+        return const _AuthLoadingView();
+      case ConsentStatus.needsConsent:
+        return ConsentScreen(
+          onAgreed: () => context.read<ConsentController>().grantConsent(),
+        );
+      case ConsentStatus.granted:
+        return const AuthGate();
+    }
   }
 }
 

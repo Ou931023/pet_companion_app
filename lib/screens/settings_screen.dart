@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../config/app_config.dart';
 import '../controllers/app_navigation_controller.dart';
 import '../controllers/auth_controller.dart';
+import '../controllers/consent_controller.dart';
 import '../controllers/conversation_controller.dart';
 import '../controllers/pet_controller.dart';
 import '../controllers/profile_controller.dart';
@@ -13,6 +14,7 @@ import '../onboarding/coach_mark_controller.dart';
 import '../onboarding/coach_mark_keys.dart';
 import '../routes/app_routes.dart';
 import '../services/realtime_voice_service.dart';
+import 'legal_document_screen.dart';
 import '../widgets/companion_debug_panel.dart';
 import '../widgets/pet_skin_picker.dart';
 
@@ -411,6 +413,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         const SizedBox(height: 14),
         _SettingsSection(
+          title: '隱私與條款',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                '想再看一次我們怎麼保護你的資料、以及使用規則嗎？可以從這裡隨時查看。',
+                style: TextStyle(fontSize: 16, height: 1.4),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => LegalDocumentScreen.privacyPolicy(),
+                  ),
+                ),
+                icon: const Icon(Icons.privacy_tip_outlined, size: 24),
+                label: const Text(
+                  '隱私權政策',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => LegalDocumentScreen.termsOfService(),
+                  ),
+                ),
+                icon: const Icon(Icons.description_outlined, size: 24),
+                label: const Text(
+                  '服務條款',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: _handleReviewConsent,
+                icon: const Icon(Icons.fact_check_outlined, size: 24),
+                label: const Text(
+                  '重新檢視同意項目',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _SettingsSection(
           title: '帳號',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -476,6 +535,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _replayCoachMark(BuildContext context) {
     context.read<CoachMarkController>().requestReplay();
     context.read<AppNavigationController>().selectShellIndex(0);
+  }
+
+  /// 重新檢視同意項目：清除本機同意紀錄，回到知情同意流程再看一次並重新同意。
+  Future<void> _handleReviewConsent() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text(
+            '重新看一次同意項目？',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+          ),
+          content: const Text(
+            '會帶你回到一開始的同意說明，重新看過並再次同意後就能繼續使用，'
+            '你的紀錄都還在。',
+            style: TextStyle(fontSize: 18, height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('先不要', style: TextStyle(fontSize: 18)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text(
+                '好，重新看',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !mounted) return;
+    // 清除同意紀錄 → ConsentGate 會自動回到知情同意畫面，不需手動導航。
+    await context.read<ConsentController>().resetConsent();
   }
 
   Future<void> _handleLogout() async {
