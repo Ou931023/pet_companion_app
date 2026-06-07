@@ -14,7 +14,10 @@ dotenv.config();
 // 非 production / NODE_ENV=test 一律 no-op（不影響既有啟動與測試）；
 // production 缺必要設定 → 印安全訊息（只列變數名稱）後 process.exit(1)。
 // 啟動層行為，不改任何路由 request/response 契約。
-const { assertProductionEnvOrExit } = require("./config/env");
+const {
+  assertProductionEnvOrExit,
+  describeMaskedConfig,
+} = require("./config/env");
 assertProductionEnvOrExit(process.env, console);
 
 const { createEmbedding } = require("./services/embeddingService");
@@ -387,17 +390,35 @@ app.post("/api/care-alerts/notify", async (req, res) => {
   if (!summary || !snippet) {
     return res.status(400).json({ success: false, error: "invalid_payload" });
   }
-  // 持久化：供長照管理者網頁查詢。失敗只 log，不影響 Telegram 發送與回應。
+  // 持久化：供長照管理者網頁查詢。
+  // CR-0034 B2：**解耦通知與持久化**——持久化失敗（含 production DB-required 失敗）
+  // 絕不阻擋 high/urgent 通知、絕不假成功；失敗時於 notification_logs 明確記一列
+  // （channel='care_alert_store'、outcome='persist_failed'、error_code=持久化錯誤碼），
+  // 避免靜默漏記。此為旁路 side-bus 寫入，不改 /notify 的 request/response 形狀。
   let storedAlert = null;
+  let persistErrorCode = null;
   try {
     const stored = await saveCareAlert(body);
     if (!stored.success) {
-      logError("care alert persist failed", { error: stored.error });
+      persistErrorCode = stored.error || "care_alert_persist_failed";
+      logError("care alert persist failed", { error: persistErrorCode });
     } else {
       storedAlert = stored.alert;
     }
   } catch (error) {
+    persistErrorCode = "care_alert_persist_exception";
     logError("care alert persist exception", { error: error?.message || error });
+  }
+  if (persistErrorCode) {
+    // 持久化失敗：明確記一列稽核（alertId 無法取得 → null；用 body.elderId 盡力標識）。
+    recordNotificationLog({
+      alertId: null,
+      elderId: typeof body.elderId === "string" ? body.elderId : (body.elderId ?? null),
+      channel: "care_alert_store",
+      riskLevel: normalizeRiskLevel(body.riskLevel),
+      outcome: "persist_failed",
+      errorCode: persistErrorCode,
+    });
   }
   // CR-P2B：通知稽核 log 共用結構化欄位（白名單；絕不含對話原文 / snippet /
   // chat_id / token / URL）。alertId / elderId 取自持久化後的 alert（DB 化後 FK 指向
@@ -2184,6 +2205,9 @@ if (require.main === module) {
     .catch((error) =>
       logError("marketplace seed failed", { error: error?.message || error }),
     );
+  // CR-0034 B2：啟動時印「一律遮蔽」的設定摘要，方便維運確認敏感設定是否就緒，
+  // 但絕不輸出任何完整 token / secret / DATABASE_URL / email（皆走 mask helper）。
+  console.log("[config] effective config (masked)", describeMaskedConfig(process.env));
   app.listen(port, host, () => {
     console.log(`STT Proxy listening on http://${host}:${port}`);
   });

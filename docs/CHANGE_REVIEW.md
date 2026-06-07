@@ -1297,3 +1297,24 @@ production 行為保證：
 - `flutter test test/config/app_config_test.dart --dart-define=APP_ENV=production --dart-define=SHOW_DEV_PANELS=true --dart-define=SHOW_DEMO_LOGIN=true --dart-define=ALLOW_MOCK_SERVICES=true --dart-define=API_BASE_URL=http://127.0.0.1:3001` → 7 passed（證明 production 強制關閉所有開發 / mock 旗標，且 localhost 觸發守門）。
 - 同檔 `--dart-define=APP_ENV=production --dart-define=API_BASE_URL=https://api.example.com` → 7 passed（正式網域放行）。
 
+---
+
+### CR-0034 B2 實作落地（backend，🔒 auth 行為 + /notify 順序）
+
+以 B1 `config/env.js` 為單一 env 語義來源，把 production 不允許的降級 / mock 路徑加 guard，並修稽核 P0-3。**未改任何路由 request/response 形狀**（guard 屬行為層）。
+
+新增 `config/env.js` helper：`isJsonFallbackAllowed(env)`（非 production 一律 true；production 預設 false，僅顯式 `ALLOW_JSON_FALLBACK=true` 才 true，但該值在 production 會被 `validateProductionEnv` fail-fast 擋下）、`FeatureUnavailableInProductionError` / `FEATURE_UNAVAILABLE_IN_PRODUCTION`、`describeMaskedConfig(env)`（啟動摘要，一律走 mask helper）。
+
+1. **P0-3 修補**：`sessionService.mockAllowed(env)` 改先判 `isProduction` → **production 一律 false**（不採信 client `firebaseUid`，必須真正驗 `idToken`）；非 production 維持 `AUTH_ALLOW_MOCK` 預設 true。`createSession` 對外契約不變。
+
+2. **care alert production DB-required（§5.3.1）**：`saveAlert` / `updateAlertStatus` 在 `isJsonFallbackAllowed=false`（production）時，DB 例外或 DB 不可用 **不降級寫 JSON**，回 `{success:false,error:'care_alert_persist_failed'}`（不丟例外、不回 stack）。dev/staging（含 `NODE_ENV=test`）維持 DB-優先 + JSON fallback，**零變更**。
+
+3. **`/notify` 解耦通知與持久化（不改契約）**：作法是「持久化與通知本就是 endpoint 內前後兩段、通知段不依賴持久化結果」，再補一條 **旁路 side-bus 稽核**——持久化失敗時 fire-and-forget 寫一列 `notification_logs`（`channel='care_alert_store'`、`outcome='persist_failed'`、`error_code=持久化錯誤碼`、`alert_id=null`），high/urgent 通知仍照送、Telegram 結局照常各記一列（`sent`/`failed`/`skipped_*`）。response body 與 status 與既有完全一致（成功仍回 Telegram 結果物件），故 **不改 request/response 形狀**。
+
+4. **marketplace / dailyCareTask（JSON-only）production guard（CR-0042 blocker）**：production 一律阻擋——回 envelope 的函式回 `{ok/success:false,error:'feature_unavailable_in_production'}`；回值（陣列 / 物件 / task）的 read 函式拋 `FeatureUnavailableInProductionError`（由各 route 既有 try/catch 轉成既有錯誤回應，不外洩 stack）；`seedDefaultProducts` production no-op。dev/staging 不受影響。屬已知且文件化限制，需產品確認接受。
+
+5. **mask 接入**：盤點現有 `console.*`——`db/postgres.js` / `firebaseAdmin.js` / `telegramNotifyService.js` 既有 log 僅印 `error.message`，本就未輸出 token/secret/DATABASE_URL/email（已驗證）。新增啟動摘要 log（`require.main` 段）`describeMaskedConfig(process.env)`：DATABASE_URL→`maskDatabaseUrl`、OPENAI/TELEGRAM token / ADMIN_API_TOKEN→`maskSecret`、FIREBASE_CLIENT_EMAIL→`maskEmail`、chat id 僅回 `(set)/(unset)`，**絕不輸出完整值**。
+
+**修改檔案**：`config/env.js`、`services/auth/sessionService.js`、`services/careAlertStoreService.js`、`services/marketplace/marketplaceStore.js`、`services/dailyCareTask/dailyCareTaskStore.js`、`server.js`（`/notify` 旁路稽核 + 啟動 masked 摘要，未動路由形狀）、`package.json`（新增 dailyCareTask store 測試與 check）。
+
+**測試**：`cd backend/stt_proxy && npm test` → **289 passed / 0 fail**（263 基線 + 既有 dailyCareTask store 11 條納入執行 + 新增 env/auth/careAlert-db/marketplace/notify 共約 15 條）。`npm run check` 全綠。既有測試斷言一字未改（僅在既有測試檔擴充 import 名單與新增 test，未動原斷言）。production 行為以 `options.env={APP_ENV:'production'}` 注入驗證（`NODE_ENV=test` 恆為 dev，基線不受影響）。

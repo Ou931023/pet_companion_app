@@ -152,3 +152,46 @@ test("listTasksForAdmin：附最新 submission + submissionCount", async () => {
   assert.ok(admin[0].latestSubmission);
   assert.ok(admin[0].latestSubmission.verification);
 });
+
+// ---- CR-0034 B2 / CR-0042 blocker：production JSON-only guard ----
+// 用 options.env 注入 production 語義（NODE_ENV=test 恆為 dev，不影響其他測試）。
+const PROD = { env: { APP_ENV: "production" } };
+
+test("production：createTask 拋具名錯誤、不寫檔", async () => {
+  const opts = tempFiles();
+  await assert.rejects(
+    () => store.createTask({ title: "吃藥", type: "medication" }, { ...opts, ...PROD }),
+    /feature_unavailable_in_production/,
+  );
+  assert.equal(fs.existsSync(opts.tasksFilePath), false);
+});
+
+test("production：read 類函式一律拋具名錯誤", async () => {
+  const opts = tempFiles();
+  await assert.rejects(
+    () => store.listTasks({ ...opts, ...PROD }),
+    /feature_unavailable_in_production/,
+  );
+  await assert.rejects(
+    () => store.getTaskById("x", { ...opts, ...PROD }),
+    /feature_unavailable_in_production/,
+  );
+  await assert.rejects(
+    () => store.recordSubmission("x", {}, { ...opts, ...PROD }),
+    /feature_unavailable_in_production/,
+  );
+  await assert.rejects(
+    () => store.getSubmissionById("x", { ...opts, ...PROD }),
+    /feature_unavailable_in_production/,
+  );
+  await assert.rejects(
+    () => store.listTasksForAdmin({ ...opts, ...PROD }),
+    /feature_unavailable_in_production/,
+  );
+});
+
+test("production：updateTaskStatus 回 feature_unavailable_in_production envelope", async () => {
+  const opts = tempFiles();
+  const r = await store.updateTaskStatus("x", "completed", { ...opts, ...PROD });
+  assert.deepEqual(r, { success: false, error: "feature_unavailable_in_production" });
+});

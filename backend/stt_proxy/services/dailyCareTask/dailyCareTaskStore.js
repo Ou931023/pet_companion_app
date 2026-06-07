@@ -14,6 +14,21 @@ const path = require("path");
 const fs = require("fs/promises");
 const { randomUUID } = require("crypto");
 
+const {
+  isJsonFallbackAllowed,
+  FeatureUnavailableInProductionError,
+  FEATURE_UNAVAILABLE_IN_PRODUCTION,
+} = require("../../config/env");
+
+// CR-0034 B2 / CR-0042 blocker：日常照護任務為 **JSON-only** store，尚未平移到 PostgreSQL。
+// production（ALLOW_JSON_FALLBACK=false）一律阻擋，避免把 JSON 當成正式資料來源。
+// dev/staging 不受影響（isJsonFallbackAllowed=true），行為零變更。
+// 回傳值（task / 陣列 / 物件）的函式 throw 具名錯誤（由各 route try/catch 接住轉既有錯誤回應）；
+// 回 envelope 的函式（updateTaskStatus）回 { success:false, error }。
+function jsonFeatureBlocked(options = {}) {
+  return !isJsonFallbackAllowed(options.env || process.env);
+}
+
 const DEFAULT_TASKS_FILE = path.join(
   __dirname,
   "..",
@@ -112,6 +127,7 @@ function normalizeTask(payload = {}) {
 }
 
 async function createTask(payload = {}, options = {}) {
+  if (jsonFeatureBlocked(options)) throw new FeatureUnavailableInProductionError();
   const filePath = resolveTasksFile(options);
   const task = normalizeTask(payload);
   const tasks = await readAll(filePath);
@@ -121,6 +137,7 @@ async function createTask(payload = {}, options = {}) {
 }
 
 async function listTasks(options = {}) {
+  if (jsonFeatureBlocked(options)) throw new FeatureUnavailableInProductionError();
   const filePath = resolveTasksFile(options);
   let tasks = await readAll(filePath);
   if (options.elderId != null) {
@@ -136,12 +153,16 @@ async function listTasks(options = {}) {
 }
 
 async function getTaskById(id, options = {}) {
+  if (jsonFeatureBlocked(options)) throw new FeatureUnavailableInProductionError();
   const filePath = resolveTasksFile(options);
   const tasks = await readAll(filePath);
   return tasks.find((t) => t.id === id) || null;
 }
 
 async function updateTaskStatus(id, status, options = {}) {
+  if (jsonFeatureBlocked(options)) {
+    return { success: false, error: FEATURE_UNAVAILABLE_IN_PRODUCTION };
+  }
   if (!VALID_TASK_STATUSES.has(status)) {
     return { success: false, error: "invalid_status" };
   }
@@ -192,6 +213,7 @@ function normalizeVerification(verification = {}) {
 // 記錄一筆完成證明 submission，並依 AI 驗證結果更新對應任務狀態。
 // 回傳 { success, task, submission }。
 async function recordSubmission(taskId, payload = {}, options = {}) {
+  if (jsonFeatureBlocked(options)) throw new FeatureUnavailableInProductionError();
   const task = await getTaskById(taskId, options);
   if (!task) {
     return { success: false, error: "task_not_found" };
@@ -225,12 +247,14 @@ async function recordSubmission(taskId, payload = {}, options = {}) {
 }
 
 async function listSubmissionsByTaskId(taskId, options = {}) {
+  if (jsonFeatureBlocked(options)) throw new FeatureUnavailableInProductionError();
   const submissionsFile = resolveSubmissionsFile(options);
   const submissions = await readAll(submissionsFile);
   return submissions.filter((s) => s.taskId === taskId);
 }
 
 async function getSubmissionById(submissionId, options = {}) {
+  if (jsonFeatureBlocked(options)) throw new FeatureUnavailableInProductionError();
   const submissionsFile = resolveSubmissionsFile(options);
   const submissions = await readAll(submissionsFile);
   return submissions.find((s) => s.id === submissionId) || null;
@@ -238,6 +262,7 @@ async function getSubmissionById(submissionId, options = {}) {
 
 // 管理者端：列出所有任務，附上每筆任務「最新一次」的 submission（含 AI 結果）。
 async function listTasksForAdmin(options = {}) {
+  if (jsonFeatureBlocked(options)) throw new FeatureUnavailableInProductionError();
   const tasks = await listTasks(options);
   const submissionsFile = resolveSubmissionsFile(options);
   const submissions = await readAll(submissionsFile);

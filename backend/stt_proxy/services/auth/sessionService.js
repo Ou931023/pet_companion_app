@@ -23,6 +23,7 @@ const { randomUUID } = require("crypto");
 
 const postgres = require("../../db/postgres");
 const defaultFirebaseAdmin = require("./firebaseAdmin");
+const { isProduction } = require("../../config/env");
 
 const DEFAULT_USERS_FILE = path.join(__dirname, "..", "..", "data", "users.json");
 const DEFAULT_ELDERS_FILE = path.join(__dirname, "..", "..", "data", "elders.json");
@@ -53,9 +54,15 @@ function resolveEldersFile(options = {}) {
   );
 }
 
-// AUTH_ALLOW_MOCK 預設 true；只有顯式設成字串 "false" 才關閉 mock。
-function mockAllowed() {
-  return String(process.env.AUTH_ALLOW_MOCK ?? "true").toLowerCase() !== "false";
+// 是否允許 mock 模式（未設定 Firebase 時採信 client 傳入的 firebaseUid）。
+// CR-0034 B2（P0-3 修補）：
+//   - production：**一律 false**。正式環境不得採信前端宣稱的 firebaseUid，
+//     必須有真正可驗證 idToken 的 Firebase 服務帳戶；否則回 invalid_id_token（401）。
+//   - 非 production（dev/staging/test）：維持既有行為——AUTH_ALLOW_MOCK 預設 true，
+//     只有顯式設成字串 "false" 才關閉 mock。
+function mockAllowed(env = process.env) {
+  if (isProduction(env)) return false;
+  return String((env || {}).AUTH_ALLOW_MOCK ?? "true").toLowerCase() !== "false";
 }
 
 function normalizeProvider(provider) {

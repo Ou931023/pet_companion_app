@@ -112,6 +112,48 @@ test("saveAlert：DB 例外 → 降級 JSON，不丟例外、success:true", asyn
   assert.equal(onDisk[0].id, r.alert.id);
 });
 
+// CR-0034 B2：production（ALLOW_JSON_FALLBACK=false）→ DB-required。
+// DB 例外時**不得降級寫 JSON**，回 { success:false, error:'care_alert_persist_failed' }。
+// 用 options.env 注入 production 語義（不依賴真實 NODE_ENV；NODE_ENV=test 仍恆為 dev）。
+const prodEnv = { APP_ENV: "production" };
+
+test("saveAlert：production DB 例外 → 不降級 JSON，回 care_alert_persist_failed", async () => {
+  const filePath = tempFile();
+  const pg = makeMockPg({ available: true, throwOn: () => true });
+  const r = await store.saveAlert(base, { pg, filePath, env: prodEnv });
+  assert.deepEqual(r, { success: false, error: "care_alert_persist_failed" });
+  // 確認**沒有**寫進 JSON 檔（檔案不存在或為空）。
+  assert.equal(fs.existsSync(filePath), false, "production 不可降級寫 JSON");
+});
+
+test("saveAlert：production DB 不可用 → 直接回 care_alert_persist_failed（不寫 JSON）", async () => {
+  const filePath = tempFile();
+  const pg = makeMockPg({ available: false });
+  const r = await store.saveAlert(base, { pg, filePath, env: prodEnv });
+  assert.deepEqual(r, { success: false, error: "care_alert_persist_failed" });
+  assert.equal(fs.existsSync(filePath), false);
+});
+
+test("updateAlertStatus：production DB 例外 → 不降級 JSON，回 care_alert_persist_failed", async () => {
+  const filePath = tempFile();
+  const pg = makeMockPg({ available: true, throwOn: () => true });
+  const r = await store.updateAlertStatus("some-id", "acknowledged", {
+    pg,
+    filePath,
+    env: prodEnv,
+  });
+  assert.deepEqual(r, { success: false, error: "care_alert_persist_failed" });
+});
+
+test("saveAlert：dev DB 例外仍降級 JSON（production guard 不影響非 production）", async () => {
+  const filePath = tempFile();
+  const pg = makeMockPg({ available: true, throwOn: () => true });
+  // 不帶 env → 走 process.env（NODE_ENV=test → development）→ 維持既有 fallback。
+  const r = await store.saveAlert(base, { pg, filePath });
+  assert.equal(r.success, true, "dev/staging 仍應降級 JSON");
+  assert.equal(JSON.parse(fs.readFileSync(filePath, "utf8")).length, 1);
+});
+
 // ---- listAlerts（DB 路徑）----
 
 test("listAlerts DB：WHERE/ORDER/LIMIT 組裝正確、row→alert 映射", async () => {

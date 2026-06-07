@@ -6,6 +6,10 @@ const {
   isProduction,
   parseBoolean,
   validateProductionEnv,
+  isJsonFallbackAllowed,
+  describeMaskedConfig,
+  FEATURE_UNAVAILABLE_IN_PRODUCTION,
+  FeatureUnavailableInProductionError,
   maskSecret,
   maskEmail,
   maskPhone,
@@ -174,4 +178,81 @@ test("maskDatabaseUrl：只保留 scheme", () => {
   assert.ok(!masked.includes("pass"));
   assert.ok(!masked.includes("host"));
   assert.equal(masked, "postgres://***");
+});
+
+// ---- CR-0034 B2：isJsonFallbackAllowed ----
+
+test("isJsonFallbackAllowed：非 production 一律允許", () => {
+  assert.equal(isJsonFallbackAllowed({ NODE_ENV: "development" }), true);
+  assert.equal(isJsonFallbackAllowed({ APP_ENV: "staging" }), true);
+  assert.equal(isJsonFallbackAllowed({ NODE_ENV: "test" }), true);
+  // NODE_ENV=test 即使 APP_ENV=production 也視為 dev → 允許（保護既有測試基線）。
+  assert.equal(
+    isJsonFallbackAllowed({ NODE_ENV: "test", APP_ENV: "production" }),
+    true,
+  );
+});
+
+test("isJsonFallbackAllowed：production 預設不允許，僅顯式 true 才允許", () => {
+  assert.equal(isJsonFallbackAllowed({ APP_ENV: "production" }), false);
+  assert.equal(
+    isJsonFallbackAllowed({ APP_ENV: "production", ALLOW_JSON_FALLBACK: "false" }),
+    false,
+  );
+  // 顯式 true 才允許（但實務上 validateProductionEnv 會對此 fail-fast）。
+  assert.equal(
+    isJsonFallbackAllowed({ APP_ENV: "production", ALLOW_JSON_FALLBACK: "true" }),
+    true,
+  );
+});
+
+// ---- CR-0034 B2：FeatureUnavailableInProductionError ----
+
+test("FeatureUnavailableInProductionError：帶具名 code，預設訊息為錯誤碼", () => {
+  const err = new FeatureUnavailableInProductionError();
+  assert.ok(err instanceof Error);
+  assert.equal(err.code, FEATURE_UNAVAILABLE_IN_PRODUCTION);
+  assert.equal(err.message, FEATURE_UNAVAILABLE_IN_PRODUCTION);
+  assert.equal(FEATURE_UNAVAILABLE_IN_PRODUCTION, "feature_unavailable_in_production");
+});
+
+// ---- CR-0034 B2：describeMaskedConfig（啟動摘要絕不外洩完整值）----
+
+test("describeMaskedConfig：所有敏感值皆遮蔽、未設定顯示 (unset)", () => {
+  const env = {
+    APP_ENV: "production",
+    DATABASE_URL: "postgres://user:supersecretpass@db.internal:5432/app",
+    OPENAI_API_KEY: "sk-live-abcdef1234567890",
+    TELEGRAM_BOT_TOKEN: "123456:AAroundsecretbotvalue",
+    TELEGRAM_CARE_CHAT_ID: "987654",
+    FIREBASE_CLIENT_EMAIL: "service@my-proj.iam.gserviceaccount.com",
+    ADMIN_API_TOKEN: "admin-token-supersecret-value",
+  };
+  const desc = describeMaskedConfig(env);
+  const flat = JSON.stringify(desc);
+  // 絕不出現任何完整敏感原值。
+  assert.ok(!flat.includes("supersecretpass"));
+  assert.ok(!flat.includes("db.internal"));
+  assert.ok(!flat.includes("sk-live-abcdef1234567890"));
+  assert.ok(!flat.includes("AAroundsecretbotvalue"));
+  assert.ok(!flat.includes("admin-token-supersecret-value"));
+  assert.ok(!flat.includes("service@my-proj"));
+  // chat id 只回是否設定，不回值。
+  assert.ok(!flat.includes("987654"));
+  assert.equal(desc.telegramCareChatId, "(set)");
+  assert.equal(desc.appEnv, "production");
+  assert.equal(desc.jsonFallbackAllowed, false);
+  assert.equal(desc.databaseUrl, "postgres://***");
+  assert.equal(desc.firebaseClientEmail, "se***@my-proj.iam.gserviceaccount.com");
+});
+
+test("describeMaskedConfig：未設定的敏感值顯示 (unset)，不誤印空字串", () => {
+  const desc = describeMaskedConfig({ NODE_ENV: "development" });
+  assert.equal(desc.databaseUrl, "(unset)");
+  assert.equal(desc.openaiApiKey, "(unset)");
+  assert.equal(desc.telegramBotToken, "(unset)");
+  assert.equal(desc.telegramCareChatId, "(unset)");
+  assert.equal(desc.adminApiToken, "(unset)");
+  assert.equal(desc.appEnv, "development");
+  assert.equal(desc.jsonFallbackAllowed, true);
 });

@@ -19,6 +19,21 @@ const path = require("path");
 const fs = require("fs/promises");
 const { randomUUID } = require("crypto");
 
+const {
+  isJsonFallbackAllowed,
+  FeatureUnavailableInProductionError,
+  FEATURE_UNAVAILABLE_IN_PRODUCTION,
+} = require("../../config/env");
+
+// CR-0034 B2 / CR-0042 blocker：商城為 **JSON-only** store，正式版尚未平移到 PostgreSQL。
+// 因此 production（ALLOW_JSON_FALLBACK=false）一律阻擋，避免把 JSON 當成正式資料來源。
+// dev/staging 不受影響（isJsonFallbackAllowed=true），行為零變更。
+// envelope 形回傳的函式回 { ok:false, error }；回傳值（陣列 / 物件）的函式改 throw
+// 具名錯誤，由各 route 既有 try/catch 轉成既有錯誤回應（不改回應形狀、不外洩 stack）。
+function jsonFeatureBlocked(options = {}) {
+  return !isJsonFallbackAllowed(options.env || process.env);
+}
+
 const DEFAULT_PRODUCTS_FILE = path.join(
   __dirname,
   "..",
@@ -375,6 +390,8 @@ function normalizeProduct(payload = {}, existing = null) {
 // 首次啟動或檔案不存在 / 為空時，寫入 Demo 種子商品，方便展示。
 // 已有商品時不覆蓋。回傳實際寫入的商品清單（或既有清單）。
 async function seedDefaultProducts(options = {}) {
+  // production：JSON-only 商城停用 → 不寫種子（startup best-effort，靜默 no-op）。
+  if (jsonFeatureBlocked(options)) return [];
   const filePath = resolveProductsFile(options);
   try {
     const existing = await readAll(filePath, "products");
@@ -396,6 +413,7 @@ async function seedDefaultProducts(options = {}) {
 }
 
 async function listProducts(options = {}) {
+  if (jsonFeatureBlocked(options)) throw new FeatureUnavailableInProductionError();
   const filePath = resolveProductsFile(options);
   let rows = await readAll(filePath, "products");
 
@@ -422,12 +440,16 @@ async function listProducts(options = {}) {
 }
 
 async function getProductById(id, options = {}) {
+  if (jsonFeatureBlocked(options)) throw new FeatureUnavailableInProductionError();
   const filePath = resolveProductsFile(options);
   const rows = await readAll(filePath, "products");
   return rows.find((p) => p.id === id) || null;
 }
 
 async function createProduct(payload = {}, options = {}) {
+  if (jsonFeatureBlocked(options)) {
+    return { ok: false, error: FEATURE_UNAVAILABLE_IN_PRODUCTION };
+  }
   const filePath = resolveProductsFile(options);
   if (!payload || !String(payload.name || "").trim()) {
     return { ok: false, error: "invalid_payload" };
@@ -447,6 +469,9 @@ async function createProduct(payload = {}, options = {}) {
 }
 
 async function updateProduct(id, payload = {}, options = {}) {
+  if (jsonFeatureBlocked(options)) {
+    return { ok: false, error: FEATURE_UNAVAILABLE_IN_PRODUCTION };
+  }
   const filePath = resolveProductsFile(options);
   try {
     const rows = await readAll(filePath, "products");
@@ -465,6 +490,9 @@ async function updateProduct(id, payload = {}, options = {}) {
 }
 
 async function setProductStatus(id, status, options = {}) {
+  if (jsonFeatureBlocked(options)) {
+    return { ok: false, error: FEATURE_UNAVAILABLE_IN_PRODUCTION };
+  }
   const normalized = (status || "").toString().trim().toLowerCase();
   if (!PRODUCT_STATUSES.includes(normalized)) {
     return { ok: false, error: "invalid_status" };
@@ -501,6 +529,9 @@ async function setProductStatus(id, status, options = {}) {
 //   4. 扣庫存並寫回商品檔（同一次寫入）。
 // 任何驗證失敗都回 {ok:false, error}，不丟例外。
 async function createOrder(payload = {}, options = {}) {
+  if (jsonFeatureBlocked(options)) {
+    return { ok: false, error: FEATURE_UNAVAILABLE_IN_PRODUCTION };
+  }
   const productsFile = resolveProductsFile(options);
   const ordersFile = resolveOrdersFile(options);
 
@@ -604,6 +635,7 @@ async function createOrder(payload = {}, options = {}) {
 }
 
 async function listOrders(options = {}) {
+  if (jsonFeatureBlocked(options)) throw new FeatureUnavailableInProductionError();
   const filePath = resolveOrdersFile(options);
   let rows = await readAll(filePath, "orders");
   if (options.status && options.status !== "all") {
@@ -619,12 +651,16 @@ async function listOrders(options = {}) {
 }
 
 async function getOrderById(id, options = {}) {
+  if (jsonFeatureBlocked(options)) throw new FeatureUnavailableInProductionError();
   const filePath = resolveOrdersFile(options);
   const rows = await readAll(filePath, "orders");
   return rows.find((o) => o.id === id) || null;
 }
 
 async function updateOrderStatus(id, status, fields = {}, options = {}) {
+  if (jsonFeatureBlocked(options)) {
+    return { ok: false, error: FEATURE_UNAVAILABLE_IN_PRODUCTION };
+  }
   const normalized = (status || "").toString().trim().toLowerCase();
   if (!ORDER_STATUSES.includes(normalized)) {
     return { ok: false, error: "invalid_status" };

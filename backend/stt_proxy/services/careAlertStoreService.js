@@ -28,6 +28,7 @@ const fs = require("fs/promises");
 const { randomUUID } = require("crypto");
 
 const defaultPg = require("../db/postgres");
+const { isJsonFallbackAllowed } = require("../config/env");
 
 const DEFAULT_DATA_FILE = path.join(__dirname, "..", "data", "care_alerts.json");
 
@@ -229,13 +230,23 @@ async function saveAlertJson(payload, options) {
 
 async function saveAlert(payload = {}, options = {}) {
   const pg = options.pg || activePg;
+  // CR-0034 B2（§5.3.1）：production（ALLOW_JSON_FALLBACK=false）→ DB-required，
+  // 不得降級寫 JSON；dev/staging 維持 DB-優先 + JSON fallback（零變更）。
+  const fallbackAllowed = isJsonFallbackAllowed(options.env || process.env);
   if (await isDbAvailable(pg)) {
     try {
       return await saveAlertDb(pg, payload);
     } catch (error) {
       logDbError("saveAlert", error);
-      // 降級 JSON：確保 /notify 不因 DB 故障失敗。
+      if (!fallbackAllowed) {
+        // production：持久化失敗就明確回報，不靜默降級、不回 stack trace。
+        return { success: false, error: "care_alert_persist_failed" };
+      }
+      // dev/staging 降級 JSON：確保 /notify 不因 DB 故障失敗。
     }
+  } else if (!fallbackAllowed) {
+    // production：DB 必須可用；不可用即視為持久化失敗（不降級 JSON）。
+    return { success: false, error: "care_alert_persist_failed" };
   }
   return saveAlertJson(payload, options);
 }
@@ -419,13 +430,20 @@ async function updateAlertStatus(id, status, options = {}) {
     return { success: false, error: "invalid_status" };
   }
   const pg = options.pg || activePg;
+  // CR-0034 B2（§5.3.1）：production → DB-required；dev/staging 維持 JSON fallback。
+  const fallbackAllowed = isJsonFallbackAllowed(options.env || process.env);
   if (await isDbAvailable(pg)) {
     try {
       return await updateAlertStatusDb(pg, id, status, options);
     } catch (error) {
       logDbError("updateAlertStatus", error);
-      // 降級 JSON。
+      if (!fallbackAllowed) {
+        return { success: false, error: "care_alert_persist_failed" };
+      }
+      // dev/staging 降級 JSON。
     }
+  } else if (!fallbackAllowed) {
+    return { success: false, error: "care_alert_persist_failed" };
   }
   return updateAlertStatusJson(id, status, options);
 }

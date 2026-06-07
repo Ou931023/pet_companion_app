@@ -9,7 +9,22 @@ const path = require("node:path");
 process.env.PGVECTOR_ENABLED = "false";
 delete process.env.DATABASE_URL;
 
-const { createSession } = require("./sessionService");
+const { createSession, mockAllowed } = require("./sessionService");
+
+// ---- CR-0034 B2（P0-3）：mockAllowed production 安全行為 ----
+
+test("mockAllowed：production 一律回 false（不採信 client firebaseUid）", () => {
+  assert.equal(mockAllowed({ APP_ENV: "production" }), false);
+  // production 即使顯式 AUTH_ALLOW_MOCK=true 也不得開放 mock。
+  assert.equal(mockAllowed({ APP_ENV: "production", AUTH_ALLOW_MOCK: "true" }), false);
+});
+
+test("mockAllowed：非 production 維持既有行為（預設 true，顯式 false 才關閉）", () => {
+  assert.equal(mockAllowed({ NODE_ENV: "development" }), true);
+  assert.equal(mockAllowed({ NODE_ENV: "development", AUTH_ALLOW_MOCK: "false" }), false);
+  // NODE_ENV=test（即使 APP_ENV=production）視為 dev → 維持 mock 預設 true（保護測試基線）。
+  assert.equal(mockAllowed({ NODE_ENV: "test", APP_ENV: "production" }), true);
+});
 
 function tempStore() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "auth_session_"));

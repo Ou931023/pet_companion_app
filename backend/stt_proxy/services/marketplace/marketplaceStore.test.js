@@ -202,3 +202,50 @@ test("seedDefaultProducts 寫入種子商品，且不覆蓋既有資料", async 
   const again = await store.seedDefaultProducts(opt);
   assert.equal(again.length, seeded.length);
 });
+
+// ---- CR-0034 B2 / CR-0042 blocker：production JSON-only guard ----
+// 用 options.env 注入 production 語義（NODE_ENV=test 仍恆為 dev，故不影響其他測試）。
+const PROD = { env: { APP_ENV: "production" } };
+
+test("marketplace：production 下 mutation 回 feature_unavailable_in_production（不寫檔）", async () => {
+  const opt = tempFiles();
+  const create = await store.createProduct({ name: "床" }, { ...opt, ...PROD });
+  assert.deepEqual(create, { ok: false, error: "feature_unavailable_in_production" });
+  const order = await store.createOrder(
+    { items: [{ productId: "x", quantity: 1 }] },
+    { ...opt, ...PROD },
+  );
+  assert.deepEqual(order, { ok: false, error: "feature_unavailable_in_production" });
+  const upd = await store.updateProduct("id", { name: "x" }, { ...opt, ...PROD });
+  assert.equal(upd.error, "feature_unavailable_in_production");
+  const sts = await store.setProductStatus("id", "inactive", { ...opt, ...PROD });
+  assert.equal(sts.error, "feature_unavailable_in_production");
+  const ord = await store.updateOrderStatus("id", "shipping", {}, { ...opt, ...PROD });
+  assert.equal(ord.error, "feature_unavailable_in_production");
+  // 確認沒有任何檔案被寫出。
+  assert.equal(fs.existsSync(opt.productsFilePath), false);
+  assert.equal(fs.existsSync(opt.ordersFilePath), false);
+});
+
+test("marketplace：production 下 read 拋 FeatureUnavailableInProductionError", async () => {
+  const opt = tempFiles();
+  await assert.rejects(
+    () => store.listProducts({ ...opt, ...PROD }),
+    /feature_unavailable_in_production/,
+  );
+  await assert.rejects(
+    () => store.getProductById("x", { ...opt, ...PROD }),
+    /feature_unavailable_in_production/,
+  );
+  await assert.rejects(
+    () => store.listOrders({ ...opt, ...PROD }),
+    /feature_unavailable_in_production/,
+  );
+});
+
+test("marketplace：production seedDefaultProducts no-op（不寫種子）", async () => {
+  const opt = tempFiles();
+  const seeded = await store.seedDefaultProducts({ ...opt, ...PROD });
+  assert.deepEqual(seeded, []);
+  assert.equal(fs.existsSync(opt.productsFilePath), false);
+});

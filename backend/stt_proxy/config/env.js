@@ -56,6 +56,33 @@ function isProduction(env = process.env) {
   return normalizeAppEnv(env) === "production";
 }
 
+// 是否允許「JSON store 作為（fallback 或唯一）資料來源」（CR-0034 Batch 2 / B4）。
+// 統一語義，供：
+//   - careAlertStoreService：DB 例外時是否降級寫 JSON（§5.3.1）。
+//   - marketplace / dailyCareTask（JSON-only）：production 是否可運作（CR-0042 blocker）。
+// 規則：
+//   - 非 production（dev/staging）→ 一律允許（維持 DB-優先 + JSON fallback 既有行為，零變更）。
+//   - production → 預設不允許；只有顯式 ALLOW_JSON_FALLBACK=true 才允許。
+//     （注意：validateProductionEnv 會對 production 顯式 ALLOW_JSON_FALLBACK=true fail-fast，
+//      故實務上 production 啟動後此值恆為 false → JSON 一律不可作為正式資料來源。）
+function isJsonFallbackAllowed(env = process.env) {
+  if (!isProduction(env)) return true;
+  return parseBoolean((env || {}).ALLOW_JSON_FALLBACK);
+}
+
+// JSON-only 功能在 production 不可用時拋出的錯誤碼（長者 / 管理端友善、非 stack trace）。
+const FEATURE_UNAVAILABLE_IN_PRODUCTION = "feature_unavailable_in_production";
+
+// JSON-only 功能（marketplace / dailyCareTask）在 production 被擋下時拋出的具名錯誤。
+// 由各 route 既有 try/catch 接住，轉成既有錯誤 envelope（不改回應形狀、不外洩 stack）。
+class FeatureUnavailableInProductionError extends Error {
+  constructor(message = FEATURE_UNAVAILABLE_IN_PRODUCTION) {
+    super(message);
+    this.name = "FeatureUnavailableInProductionError";
+    this.code = FEATURE_UNAVAILABLE_IN_PRODUCTION;
+  }
+}
+
 // 取 CORS 白名單來源（新命名 CORS_ALLOWED_ORIGINS 優先，相容既有別名 ALLOWED_ORIGINS）。
 function resolveCorsOrigins(env = process.env) {
   const source = env || {};
@@ -192,16 +219,40 @@ function maskDatabaseUrl(value) {
   return `${s.slice(0, idx + 3)}***`;
 }
 
+// 啟動用：產生「一律遮蔽」的設定摘要物件，供 server 啟動時 log。
+// 目的是讓維運能確認哪些敏感設定已就緒，但**絕不輸出任何完整值**
+// （token / secret / DATABASE_URL / email 一律走 mask helper；未設定顯示 "(unset)"）。
+function describeMaskedConfig(env = process.env) {
+  const source = env || {};
+  const presentOrUnset = (value, masker) =>
+    isPresent(value) ? masker(value) : "(unset)";
+  return {
+    appEnv: normalizeAppEnv(source),
+    jsonFallbackAllowed: isJsonFallbackAllowed(source),
+    databaseUrl: presentOrUnset(source.DATABASE_URL, maskDatabaseUrl),
+    openaiApiKey: presentOrUnset(source.OPENAI_API_KEY, maskSecret),
+    telegramBotToken: presentOrUnset(source.TELEGRAM_BOT_TOKEN, maskSecret),
+    // chat id 視為弱識別子，只回是否設定，不回值。
+    telegramCareChatId: isPresent(source.TELEGRAM_CARE_CHAT_ID) ? "(set)" : "(unset)",
+    firebaseClientEmail: presentOrUnset(source.FIREBASE_CLIENT_EMAIL, maskEmail),
+    adminApiToken: presentOrUnset(source.ADMIN_API_TOKEN, maskSecret),
+  };
+}
+
 module.exports = {
   normalizeAppEnv,
   isProduction,
   parseBoolean,
   resolveCorsOrigins,
   hasFirebaseServiceAccount,
+  isJsonFallbackAllowed,
   validateProductionEnv,
   assertProductionEnvOrExit,
   maskSecret,
   maskEmail,
   maskPhone,
   maskDatabaseUrl,
+  describeMaskedConfig,
+  FEATURE_UNAVAILABLE_IN_PRODUCTION,
+  FeatureUnavailableInProductionError,
 };
