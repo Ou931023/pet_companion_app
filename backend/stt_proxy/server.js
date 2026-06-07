@@ -69,6 +69,8 @@ const {
   canSendTelegram,
   markTelegramSent,
 } = require("./services/careAlertCooldown");
+const { logNotification } = require("./services/notificationLogService");
+const { logAudit } = require("./services/auditLogService");
 const {
   recordConsent,
   getConsent,
@@ -174,6 +176,26 @@ function logInfo(message, extra = {}) {
 
 function logError(message, extra = {}) {
   console.error(`[realtime-broker] ${message}`, extra);
+}
+
+// CR-P2B：通知 / 稽核 log 寫入採 **fire-and-forget best-effort**。
+// 兩 service 內部已吞掉所有錯誤並回 {success:false}（永不 reject）；此處再包一層
+// .catch 保險，確保稽核寫入**絕不阻塞、絕不拖垮** /notify 與敏感操作主流程，
+// 也不改任何路由的 request/response 形狀（純旁路寫入）。
+function recordNotificationLog(entry) {
+  Promise.resolve()
+    .then(() => logNotification(entry))
+    .catch((error) =>
+      logError("notification log write failed", { error: error?.message || error }),
+    );
+}
+
+function recordAuditLog(entry) {
+  Promise.resolve()
+    .then(() => logAudit(entry))
+    .catch((error) =>
+      logError("audit log write failed", { error: error?.message || error }),
+    );
 }
 
 const REALTIME_INSTRUCTIONS = `你是長者陪伴寵物，不是一般助理。
@@ -359,24 +381,47 @@ app.post("/api/care-alerts/notify", async (req, res) => {
     return res.status(400).json({ success: false, error: "invalid_payload" });
   }
   // 持久化：供長照管理者網頁查詢。失敗只 log，不影響 Telegram 發送與回應。
+  let storedAlert = null;
   try {
     const stored = await saveCareAlert(body);
     if (!stored.success) {
       logError("care alert persist failed", { error: stored.error });
+    } else {
+      storedAlert = stored.alert;
     }
   } catch (error) {
     logError("care alert persist exception", { error: error?.message || error });
   }
+  // CR-P2B：通知稽核 log 共用結構化欄位（白名單；絕不含對話原文 / snippet /
+  // chat_id / token / URL）。alertId / elderId 取自持久化後的 alert（DB 化後 FK 指向
+  // care_alerts.id）；DB 不可用時 service 會自動略過寫入。
+  const notifRiskLevel = normalizeRiskLevel(body.riskLevel);
+  const notifAlertId = storedAlert?.id ?? null;
+  const notifElderId = storedAlert?.elderId ?? null;
   // Telegram 推播規則：只有 high / urgent 推播；low / medium 只進 store / caregiver_web。
   // 並套用 in-process cooldown 防洗版（同 source+riskLevel 在冷卻期內只成功推一次）。
   try {
     if (!shouldTelegramNotify(body)) {
       // 低風險：已持久化、供 caregiver_web 查看，但不推 Telegram。
+      recordNotificationLog({
+        alertId: notifAlertId,
+        elderId: notifElderId,
+        channel: "telegram",
+        riskLevel: notifRiskLevel,
+        outcome: "skipped_low_risk",
+      });
       return res.json({ success: true, telegram: "skipped_low_risk" });
     }
     const cooldownKey = `${body.source || "unknown"}::${normalizeRiskLevel(body.riskLevel)}`;
     if (!canSendTelegram(cooldownKey)) {
       // 冷卻期內重複的同類高風險：略過 Telegram，避免洗版（alert 仍已持久化）。
+      recordNotificationLog({
+        alertId: notifAlertId,
+        elderId: notifElderId,
+        channel: "telegram",
+        riskLevel: notifRiskLevel,
+        outcome: "skipped_cooldown",
+      });
       return res.json({ success: true, telegram: "skipped_cooldown" });
     }
     const result = await sendCareAlertNotification({
@@ -392,11 +437,27 @@ app.post("/api/care-alerts/notify", async (req, res) => {
     if (result.success) {
       // 只有真的推成功才開始冷卻，避免「送失敗卻擋住後續」。
       markTelegramSent(cooldownKey);
+      recordNotificationLog({
+        alertId: notifAlertId,
+        elderId: notifElderId,
+        channel: "telegram",
+        riskLevel: notifRiskLevel,
+        outcome: "sent",
+      });
     } else {
       // 僅記錄 error code / status，不含 token 或完整 Telegram URL。
       logError("care alert notify failed", {
         error: result.error,
         status: result.status,
+      });
+      recordNotificationLog({
+        alertId: notifAlertId,
+        elderId: notifElderId,
+        channel: "telegram",
+        riskLevel: notifRiskLevel,
+        outcome: "failed",
+        errorCode: result.error,
+        httpStatus: result.status,
       });
     }
     return res.json(result);
@@ -441,6 +502,17 @@ app.patch("/api/care-alerts/:id/status", async (req, res) => {
   try {
     const result = await updateCareAlertStatus(req.params.id, status);
     if (result.success) {
+      // CR-P2B：Care Alert 狀態變更為敏感操作 → best-effort 稽核。metadata 僅
+      // 結構化（to status）；無原文 / PII。actorId 暫無認證 caregiver 身分 → null。
+      recordAuditLog({
+        actorType: "caregiver",
+        actorId: null,
+        action: "care_alert_status_change",
+        targetType: "care_alert",
+        targetId: req.params.id,
+        outcome: "success",
+        metadata: { toStatus: result.alert?.status ?? status },
+      });
       return res.json(result);
     }
     if (result.error === "invalid_status") {
@@ -538,6 +610,23 @@ app.post("/api/auth/delete", async (req, res) => {
       careAlerts = await deleteAlertsByElderId(userResult.elderId);
     }
 
+    // CR-P2B：帳號刪除為敏感操作 → best-effort 稽核。actorId/targetId 用內部
+    // user_id（非 PII 明碼）；metadata 僅刪除計數；無 email / ip / token / 原文。
+    recordAuditLog({
+      actorType: "elder",
+      actorId: userResult.userId != null ? String(userResult.userId) : null,
+      action: "account_delete",
+      targetType: "user",
+      targetId: userResult.userId != null ? String(userResult.userId) : null,
+      outcome: "success",
+      metadata: {
+        user: userResult.user,
+        elder: userResult.elder,
+        memories,
+        careAlerts,
+      },
+    });
+
     return res.json({
       success: true,
       deleted: {
@@ -634,6 +723,24 @@ app.post("/api/consent", async (req, res) => {
       logError("consent record failed", { error: result.error });
       return res.status(500).json({ success: false, error: "consent_failed" });
     }
+    // CR-P2B：consent 寫入為敏感操作 → best-effort 稽核。targetId 用 consent record
+    // id；metadata 僅結構化（type / version / action）；無原文 / email / ip / token。
+    recordAuditLog({
+      actorType: "elder",
+      actorId:
+        typeof identity.firebaseUid === "string" && identity.firebaseUid.trim()
+          ? identity.firebaseUid.trim()
+          : null,
+      action: "consent_record",
+      targetType: "consent_record",
+      targetId: result.record?.id ?? null,
+      outcome: "success",
+      metadata: {
+        consentType: result.record?.consentType,
+        consentVersion: result.record?.consentVersion,
+        action: result.record?.action,
+      },
+    });
     return res.json({ success: true, record: result.record });
   } catch (error) {
     logError("consent record exception", { error: error?.message || error });
