@@ -956,3 +956,78 @@
 - 完成狀態：✅ 完成
 
 <!-- 新提案請往下加 CR-0004 ... -->
+
+### CR-0036：consent_records 後端持久化 API（知情同意稽核軌跡）— ⬜ 未開始（2026-06-08 開立）
+- 提出 agent：architecture-agent（依 Phase 1 production 升級需求）
+- 動機 / 問題：App Store / Google Play 與 `CLAUDE.md`（根目錄版）§9、`pet_companion_app/CLAUDE.md` §3.3/§9 要求「知情同意需可稽核」。前端 Batch 1.1 已做**本機**同意 Gate（`lib/services/consent_service.dart`，僅存 shared_preferences：`consent.acceptedVersion` / `consent.grantedAt`，無後端、無稽核軌跡）。本 CR 補後端持久化（PostgreSQL）與查詢/撤回稽核能力。`PROJECT_ARCHITECTURE.md` §3.3 已將 `consent_records` 列為核心表，本案屬「補齊已規劃 schema」，非新架構。
+- 影響範圍（檔案）：
+  - 新增 `backend/stt_proxy/db/migrations/010_create_consent_records.sql`（next 編號＝010，現有最高為 `009_create_marketplace.sql`）。
+  - 新增 `backend/stt_proxy/services/consentStoreService.js`（pg insert / list / withdraw；dev-only JSON fallback 比照既有 store，正式以 PG 為準）。
+  - `backend/stt_proxy/server.js`（新增 `POST /api/consent`、`GET /api/consent`；**不改既有路由形狀**）。
+  - 新增 `backend/stt_proxy/services/consentStoreService.test.js` 與端點測試。
+  - 文件：`PROJECT_ARCHITECTURE.md` §10（新增 consent API 契約，B2 動工前先更新）。
+  - （後續、非本 CR 後端範圍）`lib/services/consent_service.dart` best-effort 補送。
+- 觸及 🔒？：**是** — ① DB schema / migration（新 `consent_records` 表）；② `server.js` API 契約（新增 2 條路由）。
+- 牽涉哪些 agent：backend-agent（B1 migration、B2 service+route）、frontend-ux-agent（B3 ConsentService 補送，後續排程）、architecture-agent（契約 + 審查）。
+- 風險等級：low–medium（純新增表與新增路由，不改任何既有流程 / 既有路由形狀 / 既有測試；最大風險是 schema 欄位設計需一次到位避免日後再 migration，以及 PII 欄位的隱私處理）。
+- migrate.js 機制（已查證）：`db/migrate.js` 啟動時 glob `migrations/*.sql` 依檔名排序逐一執行、**無 schema_migrations 追蹤、每次啟動重跑**，全靠 `IF NOT EXISTS` 冪等。→ 010 **無需改 migrate.js**，但 SQL 必須完全冪等（沿用 006/008 的 `CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN IF NOT EXISTS` + `CREATE INDEX IF NOT EXISTS` + `pgcrypto`/`gen_random_uuid()` 慣例）。
+- `consent_records` 欄位建議（沿用既有 UUID/TIMESTAMPTZ 慣例）：
+  - `id UUID PK DEFAULT gen_random_uuid()`
+  - `user_id UUID REFERENCES users(id)` **nullable**（同意可能在後端尚未建 user 前發生；有 firebaseUid/idToken 時解析回填）
+  - `elder_id UUID REFERENCES elders(id)` **nullable**
+  - `consent_type TEXT NOT NULL`（enum-by-convention：`privacy_terms`（對應目前單一 gate）/ `data_collection` / `microphone` / `notification`，預留細分）
+  - `consent_version TEXT NOT NULL`（對應前端 `consent.acceptedVersion`）
+  - `action TEXT NOT NULL DEFAULT 'granted'`（`granted` | `withdrawn`，撤回不刪舊列、改寫新列＝完整稽核軌跡）
+  - `source TEXT`（`elder_app_onboarding` | `settings` …）
+  - `agreed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`、`withdrawn_at TIMESTAMPTZ`（nullable）
+  - `app_version TEXT`、`platform TEXT`（nullable，稽核用）
+  - `ip TEXT`、`user_agent TEXT`（**nullable、可選**；§9 要求 log 不可輸出完整個資 → 僅落 DB，server log / API response 不得回顯，蒐集前需在隱私政策揭露）
+  - `created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`
+  - 索引：`idx_consent_user_id (user_id)`、`idx_consent_type_version (consent_type, consent_version)`
+- 路由契約建議（**沿用既有風格**：`app.post`/`res.json({success:true,...})`、缺欄 `400 {success:false,error:"invalid_payload"}`、例外 `500 {success:false,error:"consent_failed"}`，**絕不回 stack trace**；auth 比照 `/api/auth/delete`：`authFirebaseAdmin.isConfigured()` → 驗 `idToken` 取權威 uid 解析 user_id；否則 mock-allowed 採信傳入識別）：
+  - `POST /api/consent`：body `{ firebaseUid?, idToken?, userId?, elderId?, consentType, consentVersion, action?, source?, appVersion?, platform? }` → 寫一列，回 `{ success:true, record:{ id, consentType, consentVersion, action, agreedAt } }`（**不回 ip/user_agent**）。
+  - `GET /api/consent?userId=...`（或 `?firebaseUid=`）：回該使用者同意歷史 `{ success:true, records:[...] }`（供設定頁/稽核；同樣遮蔽 PII）。
+  - （延後）caregiver_web 稽核檢視走 `/api/admin/*`，本 CR 不含。
+- 與前端 ConsentService 對接點（後續 B3，非本 CR 後端範圍）：`recordConsent(version)` 成功後 best-effort `POST /api/consent`（**非阻塞、失敗不擋長者**，比照 `deleteAccount` best-effort 模式）；帶當前 `AuthController` 的 firebaseUid/idToken/userId/elderId。前端目前僅存單一 `version`，後端 `consent_type` 先以 `privacy_terms` 對應，細分留待後續。
+- 建議批次切分：
+  - **Batch 1（backend-agent）**：只加 `010_create_consent_records.sql`（完全冪等）。驗收：對 dev DB 跑 migrate 成功、重跑冪等不報錯；不接任何路由。最小、可獨立 revert。
+  - **Batch 2（backend-agent）**：`consentStoreService.js` + `POST /api/consent` + `GET /api/consent` + `node --test`。**動工前先更新 `PROJECT_ARCHITECTURE.md` §10 契約**（architecture-agent 規則：跨契約改動先更新架構文件再放行）。
+  - **Batch 3（frontend-ux-agent，後續排程）**：ConsentService best-effort 補送，不阻塞同意 Gate。
+- 測試計畫（node --test）：`consentStoreService.test.js`（insert / list / withdraw 寫新列不刪舊 / 缺必填欄位→拒絕 / 冪等）、端點測試（`400 invalid_payload`、`200 success` 形狀、mock-auth 採信傳入 uid 路徑、PII 不回顯）、`npm run check`；migration 以 dev DB 實跑 + 重跑驗冪等。
+- architecture-agent 裁決：**✅ 核准 Batch 1（migration 010，可即刻執行）**；**🔁 Batch 2 條件放行** — 須先更新 `PROJECT_ARCHITECTURE.md` §10 consent API 契約並由 architecture-agent 確認後方可動 `server.js`；Batch 3 待 B1/B2 ship 後排程。限制：不碰 `.env`/token、不把 runtime `data/*.json` 進 git、不改既有路由形狀、API/log 不回顯 PII。
+- 完成狀態：⬜ 未開始
+
+### CR-0037：移除正式環境 mockFallback 造假登入（正式登入失敗應白話錯誤＋重試）— ⬜ 未開始（2026-06-08 開立）
+- 提出 agent：architecture-agent（依 Phase 1 production 升級需求）
+- 動機 / 問題：`lib/services/auth/session_api_service.dart` 的 `createSession` 在後端 **non-2xx / timeout / JSON 解析失敗時一律回 `AuthSession.mockFallback()`**（`authMode='mock'`、`provider='mock'`、`elderId='default_user'`）。對「正式帳號的後端失敗」而言，這是**未經後端驗證就捏造一個 authenticated session**（§2.1 fake user、§9 隱私），且把後端故障對使用者**靜默成功**、無白話錯誤、無重試。
+- ⚠️ 現況校正（architecture-agent 已查證，誠實修正任務前提）：任務描述的「真實使用者被塞進共用 `default_user` → 跨使用者資料混用」**對 email/google 路徑其實已被部分緩解**：`auth_service.dart` `_createSessionFromFirebase`（行 118–126）在 createSession 回 mockFallback 時，會以 **Firebase uid 取代 default_user 當隔離 key**（且有測試 `auth_service_test.dart:431` 斷言此行為）。因此不同正式帳號**不會**塌縮成同一個 default_user 命名空間。**真正殘留的正式版問題**是：
+  1. 正式（email/google）登入遇後端 non-2xx/timeout/parse-fail 時，App **捏造一個後端從未驗證的 authenticated session**，使用者被當成已登入；其資料 key 在後端未知（server 端記憶/Care Alert/elder 聚合無法正確歸戶）→ 把後端中斷對使用者**靜默成假成功**，且**沒有**白話錯誤＋重試路徑。
+  2. 後端 `401 invalid_id_token`（真正的 token 拒絕）目前與一般 5xx **一視同仁**走 fallback → 無效 token 也被捏造成 session。
+  3. `mockLogin`（Demo 路徑）本就刻意捏造 demo user（`provider='mock'`、`default_user`），**這是 Demo 專用**且登入頁 Demo 按鈕已被 `AppConfig.showDemoLoginButton`（`SHOW_DEMO_LOGIN`，預設 false）隔離 — 此路徑**應保留**，不在移除範圍。
+- 影響範圍（檔案）：
+  - `lib/services/auth/session_api_service.dart`（核心：`createSession` 改為 provider-aware；真實 provider 失敗 → 丟 typed 例外，不捏造）。
+  - `lib/services/auth/auth_service.dart`（`_createSessionFromFirebase` 的 uid-substitution offline 捏造需重新評估：正式版預設不捏造 authenticated session；如保留離線能力須 dev-flag 隔離）。
+  - `lib/controllers/auth_controller.dart`（email/google 路徑失敗 → `error` 狀態 + 白話訊息；已有 `_friendlyEmailError`/`_friendlyGoogleError` 基礎，補上「後端 session 失敗」對映）。
+  - 測試：`test/services/auth_service_test.dart`（行 431、542 兩個**斷言舊捏造行為**的測試需改寫為「丟例外/surface error」）、`test/services/session_api_service` 相關、`test/controllers/auth_controller` 相關、`test/screens/login_screen_test.dart`（test double 內用 mockFallback，多半不受影響）。
+- 觸及 🔒？：**是** — auth 契約（`session_api_service` 對外行為 + `AuthController` 對失敗的處理語意）。**後端 `server.js /api/auth/session` 不需改**（已正確回 401 invalid_id_token / 500 auth_session_failed，問題在前端一律吞成 fallback）。
+- 牽涉哪些 agent：frontend-ux-agent（主，全部三批）、architecture-agent（契約 + 審查）。backend-agent 不需動。
+- 風險等級：medium（改既有 auth 行為、且涉及一條 Demo 也會經過的程式路徑；需嚴守「不破壞 Demo」「不回工程錯誤訊息給長者」）。
+- 建議批次切分（依任務建議順序）：
+  - **Batch 1（frontend-ux-agent）— 把 mockFallback 隔離為「Demo 專用」**：`createSession` 改 provider-aware —— `provider=='mock'`（Demo）→ 維持回 `mockFallback`（行為不變，Demo 安全）；真實 provider（email/google/apple）→ 後端 non-2xx/timeout/parse 改丟新的 typed `SessionApiException`（含可分類 code，如 `network`/`server`/`invalid_token`，**不含後端原文**）。保留 `AuthSession.mockFallback` factory（Demo 仍用）。同批重新評估 `auth_service.dart` 的 uid-substitution：正式版預設**不捏造** authenticated session（移除或 dev-flag 隔離）。
+  - **Batch 2（frontend-ux-agent）— 正式路徑白話錯誤＋重試**：`AuthController.signInWithEmail/registerWithEmail/signInWithGoogle` 捕捉 `SessionApiException` → `error` 狀態 + 白話訊息（沿用既有 `_friendly*Error` 風格，如「現在連線不太順，待會再試一次好嗎？」）；確認 `error` 狀態在 `app.dart` AuthGate 仍回 LoginScreen（非死路、可重試，CR-0006 B3c 已保證）。
+  - **Batch 3（frontend-ux-agent）— 測試**：改寫 `auth_service_test.dart` 兩個斷言舊捏造行為的測試為「真實 provider 後端失敗 → 丟 `SessionApiException` / AuthController 進 error + 白話訊息」；補 `session_api_service` 的 provider-aware 分支測試（mock→fallback、real→throw、401→可辨識）；回歸 `flutter analyze` + 既有 auth/login widget 測試全綠。
+- 測試計畫：`flutter test test/services/auth_service_test.dart test/services/session_api_service_test.dart test/controllers/auth_controller_test.dart test/screens/login_screen_test.dart`；回歸全 `test/` + `flutter analyze`。
+- 風險評估與緩解：
+  - ①**誤擋 Demo**：`provider=='mock'` 路徑零改動、Demo 按鈕已 `SHOW_DEMO_LOGIN` 隔離 → Demo 不受影響。緩解：Batch 1 只動真實 provider 分支。
+  - ②**回工程錯誤給長者**：嚴禁把 `SessionApiException`/Firebase 原文顯示 → 一律經 `_friendly*Error` 轉白話（§11.6）。
+  - ③**改壞既有測試**：行 431/542 兩測試**斷言的正是要修正的捏造行為**，屬「刻意重新規格化」非「破壞既有正確測試」；須在 Batch 3 同步改寫並說明理由，不得偷刪。
+  - ④**離線能力退化**：原 uid-substitution 讓「後端連不到也能進 App」；正式版改為「白話錯誤＋重試」是正確取捨（§5 網路中斷要清楚告知並可重連）。如產品仍要離線 Demo，走 Demo 登入（已 flag 隔離），不靠正式帳號捏造。
+  - rollback：純前端、單一 feature commit，`git revert` 即恢復；後端零改動、無 schema。
+- architecture-agent 裁決：**✅ 核准 Batch 1（provider-aware 隔離，可即刻執行）**；Batch 2/3 隨後依序執行（同 owner，不需再審，但 Batch 3 改寫既有測試須於回報中逐項說明理由）。限制：`provider=='mock'` Demo 路徑不得改、不碰 Realtime / `server.js` / `.env`/token、白話錯誤不得含工程字眼、`error` 狀態不得成死路。
+- 完成狀態：✅ 已完成（2026-06-08，frontend-ux-agent；Batch 1+2+3 一次連貫提交）
+  - 實作：
+    - `session_api_service.dart`：新增 typed `SessionApiException`（code: `network`/`server`/`invalid_token`，不含後端原文）；`createSession` 改 provider-aware —— `provider=='mock'`（Demo）維持 mockFallback；正式帳號 non-2xx → 401 丟 `invalid_token`、其餘丟 `server`；解析失敗（FormatException）丟 `server`；timeout/連線錯誤丟 `network`。`AuthSession.mockFallback` factory 保留（Demo 仍用）。
+    - `auth_service.dart`：移除 `_createSessionFromFirebase` 行 118–126 的 uid-substitution 離線捏造——正式帳號後端失敗改往上拋，不再捏造 authenticated session。
+    - `auth_controller.dart`：`_runEmailAuth` 與 `signInWithGoogle` 新增 `on SessionApiException` 捕捉 → 新 `_friendlySessionError(code)` 白話訊息（`invalid_token`→「登入的資料好像過期了，請重新登入一次好嗎？」；`network`→網路白話；`server`→「登入暫時有點忙不過來…」），維持 `error` 狀態可在 LoginScreen 重試。
+  - 重新規格化的既有測試（非破壞，斷言的正是要修正的捏造行為）：`auth_service_test.dart` 原「Firebase 成功但後端不可達 → 用 uid 當隔離 key」「Google 成功但後端失敗 → mockFallback」兩測試，改寫為「正式帳號後端失敗 → 丟 `SessionApiException` 且不持久化」，並補 401/連線錯誤分支。
+  - 測試：`flutter analyze` 0 issue；`flutter test` 全綠 **464 passed**（基線 452 → 新增/改寫 auth 測試）。

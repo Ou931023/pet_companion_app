@@ -44,8 +44,9 @@ class AuthService {
 
   /// Email 登入：Firebase 驗證 → 拿 idToken 呼叫後端建立 session → 持久化。
   ///
-  /// Firebase 驗證失敗會丟 [EmailAuthException]（由上層轉白話）。後端 session
-  /// 失敗時 `createSession` 內部已回 mockFallback（不丟例外、不 crash）。
+  /// Firebase 驗證失敗會丟 [EmailAuthException]（由上層轉白話）。CR-0037 起，
+  /// 後端 session 失敗（non-2xx / timeout / 解析失敗）會丟 [SessionApiException]
+  /// （不再捏造 authenticated session），同樣由上層轉白話訊息並提供重試。
   Future<AuthSession> signInWithEmail({
     required String email,
     required String password,
@@ -94,7 +95,7 @@ class AuthService {
   /// session（provider='google'）→ 持久化。
   ///
   /// Google 驗證失敗 / 取消會丟 [GoogleAuthException]（由上層轉白話 / 柔性中止）。
-  /// 後端 session 失敗時 `createSession` 內部已回 mockFallback（不丟例外）。
+  /// CR-0037 起，後端 session 失敗會丟 [SessionApiException]（不再捏造 session）。
   Future<AuthSession> signInWithGoogle() async {
     final result = await _firebaseAuthService.signInWithGoogle();
     return _createSessionFromFirebase(result);
@@ -103,6 +104,10 @@ class AuthService {
   Future<AuthSession> _createSessionFromFirebase(
     FirebaseSignInResult result,
   ) async {
+    // CR-0037：正式帳號（email/google/apple）後端失敗時，createSession 會丟
+    // [SessionApiException]——**不再**在後端失敗時用 Firebase uid 捏造一個
+    // 「後端從未驗證」的 authenticated session。失敗會往上拋，由 AuthController
+    // 轉白話錯誤＋讓使用者在登入頁重試（§5 網路中斷要清楚告知並可重連）。
     final session = await _sessionApiService.createSession(
       firebaseUid: result.uid,
       idToken: result.idToken,
@@ -113,18 +118,7 @@ class AuthService {
     );
     // CR-0009：標記為正式登入（email/google）→ 下游用 session.elderId 隔離，
     // 即使後端在 mock 模式回 authMode='mock' 也能依登入方式正確判斷。
-    var stamped = session.copyWith(provider: result.provider);
-
-    // 後端不可達時（例如實機連不到 127.0.0.1 的後端）createSession 會回
-    // mockFallback（elderId/userId = 'default_user'）。正式帳號**不該**落在
-    // default_user（會和其他帳號 + Demo 共用本機資料），所以改用 Firebase uid
-    // 當穩定且每帳號唯一的隔離 key，確保不依賴後端也能正確隔離。
-    final needsLocalId = stamped.elderId.isEmpty ||
-        stamped.elderId == AuthSession.fallbackUserId;
-    if (needsLocalId && result.uid.isNotEmpty) {
-      stamped = stamped.copyWith(elderId: result.uid, userId: result.uid);
-    }
-
+    final stamped = session.copyWith(provider: result.provider);
     await persist(stamped);
     return stamped;
   }

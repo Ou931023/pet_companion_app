@@ -6,12 +6,36 @@ import 'package:http/http.dart' as http;
 import '../../config/app_config.dart';
 import '../../models/auth_session.dart';
 
+/// 後端建立 session 失敗時、針對**正式帳號（email/google/apple）**丟出的
+/// typed 例外。
+///
+/// CR-0037：正式帳號不可在後端失敗時被捏造成「已登入」。失敗會丟此例外，
+/// 由上層（`AuthController`）轉成長者看得懂的白話訊息並提供重試。
+///
+/// [code] 為可分類的錯誤類別，**不含任何後端原文或工程細節**：
+/// - `network`：連線不到後端 / timeout（裝置網路問題）。
+/// - `server`：後端回非 2xx（5xx 等）或回應格式不正確。
+/// - `invalid_token`：後端回 401（登入憑證已失效，需重新登入）。
+class SessionApiException implements Exception {
+  const SessionApiException(this.code);
+
+  /// 'network' | 'server' | 'invalid_token'。
+  final String code;
+
+  @override
+  String toString() => 'SessionApiException(code: $code)';
+}
+
 /// 呼叫後端 `POST /api/auth/session` 建立 / 取回 session 的 HTTP 服務。
 ///
-/// 設計原則（CR-0006 Batch 3a）：
+/// 設計原則（CR-0006 Batch 3a，CR-0037 修正）：
 /// - 只負責一次 HTTP 往返，不持有任何登入狀態。
-/// - **任何失敗都不丟例外**：非 2xx、連線錯誤、JSON 解析失敗，
-///   一律回 [AuthSession.mockFallback]，確保 Demo 不被後端問題擋住。
+/// - **provider-aware 失敗處理**：
+///   - `provider == 'mock'`（Demo）：任何失敗一律回 [AuthSession.mockFallback]，
+///     確保 Demo 不被後端問題擋住（行為與 CR-0006 相同）。
+///   - 正式帳號（email/google/apple）：後端 non-2xx / timeout / 解析失敗時，
+///     **不再捏造 authenticated session**，改丟 [SessionApiException]
+///     （帶可分類 code），由上層轉白話錯誤＋重試。
 /// - HTTP client 可注入，方便用 `package:http/testing.dart` 的 MockClient 測試。
 class SessionApiService {
   SessionApiService({http.Client? client})
@@ -37,6 +61,9 @@ class SessionApiService {
     required String provider,
     String? photoUrl,
   }) async {
+    // Demo 路徑（provider == 'mock'）保留原本「任何失敗都回 fallback」行為；
+    // 正式帳號路徑改丟 typed 例外，不捏造 session。
+    final isDemo = provider == 'mock';
     try {
       final response = await _client
           .post(
@@ -54,23 +81,46 @@ class SessionApiService {
           .timeout(_timeout);
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        debugPrint(
-          '[AUTH_SESSION] non-2xx response: ${response.statusCode}, '
-          '改用 demo fallback session。',
+        if (isDemo) {
+          debugPrint(
+            '[AUTH_SESSION] non-2xx response: ${response.statusCode}, '
+            '改用 demo fallback session。',
+          );
+          return AuthSession.mockFallback();
+        }
+        // 正式帳號：401 視為登入憑證失效（需重新登入），其餘非 2xx 視為 server。
+        debugPrint('[AUTH_SESSION] non-2xx response: ${response.statusCode}（正式帳號，丟例外）。');
+        throw SessionApiException(
+          response.statusCode == 401 ? 'invalid_token' : 'server',
         );
-        return AuthSession.mockFallback();
       }
 
       final decoded = jsonDecode(response.body);
       if (decoded is! Map<String, dynamic> || decoded['success'] != true) {
-        debugPrint('[AUTH_SESSION] backend 回應非成功格式，改用 demo fallback session。');
-        return AuthSession.mockFallback();
+        if (isDemo) {
+          debugPrint('[AUTH_SESSION] backend 回應非成功格式，改用 demo fallback session。');
+          return AuthSession.mockFallback();
+        }
+        debugPrint('[AUTH_SESSION] backend 回應非成功格式（正式帳號，丟例外）。');
+        throw const SessionApiException('server');
       }
       return AuthSession.fromJson(decoded);
+    } on SessionApiException {
+      rethrow;
+    } on FormatException {
+      // JSON 解析失敗：後端回了非預期內容。
+      if (isDemo) {
+        debugPrint('[AUTH_SESSION] 解析失敗，改用 demo fallback session。');
+        return AuthSession.mockFallback();
+      }
+      throw const SessionApiException('server');
     } catch (error) {
-      // 含 timeout / 連線錯誤 / JSON 解析失敗：吞掉，回 fallback。
-      debugPrint('[AUTH_SESSION] createSession 失敗，改用 demo fallback session：$error');
-      return AuthSession.mockFallback();
+      // timeout / 連線錯誤等。
+      if (isDemo) {
+        debugPrint('[AUTH_SESSION] createSession 失敗，改用 demo fallback session：$error');
+        return AuthSession.mockFallback();
+      }
+      throw const SessionApiException('network');
     }
   }
 

@@ -428,24 +428,66 @@ void main() {
     );
   });
 
-  test('Firebase 成功但後端不可達 → 用 Firebase uid 當隔離 key（不落 default_user）',
+  // CR-0037（重新規格化）：原本此測試斷言「後端 500 → 用 Firebase uid 捏造一個
+  // authenticated session（authMode=mock、elderId=fb-uid）」。正式版不可在後端
+  // 未驗證下捏造登入，改為「正式帳號後端失敗 → 丟 SessionApiException 且不持久化」。
+  test('Firebase 成功但後端 5xx → 丟 SessionApiException(server)、不捏造 session、不持久化',
       () async {
     final service = AuthService(
-      // 後端 500 → createSession 內部回 mockFallback（elderId=default_user）。
       sessionApiService: SessionApiService(
         client: MockClient((request) async => http.Response('err', 500)),
       ),
       firebaseAuthService: _FakeFirebaseAuthService(result: _firebaseResult),
     );
 
-    final session =
-        await service.signInWithEmail(email: 'grandma@example.com', password: 'secret1');
+    await expectLater(
+      service.signInWithEmail(email: 'grandma@example.com', password: 'secret1'),
+      throwsA(
+        isA<SessionApiException>().having((e) => e.code, 'code', 'server'),
+      ),
+    );
+    // 沒有捏造的 session 被持久化。
+    expect(await service.restoreSession(), isNull);
+  });
 
-    expect(session.authMode, 'mock');
-    // CR-0009：正式帳號不可落在 default_user，改用 Firebase uid 隔離。
-    expect(session.elderId, 'fb-uid-1');
-    expect(session.userId, 'fb-uid-1');
-    expect(session.provider, 'email');
+  test('Firebase 成功但後端 401 → 丟 SessionApiException(invalid_token)、不持久化',
+      () async {
+    final service = AuthService(
+      sessionApiService: SessionApiService(
+        client: MockClient(
+          (request) async => http.Response('invalid_id_token', 401),
+        ),
+      ),
+      firebaseAuthService: _FakeFirebaseAuthService(result: _firebaseResult),
+    );
+
+    await expectLater(
+      service.signInWithEmail(email: 'grandma@example.com', password: 'secret1'),
+      throwsA(
+        isA<SessionApiException>().having((e) => e.code, 'code', 'invalid_token'),
+      ),
+    );
+    expect(await service.restoreSession(), isNull);
+  });
+
+  test('Firebase 成功但後端連線錯誤 → 丟 SessionApiException(network)、不持久化',
+      () async {
+    final service = AuthService(
+      sessionApiService: SessionApiService(
+        client: MockClient((request) async {
+          throw const _FakeSocketException();
+        }),
+      ),
+      firebaseAuthService: _FakeFirebaseAuthService(result: _firebaseResult),
+    );
+
+    await expectLater(
+      service.signInWithEmail(email: 'grandma@example.com', password: 'secret1'),
+      throwsA(
+        isA<SessionApiException>().having((e) => e.code, 'code', 'network'),
+      ),
+    );
+    expect(await service.restoreSession(), isNull);
   });
 
   test('signInWithGoogle 成功 → 帶 idToken 與 provider=google 呼叫後端並回 session',
@@ -539,7 +581,9 @@ void main() {
     );
   });
 
-  test('Google 成功但後端失敗 → mockFallback、不 crash', () async {
+  // CR-0037（重新規格化）：原本此測試斷言「Google 成功但後端失敗 → mockFallback
+  // （用 Firebase uid 捏造 authenticated session）」。正式版改為丟例外、不捏造。
+  test('Google 成功但後端失敗 → 丟 SessionApiException(server)、不持久化', () async {
     final service = AuthService(
       sessionApiService: SessionApiService(
         client: MockClient((request) async => http.Response('err', 500)),
@@ -547,12 +591,18 @@ void main() {
       firebaseAuthService: _FakeFirebaseAuthService(googleResult: _googleResult),
     );
 
-    final session = await service.signInWithGoogle();
-
-    expect(session.authMode, 'mock');
-    // CR-0009：正式帳號不可落在 default_user，改用 Firebase uid 隔離。
-    expect(session.elderId, 'fb-uid-g');
-    expect(session.userId, 'fb-uid-g');
-    expect(session.provider, 'google');
+    await expectLater(
+      service.signInWithGoogle(),
+      throwsA(
+        isA<SessionApiException>().having((e) => e.code, 'code', 'server'),
+      ),
+    );
+    expect(await service.restoreSession(), isNull);
   });
+}
+
+class _FakeSocketException implements Exception {
+  const _FakeSocketException();
+  @override
+  String toString() => 'Connection refused';
 }

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../models/auth_session.dart';
 import '../services/auth/auth_service.dart';
 import '../services/auth/firebase_auth_service.dart';
+import '../services/auth/session_api_service.dart';
 
 /// 登入流程的狀態機。
 enum AuthStatus {
@@ -150,6 +151,11 @@ class AuthController extends ChangeNotifier {
         _errorMessage = _friendlyGoogleError(error.code);
         _setStatus(AuthStatus.error);
       }
+    } on SessionApiException catch (error) {
+      // CR-0037：Google 驗證成功但後端建立 session 失敗 → 白話錯誤＋可重試，
+      // 不捏造登入。
+      _errorMessage = _friendlySessionError(error.code);
+      _setStatus(AuthStatus.error);
     } catch (error) {
       debugPrint('[AUTH] google 登入失敗：$error');
       _errorMessage = _friendlyGoogleError('unknown');
@@ -200,10 +206,30 @@ class AuthController extends ChangeNotifier {
     } on EmailAuthException catch (error) {
       _errorMessage = _friendlyEmailError(error.code);
       _setStatus(AuthStatus.error);
+    } on SessionApiException catch (error) {
+      // CR-0037：Firebase 驗證成功但後端建立 session 失敗 → 白話錯誤＋可重試，
+      // 不捏造登入。
+      _errorMessage = _friendlySessionError(error.code);
+      _setStatus(AuthStatus.error);
     } catch (error) {
       debugPrint('[AUTH] email auth 失敗：$error');
       _errorMessage = _friendlyEmailError('unknown');
       _setStatus(AuthStatus.error);
+    }
+  }
+
+  /// CR-0037：後端建立 session 失敗的 code → 長者看得懂的白話訊息。
+  /// **絕不**顯示 SessionApiException / 後端原文。`invalid_token`（憑證失效）
+  /// 與一般 server / network 區分，引導使用者重新登入。
+  String _friendlySessionError(String code) {
+    switch (code) {
+      case 'invalid_token':
+        return '登入的資料好像過期了，請重新登入一次好嗎？';
+      case 'network':
+        return '現在網路好像不太穩，待會再試一次好嗎？';
+      case 'server':
+      default:
+        return '登入暫時有點忙不過來，待會再試一次好嗎？';
     }
   }
 

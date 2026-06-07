@@ -416,6 +416,63 @@ void main() {
       expect(controller.status, AuthStatus.error);
       expect(controller.errorMessage, '現在連線不太順，待會再試一次好嗎？');
     });
+
+    test('CR-0037：後端 5xx（SessionApiException server）→ error 白話、可重試、不露原文',
+        () async {
+      final controller = AuthController(
+        authService: _StubEmailAuthService(
+          error: const SessionApiException('server'),
+        ),
+      );
+
+      await controller.signInWithEmail(
+        email: 'grandma@example.com',
+        password: 'secret1',
+      );
+
+      expect(controller.status, AuthStatus.error);
+      expect(controller.errorMessage, '登入暫時有點忙不過來，待會再試一次好嗎？');
+      expect(controller.errorMessage, isNot(contains('SessionApiException')));
+      expect(controller.errorMessage, isNot(contains('server')));
+      // error 狀態非死路：未被當成已登入。
+      expect(controller.isAuthenticated, false);
+    });
+
+    test('CR-0037：後端 401（SessionApiException invalid_token）→ 引導重新登入',
+        () async {
+      final controller = AuthController(
+        authService: _StubEmailAuthService(
+          error: const SessionApiException('invalid_token'),
+        ),
+      );
+
+      await controller.signInWithEmail(
+        email: 'grandma@example.com',
+        password: 'secret1',
+      );
+
+      expect(controller.status, AuthStatus.error);
+      expect(controller.errorMessage, contains('重新登入'));
+      expect(controller.errorMessage, isNot(contains('invalid_token')));
+      expect(controller.isAuthenticated, false);
+    });
+
+    test('CR-0037：後端連線問題（SessionApiException network）→ 網路白話訊息',
+        () async {
+      final controller = AuthController(
+        authService: _StubEmailAuthService(
+          error: const SessionApiException('network'),
+        ),
+      );
+
+      await controller.signInWithEmail(
+        email: 'grandma@example.com',
+        password: 'secret1',
+      );
+
+      expect(controller.status, AuthStatus.error);
+      expect(controller.errorMessage, '現在網路好像不太穩，待會再試一次好嗎？');
+    });
   });
 
   group('Email 註冊不自動登入（CR-0006 Batch 4d）', () {
@@ -504,6 +561,22 @@ void main() {
 
       expect(controller.status, AuthStatus.error);
       expect(controller.errorMessage, '現在連線不太順，待會再試一次好嗎？');
+    });
+
+    test('CR-0037：Google 驗證成功但後端失敗 → error 白話、可重試、不捏造登入',
+        () async {
+      final controller = AuthController(
+        authService: _StubEmailAuthService(
+          googleError: const SessionApiException('server'),
+        ),
+      );
+
+      await controller.signInWithGoogle();
+
+      expect(controller.status, AuthStatus.error);
+      expect(controller.errorMessage, '登入暫時有點忙不過來，待會再試一次好嗎？');
+      expect(controller.errorMessage, isNot(contains('SessionApiException')));
+      expect(controller.isAuthenticated, false);
     });
   });
 }
