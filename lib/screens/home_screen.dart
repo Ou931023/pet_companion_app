@@ -257,6 +257,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               KeyedSubtree(
                                 key: coachKeys.statusKey,
                                 child: PetStatusPanel(
+                                  petName: profileController.petName,
                                   intimacy: petStatsController.intimacy,
                                   fullness: petStatsController.fullness,
                                   moodValue: petStatsController.moodValue,
@@ -525,6 +526,12 @@ class _HomeScreenState extends State<HomeScreen> {
     FocusScope.of(context).unfocus();
     _messageController.clear();
     conversationController.clearDraftText();
+    // 若語音 Realtime 正在連線中，打字直接注入同一個 live 對話（寵物用語音回覆）；
+    // 沒在語音中（回傳 false）才走原本的打字回覆路徑，兩者共用同一份對話紀錄。
+    final voiceAgentController = context.read<VoiceAgentController>();
+    if (await voiceAgentController.sendTextDuringRealtime(normalized)) {
+      return;
+    }
     await conversationController.quickAction(normalized);
   }
 

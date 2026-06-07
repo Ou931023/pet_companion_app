@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../controllers/auth_controller.dart';
+import '../widgets/auth/auth_visuals.dart';
 
 /// 註冊頁（CR-0006 Batch 3b UI / Batch 4b 接上 Email 註冊）。
 ///
 /// 長者友善：大字、大按鈕、溫暖語氣。**註冊頁只做 Email 註冊**；Google / Apple
 /// 綁定統一放在最前面的登入頁，這裡不重複（CR-0009 後續調整）。Email 註冊成功
 /// 後不自動登入，會提示「請用 Email 登入」並返回登入頁。
+///
+/// 視覺重設計：沿用登入頁的暖色背景，表單收進白色圓角卡片，輸入框高度統一、
+/// 圓角柔和；「建立帳號」主按鈕固定在安全區上方。登入 / 註冊邏輯一字未動。
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key, this.onBackToLogin});
 
@@ -120,29 +124,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            const pagePadding = EdgeInsets.fromLTRB(24, 24, 24, 24);
-            final minContentHeight =
-                (constraints.maxHeight - pagePadding.vertical)
-                    .clamp(0.0, double.infinity);
-
-            return SingleChildScrollView(
-              padding: pagePadding,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: minContentHeight),
-                child: IntrinsicHeight(
+      backgroundColor: Colors.transparent,
+      body: AuthGradientBackground(
+        child: SafeArea(
+          child: Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 8),
                       const Text(
                         '建立你的帳號，紀錄好好保存',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontSize: 30,
-                          fontWeight: FontWeight.w800,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w700,
                           height: 1.3,
                         ),
                       ),
@@ -151,34 +150,46 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         '綁定一個常用的帳號，下次回來陪伴的點滴都還在。',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontSize: 20,
-                          height: 1.4,
-                          color: Colors.grey.shade700,
+                          fontSize: 18,
+                          height: 1.5,
+                          color: Colors.black.withValues(alpha: 0.6),
                         ),
                       ),
-                      const SizedBox(height: 28),
-                      _buildField(
-                        controller: _emailController,
-                        label: 'Email',
-                        icon: Icons.email_outlined,
-                        keyboardType: TextInputType.emailAddress,
+                      const SizedBox(height: 24),
+                      AuthCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            AuthTextField(
+                              controller: _emailController,
+                              label: 'Email',
+                              icon: Icons.email_outlined,
+                              enabled: !_isBusy,
+                              keyboardType: TextInputType.emailAddress,
+                              textInputAction: TextInputAction.next,
+                            ),
+                            const SizedBox(height: 14),
+                            AuthTextField(
+                              controller: _passwordController,
+                              label: '密碼（至少 6 個字）',
+                              icon: Icons.lock_outline,
+                              obscure: true,
+                              enabled: !_isBusy,
+                              textInputAction: TextInputAction.next,
+                            ),
+                            const SizedBox(height: 14),
+                            AuthTextField(
+                              controller: _confirmController,
+                              label: '再輸入一次密碼',
+                              icon: Icons.lock_outline,
+                              obscure: true,
+                              enabled: !_isBusy,
+                              textInputAction: TextInputAction.done,
+                              onSubmitted: (_) => _handleRegister(),
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 14),
-                      _buildField(
-                        controller: _passwordController,
-                        label: '密碼（至少 6 個字）',
-                        icon: Icons.lock_outline,
-                        obscure: true,
-                      ),
-                      const SizedBox(height: 14),
-                      _buildField(
-                        controller: _confirmController,
-                        label: '再輸入一次密碼',
-                        icon: Icons.lock_outline,
-                        obscure: true,
-                      ),
-                      const SizedBox(height: 20),
-                      _buildRegisterButton(),
                       const SizedBox(height: 16),
                       Text(
                         '想用 Google 或 Apple？回上一頁就能綁定。',
@@ -186,61 +197,43 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         style: TextStyle(
                           fontSize: 16,
                           height: 1.4,
-                          color: Colors.grey.shade600,
+                          color: Colors.black.withValues(alpha: 0.5),
                         ),
                       ),
-                      const Spacer(),
-                      SizedBox(
-                        width: double.infinity,
-                        child: TextButton(
-                          onPressed: _isBusy ? null : widget.onBackToLogin,
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                          ),
-                          child: const Text(
-                            '返回登入',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
                     ],
                   ),
                 ),
               ),
-            );
-          },
+              _buildBottomBar(),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildField({
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
-    bool obscure = false,
-    TextInputType? keyboardType,
-  }) {
-    return TextField(
-      controller: controller,
-      enabled: !_isBusy,
-      obscureText: obscure,
-      keyboardType: keyboardType,
-      autocorrect: false,
-      style: const TextStyle(fontSize: 20),
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: const TextStyle(fontSize: 18),
-        prefixIcon: Icon(icon, size: 26),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-        ),
+  /// 固定在安全區上方的底部操作列：主按鈕「建立帳號」+ 次要「返回登入」。
+  Widget _buildBottomBar() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(24, 12, 24, 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildRegisterButton(),
+          SizedBox(
+            width: double.infinity,
+            child: TextButton(
+              onPressed: _isBusy ? null : widget.onBackToLogin,
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              child: const Text(
+                '返回登入',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -253,7 +246,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         style: ElevatedButton.styleFrom(
           padding: const EdgeInsets.symmetric(vertical: 18),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(18),
           ),
         ),
         child: _isSubmitting
@@ -267,7 +260,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               )
             : const Text(
                 '建立帳號',
-                style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
               ),
       ),
     );

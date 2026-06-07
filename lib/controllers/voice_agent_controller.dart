@@ -586,32 +586,6 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       turnId: turnId,
     );
     _startTimeout(RealtimeTimeoutType.responseTimeout, turnId: turnId);
-    final routing = agentToolController?.routeFromUserText(
-      transcript,
-      sessionId: conversationController.activeSessionId,
-      turnId: turnId,
-      petName: profileController.petName,
-      emotion: _pendingRealtimeEmotion,
-      languageHint: _currentLanguageRoute.languageHint.value,
-      petState: {
-        'mood': petController.mood,
-        'expression': petController.expression,
-        'intimacy': petStatsController.intimacy,
-        'hunger': petStatsController.fullness,
-        'energy': petStatsController.moodValue,
-      },
-      recentTurns: conversationController.history.take(4).map((turn) {
-        return {
-          'userText': turn.userText,
-          'petReply': turn.petReply,
-          'emotionTag': turn.emotionTag,
-        };
-      }).toList(),
-    );
-    if (routing != null) {
-      // 工具（找新聞 / 播音樂等）執行完，讓寵物用語音把結果念出來（避免「沒聽懂」感）。
-      unawaited(routing.then((_) => _maybeSpeakToolOutcome()));
-    }
     unawaited(_analyzeCompanionTranscript(transcript, turnId));
 
     final navigationIntent = navigationService.detect(transcript);
@@ -638,11 +612,9 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
       return;
     }
-    if (conversationController.shouldHandleAsLocalCommand(transcript)) {
-      unawaited(_handleLocalRealtimeCommand(transcript, turnId));
-      // Fall through: let OpenAI realtime speak the reply, while the local
-      // toolRouter quietly applies the action's side-effects in parallel.
-    }
+    // 工具路由（本地指令 XOR 後端 agent；含查詢結果語音回應）。主流程與「寵物回覆中擷取」
+    // 共用同一條，確保不論何時說指令都會被理解與執行。Fall through：Realtime 仍照常回覆。
+    _routeToolsForTranscript(transcript, turnId);
     final renameResult = _tryHandleRenameIntent(transcript);
     _emotion = detectEmotion(transcript);
     debugPrint('[EMOTION] text=$transcript emotion=${_emotion.name}');
@@ -697,9 +669,14 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _handleLocalRealtimeCommand(String text, String turnId) async {
     try {
-      // Execute the toolRouter side-effects silently (check-in, settings, etc.)
-      // — no pet bubble, no TTS — so OpenAI realtime stays the only speaker.
-      await conversationController.toolRouter.route(text);
+      // 本地工具路由（簽到 / 設定 / 找新聞 / 查資訊…）。
+      final result = await conversationController.toolRouter.route(text);
+      // 需要把結果說給使用者聽的工具（找新聞 / 查資訊等 shouldSpeak=true）→ 用寵物的
+      // 聲音把結果念出來，使用者才知道有查到（不再「沒聽懂」）。speakToolOutcome 會等
+      // 寵物把當下回覆講完再念，不會與正在播放的回覆撞在一起。
+      if (result.shouldSpeak && result.message.trim().isNotEmpty) {
+        unawaited(realtimeVoiceService.speakToolOutcome(result.message.trim()));
+      }
     } catch (_) {}
   }
 
@@ -743,10 +720,53 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     debugPrint(
       '[VOICE_TURN] capture user final during pet reply turn=$turnId text="$transcript"',
     );
+    // 指令也可能在寵物還在回覆時說出來（例如「幫我找新聞」）。先前這條路徑只做情緒分析、
+    // 不判斷工具，導致使用者覺得「沒聽懂」。這裡也跑一次工具路由 + 語音回應，讓「不管何時
+    // 說指令都聽得懂」。純附加，不改語音狀態機、不打斷正在播放的回覆。
+    _routeToolsForTranscript(transcript, turnId);
     unawaited(
       _analyzeCompanionTranscript(transcript, turnId, applyPetState: false),
     );
     notifyListeners();
+  }
+
+  /// 對一句使用者轉錄做「工具路由 + 語音回應」：
+  /// - 後端 agent 路由（播音樂 / 打電話 / 查詢…）→ 完成後用語音念出結果 / 確認問句。
+  /// - 本地指令路由（簽到 / 設定 / 找新聞 / 查資訊…）→ 需要時用語音念出結果。
+  /// 主流程與「寵物回覆中擷取」路徑共用，確保不管何時說指令都會被理解與執行。
+  void _routeToolsForTranscript(String transcript, String turnId) {
+    // 本地能處理（簽到 / 設定 / 找新聞 / 查資訊…）就走本地，並念出結果；走本地就不再
+    // 交給後端 agent，避免同一個指令被執行兩次（重複查 / 重複念）。
+    if (conversationController.shouldHandleAsLocalCommand(transcript)) {
+      unawaited(_handleLocalRealtimeCommand(transcript, turnId));
+      return;
+    }
+    // 其餘（播音樂 / 打電話 / 其他工具）交給後端 agent 路由，完成後用語音念出結果或確認問句。
+    final routing = agentToolController?.routeFromUserText(
+      transcript,
+      sessionId: conversationController.activeSessionId,
+      turnId: turnId,
+      petName: profileController.petName,
+      emotion: _pendingRealtimeEmotion,
+      languageHint: _currentLanguageRoute.languageHint.value,
+      petState: {
+        'mood': petController.mood,
+        'expression': petController.expression,
+        'intimacy': petStatsController.intimacy,
+        'hunger': petStatsController.fullness,
+        'energy': petStatsController.moodValue,
+      },
+      recentTurns: conversationController.history.take(4).map((turn) {
+        return {
+          'userText': turn.userText,
+          'petReply': turn.petReply,
+          'emotionTag': turn.emotionTag,
+        };
+      }).toList(),
+    );
+    if (routing != null) {
+      unawaited(routing.then((_) => _maybeSpeakToolOutcome()));
+    }
   }
 
   Future<void> _analyzeCompanionTranscript(

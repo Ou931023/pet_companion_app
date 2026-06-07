@@ -95,16 +95,22 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
   }
 
-  testWidgets('顯示溫暖標題、Demo 主按鈕與 Email 登入區', (tester) async {
+  testWidgets('顯示主視覺標題、Demo 備援按鈕與可展開的 Email 登入區', (tester) async {
     useTallView(tester);
     final controller = AuthController(authService: _FakeAuthService());
     await _pumpLogin(tester, controller);
 
-    expect(find.text('歡迎回來，陪伴一直都在'), findsOneWidget);
+    expect(find.text('你的陪伴夥伴正在等你'), findsOneWidget);
     expect(find.text('先進去陪伴'), findsOneWidget); // Demo 仍保留且明顯
     expect(find.text('用 Email 登入'), findsOneWidget);
-    // Email / 密碼 兩個輸入框
+    // 預設收合：尚未點開「用 Email 登入」時不顯示輸入框（畫面先呈現寵物與登入選項）。
+    expect(find.byType(TextField), findsNothing);
+
+    // 點「用 Email 登入」展開 Email / 密碼欄位與「登入」按鈕。
+    await tester.tap(find.text('用 Email 登入'));
+    await tester.pumpAndSettle();
     expect(find.byType(TextField), findsNWidgets(2));
+    expect(find.text('登入'), findsOneWidget);
   });
 
   testWidgets('點主按鈕成功登入會轉為 authenticated 並呼叫 onSignedIn', (tester) async {
@@ -163,9 +169,11 @@ void main() {
     var signedIn = false;
     await _pumpLogin(tester, controller, onSignedIn: () => signedIn = true);
 
+    await tester.tap(find.text('用 Email 登入'));
+    await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).at(0), 'grandma@example.com');
     await tester.enterText(find.byType(TextField).at(1), 'secret1');
-    await tester.tap(find.text('用 Email 登入'));
+    await tester.tap(find.text('登入'));
     await tester.pumpAndSettle();
 
     expect(controller.status, AuthStatus.authenticated);
@@ -178,6 +186,8 @@ void main() {
     await _pumpLogin(tester, controller);
 
     await tester.tap(find.text('用 Email 登入'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('登入'));
     await tester.pumpAndSettle();
 
     expect(find.text('請先填一下 Email 喔。'), findsOneWidget);
@@ -193,9 +203,11 @@ void main() {
     );
     await _pumpLogin(tester, controller);
 
+    await tester.tap(find.text('用 Email 登入'));
+    await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).at(0), 'grandma@example.com');
     await tester.enterText(find.byType(TextField).at(1), 'bad');
-    await tester.tap(find.text('用 Email 登入'));
+    await tester.tap(find.text('登入'));
     await tester.pumpAndSettle();
 
     expect(controller.status, AuthStatus.error);
@@ -268,28 +280,28 @@ void main() {
     expect(find.textContaining('Exception'), findsNothing);
   });
 
-  testWidgets('點「建立帳號」會呼叫 onRegister', (tester) async {
+  testWidgets('點「開始陪伴生活」會呼叫 onRegister', (tester) async {
     useTallView(tester);
     final controller = AuthController(authService: _FakeAuthService());
     var registerTapped = false;
     await _pumpLogin(tester, controller, onRegister: () => registerTapped = true);
 
-    await tester.tap(find.text('建立帳號'));
+    await tester.tap(find.text('開始陪伴生活'));
     await tester.pump();
 
     expect(registerTapped, isTrue);
   });
 
-  testWidgets('正式模式（showDemoLogin=false）：無測試感按鈕，主視覺為 Google/Email/建立帳號',
+  testWidgets('正式模式（showDemoLogin=false）：無測試感按鈕，主視覺為 Google/Email/建立帳號入口',
       (tester) async {
     useTallView(tester);
     final controller = AuthController(authService: _FakeAuthService());
     await _pumpLogin(tester, controller, showDemoLogin: false);
 
-    // 主視覺：Google 登入 / Email 登入 / 建立帳號
+    // 主視覺：Google 登入 / Email 登入 / 建立帳號入口
     expect(find.text('用 Google 登入'), findsOneWidget);
     expect(find.text('用 Email 登入'), findsOneWidget);
-    expect(find.text('建立帳號'), findsOneWidget);
+    expect(find.text('開始陪伴生活'), findsOneWidget);
 
     // 不出現測試感字樣 / Demo 按鈕。
     expect(find.text('先進去陪伴'), findsNothing);

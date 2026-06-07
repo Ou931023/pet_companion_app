@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'ui/section_card.dart';
+
 class PetStatusPanel extends StatelessWidget {
   const PetStatusPanel({
     super.key,
@@ -7,15 +9,28 @@ class PetStatusPanel extends StatelessWidget {
     required this.fullness,
     required this.moodValue,
     required this.isDead,
+    this.petName = '寵物',
   });
 
   final int intimacy;
   final int fullness;
   final int moodValue;
   final bool isDead;
+  final String petName;
+
+  /// 依目前寵物狀態組一句生活化的白話說明（純呈現，不更動任何寵物狀態邏輯）。
+  String _statusDescription() {
+    if (isDead) return '$petName正在沉睡，餵牠喝復活藥水就會醒來。';
+    if (fullness < 30) return '$petName肚子有點餓了，找點東西餵餵牠吧。';
+    if (moodValue < 30) return '$petName今天有點沒精神，多陪牠說說話。';
+    if (intimacy >= 65 && moodValue >= 60) return '$petName今天精神不錯，想和你聊聊天。';
+    return '$petName就在這裡，靜靜陪著你。';
+  }
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final accent = isDead ? Colors.grey.shade600 : scheme.primary;
     Widget item({
       required IconData icon,
       required String label,
@@ -32,36 +47,60 @@ class PetStatusPanel extends StatelessWidget {
       );
     }
 
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: isDead ? Colors.grey.shade300 : Colors.green.shade50,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: isDead ? Colors.grey.shade400 : Colors.green.shade100,
-        ),
-      ),
+    return SectionCard(
+      padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(
-                isDead ? Icons.bedtime : Icons.favorite,
-                size: 18,
-                color: isDead ? Colors.grey.shade700 : Colors.green.shade700,
+              Container(
+                width: 40,
+                height: 40,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isDead ? Icons.bedtime : Icons.spa,
+                  size: 22,
+                  color: accent,
+                ),
               ),
-              const SizedBox(width: 6),
-              Text(
-                isDead ? '沉睡中' : '陪伴中',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '$petName的狀態',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _statusDescription(),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        height: 1.3,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Row(
             children: [
               item(

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:pet_companion_app/controllers/app_navigation_controller.dart';
+import 'package:pet_companion_app/controllers/auth_controller.dart';
 import 'package:pet_companion_app/controllers/check_in_controller.dart';
 import 'package:pet_companion_app/controllers/conversation_controller.dart';
 import 'package:pet_companion_app/controllers/inventory_controller.dart';
@@ -292,34 +293,161 @@ void main() {
     harness.dispose();
   });
 
-  testWidgets('設定頁有「重新觀看新手導覽」入口，點擊會 replay 並切回首頁分頁',
+  testWidgets('設定頁有「重新觀看新手導覽」按鈕，點擊觸發 replay 並切回首頁',
       (tester) async {
-    // 高螢幕，讓設定頁長列表的「重新觀看新手導覽」入口可穩定捲到、點到。
-    await binding.setSurfaceSize(const Size(420, 2400));
-    addTearDown(() => binding.setSurfaceSize(null));
     final harness = await _HomeHarness.create();
     addTearDown(harness.dispose);
     final coachController = CoachMarkController();
     addTearDown(coachController.dispose);
-    // 先切到設定分頁，驗證點擊後會切回首頁(0)。
+
+    // 先切到非首頁分頁，確認點擊後會切回首頁（index 0）。
     harness.navigationController.selectShellIndex(3);
 
     await tester.pumpWidget(_settingsHostWithCoach(harness, coachController));
     await tester.pumpAndSettle();
 
-    final entry = find.widgetWithText(FilledButton, '重新觀看新手導覽');
-    expect(entry, findsOneWidget);
+    // 設定頁存在「重新觀看新手導覽」按鈕（在 ListView 下方，需捲動帶出）。
+    await tester.scrollUntilVisible(
+      find.text('重新觀看新手導覽'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('重新觀看新手導覽'), findsOneWidget);
     expect(coachController.replayRequested, isFalse);
 
-    await tester.ensureVisible(entry);
+    await tester.ensureVisible(find.text('重新觀看新手導覽'));
     await tester.pumpAndSettle();
-    await tester.tap(entry);
+    await tester.tap(find.widgetWithText(OutlinedButton, '重新觀看新手導覽'));
     await tester.pump();
 
-    // 點擊後：要求 replay + 切回首頁分頁（CoachMarkHost 會在首頁就緒後開始導覽）。
+    // 點擊後請求 replay，並切回首頁分頁（CoachMarkHost 會在首頁就緒後開始導覽）。
     expect(coachController.replayRequested, isTrue);
     expect(harness.navigationController.currentShellIndex, 0);
   });
+
+  testWidgets('設定頁「刪除帳號」需二次確認，第一關取消不會刪除', (tester) async {
+    final harness = await _HomeHarness.create();
+    addTearDown(harness.dispose);
+    final auth = AuthController();
+    addTearDown(auth.dispose);
+
+    await tester.pumpWidget(_settingsHostWithAuth(harness, auth));
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.widgetWithText(TextButton, '刪除帳號'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.ensureVisible(find.widgetWithText(TextButton, '刪除帳號'));
+    await tester.pumpAndSettle();
+
+    // 第一次確認對話框出現。
+    await tester.tap(find.widgetWithText(TextButton, '刪除帳號'));
+    await tester.pumpAndSettle();
+    expect(find.text('要刪除帳號嗎？'), findsOneWidget);
+
+    // 第一關按「取消」→ 不進入第二關、不刪除。
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(find.text('要刪除帳號嗎？'), findsNothing);
+    expect(find.text('最後確認'), findsNothing);
+  });
+
+  testWidgets('設定頁「刪除帳號」兩次都確定 → 觸發刪除並登出', (tester) async {
+    final harness = await _HomeHarness.create();
+    addTearDown(harness.dispose);
+    final auth = AuthController();
+    addTearDown(auth.dispose);
+
+    await tester.pumpWidget(_settingsHostWithAuth(harness, auth));
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.widgetWithText(TextButton, '刪除帳號'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.ensureVisible(find.widgetWithText(TextButton, '刪除帳號'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(TextButton, '刪除帳號'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('繼續'));
+    await tester.pumpAndSettle();
+
+    // 第二關「最後確認」。
+    expect(find.text('最後確認'), findsOneWidget);
+    await tester.tap(find.text('確定刪除'));
+    await tester.pumpAndSettle();
+
+    // 測試環境 Firebase 不可用 → deleteCurrentUser no-op，仍會清本機 session 並登出。
+    expect(auth.status, AuthStatus.unauthenticated);
+  });
+}
+
+Widget _settingsHostWithAuth(_HomeHarness harness, AuthController auth) {
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider<AuthController>.value(value: auth),
+      ChangeNotifierProvider<ProfileController>.value(
+        value: harness.profileController,
+      ),
+      ChangeNotifierProvider<PetController>.value(
+        value: harness.petController,
+      ),
+      ChangeNotifierProvider<ConversationController>.value(
+        value: harness.conversationController,
+      ),
+      ChangeNotifierProvider<VoiceAgentController>.value(
+        value: harness.voiceAgentController,
+      ),
+      Provider<RealtimeVoiceService>.value(
+        value: harness.realtimeVoiceService,
+      ),
+      Provider<CoachMarkKeys>(create: (_) => CoachMarkKeys()),
+    ],
+    child: const MaterialApp(
+      home: Scaffold(
+        body: SettingsScreen(),
+      ),
+    ),
+  );
+}
+
+Widget _settingsHostWithCoach(
+  _HomeHarness harness,
+  CoachMarkController coachController,
+) {
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider<ProfileController>.value(
+        value: harness.profileController,
+      ),
+      ChangeNotifierProvider<PetController>.value(
+        value: harness.petController,
+      ),
+      ChangeNotifierProvider<ConversationController>.value(
+        value: harness.conversationController,
+      ),
+      ChangeNotifierProvider<VoiceAgentController>.value(
+        value: harness.voiceAgentController,
+      ),
+      Provider<RealtimeVoiceService>.value(
+        value: harness.realtimeVoiceService,
+      ),
+      ChangeNotifierProvider<AppNavigationController>.value(
+        value: harness.navigationController,
+      ),
+      ChangeNotifierProvider<CoachMarkController>.value(value: coachController),
+      Provider<CoachMarkKeys>(create: (_) => CoachMarkKeys()),
+    ],
+    child: const MaterialApp(
+      home: Scaffold(
+        body: SettingsScreen(),
+      ),
+    ),
+  );
 }
 
 Future<void> _pumpHomeScreen(
@@ -419,43 +547,6 @@ Widget _settingsHost(_HomeHarness harness) {
       Provider<RealtimeVoiceService>.value(
         value: harness.realtimeVoiceService,
       ),
-      Provider<CoachMarkKeys>(create: (_) => CoachMarkKeys()),
-    ],
-    child: const MaterialApp(
-      home: Scaffold(
-        body: SettingsScreen(),
-      ),
-    ),
-  );
-}
-
-/// 設定頁 host，額外提供導覽 controller / 分頁 controller，讓「重新觀看新手導覽」
-/// 入口可被點擊並驗證（CR-0016b）。
-Widget _settingsHostWithCoach(
-  _HomeHarness harness,
-  CoachMarkController coachController,
-) {
-  return MultiProvider(
-    providers: [
-      ChangeNotifierProvider<ProfileController>.value(
-        value: harness.profileController,
-      ),
-      ChangeNotifierProvider<PetController>.value(
-        value: harness.petController,
-      ),
-      ChangeNotifierProvider<ConversationController>.value(
-        value: harness.conversationController,
-      ),
-      ChangeNotifierProvider<VoiceAgentController>.value(
-        value: harness.voiceAgentController,
-      ),
-      Provider<RealtimeVoiceService>.value(
-        value: harness.realtimeVoiceService,
-      ),
-      ChangeNotifierProvider<AppNavigationController>.value(
-        value: harness.navigationController,
-      ),
-      ChangeNotifierProvider<CoachMarkController>.value(value: coachController),
       Provider<CoachMarkKeys>(create: (_) => CoachMarkKeys()),
     ],
     child: const MaterialApp(

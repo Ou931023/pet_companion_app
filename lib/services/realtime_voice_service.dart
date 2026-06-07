@@ -155,6 +155,9 @@ class RealtimeVoiceService {
   bool _rendererReady = false;
   bool _isSpeaking = false;
   bool _hasActiveAssistantResponse = false;
+  // 工具結果（找新聞 / 播音樂…）要念的句子：若送來時還有 active response，先排隊，
+  // 等 response.done 再送，避免「同時只能一個 response」而被丟棄。
+  String? _pendingToolOutcomeLine;
   bool _isStopping = false;
   bool _isDisposed = false;
   bool _dataChannelOpen = false;
@@ -526,13 +529,24 @@ class RealtimeVoiceService {
   Future<void> speakToolOutcome(String line) async {
     final normalized = line.trim();
     if (normalized.isEmpty) return;
+    // Realtime 同時只能有一個 active response：若目前還在回覆中（例如剛說完「好的，幫你查」
+    // 那個 response 尚未結束），先把這句排隊，等 response.done 再送，避免被丟棄而「沒有後續」。
+    if (_hasActiveAssistantResponse) {
+      _pendingToolOutcomeLine = normalized;
+      _log('Tool outcome queued until current response finishes');
+      return;
+    }
+    await _sendToolOutcomeResponse(normalized);
+  }
+
+  Future<void> _sendToolOutcomeResponse(String line) async {
     try {
       await _sendEventPayload(jsonEncode({
         'type': 'response.create',
         'response': {
           'instructions':
               '請用溫暖、簡短、口語的方式對長輩說以下這件事，像剛幫他做完一樣自然，'
-                  '不要重複問問題、不要說自己是 AI：$normalized',
+                  '不要重複問問題、不要說自己是 AI：$line',
         },
       }));
       _log('Sent tool outcome to realtime session for spoken reply');
@@ -756,6 +770,13 @@ class RealtimeVoiceService {
       _hasActiveAssistantResponse = false;
       _emit(RealtimeEventType.assistantResponseDone, '');
       _emit(RealtimeEventType.assistantAudioEnd, '');
+      // 這一輪回覆結束後，若有排隊中的工具念稿（找新聞 / 播音樂結果），現在才送，
+      // 讓寵物接著用語音把結果講出來（避免與前一個 response 撞在一起被丟棄）。
+      final pendingTool = _pendingToolOutcomeLine;
+      if (pendingTool != null) {
+        _pendingToolOutcomeLine = null;
+        unawaited(_sendToolOutcomeResponse(pendingTool));
+      }
       // Turn-based「一人一句」：寵物這一輪講完後**不自動回 listening**。
       // 保留同一條 Realtime 連線（不關閉、不重建 SDP / DataChannel），由
       // VoiceAgentController 把狀態收回 idle，等使用者再次按鈕才開始說下一句。
@@ -939,6 +960,7 @@ class RealtimeVoiceService {
     _lastFinalTranscriptAt = null;
     _isSpeaking = false;
     _hasActiveAssistantResponse = false;
+    _pendingToolOutcomeLine = null;
     if (emitIdle) {
       _emit(RealtimeEventType.state, 'idle');
     }

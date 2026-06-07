@@ -5,14 +5,17 @@ import '../config/app_config.dart';
 import '../controllers/app_navigation_controller.dart';
 import '../controllers/auth_controller.dart';
 import '../routes/app_routes.dart';
-import '../utils/asset_paths.dart';
 import '../widgets/auth/auth_provider_button.dart';
+import '../widgets/auth/auth_visuals.dart';
 
 /// 登入頁。
 ///
-/// 長者友善：大字、大按鈕、溫暖語氣。正式展示主視覺為 **Google 登入 / Email
-/// 登入 / 建立帳號**；Demo 快速登入預設隱藏（正式截圖不露測試感按鈕），由
+/// 正式展示主視覺：先看到放大的陪伴寵物與溫暖文案，再呈現登入選項
+/// （Google / Apple / 用 Email 登入）。Email / 密碼欄位預設收合，點「用 Email 登入」
+/// 才展開，避免一開始就太像工具表單。Demo 快速登入預設隱藏，由
 /// `AppConfig.showDemoLoginButton`（或建構參數 [showDemoLogin]）控制，開發時可開啟。
+///
+/// 本次只調整 UI / UX 與文案；Google / Apple / Email 登入邏輯一字未動。
 class LoginScreen extends StatefulWidget {
   const LoginScreen({
     super.key,
@@ -24,7 +27,7 @@ class LoginScreen extends StatefulWidget {
   /// 登入成功（state=authenticated）後通知外層。
   final VoidCallback? onSignedIn;
 
-  /// 點「還沒有帳號？建立帳號」時通知外層切到註冊頁。
+  /// 點「還沒有帳號？開始陪伴生活」時通知外層切到註冊頁。
   final VoidCallback? onRegister;
 
   /// 是否顯示 Demo 快速登入（備援）。null → 沿用 [AppConfig.showDemoLoginButton]。
@@ -40,9 +43,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   bool _isSigningIn = false;
   bool _isEmailSubmitting = false;
   bool _isGoogleSubmitting = false;
+
+  /// Email / 密碼欄位是否已展開（點「用 Email 登入」後才出現）。
+  bool _emailExpanded = false;
 
   bool get _isBusy => _isSigningIn || _isEmailSubmitting || _isGoogleSubmitting;
 
@@ -50,6 +57,7 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -57,6 +65,20 @@ class _LoginScreenState extends State<LoginScreen> {
   /// 跨登入保留）。所以登入前先把 shell route 重置成首頁。
   void _resetShellToHome() {
     context.read<AppNavigationController>().navigateTo(AppRoute.home);
+  }
+
+  /// 點「用 Email 登入」：展開欄位，並把畫面捲到底讓欄位看得到。
+  void _expandEmail() {
+    if (_emailExpanded) return;
+    setState(() => _emailExpanded = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   Future<void> _handleQuickStart() async {
@@ -152,163 +174,202 @@ class _LoginScreenState extends State<LoginScreen> {
     final errorMessage =
         auth.status == AuthStatus.error ? auth.errorMessage : null;
     return Scaffold(
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            const pagePadding = EdgeInsets.fromLTRB(24, 24, 24, 24);
-            final minContentHeight =
-                (constraints.maxHeight - pagePadding.vertical)
-                    .clamp(0.0, double.infinity);
+      backgroundColor: Colors.transparent,
+      body: AuthGradientBackground(
+        child: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              const pagePadding = EdgeInsets.fromLTRB(24, 24, 24, 28);
+              final minContentHeight =
+                  (constraints.maxHeight - pagePadding.vertical)
+                      .clamp(0.0, double.infinity);
 
-            return SingleChildScrollView(
-              padding: pagePadding,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: minContentHeight),
-                child: IntrinsicHeight(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const SizedBox(height: 12),
-                      Center(
-                        child: Image.asset(
-                          AssetPaths.defaultRestImage,
-                          width: 180,
-                          height: 180,
-                          errorBuilder: (_, __, ___) => Container(
-                            width: 180,
-                            height: 180,
-                            alignment: Alignment.center,
-                            color: Colors.grey.shade200,
-                            child: const Icon(
-                              Icons.pets,
-                              size: 80,
-                              color: Colors.grey,
-                            ),
+              return SingleChildScrollView(
+                controller: _scrollController,
+                padding: pagePadding,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: minContentHeight),
+                  child: IntrinsicHeight(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const SizedBox(height: 8),
+                        const Center(child: AuthPetHero(size: 220)),
+                        const SizedBox(height: 20),
+                        const Text(
+                          '你的陪伴夥伴正在等你',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w700,
+                            height: 1.3,
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 24),
-                      const Text(
-                        '歡迎回來，陪伴一直都在',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 30,
-                          fontWeight: FontWeight.w800,
-                          height: 1.3,
+                        const SizedBox(height: 12),
+                        Text(
+                          '登入後，牠會陪你說話、記得你的日常，也關心你的心情。',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 18,
+                            height: 1.5,
+                            color: Colors.black.withValues(alpha: 0.6),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        '用你的帳號登入，繼續陪伴的點滴。',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 20,
-                          height: 1.4,
-                          color: Colors.grey.shade700,
+                        const Spacer(),
+                        AuthProviderButton(
+                          icon: Icons.g_mobiledata,
+                          label: '用 Google 登入',
+                          iconColor: const Color(0xFF4285F4),
+                          onPressed: () => _handleGoogleSignIn(),
                         ),
-                      ),
-                      const Spacer(),
-                      AuthProviderButton(
-                        icon: Icons.g_mobiledata,
-                        label: '用 Google 登入',
-                        onPressed: () => _handleGoogleSignIn(),
-                      ),
-                      const SizedBox(height: 14),
-                      AuthProviderButton(
-                        icon: Icons.apple,
-                        label: '用 Apple 登入',
-                        onPressed: _handleApplePending,
-                      ),
-                      const SizedBox(height: 24),
-                      _buildDivider('或用 Email 登入'),
-                      const SizedBox(height: 20),
-                      _buildEmailField(),
-                      const SizedBox(height: 14),
-                      _buildPasswordField(),
-                      const SizedBox(height: 16),
-                      _buildEmailSignInButton(),
-                      if (errorMessage != null) ...[
-                        const SizedBox(height: 16),
-                        _buildErrorBanner(errorMessage),
+                        const SizedBox(height: 14),
+                        AuthProviderButton(
+                          icon: Icons.apple,
+                          label: '用 Apple 登入',
+                          onPressed: _handleApplePending,
+                        ),
+                        const SizedBox(height: 14),
+                        _buildEmailSection(),
+                        if (errorMessage != null) ...[
+                          const SizedBox(height: 16),
+                          _buildErrorBanner(errorMessage),
+                        ],
+                        const SizedBox(height: 22),
+                        _buildRegisterLink(context),
+                        if (_showDemoLogin) ...[
+                          const SizedBox(height: 18),
+                          _buildDemoButton(context),
+                        ],
+                        const SizedBox(height: 8),
                       ],
-                      const SizedBox(height: 24),
-                      _buildRegisterLink(context),
-                      if (_showDemoLogin) ...[
-                        const SizedBox(height: 24),
-                        _buildPrimaryButton(context),
-                      ],
-                      const SizedBox(height: 12),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildPrimaryButton(BuildContext context) {
+  /// Email 登入區：收合時是一顆「用 Email 登入」按鈕；點開後柔順展開
+  /// Email / 密碼欄位與「登入」按鈕。
+  Widget _buildEmailSection() {
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+      alignment: Alignment.topCenter,
+      child: _emailExpanded ? _buildEmailForm() : _buildEmailExpander(),
+    );
+  }
+
+  Widget _buildEmailExpander() {
+    return AuthProviderButton(
+      icon: Icons.email_outlined,
+      label: '用 Email 登入',
+      trailing: Icon(
+        Icons.keyboard_arrow_down_rounded,
+        size: 26,
+        color: Colors.black.withValues(alpha: 0.45),
+      ),
+      onPressed: _expandEmail,
+    );
+  }
+
+  Widget _buildEmailForm() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AuthCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AuthTextField(
+                controller: _emailController,
+                label: 'Email',
+                icon: Icons.email_outlined,
+                enabled: !_isBusy,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
+              ),
+              const SizedBox(height: 14),
+              AuthTextField(
+                controller: _passwordController,
+                label: '密碼',
+                icon: Icons.lock_outline,
+                obscure: true,
+                enabled: !_isBusy,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _handleEmailSignIn(),
+              ),
+              const SizedBox(height: 16),
+              _buildEmailSignInButton(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmailSignInButton() {
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton(
-        onPressed: _isSigningIn ? null : _handleQuickStart,
+        onPressed: _isBusy ? null : _handleEmailSignIn,
         style: ElevatedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 18),
+          padding: const EdgeInsets.symmetric(vertical: 16),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
+        ),
+        child: _isEmailSubmitting
+            ? const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  color: Colors.white,
+                ),
+              )
+            : const Text(
+                '登入',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+              ),
+      ),
+    );
+  }
+
+  Widget _buildDemoButton(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: TextButton(
+        onPressed: _isSigningIn ? null : _handleQuickStart,
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 12),
         ),
         child: _isSigningIn
             ? const Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   SizedBox(
-                    width: 26,
-                    height: 26,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 3,
-                      color: Colors.white,
-                    ),
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 3),
                   ),
-                  SizedBox(width: 16),
+                  SizedBox(width: 14),
                   Text(
                     '正在帶你進去…',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style:
+                        TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
                   ),
                 ],
               )
             : const Text(
                 '先進去陪伴',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w800,
-                ),
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
               ),
       ),
-    );
-  }
-
-  Widget _buildDivider(String label) {
-    return Row(
-      children: [
-        Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.grey.shade600,
-            ),
-          ),
-        ),
-        Expanded(child: Divider(color: Colors.grey.shade300, thickness: 1)),
-      ],
     );
   }
 
@@ -342,72 +403,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildEmailField() {
-    return TextField(
-      controller: _emailController,
-      enabled: !_isBusy,
-      keyboardType: TextInputType.emailAddress,
-      autocorrect: false,
-      style: const TextStyle(fontSize: 20),
-      decoration: InputDecoration(
-        labelText: 'Email',
-        labelStyle: const TextStyle(fontSize: 18),
-        prefixIcon: const Icon(Icons.email_outlined, size: 26),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPasswordField() {
-    return TextField(
-      controller: _passwordController,
-      enabled: !_isBusy,
-      obscureText: true,
-      style: const TextStyle(fontSize: 20),
-      onSubmitted: (_) => _handleEmailSignIn(),
-      decoration: InputDecoration(
-        labelText: '密碼',
-        labelStyle: const TextStyle(fontSize: 18),
-        prefixIcon: const Icon(Icons.lock_outline, size: 26),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmailSignInButton() {
-    return SizedBox(
-      width: double.infinity,
-      child: OutlinedButton(
-        onPressed: _isBusy ? null : _handleEmailSignIn,
-        style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          side: BorderSide(color: Colors.grey.shade400, width: 1.5),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-        ),
-        child: _isEmailSubmitting
-            ? const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 3),
-              )
-            : const Text(
-                '用 Email 登入',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
-              ),
-      ),
-    );
-  }
-
   Widget _buildRegisterLink(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -415,16 +410,16 @@ class _LoginScreenState extends State<LoginScreen> {
         Text(
           '還沒有帳號？',
           style: TextStyle(
-            fontSize: 20,
-            color: Colors.grey.shade700,
+            fontSize: 18,
+            color: Colors.black.withValues(alpha: 0.6),
           ),
         ),
         TextButton(
           onPressed: widget.onRegister,
           child: const Text(
-            '建立帳號',
+            '開始陪伴生活',
             style: TextStyle(
-              fontSize: 20,
+              fontSize: 18,
               fontWeight: FontWeight.w700,
             ),
           ),

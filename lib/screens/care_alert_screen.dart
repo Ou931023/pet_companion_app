@@ -4,9 +4,11 @@ import 'package:provider/provider.dart';
 import '../controllers/care_alert_controller.dart';
 import '../models/care_alert.dart';
 
-/// 長照提醒紀錄頁。
+/// 今日關心紀錄頁（長者端）。
 ///
-/// 讓長照人員或家屬查看寵物從對話中注意到、可能需要關心的狀況。
+/// 這是給長者自己看的畫面，語氣溫暖、像「有人在關心你」，
+/// 不顯示風險等級、分析摘要或原始對話等後台資訊
+/// （那些只給家人 / 照護人員在 caregiver 端查看）。
 class CareAlertScreen extends StatefulWidget {
   const CareAlertScreen({super.key});
 
@@ -30,7 +32,7 @@ class _CareAlertScreenState extends State<CareAlertScreen> {
     final alerts = controller.alerts;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('長照提醒紀錄')),
+      appBar: AppBar(title: const Text('今日關心紀錄')),
       body: RefreshIndicator(
         onRefresh: controller.loadAlerts,
         child: ListView(
@@ -47,7 +49,7 @@ class _CareAlertScreenState extends State<CareAlertScreen> {
               const _EmptyState()
             else
               for (final alert in alerts)
-                _CareAlertCard(
+                _CareNoteCard(
                   alert: alert,
                   onMarkRead: () =>
                       context.read<CareAlertController>().markAsRead(alert.id),
@@ -65,15 +67,24 @@ class _IntroNote extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.black12),
+        color: const Color(0xFFFDF4F6),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFF3D7DE)),
       ),
-      child: const Text(
-        '這裡記錄寵物在對話中注意到、可能需要多關心的狀況，方便家人或照護人員了解長者近況。',
-        style: TextStyle(fontSize: 16, height: 1.4),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('💛', style: TextStyle(fontSize: 22)),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '這裡放著想多陪你一點的小紀錄。你並不孤單，有人一直在關心你。',
+              style: TextStyle(fontSize: 16, height: 1.5),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -85,18 +96,26 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 36),
-      child: Text(
-        '目前沒有需要特別注意的提醒紀錄',
-        textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 17, height: 1.4),
+      padding: EdgeInsets.symmetric(vertical: 40),
+      child: Column(
+        children: [
+          Text('🌷', style: TextStyle(fontSize: 40)),
+          SizedBox(height: 12),
+          Text(
+            '今天一切都好，沒有特別的事。\n記得想聊天的時候，我都在喔。',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 17, height: 1.5),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _CareAlertCard extends StatelessWidget {
-  const _CareAlertCard({
+/// 長者端的關心卡片。只呈現溫暖訊息與（必要時）柔和的主題，
+/// 不顯示風險等級、分析摘要、原始對話與來源。
+class _CareNoteCard extends StatelessWidget {
+  const _CareNoteCard({
     required this.alert,
     required this.onMarkRead,
   });
@@ -106,7 +125,7 @@ class _CareAlertCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = _riskColor(alert.riskLevel);
+    final topic = _warmTopic(alert.category);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -114,8 +133,9 @@ class _CareAlertCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color:
-              alert.isRead ? Colors.black12 : color.withValues(alpha: 0.55),
+          color: alert.isRead
+              ? Colors.black12
+              : const Color(0xFFE7A6B4),
           width: alert.isRead ? 1 : 2,
         ),
       ),
@@ -124,90 +144,69 @@ class _CareAlertCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  alert.riskLevel.label,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
+              const Text('💗', style: TextStyle(fontSize: 20)),
               const SizedBox(width: 8),
-              Expanded(
+              const Expanded(
                 child: Text(
-                  alert.category.label,
-                  style: const TextStyle(
-                    fontSize: 17,
+                  '有人關心你',
+                  style: TextStyle(
+                    fontSize: 18,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
               ),
-              if (!alert.isRead)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: color,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: const Text(
-                    '未查看',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+              Text(
+                _formatDay(alert.createdAt),
+                style: TextStyle(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
                 ),
+              ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Text(
-            _formatTime(alert.createdAt),
+            '我把你放在心上，記得你並不孤單，有需要的時候我都在你身邊。',
             style: TextStyle(
-              color: Colors.black.withValues(alpha: 0.55),
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
+              fontSize: 17,
+              height: 1.5,
+              color: Colors.black.withValues(alpha: 0.85),
             ),
           ),
-          if (alert.triggerSummary.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              alert.triggerSummary,
-              style: const TextStyle(fontSize: 17, height: 1.4),
-            ),
-          ],
-          if (alert.transcriptSnippet.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(
-              '長者說：「${alert.transcriptSnippet}」',
-              style: TextStyle(
-                fontSize: 15,
-                height: 1.4,
-                color: Colors.black.withValues(alpha: 0.6),
+          if (topic != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFDF4F6),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                topic,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFB05a6c),
+                ),
               ),
             ),
           ],
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           SizedBox(
             width: double.infinity,
             child: alert.isRead
-                ? const _ReadLabel()
-                : FilledButton.icon(
+                ? const _SeenLabel()
+                : FilledButton(
                     onPressed: onMarkRead,
                     style: FilledButton.styleFrom(
                       minimumSize: const Size.fromHeight(48),
                     ),
-                    icon: const Icon(Icons.check),
-                    label: const Text('標記已查看'),
+                    child: const Text(
+                      '我知道了，謝謝你',
+                      style: TextStyle(fontSize: 16),
+                    ),
                   ),
           ),
         ],
@@ -215,38 +214,39 @@ class _CareAlertCard extends StatelessWidget {
     );
   }
 
-  String _formatTime(DateTime dt) {
+  String _formatDay(DateTime dt) {
     String two(int value) => value.toString().padLeft(2, '0');
-    return '${dt.year}/${two(dt.month)}/${two(dt.day)} '
-        '${two(dt.hour)}:${two(dt.minute)}';
+    return '${dt.month}月${dt.day}日 ${two(dt.hour)}:${two(dt.minute)}';
   }
 
-  Color _riskColor(CareAlertRiskLevel level) {
-    return switch (level) {
-      // 權威四級
-      CareAlertRiskLevel.urgent => Colors.red.shade700,
-      CareAlertRiskLevel.high => Colors.deepOrange.shade700,
-      CareAlertRiskLevel.medium => Colors.orange.shade700,
-      CareAlertRiskLevel.low => Colors.indigo,
-      // 舊代碼（legacy，向下相容顯示）
-      CareAlertRiskLevel.attention => Colors.orange.shade800,
-      CareAlertRiskLevel.normal => Colors.indigo,
+  /// 把分類轉成柔和、不像監控的主題；無明確主題（other）時不顯示。
+  String? _warmTopic(CareAlertCategory category) {
+    return switch (category) {
+      CareAlertCategory.sleep => '想陪你聊聊：好好睡',
+      CareAlertCategory.appetite => '想陪你聊聊：吃得開心',
+      CareAlertCategory.dizziness => '想多關心你的身體',
+      CareAlertCategory.fall => '想確認你平平安安',
+      CareAlertCategory.loneliness => '想多陪陪你',
+      CareAlertCategory.depressed => '想陪你放鬆心情',
+      CareAlertCategory.selfHarm => '想好好陪在你身邊',
+      CareAlertCategory.needHelp => '想看看能幫上什麼忙',
+      CareAlertCategory.other => null,
     };
   }
 }
 
-class _ReadLabel extends StatelessWidget {
-  const _ReadLabel();
+class _SeenLabel extends StatelessWidget {
+  const _SeenLabel();
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(Icons.check_circle, size: 18, color: Colors.green.shade600),
+        Icon(Icons.favorite, size: 18, color: Colors.pink.shade300),
         const SizedBox(width: 6),
         Text(
-          '已查看',
+          '你已經看過了',
           style: TextStyle(
             color: Colors.black.withValues(alpha: 0.5),
             fontWeight: FontWeight.w700,

@@ -11,6 +11,7 @@ import 'package:pet_companion_app/screens/login_screen.dart';
 import 'package:pet_companion_app/screens/onboarding_screen.dart';
 import 'package:pet_companion_app/screens/register_screen.dart';
 import 'package:pet_companion_app/services/auth/auth_service.dart';
+import 'package:pet_companion_app/controllers/pet_controller.dart';
 import 'package:pet_companion_app/services/local_storage_service.dart';
 
 /// 可控狀態的 AuthController：直接設定終態，不碰 prefs / 後端 / 真 AuthService。
@@ -98,6 +99,12 @@ Future<void> _pumpGate(
         ChangeNotifierProvider<ProfileController>.value(
           value: profile ??
               _FakeProfileController(isLoading: false, onboarded: false),
+        ),
+        // OnboardingScreen 移除舊版導覽後直接進入「選夥伴」設定步驟，
+        // 該步驟會讀 PetController / LocalStorageService。
+        ChangeNotifierProvider<PetController>(create: (_) => PetController()),
+        Provider<LocalStorageService>(
+          create: (_) => _NoopLocalStorageService(),
         ),
         if (withNavigation)
           ChangeNotifierProvider<AppNavigationController>(
@@ -230,9 +237,12 @@ void main() {
     expect(find.byType(LoginScreen), findsOneWidget);
 
     // 正式模式登入頁用 Email 登入（stub 直接收斂 authenticated）。
+    // 先點開「用 Email 登入」展開欄位，再填寫並按「登入」。
+    await tester.tap(find.text('用 Email 登入'));
+    await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).at(0), 'grandma@example.com');
     await tester.enterText(find.byType(TextField).at(1), 'secret1');
-    await tester.tap(find.text('用 Email 登入'));
+    await tester.tap(find.text('登入'));
     await tester.pumpAndSettle();
 
     // gate 重建後不再是登入頁，落到既有流程（此處 onboarded=false → Onboarding）。
@@ -251,7 +261,7 @@ void main() {
 
     expect(find.byType(LoginScreen), findsOneWidget);
 
-    await tester.tap(find.text('建立帳號'));
+    await tester.tap(find.text('開始陪伴生活'));
     await tester.pumpAndSettle();
     expect(find.byType(RegisterScreen), findsOneWidget);
 

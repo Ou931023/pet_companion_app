@@ -8,12 +8,17 @@ import 'package:pet_companion_app/models/care_alert.dart';
 import 'package:pet_companion_app/screens/care_alert_screen.dart';
 import 'package:pet_companion_app/services/care_alert_storage_service.dart';
 
-CareAlert _alert(String id, CareAlertRiskLevel level, String summary) {
+CareAlert _alert(
+  String id,
+  CareAlertRiskLevel level,
+  String summary, {
+  CareAlertCategory category = CareAlertCategory.other,
+}) {
   return CareAlert(
     id: id,
     createdAt: DateTime(2026, 5, 31, 10),
     riskLevel: level,
-    category: CareAlertCategory.other,
+    category: category,
     triggerSummary: summary,
     transcriptSnippet: '對話片段',
     source: 'companion_analysis',
@@ -43,36 +48,61 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  testWidgets('#3/#4 medium/high/urgent 顯示為 持續觀察/需通知/緊急，並顯示 triggerSummary',
-      (tester) async {
+  testWidgets('長者端：標題溫暖，且呈現「有人關心你」與白話確認按鈕', (tester) async {
     final controller = CareAlertController(CareAlertStorageService());
     await controller.loadAlerts();
     await controller.addAlert(
-      _alert('m', CareAlertRiskLevel.medium, '系統偵測長者提到睡眠不佳，建議持續觀察近況。'),
-    );
-    await controller.addAlert(
-      _alert('h', CareAlertRiskLevel.high, '系統偵測長者情緒低落，建議照護人員主動關心。'),
-    );
-    await controller.addAlert(
-      _alert('u', CareAlertRiskLevel.urgent, '系統偵測長者疑似跌倒，建議立即確認安全。'),
+      _alert('m', CareAlertRiskLevel.medium, '系統偵測長者提到睡眠不佳，建議持續觀察近況。',
+          category: CareAlertCategory.sleep),
     );
 
     await _pumpScreen(tester, controller);
 
-    expect(find.text('持續觀察'), findsOneWidget);
-    expect(find.text('需通知'), findsOneWidget);
-    expect(find.text('緊急'), findsOneWidget);
+    expect(find.text('今日關心紀錄'), findsOneWidget); // AppBar 標題
+    expect(find.text('有人關心你'), findsWidgets);
+    expect(find.text('我知道了，謝謝你'), findsOneWidget);
+  });
 
-    // triggerSummary 有清楚顯示
-    expect(find.textContaining('持續觀察近況'), findsOneWidget);
-    expect(find.textContaining('立即確認安全'), findsOneWidget);
+  testWidgets('長者端：不顯示風險等級、分析摘要與原始對話（那些只給照護端）',
+      (tester) async {
+    final controller = CareAlertController(CareAlertStorageService());
+    await controller.loadAlerts();
+    await controller.addAlert(
+      _alert('m', CareAlertRiskLevel.medium, '系統偵測長者提到睡眠不佳，建議持續觀察近況。',
+          category: CareAlertCategory.sleep),
+    );
+    await controller.addAlert(
+      _alert('h', CareAlertRiskLevel.high, '系統偵測長者情緒低落，建議照護人員主動關心。',
+          category: CareAlertCategory.depressed),
+    );
+    await controller.addAlert(
+      _alert('u', CareAlertRiskLevel.urgent, '系統偵測長者疑似跌倒，建議立即確認安全。',
+          category: CareAlertCategory.fall),
+    );
+
+    await _pumpScreen(tester, controller);
+
+    // 風險等級代碼 / label 不應出現在長者端
+    expect(find.text('持續觀察'), findsNothing);
+    expect(find.text('需通知'), findsNothing);
+    expect(find.text('緊急'), findsNothing);
+
+    // 後台分析摘要 triggerSummary 不應出現
+    expect(find.textContaining('持續觀察近況'), findsNothing);
+    expect(find.textContaining('主動關心'), findsNothing);
+    expect(find.textContaining('立即確認安全'), findsNothing);
+    expect(find.textContaining('系統偵測'), findsNothing);
+
+    // 原始對話片段不應原樣顯示給長者
+    expect(find.textContaining('對話片段'), findsNothing);
   });
 
   testWidgets('長者友善：care alert 畫面不出現工程 / debug 字樣', (tester) async {
     final controller = CareAlertController(CareAlertStorageService());
     await controller.loadAlerts();
     await controller.addAlert(
-      _alert('m', CareAlertRiskLevel.medium, '系統偵測長者提到睡眠不佳，建議持續觀察近況。'),
+      _alert('m', CareAlertRiskLevel.medium, '系統偵測長者提到睡眠不佳，建議持續觀察近況。',
+          category: CareAlertCategory.sleep),
     );
 
     await _pumpScreen(tester, controller);
@@ -84,6 +114,7 @@ void main() {
 
     const banned = [
       'riskLevel',
+      'triggerSummary',
       'null',
       'Exception',
       'WebRTC',

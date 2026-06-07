@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/shop_item.dart';
+import 'ui/section_card.dart';
 
 class ShopItemCard extends StatelessWidget {
   const ShopItemCard({
@@ -17,6 +18,7 @@ class ShopItemCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final effects = <String>[
       if (item.fullnessDelta > 0) '飽足 +${item.fullnessDelta}',
       if (item.moodDelta > 0) '心情 +${item.moodDelta}',
@@ -24,29 +26,22 @@ class ShopItemCard extends StatelessWidget {
       if (item.isRevive) '復活',
     ];
 
-    return Card(
-      elevation: 0,
-      margin: EdgeInsets.zero,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.indigo.withValues(alpha: 0.10)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
+    return SectionCard(
+      padding: const EdgeInsets.all(14),
+      borderRadius: 18,
+      child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  width: 52,
-                  height: 52,
+                  width: 54,
+                  height: 54,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: Colors.indigo.withValues(alpha: 0.07),
-                    borderRadius: BorderRadius.circular(12),
+                    color: scheme.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(14),
                   ),
                   child: Text(item.emoji, style: const TextStyle(fontSize: 30)),
                 ),
@@ -142,7 +137,6 @@ class ShopItemCard extends StatelessWidget {
             ),
           ],
         ),
-      ),
     );
   }
 }
