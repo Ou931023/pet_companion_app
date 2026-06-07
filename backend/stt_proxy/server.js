@@ -70,6 +70,10 @@ const {
   markTelegramSent,
 } = require("./services/careAlertCooldown");
 const {
+  recordConsent,
+  getConsent,
+} = require("./services/consentStoreService");
+const {
   createSession,
   deleteUserByFirebaseUid,
   mockAllowed: authMockAllowed,
@@ -546,6 +550,142 @@ app.post("/api/auth/delete", async (req, res) => {
   } catch (error) {
     logError("auth delete exception", { error: error?.message || error });
     return res.status(500).json({ success: false, error: "auth_delete_failed" });
+  }
+});
+
+// CR-0036 Batch 2：知情同意稽核 API。契約見 PROJECT_ARCHITECTURE.md §10.4。
+// 身份辨識沿用既有中介（比照 /api/auth/delete）：firebase configured → 驗 idToken
+// 取權威 uid；否則 mock-allowed → 採信傳入識別。只新增路由、不改既有路由形狀。
+
+// 決定權威 firebaseUid（與 /api/auth/delete / createSession 一致）。
+// 回 { ok:true, firebaseUid } 或 { ok:false }（→ 401 invalid_id_token）。
+async function resolveConsentIdentity(rawUid, idToken, { requireToken }) {
+  const configured = (() => {
+    try {
+      return authFirebaseAdmin.isConfigured();
+    } catch (_) {
+      return false;
+    }
+  })();
+  if (configured) {
+    // configured 模式：POST 一律驗 token；GET 僅在有帶 idToken 時驗。
+    if (requireToken || idToken) {
+      const decoded = await authFirebaseAdmin.verifyIdToken(idToken);
+      if (!decoded || !decoded.uid) {
+        return { ok: false };
+      }
+      return { ok: true, firebaseUid: decoded.uid };
+    }
+    return { ok: true, firebaseUid: rawUid };
+  }
+  // 未 configured：mock 不允許 → 無法驗證，視為 401。
+  if (!authMockAllowed()) {
+    return { ok: false };
+  }
+  return { ok: true, firebaseUid: rawUid };
+}
+
+// 記錄一次同意 / 撤回（寫一列，append-only）。
+app.post("/api/consent", async (req, res) => {
+  const body = req.body || {};
+  const consentType =
+    typeof body.consentType === "string" ? body.consentType.trim() : "";
+  const consentVersion =
+    typeof body.consentVersion === "string" ? body.consentVersion.trim() : "";
+  if (!consentType || !consentVersion) {
+    return res.status(400).json({ success: false, error: "invalid_payload" });
+  }
+
+  try {
+    const rawUid =
+      typeof body.firebaseUid === "string" ? body.firebaseUid.trim() : "";
+    const idToken = typeof body.idToken === "string" ? body.idToken.trim() : "";
+    const identity = await resolveConsentIdentity(rawUid, idToken, {
+      requireToken: true,
+    });
+    if (!identity.ok) {
+      return res
+        .status(401)
+        .json({ success: false, error: "invalid_id_token" });
+    }
+
+    const result = await recordConsent({
+      userId: body.userId,
+      elderId: body.elderId,
+      firebaseUid: identity.firebaseUid,
+      consentType,
+      consentVersion,
+      action: body.action,
+      source: body.source,
+      appVersion: body.appVersion,
+      platform: body.platform,
+      agreedAt: body.agreedAt,
+      // PII：後端從 request 自行擷取，僅落 DB 供稽核；body 不接受、回應/log 不回顯。
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    if (!result.success) {
+      if (result.error === "invalid_payload") {
+        return res
+          .status(400)
+          .json({ success: false, error: "invalid_payload" });
+      }
+      logError("consent record failed", { error: result.error });
+      return res.status(500).json({ success: false, error: "consent_failed" });
+    }
+    return res.json({ success: true, record: result.record });
+  } catch (error) {
+    logError("consent record exception", { error: error?.message || error });
+    return res.status(500).json({ success: false, error: "consent_failed" });
+  }
+});
+
+// 查詢某使用者目前同意狀態 + 稽核歷史（遮蔽 PII）。
+app.get("/api/consent", async (req, res) => {
+  const q = req.query || {};
+  const userId = typeof q.userId === "string" ? q.userId.trim() : "";
+  const elderId = typeof q.elderId === "string" ? q.elderId.trim() : "";
+  const rawUid =
+    typeof q.firebaseUid === "string" ? q.firebaseUid.trim() : "";
+  if (!userId && !elderId && !rawUid) {
+    return res.status(400).json({ success: false, error: "invalid_payload" });
+  }
+
+  try {
+    const idToken = typeof q.idToken === "string" ? q.idToken.trim() : "";
+    // GET：firebase configured 且有帶 idToken 時驗證（取權威 uid）；未帶不強制。
+    const identity = await resolveConsentIdentity(rawUid, idToken, {
+      requireToken: false,
+    });
+    if (!identity.ok) {
+      return res
+        .status(401)
+        .json({ success: false, error: "invalid_id_token" });
+    }
+
+    const result = await getConsent({
+      userId,
+      elderId,
+      firebaseUid: identity.firebaseUid,
+    });
+    if (!result.success) {
+      if (result.error === "invalid_payload") {
+        return res
+          .status(400)
+          .json({ success: false, error: "invalid_payload" });
+      }
+      logError("consent get failed", { error: result.error });
+      return res.status(500).json({ success: false, error: "consent_failed" });
+    }
+    return res.json({
+      success: true,
+      current: result.current,
+      history: result.history,
+    });
+  } catch (error) {
+    logError("consent get exception", { error: error?.message || error });
+    return res.status(500).json({ success: false, error: "consent_failed" });
   }
 });
 

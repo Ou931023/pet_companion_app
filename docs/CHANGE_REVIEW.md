@@ -994,8 +994,9 @@
   - **Batch 2（backend-agent）**：`consentStoreService.js` + `POST /api/consent` + `GET /api/consent` + `node --test`。**動工前先更新 `PROJECT_ARCHITECTURE.md` §10 契約**（architecture-agent 規則：跨契約改動先更新架構文件再放行）。
   - **Batch 3（frontend-ux-agent，後續排程）**：ConsentService best-effort 補送，不阻塞同意 Gate。
 - 測試計畫（node --test）：`consentStoreService.test.js`（insert / list / withdraw 寫新列不刪舊 / 缺必填欄位→拒絕 / 冪等）、端點測試（`400 invalid_payload`、`200 success` 形狀、mock-auth 採信傳入 uid 路徑、PII 不回顯）、`npm run check`；migration 以 dev DB 實跑 + 重跑驗冪等。
-- architecture-agent 裁決：**✅ 核准 Batch 1（migration 010，可即刻執行）**；**🔁 Batch 2 條件放行** — 須先更新 `PROJECT_ARCHITECTURE.md` §10 consent API 契約並由 architecture-agent 確認後方可動 `server.js`；Batch 3 待 B1/B2 ship 後排程。限制：不碰 `.env`/token、不把 runtime `data/*.json` 進 git、不改既有路由形狀、API/log 不回顯 PII。
-- 完成狀態：⬜ 未開始
+- architecture-agent 裁決：**✅ 核准 Batch 1（migration 010，已 ship）**；**✅ Batch 2 放行（2026-06-08，前置治理完成）** — consent API 正式契約已定稿於 `PROJECT_ARCHITECTURE.md §10.4`（`POST /api/consent` / `GET /api/consent` request/response 形狀、辨識沿用既有 auth 中介、錯誤碼 `400 invalid_payload` / `401 invalid_id_token` / `500 consent_failed`、PII 不回顯），backend-agent 可依該契約實作 `consentStoreService.js` + 2 條路由 + `node --test`；Batch 3（前端 best-effort 補送）待 B2 ship 後排程。
+  - **backend-agent 實作紅線（B2）**：① `ip`/`user_agent` 後端自 `req` 擷取、僅落 DB，**response 與 server log 一律不回顯**；② 錯誤一律 `{success:false,error}`，**絕不回 stack trace**（細節只進 `logError`）；③ 辨識沿用 `authFirebaseAdmin.isConfigured()` → 驗 `idToken` / 否則 `authMockAllowed()`，**不新發明 auth**；④ 只新增 2 條路由，**不改任何既有路由形狀**；⑤ 不破壞既有測試（現基線需全綠）、不碰 `.env`/token、不把 runtime `data/*.json` 進 git；⑥ 無新增環境變數（沿用 `AUTH_ALLOW_MOCK` 與既有 PG / Firebase 設定）。
+- 完成狀態：🔁 進行中 — **Batch 1 ✅ 已 ship**（migration 010）；**Batch 2 ✅ 放行（前置治理完成：契約已寫入 `PROJECT_ARCHITECTURE.md §10.4`）**，待 backend-agent 實作；Batch 3 待排程
 
 ### CR-0037：移除正式環境 mockFallback 造假登入（正式登入失敗應白話錯誤＋重試）— ⬜ 未開始（2026-06-08 開立）
 - 提出 agent：architecture-agent（依 Phase 1 production 升級需求）

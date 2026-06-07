@@ -305,6 +305,88 @@ Response（200）：
 
 `game_cognitive_metrics`：`id (uuid pk)`、`elder_id (uuid fk)`、`game_type (text)`、`played_at (timestamptz)`、`moves (int)`、`duration_seconds (int)`、`completion_rate (numeric)`、`difficulty (text)`、`cognitive_score (numeric)`、`regression_flag (bool default false)`、`created_at (timestamptz default now())`
 
+### 10.4 知情同意稽核 API 契約（CR-0036，🔒 跨前後端契約）
+
+> 對應 DB migration `db/migrations/010_create_consent_records.sql`（append-only 稽核表，欄位以該檔為準）與前端 `lib/services/consent_service.dart`。
+> 後端持久化是「補齊 §3.3 已規劃 `consent_records` 核心表」，非新架構。**只新增 2 條路由，不改任何既有路由形狀。**
+> 身份辨識沿用既有 auth 中介（同 `POST /api/auth/delete`）：`authFirebaseAdmin.isConfigured()` → 驗 `idToken` 取權威 `uid`；否則 `authMockAllowed()`（`AUTH_ALLOW_MOCK`，預設 true）→ 採信傳入識別。**不新發明 auth 機制。**
+
+#### `POST /api/consent`（記錄一次同意 / 撤回，寫一列）
+
+Request body：
+```jsonc
+{
+  "firebaseUid": "string | null",   // 辨識用：firebase configured 時搭配 idToken 驗證
+  "idToken": "string | null",       // firebase configured 時必須；mock 模式可省略
+  "userId": "uuid | null",          // 已知時直接帶；後端據以回填 consent_records.user_id
+  "elderId": "uuid | null",         // 已知時直接帶；回填 consent_records.elder_id
+  "consentType": "string",          // 必填：privacy_terms | data_collection | microphone | notification
+  "consentVersion": "string",       // 必填：對應前端 consent.acceptedVersion
+  "action": "granted | withdrawn",  // 可選，預設 granted
+  "source": "string | null",        // 可選：elder_app_onboarding | settings | ...
+  "appVersion": "string | null",    // 可選，稽核用
+  "platform": "string | null",      // 可選：ios | android
+  "agreedAt": "ISO8601 | null"      // 可選，省略時後端用 NOW()
+}
+```
+必填：`consentType`、`consentVersion`。其餘皆可選。
+辨識規則：firebase configured → 驗 `idToken` 取權威 `uid` → 解析回填 `user_id`/`elder_id`（驗證失敗回 401 `invalid_id_token`）；否則 mock-allowed → 採信傳入 `userId`/`elderId`/`firebaseUid`。`user_id`/`elder_id` 解析不到時仍可寫列（兩欄 nullable，保留稽核軌跡，比照 010 表設計）。
+`withdrawn` 時不刪舊列，改寫一列 `action='withdrawn'`、填 `withdrawn_at`（append-only）。
+
+**PII 紅線**：`ip` 與 `user_agent` 由後端從 request（`req.ip` / `req.headers['user-agent']`）自行擷取，**僅落 DB 供稽核**；request body 不接受、**response 與 server log 一律不得回顯**。
+
+Response（200）：
+```jsonc
+{
+  "success": true,
+  "record": {
+    "id": "uuid",
+    "consentType": "privacy_terms",
+    "consentVersion": "1.0.0",
+    "action": "granted",
+    "agreedAt": "ISO8601"
+    // 絕不含 ip / userAgent
+  }
+}
+```
+錯誤碼（沿用既有 `{success:false,error}` 形狀，**絕不回 stack trace**）：
+- 缺 `consentType` 或 `consentVersion` → `400 { success:false, error:"invalid_payload" }`
+- firebase configured 且 `idToken` 驗證失敗 → `401 { success:false, error:"invalid_id_token" }`
+- 例外（DB 寫入失敗等）→ `500 { success:false, error:"consent_failed" }`（細節只進 `logError`，不回前端）
+
+#### `GET /api/consent`（查詢某使用者目前同意狀態）
+
+Query：`?userId=<uuid>`（或 `?firebaseUid=<uid>`；firebase configured 時可搭 `idToken` 驗證）。
+語義：回該使用者**每個 `consent_type` 的最新一筆**（依 `created_at` desc 取首列 per type）為「目前同意狀態」，外加可選 `history` 全列表供稽核。未帶可辨識識別 → `400 invalid_payload`。
+
+Response（200）：
+```jsonc
+{
+  "success": true,
+  "current": [
+    { "consentType": "privacy_terms", "consentVersion": "1.0.0",
+      "action": "granted", "agreedAt": "ISO8601" }
+  ],
+  "history": [
+    { "id": "uuid", "consentType": "...", "consentVersion": "...",
+      "action": "granted | withdrawn", "agreedAt": "ISO8601",
+      "withdrawnAt": "ISO8601 | null" }
+    // 同樣遮蔽 PII：絕不含 ip / userAgent
+  ]
+}
+```
+錯誤碼：缺可辨識識別 → `400 invalid_payload`；firebase 驗證失敗 → `401 invalid_id_token`；例外 → `500 consent_failed`。
+
+#### 與前端 `ConsentService` 對接（B3，frontend-ux-agent 後續排程）
+
+- 呼叫時機：`recordConsent(version)` 成功寫入本機（shared_preferences）**之後**，best-effort `POST /api/consent`（`consentType` 先固定 `privacy_terms` 對應目前單一 gate）。
+- 帶入：當前 `AuthController` 的 `firebaseUid` / `idToken` / `userId` / `elderId`。
+- 失敗行為：**非阻塞** — 後端失敗（離線 / 5xx / timeout）**不得影響本機已同意狀態**，使用者照常進入 App（比照 `deleteAccount` best-effort）；可在下次啟動 / 設定頁重試補送。本機 `consent.acceptedVersion` 仍是 App 內判斷是否需重新同意的唯一來源。
+
+#### 環境變數
+
+無新增。沿用既有 `AUTH_ALLOW_MOCK`（預設 true，控制 mock 採信）與既有 Firebase Admin 設定；資料庫沿用既有 PG 連線設定。
+
 ---
 
 ## 11. 健康後台 Admin API 契約（CR-0007，🔒）
