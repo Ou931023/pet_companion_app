@@ -35,5 +35,17 @@ backend/stt_proxy/data/users.json
 backend/stt_proxy/data/elders.json
 backend/stt_proxy/data/daily_care_tasks.json
 backend/stt_proxy/data/daily_care_task_submissions.json
+backend/stt_proxy/data/companion_memories.json
+backend/stt_proxy/data/memory_events.json
+backend/stt_proxy/data/search_queries.json
+backend/stt_proxy/data/search_results.json
+backend/stt_proxy/data/marketplace_orders.json
+backend/stt_proxy/data/marketplace_products.json
 ios/Runner/GoogleService-Info.plist
 android/app/google-services.json
+
+# Tooling output / local scratch — never commit
+repomix-output.xml
+devtools_options.yaml
+.claude/worktrees/
+assets/pets_raw/
