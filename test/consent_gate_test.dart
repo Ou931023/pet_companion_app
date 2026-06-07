@@ -6,7 +6,31 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pet_companion_app/controllers/consent_controller.dart';
 import 'package:pet_companion_app/screens/consent_screen.dart';
 import 'package:pet_companion_app/screens/legal_document_screen.dart';
+import 'package:pet_companion_app/services/auth/consent_api_service.dart';
 import 'package:pet_companion_app/services/consent_service.dart';
+
+/// 不打網路的同意補送 stub：讓本檔聚焦在「同意 gate / 持久化」行為，
+/// 後端補送另有專屬測試（consent_backend_sync_test.dart）。
+class _OfflineConsentApi extends ConsentApiService {
+  @override
+  Future<bool> submitConsent({
+    required String consentType,
+    required String consentVersion,
+    String action = 'granted',
+    String? source,
+    String? firebaseUid,
+    String? idToken,
+    String? userId,
+    String? elderId,
+    String? appVersion,
+    String? platform,
+    String? agreedAt,
+  }) async =>
+      false;
+}
+
+ConsentService _offlineConsentService() =>
+    ConsentService(consentApi: _OfflineConsentApi());
 
 /// 依 [ConsentController.status] 分流的精簡 gate（鏡像 app.dart 的 ConsentGate，
 /// 但不拉進整個 AuthGate / MultiProvider 依賴）。
@@ -56,7 +80,7 @@ void main() {
     useTallView(tester);
     SharedPreferences.setMockInitialValues({});
     final controller =
-        ConsentController(consentService: ConsentService());
+        ConsentController(consentService: _offlineConsentService());
     await controller.load();
     await _pumpGate(tester, controller);
     await tester.pump();
@@ -73,7 +97,7 @@ void main() {
     useTallView(tester);
     SharedPreferences.setMockInitialValues({});
     final controller =
-        ConsentController(consentService: ConsentService());
+        ConsentController(consentService: _offlineConsentService());
     await controller.load();
     await _pumpGate(tester, controller);
     await tester.pump();
@@ -101,13 +125,13 @@ void main() {
     SharedPreferences.setMockInitialValues({});
 
     // 第一次：同意。
-    final first = ConsentController(consentService: ConsentService());
+    final first = ConsentController(consentService: _offlineConsentService());
     await first.load();
     await first.grantConsent();
     expect(first.status, ConsentStatus.granted);
 
     // 模擬重啟：用新的 controller + service，從同一個本機儲存載入。
-    final second = ConsentController(consentService: ConsentService());
+    final second = ConsentController(consentService: _offlineConsentService());
     await second.load();
     expect(second.status, ConsentStatus.granted);
 
@@ -119,7 +143,7 @@ void main() {
 
   testWidgets('條款版本更新後，舊版本同意者需重新同意', (tester) async {
     SharedPreferences.setMockInitialValues({});
-    final service = ConsentService();
+    final service = _offlineConsentService();
     // 已同意舊版本。
     await service.recordConsent('old.version');
 
@@ -135,7 +159,7 @@ void main() {
     useTallView(tester);
     SharedPreferences.setMockInitialValues({});
     final controller =
-        ConsentController(consentService: ConsentService());
+        ConsentController(consentService: _offlineConsentService());
     await controller.load();
     await _pumpGate(tester, controller);
     await tester.pump();
@@ -176,7 +200,7 @@ void main() {
   test('resetConsent 後回到 needsConsent（設定頁重新檢視同意用）', () async {
     SharedPreferences.setMockInitialValues({});
     final controller =
-        ConsentController(consentService: ConsentService());
+        ConsentController(consentService: _offlineConsentService());
     await controller.load();
     await controller.grantConsent();
     expect(controller.status, ConsentStatus.granted);
@@ -185,7 +209,7 @@ void main() {
     expect(controller.status, ConsentStatus.needsConsent);
 
     // 持久化也清掉了：新 controller 載入仍為 needsConsent。
-    final reloaded = ConsentController(consentService: ConsentService());
+    final reloaded = ConsentController(consentService: _offlineConsentService());
     await reloaded.load();
     expect(reloaded.status, ConsentStatus.needsConsent);
   });
