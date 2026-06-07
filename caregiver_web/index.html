@@ -435,7 +435,8 @@
             <button id="save-api-base" class="btn">儲存位址</button>
           </div>
           <p class="hint">
-            本機展示用 <code>http://127.0.0.1:3001/api</code>；
+            正式部署會自動使用後端設定位址；此處可臨時覆寫（存在本機瀏覽器）。
+            本機開發後端另開 port 時填 <code>http://127.0.0.1:3001/api</code>；
             手機 / 其他電腦請改成 <code>http://&lt;Mac區網IP&gt;:3001/api</code>。
           </p>
         </div>
@@ -536,6 +537,19 @@
       </div>
     </div>
 
+    <!--
+      部署設定點（API base URL）：
+      - 正式部署：把下方 apiBaseUrl 改成後端正式 API 位址，例如
+        window.APP_CONFIG = { apiBaseUrl: "https://api.your-domain.com/api" };
+      - 留 null：使用同源相對路徑 "/api"（caregiver_web 與後端同網域 / 反向代理時適用）。
+      - 請勿在此填 localhost / 127.0.0.1 作為正式預設。
+      - 進階：可改為獨立檔，複製 config.example.js 為 config.js，
+        並在本行前加 <script src="./config.js"></script>，部署時只覆蓋 config.js。
+      - 本機開發若後端在另一個 port（例如 3001），可在頁面「連線設定」輸入後端位址。
+    -->
+    <script>
+      window.APP_CONFIG = window.APP_CONFIG || { apiBaseUrl: null };
+    </script>
     <script src="./app.js?v=20260604b"></script>
   </body>
 </html>

@@ -6,7 +6,12 @@
   "use strict";
 
   var API_BASE_KEY = "caregiver_api_base";
-  var DEFAULT_API_BASE = "http://127.0.0.1:3001/api";
+  // 後端 API 位址預設使用「同源相對路徑」，正式部署時 caregiver_web 與後端同網域
+  // 或經反向代理即可直接運作；不把 localhost / 127.0.0.1 硬編為正式預設。
+  // 部署正式後端時，請於 index.html（或注入的 config.js）設定
+  // window.APP_CONFIG.apiBaseUrl = "https://api.your-domain.com/api"。
+  // 本機開發若後端在另一個 port（例如 3001），可在頁面「連線設定」輸入後端位址。
+  var DEFAULT_API_BASE = "/api";
   // CR-0029：管理者權杖只存在本機 localStorage，不寫死、不進 Git。
   var ADMIN_TOKEN_KEY = "caregiver_admin_token";
 
@@ -49,9 +54,22 @@
   };
 
   // ---- helpers ----
+  // 部署時注入的設定（index.html 內 window.APP_CONFIG 或獨立 config.js）。
+  function configuredApiBase() {
+    var cfg = (typeof window !== "undefined" && window.APP_CONFIG) || {};
+    return normalizeBase(cfg.apiBaseUrl);
+  }
+
+  // API base URL 解析順序（擇先非空者）：
+  // 1. 使用者在「連線設定」手動覆寫（localStorage，dev / 區網用）。
+  // 2. 部署注入的 window.APP_CONFIG.apiBaseUrl（正式後端位址）。
+  // 3. DEFAULT_API_BASE 同源相對路徑 "/api"（無 localhost 硬編）。
   function getApiBase() {
-    var stored = (localStorage.getItem(API_BASE_KEY) || "").trim();
-    return stored || DEFAULT_API_BASE;
+    var stored = normalizeBase(localStorage.getItem(API_BASE_KEY));
+    if (stored) return stored;
+    var configured = configuredApiBase();
+    if (configured) return configured;
+    return DEFAULT_API_BASE;
   }
 
   function normalizeBase(value) {

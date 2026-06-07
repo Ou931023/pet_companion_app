@@ -20,9 +20,26 @@
 
 ## API base URL 設定
 
-- 預設為 `http://127.0.0.1:3001/api`。
-- 頁面上方可輸入並「儲存位址」，會存進瀏覽器 `localStorage`（key：`caregiver_api_base`）。
-- 手機或其他電腦連線時，改成 `http://<Mac區網IP>:3001/api`（例如 `http://172.20.10.3:3001/api`）。
+API base URL 為可配置，解析順序（擇先非空者）：
+
+1. 使用者在頁面「連線設定」輸入並「儲存位址」（存進瀏覽器 `localStorage`，key：`caregiver_api_base`）。適合本機 / 區網臨時覆寫。
+2. 部署注入的 `window.APP_CONFIG.apiBaseUrl`（見下）。
+3. 預設同源相對路徑 `/api`（caregiver_web 與後端同網域或經反向代理時直接適用）。**不再硬編 localhost 作為正式預設。**
+
+### 正式部署指定後端位址
+
+二擇一：
+
+- 直接編輯 `index.html` 內的 `window.APP_CONFIG`，例如：
+  `window.APP_CONFIG = { apiBaseUrl: "https://api.your-domain.com/api" };`
+- 或複製 `config.example.js` 為 `config.js` 填入位址，並在 `index.html` 的
+  `app.js` script 之前加入 `<script src="./config.js"></script>`，部署時只覆蓋 `config.js`。
+
+### 本機 / 區網開發
+
+後端另開 port（例如 3001）時，可在頁面「連線設定」輸入 `http://127.0.0.1:3001/api`；
+手機或其他電腦連線改成 `http://<Mac區網IP>:3001/api`（例如 `http://172.20.10.3:3001/api`）。
+此覆寫只存在本機瀏覽器，不影響正式部署預設。
 
 ## 功能
 
