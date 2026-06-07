@@ -40,7 +40,7 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   bool get _showDemoLogin =>
-      widget.showDemoLogin ?? AppConfig.showDemoLoginButton;
+      widget.showDemoLogin ?? AppConfig.demoLoginVisible;
 
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();

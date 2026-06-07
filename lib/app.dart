@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import 'config/app_config.dart';
 import 'onboarding/coach_mark_controller.dart';
 import 'onboarding/coach_mark_keys.dart';
 import 'onboarding/coach_mark_overlay.dart';
@@ -164,11 +165,19 @@ class PetCompanionApp extends StatelessWidget {
             storageService: context.read<LocalStorageService>(),
           ),
         ),
-        Provider(create: (_) => MockShopService()),
+        // CR-0034：mock service 注入依環境決定。production（或未開
+        // ALLOW_MOCK_SERVICES）一律不注入未使用的 mock shop，確保正式版只走
+        // 正式商城路徑。mock service 類別本身保留，供 dev / test 使用。
+        if (AppConfig.mockServicesEnabled)
+          Provider(create: (_) => MockShopService()),
         Provider(create: (_) => WebSearchService()),
         ProxyProvider<WebSearchService, CompanionContentService>(
           update: (_, webSearch, __) => CompanionContentService(webSearch),
         ),
+        // CR-0034：以下兩個 mock 是 AiToolRouter / ConversationController 建構子
+        // 的結構性後援依賴（按住說話的降級路徑），故維持注入；正式版主要互動走
+        // Realtime 語音與正式 STT proxy，不以 mock 作為正式資料來源。後援文案中的
+        // 「Mock」工程字樣移除屬 CR-0039 範圍，本批不動。
         Provider(create: (_) => MockAiService()),
         Provider(create: (_) => MockSpeechToTextService()),
         Provider(create: (_) => SearchService()),
@@ -368,7 +377,12 @@ class PetCompanionApp extends StatelessWidget {
               );
             },
             onGenerateRoute: _onGenerateRoute,
-            home: const AppRoot(),
+            // CR-0034：production 但 API base URL 仍指向本機 / 空時，不進入正式
+            // 主流程（AppRoot 不掛載、不觸發載入），改顯示長者友善的暫不可用畫面，
+            // 避免長者連到不存在的本機服務、看到一連串連線錯誤。
+            home: AppConfig.isApiBaseUrlProductionSafe
+                ? const AppRoot()
+                : const _ServiceUnavailableView(),
           );
         },
       ),
@@ -636,6 +650,43 @@ class _AuthLoadingView extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// CR-0034：正式環境設定尚未完成（API 位址未指向正式服務）時的長者友善畫面。
+///
+/// 不顯示任何工程字眼（URL / host / config 名稱），只告訴使用者暫時無法連線、
+/// 請稍後再試或找服務人員協助，避免進入會一直連線失敗的正式主流程。
+class _ServiceUnavailableView extends StatelessWidget {
+  const _ServiceUnavailableView();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.favorite, size: 72, color: Color(0xFFFF8A80)),
+              SizedBox(height: 24),
+              Text(
+                '服務正在準備中',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
+              ),
+              SizedBox(height: 16),
+              Text(
+                '現在還沒辦法連上，請稍後再打開看看。\n如果一直這樣，可以請家人或服務人員幫忙看看。',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 20, height: 1.5),
+              ),
+            ],
+          ),
         ),
       ),
     );

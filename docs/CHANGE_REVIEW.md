@@ -1270,3 +1270,30 @@ CR-0034 — Production Environment and Config
 ### 測試
 本治理 CR 未改程式，未跑測試。基線維持 CR-0033：flutter 476 / backend 246 / caregiver_web 51。B1-B5 落地時各自補測並回報實跑結果。
 
+---
+
+### CR-0034 B3 實作落地（frontend-ux，Flutter）
+
+集中正式環境設定於 `lib/config/app_config.dart`（沿用既有 `AppConfig` 命名，不另開模組）：
+
+- 新增 compile-time（`--dart-define`）：`APP_ENV`（預設 development）/ `API_BASE_URL`（收斂 `BACKEND_BASE_URL` 為可讀別名，預設 localhost）/ `ALLOW_MOCK_SERVICES`（預設 false）。
+- 新增 getter：`isProduction`、`apiBaseUrl`（= `backendBaseUrl`）、`mockServicesEnabled`（production 一律 false）、`devPanelsVisible`（= `showDevPanels && !isProduction`）、`demoLoginVisible`（= `showDemoLoginButton && !isProduction`）、`isApiBaseUrlProductionSafe`（production 但 base URL 為 localhost / 空 → false）。
+- 原始 const（`showDevPanels` / `showDemoLoginButton` / `backendBaseUrl`）保留，維持既有測試與相容。
+
+production 行為保證：
+
+- `MaterialApp.debugShowCheckedModeBanner` 維持 false（確認，未改）。
+- 開發面板（`settings_screen.dart`）改讀 `AppConfig.devPanelsVisible` → production 強制不顯示。
+- Demo 登入（`login_screen.dart`）改讀 `AppConfig.demoLoginVisible` → production 強制隱藏。
+- mock service 注入改 guard：未使用的 `MockShopService` 改 `if (AppConfig.mockServicesEnabled)` 注入；production 不注入。`MockAiService` / `MockSpeechToTextService` 為 `AiToolRouter` / `ConversationController` 建構子結構性後援依賴，維持注入（不改契約），正式互動走 Realtime + 正式 STT proxy；其後援文案「Mock」工程字樣移除屬 CR-0039。
+- API base URL 一律由 `AppConfig` 取得，UI 頁面不硬編。
+- production 但 API base URL 仍指向本機 / 空 → `home` 改顯示長者友善 `_ServiceUnavailableView`，AppRoot 不掛載、不觸發正式主流程載入。
+
+未碰 `lib/services/realtime_voice_service.dart`、未改後端、未改 auth 契約。
+
+測試：新增 `test/config/app_config_test.dart`（依 `isProduction` 分流斷言）。
+- `flutter analyze` → No issues found。
+- `flutter test` → 483 passed（476 基線 + 7 新增）。
+- `flutter test test/config/app_config_test.dart --dart-define=APP_ENV=production --dart-define=SHOW_DEV_PANELS=true --dart-define=SHOW_DEMO_LOGIN=true --dart-define=ALLOW_MOCK_SERVICES=true --dart-define=API_BASE_URL=http://127.0.0.1:3001` → 7 passed（證明 production 強制關閉所有開發 / mock 旗標，且 localhost 觸發守門）。
+- 同檔 `--dart-define=APP_ENV=production --dart-define=API_BASE_URL=https://api.example.com` → 7 passed（正式網域放行）。
+

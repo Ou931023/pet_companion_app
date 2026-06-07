@@ -321,7 +321,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: _FamilyContactsEditor(profile: profile),
           ),
         ),
-        if (AppConfig.showDevPanels) ...[
+        if (AppConfig.devPanelsVisible) ...[
           const SizedBox(height: 14),
           Container(
             width: double.infinity,
