@@ -1032,3 +1032,95 @@
     - `auth_controller.dart`：`_runEmailAuth` 與 `signInWithGoogle` 新增 `on SessionApiException` 捕捉 → 新 `_friendlySessionError(code)` 白話訊息（`invalid_token`→「登入的資料好像過期了，請重新登入一次好嗎？」；`network`→網路白話；`server`→「登入暫時有點忙不過來…」），維持 `error` 狀態可在 LoginScreen 重試。
   - 重新規格化的既有測試（非破壞，斷言的正是要修正的捏造行為）：`auth_service_test.dart` 原「Firebase 成功但後端不可達 → 用 uid 當隔離 key」「Google 成功但後端失敗 → mockFallback」兩測試，改寫為「正式帳號後端失敗 → 丟 `SessionApiException` 且不持久化」，並補 401/連線錯誤分支。
   - 測試：`flutter analyze` 0 issue；`flutter test` 全綠 **464 passed**（基線 452 → 新增/改寫 auth 測試）。
+
+### CR-P2A：Care Alert 改 PostgreSQL 持久化（DB-優先、向下相容既有 JSON）— 🚧 進行中（2026-06-08 開立）
+- 提出 agent：architecture-agent（Phase 2 production 升級 / 治理）
+- 動機 / 問題：`careAlertStoreService.js` 目前**只**用 `fs.writeFile` 寫 `data/care_alerts.json`，等於把 Care Alert 核心資料以 JSON 檔當正式資料來源，違反 `pet_companion_app/CLAUDE.md §3.3`「正式版不可依賴 JSON file 作為主要資料庫」、且 §3.3 已把 `care_alerts` / `care_alert_status_events` 列為核心表。本 CR 補 PostgreSQL 持久化與狀態事件軌跡，**DB-優先**，JSON 降為 dev-only fallback。
+- ⚠️ 與 CR-0036（consent）DB-only 的關鍵差異（architecture-agent 裁定）：consent 是**稽核資料**（不可 JSON 假成功，連不到 DB 就丟例外）；**Care Alert 是可降級的營運資料**——high/urgent 通知不能因 DB 連不上就整條 `/notify` 失敗（會漏掉長者異常通知，比暫存 JSON 更糟）。故 Care Alert 採 **DB-優先 + JSON fallback（dev/容錯雙用）**，與 consent 的 DB-only 刻意不同，並在架構文件 §5 明記此差異與理由。
+- 現況查證（architecture-agent）：
+  - store 介面：`saveAlert / listAlerts / getAlertById / updateAlertStatus / deleteAlertsByElderId`（+ `normalizeAlert / normalizeRiskLevel / RISK_LEVEL_LABELS / VALID_STATUSES`）。
+  - 資料形狀：見 `PROJECT_ARCHITECTURE.md §5`（id/elderId/receivedAt/status/riskLevel/riskLevelLabel/category/categoryLabel/triggerSummary/transcriptSnippet/createdAt/source/statusUpdatedAt/acknowledgedAt/resolvedAt）。
+  - 狀態機：`VALID_STATUSES = ["new","acknowledged","resolved"]`，`new → acknowledged → resolved`。
+  - `riskLevel` 權威四級 + legacy 讀取容錯（`normalizeRiskLevel`：normal→low、attention→medium、未知→low）已實作，DB 寫入沿用同一正規化。
+  - server.js 路由：`POST /api/care-alerts/notify`、`GET /api/care-alerts`、`GET /api/care-alerts/:id`、`PATCH /api/care-alerts/:id/status`；回應形狀 `{success,alert}` / `{success,alerts}`。`deleteAlertsByElderId` 另由 `/api/auth/delete` 帳號刪除級聯呼叫（行 ~538）。
+  - `telegramNotifyService` 用到欄位：riskLevel / riskLevelLabel / category / categoryLabel / triggerSummary / transcriptSnippet / createdAt / source（DB 化不得改這些欄位語意）。
+  - 測試：`careAlertStoreService.test.js`（用 `options.filePath` temp 檔）、`careAlertListEndpoint.test.js` / `careAlertNotifyEndpoint.test.js` / `careAlertStatusEndpoint.test.js` / `careAlertDemoFlow.test.js`（用 `CARE_ALERTS_DATA_FILE` env 指 temp 檔）。**這些測試跑在無 `DATABASE_URL` 環境 → 必須仍走 JSON 路徑且全綠**，是本 CR 最重要的相容紅線。
+  - migrate.js：glob `migrations/*.sql` 依檔名排序、每次啟動重跑、無 schema_migrations 追蹤 → 新 migration **必須完全冪等**（沿用 `CREATE TABLE IF NOT EXISTS` + `ADD COLUMN IF NOT EXISTS` + `CREATE INDEX IF NOT EXISTS` + `pgcrypto`/`gen_random_uuid()`）。現有最高編號 `010_create_consent_records.sql` → 本 CR 用 **011**。
+  - `db/postgres.js` 提供 `query()` 與 `isPostgresAvailable()`（`DATABASE_URL` 未設或 `PGVECTOR_ENABLED!=true` 即回 false）→ 作為「DB 可用才走 DB、否則 JSON fallback」的天然 gate；store 沿用 consentStoreService 的 `options.pg` / `setPgForTest` 注入模式以便單測。
+- 影響範圍（檔案）：
+  - 新增 `backend/stt_proxy/db/migrations/011_create_care_alerts.sql`（`care_alerts` + `care_alert_status_events` 兩表，完全冪等）。
+  - 改 `backend/stt_proxy/services/careAlertStoreService.js`（DB-優先讀寫；DB 不可用 → JSON fallback；**對外 5 個函式簽章與回傳形狀完全不變**）。
+  - 新增 `backend/stt_proxy/services/careAlertStoreService.db.test.js`（注入 mock pg 測 DB 路徑；既有 JSON 測試保留不改）。
+  - 文件：`PROJECT_ARCHITECTURE.md §5`（標註後端持久化已 DB 化、DB-優先 + dev-only JSON fallback 的差異理由；schema 對映 011）。
+  - **不改 server.js 任何既有路由形狀**（核心批次）。任何新增「狀態歷史 GET 路由」屬契約改動，延後且需先更新架構契約。
+- 觸及 🔒？：**是** — ① DB schema / migration（新 `care_alerts` / `care_alert_status_events`）；② Care Alert 三方共用資料結構（§5）；③ `careAlertStoreService.js`（backend-agent owner，但屬共用 store）。**核心批次不觸 server.js 路由形狀**。
+- 牽涉哪些 agent：backend-agent（B1 migration、B2 store DB 化、B3 狀態事件軌跡）、architecture-agent（schema/契約 + 審查）。frontend-ux-agent / companion-memory-agent 不需動（欄位與回傳形狀不變）。
+- 風險等級：**medium**（改到核心 store 的讀寫實作；最大風險是破壞既有 JSON 測試與 `/notify` 不可因 DB 故障而漏掉 high/urgent 通知）。
+- `care_alerts` 欄位（對映 §5 JSON 形狀，沿用 UUID/TIMESTAMPTZ 慣例）：
+  - `id UUID PK DEFAULT gen_random_uuid()`、`elder_id UUID REFERENCES elders(id)` nullable
+  - `received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`、`status TEXT NOT NULL DEFAULT 'new'`（CHECK in new/acknowledged/resolved）
+  - `risk_level TEXT NOT NULL DEFAULT 'low'`（寫入前以 `normalizeRiskLevel` 收斂為四級）、`risk_level_label TEXT`
+  - `category TEXT`、`category_label TEXT`、`trigger_summary TEXT`、`transcript_snippet TEXT`
+  - `created_at TIMESTAMPTZ`（payload 來源時間，可空）、`source TEXT`
+  - `status_updated_at TIMESTAMPTZ`、`acknowledged_at TIMESTAMPTZ`、`resolved_at TIMESTAMPTZ`
+  - 索引：`idx_care_alerts_elder (elder_id)`、`idx_care_alerts_risk (risk_level)`、`idx_care_alerts_status (status)`、`idx_care_alerts_received (received_at DESC)`
+  - **id 由 service 端產生（`randomUUID`）並帶入 INSERT**，與既有 JSON 形狀一致，避免 DB 與 JSON 兩路徑 id 來源不同。
+- `care_alert_status_events`（狀態軌跡，append-only）：
+  - `id UUID PK DEFAULT gen_random_uuid()`、`alert_id UUID NOT NULL REFERENCES care_alerts(id) ON DELETE CASCADE`
+  - `from_status TEXT`、`to_status TEXT NOT NULL`、`changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`、`source TEXT`（誰改：caregiver_web / system）
+  - 索引：`idx_alert_status_events_alert (alert_id)`
+- DB-優先 / fallback 規則（紅線）：
+  - 讀寫先試 DB（`isPostgresAvailable()` 為 true 時）；DB 例外 → 記 `logError`（不含原文/PII）後**降級 JSON**，不丟例外、不讓 `/notify` 失敗。
+  - 無 `DATABASE_URL`（含所有現有測試與 Demo 無 DB 機）→ 直接走 JSON，行為與今日**完全一致**。
+  - **向下相容既有 `care_alerts.json` runtime 資料**：JSON 路徑保留 `normalizeAlert` / 讀取容錯（缺欄位視 null、legacy riskLevel 容錯），既有 alert 顯示與篩選不破壞。
+  - 不做 JSON↔DB 自動雙寫或遷移（避免重複 alert / id 衝突）；歷史 JSON 資料留在 JSON 路徑，新環境啟用 DB 後新資料進 DB。如需一次性匯入另開 follow-up，不在本 CR。
+- 建議批次切分：
+  - **Batch 1（backend-agent）— migration only**：加 `011_create_care_alerts.sql`（兩表，完全冪等），不接任何 store / 路由。驗收：dev DB 跑 migrate 成功 + 重跑冪等不報錯。最小、可獨立 revert。**不觸 server.js，不需先改契約。**
+  - **Batch 2（backend-agent）— store DB 優先（保留 JSON fallback）**：改 `careAlertStoreService.js` 的 `saveAlert / listAlerts / getAlertById / updateAlertStatus / deleteAlertsByElderId` 為「DB 可用走 DB、否則 JSON」，**對外簽章/回傳形狀零變更**；新增 `setPgForTest` / `options.pg` 注入。新增 `careAlertStoreService.db.test.js`，**既有 JSON 測試一字不改且全綠**。**server.js 路由形狀不變 → 不需先改契約**（僅在 §5 補一句「後端已 DB 化、DB-優先」說明，B2 動工前更新）。
+  - **Batch 3（backend-agent）— 狀態事件軌跡**：`updateAlertStatus` 在寫 status 同時 append 一列 `care_alert_status_events`（DB 路徑；JSON 路徑維持現狀不寫軌跡表，僅更新 alert 本體）。**不新增對外路由**。若日後要開 `GET /api/care-alerts/:id/history` 暴露軌跡 → 屬契約改動，須**先更新 `PROJECT_ARCHITECTURE.md §5` 契約再放行**（比照 CR-0036 規則），不在本 CR 核心批次。
+- 測試計畫（node --test）：`careAlertStoreService.db.test.js`（mock pg：save/list/get/updateStatus/deleteByElder 的 DB 路徑、DB 例外→JSON 降級不丟例外、狀態軌跡 append）；既有 `careAlertStoreService.test.js` + 4 個端點測試**回歸全綠**（驗證無 DB 環境行為不變）；`npm run check`；migration 以 dev DB 實跑 + 重跑驗冪等。
+- architecture-agent 裁決：**✅ 核准 Batch 1（migration 011，可即刻執行）**；**✅ 預核准 Batch 2/3 方向**（DB-優先 + JSON fallback、對外形狀零變更），但 **Batch 2 動工前需先在 `PROJECT_ARCHITECTURE.md §5` 補「後端持久化 DB 化 / DB-優先 vs consent DB-only 差異」說明**（治理前置，非契約形狀改動）。**任何新增路由（如狀態歷史 GET）一律退回，須另開契約更新後再審**。
+  - backend-agent 實作紅線：① 既有 JSON 測試**一字不改、全綠**（無 DATABASE_URL 行為與今日一致）；② `/notify` 絕不因 DB 故障而失敗——DB 例外→降級 JSON+`logError`，**不回 stack trace**；③ log / response **不得含完整 `transcriptSnippet` 之外的對話原文、不得含 PII / token**（snippet 沿用既有 200 字截斷規則）；④ 向下相容既有 `care_alerts.json`（不改寫舊資料、legacy riskLevel 容錯）；⑤ 對外 5 函式簽章/回傳形狀零變更、server.js 路由形狀零變更；⑥ 不碰 `.env`、不把 runtime `data/*.json` 進 git；⑦ 無新增環境變數（沿用既有 PG 設定）。
+- **Batch 2/3 正式放行（architecture-agent，2026-06-08）：✅ 放行（前置治理完成）。** 動工前置已完成——`PROJECT_ARCHITECTURE.md` 新增 **§5.3「後端 Care Alert 持久化（DB-優先 + JSON fallback）」**，明記與 CR-0036 consent **DB-only** 的差異與理由（care alert 為可降級營運資料，`/notify` 不可因 DB 故障漏掉 high/urgent 通知）、`careAlertStoreService` 對外 5 函式（`saveAlert / listAlerts / getAlertById / updateAlertStatus / deleteAlertsByElderId`）簽章與回傳形狀**零變更**、legacy riskLevel 讀取容錯、既有 `care_alerts.json` 不自動遷移 / 不雙寫。backend-agent 可依 **B2（store DB 化）→ B3（狀態軌跡）** 執行，恪守上方實作紅線；**任何新增路由（狀態歷史 GET 等）一律另開 CR、先更新 §4/§5 契約再審**。
+- 完成狀態：🚧 進行中（Batch 1 migration 011 ✅ 已 ship；Batch 2/3 ✅ 放行待實作，前置治理 §5.3 / §6.1 已完成）
+
+### CR-P2B：notification_logs + audit_logs（通知與敏感操作稽核）— 🚧 進行中（2026-06-08 開立）
+- 提出 agent：architecture-agent（Phase 2 production 升級 / 治理）
+- 動機 / 問題：`pet_companion_app/CLAUDE.md §8.7`「每次通知必須寫入 notification log」、§9.13「所有敏感操作需寫 audit log」、§8.10「通知失敗需可追蹤，不可靜默失敗」目前**完全未實作**（`grep notification_log / audit_log` 於 services + server.js = NONE；通知失敗只 `console` / `logError`，無持久化軌跡）。本 CR 補兩張稽核表與最小寫入點。
+- 現況查證（architecture-agent）：
+  - `telegramNotifyService.sendCareAlertNotification` 回 `{success}` / `{success:false,error,status?}`；`server.js /notify` 已分流 `skipped_low_risk` / `skipped_cooldown` / 真送（成功 `markTelegramSent`、失敗 `logError`）。→ notification_logs 寫入點集中在 `/notify` route（涵蓋 sent / failed / skipped 三種結局）。
+  - cooldown：`careAlertCooldown`（in-process，`canSendTelegram` / `markTelegramSent`），與 log 正交，不改。
+  - 敏感操作（server.js 既有）：帳號刪除 `/api/auth/delete`、Care Alert 狀態變更 `PATCH /api/care-alerts/:id/status`、consent 寫入（CR-0036 後）、登入 session（`/api/auth/session`）。**最小範圍先涵蓋前三者**（明確的資料/狀態變更與刪除），登入留待後續以免量大洗稽核。
+  - `logError` 風格：`logError(message, extra)`，extra 只放 error code / status，不放原文 → audit log 沿用「結構化、不含原文/PII」原則。
+  - migrate.js / postgres.js 機制同 CR-P2A；新 migration 用 **012**（在 CR-P2A 的 011 之後；若 P2A 未先 ship 則本 CR 取當下 next 編號並於動工時確認不撞號）。
+- 影響範圍（檔案）：
+  - 新增 `backend/stt_proxy/db/migrations/012_create_notification_audit_logs.sql`（`notification_logs` + `audit_logs` 兩表，完全冪等）。
+  - 新增 `backend/stt_proxy/services/notificationLogService.js`、`backend/stt_proxy/services/auditLogService.js`（pg insert；**DB-only-best-effort**：寫入失敗只 `logError`、回 `{success:false}`，**絕不丟例外影響主流程**——稽核 log 失敗不可拖垮通知或操作本身）。
+  - 改 `backend/stt_proxy/server.js`：在 `/notify`（通知三結局）、`/api/auth/delete`、`PATCH /api/care-alerts/:id/status` 補 best-effort 寫 log。**不改任何既有路由的 request/response 形狀**（只新增 fire-and-forget 寫入）。
+  - 新增對應 `*.test.js`（mock pg）。
+  - 文件：`PROJECT_ARCHITECTURE.md §3.3`（補列 `notification_logs` / `audit_logs` 核心表現況；目前架構文件僅 CLAUDE.md §3.3 列出，PROJECT_ARCHITECTURE 未明列）。
+- 觸及 🔒？：**是** — ① DB schema / migration（兩新表）；② `server.js`（在既有路由內**新增 log 寫入**，但**不改路由 request/response 形狀**）。
+- 牽涉哪些 agent：backend-agent（全部批次）、architecture-agent（schema + 審查）。
+- 風險等級：**low–medium**（純新增表 + best-effort 寫入；最大風險是 log 誤含原文/PII，或稽核寫入例外拖垮主流程——兩者皆以紅線封死）。
+- `notification_logs` 欄位：
+  - `id UUID PK DEFAULT gen_random_uuid()`、`alert_id UUID REFERENCES care_alerts(id)` nullable、`elder_id UUID` nullable
+  - `channel TEXT NOT NULL DEFAULT 'telegram'`、`risk_level TEXT`、`outcome TEXT NOT NULL`（`sent` | `failed` | `skipped_low_risk` | `skipped_cooldown`）
+  - `error_code TEXT`（失敗時的 error code，如 `telegram_send_failed`；**不存原文/URL/token**）、`http_status INT`（nullable）
+  - `created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`
+  - 索引：`idx_notif_log_alert (alert_id)`、`idx_notif_log_created (created_at DESC)`
+  - **不存**：完整對話原文、`transcriptSnippet`、chat_id、bot token、URL（§8.8 / §9.14）。
+- `audit_logs` 欄位：
+  - `id UUID PK DEFAULT gen_random_uuid()`、`actor_type TEXT`（`elder` | `caregiver` | `system`）、`actor_id TEXT` nullable（user_id / 識別；非 PII 明碼）
+  - `action TEXT NOT NULL`（`account_delete` | `care_alert_status_change` | `consent_record` …）、`target_type TEXT`、`target_id TEXT`
+  - `outcome TEXT`（`success` | `failed`）、`metadata JSONB`（**僅結構化非敏感欄位**：如 from/to status、刪除計數；**禁放原文 / email / ip / token**）
+  - `created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`
+  - 索引：`idx_audit_action (action)`、`idx_audit_actor (actor_id)`、`idx_audit_created (created_at DESC)`
+- 建議批次切分：
+  - **Batch 1（backend-agent）— migration only**：加 `012_create_notification_audit_logs.sql`（兩表，完全冪等），不接任何寫入。驗收：dev DB migrate + 重跑冪等。**不觸 server.js。**
+  - **Batch 2（backend-agent）— notification_logs**：`notificationLogService.js`（best-effort insert）+ 在 `/notify` 三結局（sent / failed / skipped）寫一列。**不改 `/notify` response 形狀**（純新增 fire-and-forget）。最小可行先只涵蓋 Care Alert 通知。
+  - **Batch 3（backend-agent）— audit_logs**：`auditLogService.js` + 在 `/api/auth/delete`、`PATCH /api/care-alerts/:id/status`（、CR-0036 ship 後的 consent 寫入）補 best-effort 稽核寫入。**不改既有路由 response 形狀**。
+- 測試計畫（node --test）：`notificationLogService.test.js` / `auditLogService.test.js`（mock pg：insert 形狀、寫入失敗→回 `{success:false}` 不丟例外、**斷言 log 物件不含 token/原文/PII 欄位**）；端點回歸：`/notify`、`/api/auth/delete`、`/status` 既有測試全綠（驗證新增寫入不改回應）；`npm run check`；migration dev DB 實跑 + 冪等。
+- architecture-agent 裁決：**✅ 核准 Batch 1（migration 012，可即刻執行）**；**✅ 預核准 Batch 2/3 方向**（best-effort、不改既有路由形狀）。因 Batch 2/3 在既有路由內新增寫入（屬 🔒 server.js 範圍），**動工前需先更新 `PROJECT_ARCHITECTURE.md §3.3`** 補列兩表現況（治理前置）；**只要任一批次改動 `/notify` 或敏感路由的 request/response 形狀即退回**。
+  - backend-agent 實作紅線：① 稽核/通知 log 寫入**一律 best-effort**——失敗只 `logError` + 回 `{success:false}`，**絕不丟例外、不拖垮通知或操作主流程**；② log **絕不含**完整對話原文 / `transcriptSnippet` / email / ip / chat_id / bot token / 含 token 的 URL（§8.8、§9.14）；③ 既有路由 request/response 形狀**零變更**、既有測試全綠；④ 錯誤**不回 stack trace**（細節只進 `logError`）；⑤ 不碰 `.env`、不把 runtime `data/*.json` 進 git；⑥ 無新增環境變數。
+- **Batch 2/3 正式放行（architecture-agent，2026-06-08）：✅ 放行（前置治理完成）。** 動工前置已完成——`PROJECT_ARCHITECTURE.md` 於 **§6.1「核心資料表（對映 CLAUDE.md §3.3）」** 正式列入 `notification_logs`、`audit_logs` 兩表（用途、欄位、「不存原文 / PII / token」紅線）；`notification_logs` 涵蓋 `/api/care-alerts/notify` **三結局**（sent / failed / skipped_*），`audit_logs` 先涵蓋**帳號刪除 / Care Alert 狀態變更 / consent 寫入**。backend-agent 可依 **B2（notification_logs）→ B3（audit_logs）** 執行，恪守上方實作紅線（best-effort、既有路由 request/response 形狀零變更、不含對話原文 / PII / token、不碰 `.env`、runtime `data/*.json` 不進 git、無新增環境變數）；**只要任一批次改動 `/notify` 或敏感路由 request/response 形狀即退回**。
+- 完成狀態：🚧 進行中（Batch 1 migration 012 ✅ 已 ship；Batch 2/3 ✅ 放行待實作，前置治理 §3.3 / §6.1 已完成）

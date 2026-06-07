@@ -195,6 +195,20 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
 
 這套 `low/medium/high` 屬於 `backend/agent/**` 與 tool intent，**owner 為 backend-agent**，不在 Care Alert OI-0001 範圍內，維持現狀。撰文時請以「Agent Tool 風險」明確區分，避免與 Care Alert 的 `riskLevel` 混淆。
 
+### 5.3 後端 Care Alert 持久化（CR-P2A，DB-優先 + JSON fallback）
+
+> CR-P2A 已將後端 Care Alert 持久化由「JSON 檔當正式資料來源」升級為 **PostgreSQL 優先**，
+> 對映 migration `011_create_care_alerts.sql`（`care_alerts` + `care_alert_status_events` 兩表）。
+
+持久化策略 — **DB-優先 + JSON fallback**（與 CR-0036 consent 的 **DB-only** 刻意不同）：
+
+- **為何不採 consent 式 DB-only**：consent 是稽核資料，連不到 DB 必須丟例外、不可 JSON 假成功；**Care Alert 是可降級的營運資料**——`/api/care-alerts/notify` 的 high/urgent 通知若因 DB 連不上就整條失敗，會直接漏掉長者異常通知，比暫存 JSON 更糟。故 Care Alert 採可降級路徑，並在此明記差異與理由。
+- **讀寫優先序**：`isPostgresAvailable()` 為 true → 走 DB；DB 例外 → `logError`（不含原文 / PII / token）後**降級 JSON**，不丟例外、不讓 `/notify` 失敗。無 `DATABASE_URL`（含所有現有測試與無 DB 的 Demo 機）→ 直接走 JSON，行為與 DB 化前**完全一致**。
+- **對外介面零變更**：`careAlertStoreService` 對外 5 函式 `saveAlert / listAlerts / getAlertById / updateAlertStatus / deleteAlertsByElderId` 的簽章與回傳形狀（`{success,alert}` / `{success,alerts}` 等）**完全不變**；§4 路由路徑 / 方法 / response 形狀亦不變。
+- **legacy riskLevel 讀取容錯**：DB 寫入沿用 `normalizeRiskLevel`（normal→low、attention→medium、未知→low）收斂為四級；讀取容錯 legacy 值（見 §5.1）。
+- **不自動遷移、不雙寫**：既有 `data/care_alerts.json` 舊資料**不自動匯入 DB、不 JSON↔DB 雙寫**（避免重複 alert / id 衝突）；歷史資料留在 JSON 路徑，啟用 DB 後新資料進 DB。一次性匯入如有需要另開 follow-up。
+- **狀態軌跡**：`care_alert_status_events` 為 append-only，DB 路徑於 `updateAlertStatus` 同步 append；JSON 路徑僅更新 alert 本體、不寫軌跡表。**暴露軌跡的 GET 路由屬契約改動，須另開 CR 先更新 §4/§5 契約再放行。**
+
 ---
 
 ## 6. 資料儲存
@@ -203,6 +217,18 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
 - 目標：PostgreSQL + pgvector；embedding 預設 `text-embedding-3-small`。
 - migration：`backend/stt_proxy/db/migrate.js`（🔒 schema 變更需核准）。
 - 連線：`backend/stt_proxy/db/pool.js`、`postgres.js`。
+
+### 6.1 核心資料表（對映 `pet_companion_app/CLAUDE.md §3.3`）
+
+> 隨 Phase 2 production 升級，核心營運 / 稽核資料逐步落地 PostgreSQL。以下為已納入治理的稽核相關核心表現況（PROJECT_ARCHITECTURE 先前僅 CLAUDE.md §3.3 列出、本檔未明列，於此補齊）。
+
+- `care_alerts` / `care_alert_status_events`（migration 011，CR-P2A）— Care Alert 本體與狀態軌跡，持久化策略見 §5.3。
+- `notification_logs`（migration 012，CR-P2B）— **每次 Care Alert 通知必寫一列**（對映 CLAUDE.md §8.7、§8.10「不可靜默失敗」）。涵蓋 `/api/care-alerts/notify` 的**三結局**：`sent` / `failed` / `skipped_*`（`skipped_low_risk`、`skipped_cooldown`）。欄位僅結構化：`alert_id` / `elder_id` / `channel` / `risk_level` / `outcome` / `error_code` / `http_status` / `created_at`。
+  - **紅線（§8.8、§9.14）：不存對話原文 / `transcriptSnippet` / chat_id / bot token / URL / email / ip。**
+- `audit_logs`（migration 012，CR-P2B）— **敏感操作須寫一列**（對映 CLAUDE.md §9.13）。最小範圍先涵蓋三類：**帳號刪除**（`/api/auth/delete`）、**Care Alert 狀態變更**（`PATCH /api/care-alerts/:id/status`）、**consent 寫入**（CR-0036 ship 後）；登入 session 暫不納入以免洗稽核。欄位：`actor_type` / `actor_id` / `action` / `target_type` / `target_id` / `outcome` / `metadata(JSONB)` / `created_at`。
+  - **紅線：`metadata` 僅放結構化非敏感欄位（如 from/to status、刪除計數）；禁放原文 / email / ip / token。**
+
+> 兩表寫入皆為 **best-effort**：寫入失敗只 `logError`，**絕不丟例外拖垮 `/notify` 或主流程**（詳見 `docs/CHANGE_REVIEW.md` CR-P2B 紅線）。
 
 ---
 
