@@ -7,6 +7,7 @@ import '../controllers/auth_controller.dart';
 import '../routes/app_routes.dart';
 import '../widgets/auth/auth_provider_button.dart';
 import '../widgets/auth/auth_visuals.dart';
+import 'legal_document_screen.dart';
 
 /// 登入頁。
 ///
@@ -240,6 +241,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           const SizedBox(height: 18),
                           _buildDemoButton(context),
                         ],
+                        const SizedBox(height: 16),
+                        _buildLegalLinks(context),
                         const SizedBox(height: 8),
                       ],
                     ),
@@ -425,6 +428,76 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  /// 登入前可閱讀的法遵入口：在 App 內直接捲動閱讀隱私權政策與服務條款，
+  /// 不依賴外部網址（URL 仍是佔位時也能安心點開）。
+  Widget _buildLegalLinks(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          '登入即代表你已閱讀並同意',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 16,
+            height: 1.4,
+            color: Colors.black.withValues(alpha: 0.55),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            TextButton(
+              onPressed: () => _openPrivacyPolicy(context),
+              style: TextButton.styleFrom(
+                minimumSize: const Size(0, 48),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+              ),
+              child: const Text(
+                '隱私權政策',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+              ),
+            ),
+            Text(
+              '與',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.black.withValues(alpha: 0.55),
+              ),
+            ),
+            TextButton(
+              onPressed: () => _openTermsOfService(context),
+              style: TextButton.styleFrom(
+                minimumSize: const Size(0, 48),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+              ),
+              child: const Text(
+                '服務條款',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  void _openPrivacyPolicy(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => LegalDocumentScreen.privacyPolicy(),
+      ),
+    );
+  }
+
+  void _openTermsOfService(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => LegalDocumentScreen.termsOfService(),
+      ),
     );
   }
 }

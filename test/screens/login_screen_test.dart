@@ -318,4 +318,39 @@ void main() {
 
     expect(find.text('先進去陪伴'), findsOneWidget);
   });
+
+  testWidgets('登入前可看到隱私權政策與服務條款入口', (tester) async {
+    useTallView(tester);
+    final controller = AuthController(authService: _FakeAuthService());
+    await _pumpLogin(tester, controller);
+
+    expect(find.text('登入即代表你已閱讀並同意'), findsOneWidget);
+    expect(find.text('隱私權政策'), findsOneWidget);
+    expect(find.text('服務條款'), findsOneWidget);
+  });
+
+  testWidgets('點「隱私權政策」會在 App 內開啟並顯示政策內容', (tester) async {
+    useTallView(tester);
+    final controller = AuthController(authService: _FakeAuthService());
+    await _pumpLogin(tester, controller);
+
+    await tester.tap(find.text('隱私權政策'));
+    await tester.pumpAndSettle();
+
+    // 進入 App 內可捲動閱讀的政策畫面，顯示政策段落（不依賴外部網址）。
+    expect(find.text('我們珍惜你的信任'), findsOneWidget);
+    expect(find.textContaining('TODO'), findsNothing);
+  });
+
+  testWidgets('點「服務條款」會在 App 內開啟並顯示條款內容', (tester) async {
+    useTallView(tester);
+    final controller = AuthController(authService: _FakeAuthService());
+    await _pumpLogin(tester, controller);
+
+    await tester.tap(find.text('服務條款'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('關於這個服務'), findsOneWidget);
+    expect(find.textContaining('TODO'), findsNothing);
+  });
 }
