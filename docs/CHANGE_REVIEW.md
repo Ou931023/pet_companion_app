@@ -679,6 +679,66 @@
 
 ---
 
+## CR-0013：簽到日曆獎勵升級（每日固定獎勵 + 禮物日）
+
+- 提出 agent：frontend-ux-agent（實作）／architecture-agent（review）
+- 日期：2026-06-01
+- 動機：讓簽到更有遊戲感、適合正式展示——每格顯示當天獎勵、隨機金幣、每 4 天送商品、今日高亮、已領取狀態。
+- 觸及 🔒？**否**：純前端（check-in / 日曆 UI / reward model / inventory / coins），無 backend API、無 Realtime、無 schema、無依賴新增、不跨 agent → 不需事前 CR，於 frontend-ux 範圍內小步實作，本則為事後 checkpoint review。
+- 範圍：
+  - 新增 `lib/models/daily_reward.dart`（`DailyReward` + `MonthlyRewardTable`）、`test/models/daily_reward_test.dart`、`test/controllers/check_in_controller_test.dart`
+  - 修改 `lib/services/check_in_storage_service.dart`（持久化月度 reward 表，沿用 `_k()` elderId namespace）、`lib/controllers/check_in_controller.dart`（reward 表載入/產生 + `checkIn` 發金幣+禮物 + `lastClaim`/`rewardForDay`）、`lib/services/ai_tool_router.dart`（語音簽到補傳 `inventoryController`）、`lib/screens/home_screen.dart`（日曆 UI 升級 + `_CalendarDayCell`）
+
+### Checkpoint Review（architecture-agent，2026-06-01）— 獨立讀碼 + grep + analyze + full test
+
+| # | 項目 | 結果 |
+|---|------|------|
+| 1 | DailyReward / MonthlyRewardTable 設計完整 | ✅ `DailyReward{day,coins,hasGift,giftItemId}`＋`MonthlyRewardTable{year,month,rewards}` 含 `generate`/`forDay`/`toJson`/`fromJson` |
+| 2 | 金幣區間 一般 10–25、週一 25–40 | ✅ `weekStart ? 25+rng.nextInt(16) : 10+rng.nextInt(16)`，`isWeekStart=weekday==Monday`；測試以 inInclusiveRange 鎖住 |
+| 3 | 每 4 天送隨機商品 | ✅ `isGiftDay=day%4==0`，禮物日從 `giftPool` 取 id；測試覆蓋 4/8/…/28 |
+| 4 | 同 elderId+年月固定、不重 random | ✅ `MonthlyRewardTable.generate` 用穩定 FNV-1a 種子（`elderId|year|month`）＋ `_ensureRewardTable` 先讀已存表、null 才產生並存回；`load()` 換帳號時清表重讀 |
+| 5 | checkIn 真的發金幣 | ✅ `walletController.addCoins(coins)`；測試驗 `wallet.coins == before+N` |
+| 6 | 禮物日真的發商品到 inventory | ✅ `inventoryController.addFromShop(gift)`；測試驗 `inventory.items` 含預存 giftItemId |
+| 7 | 重複簽到不重複領 | ✅ `if (hasCheckedInToday) return false`；測試驗第二次回 false |
+| 8 | reward table / check-in / inventory 依 elderId 隔離 | ✅ reward 表 `_k(_rewardKey())`、check-in/ inventory 已於 CR-0012 namespace；測試驗 A 表 B 讀不到 |
+| 9 | Demo default_user 不被破壞 | ✅ `_k` default_user 走全域 key；測試驗 default_user reward 表獨立 |
+| 10 | 日曆 UI：日期 / 金幣 / 禮物 / 今日高亮 / 已領取 | ✅ `_CalendarDayCell` 顯示日期＋🪙金幣＋🎁；今日橘框、已簽到綠底＋✓ check_circle；白話說明＋大鈕＋無工程字 |
+| 11 | 未改 backend / caregiver_web / Realtime / Firebase 原生 / pubspec / .env | ✅ 本功能改動檔僅 check_in_controller / home_screen / ai_tool_router / check_in_storage ＋新 model/2 測試；`care_alert_screen*`、`caregiver_web/*` 為會話初始既有遺留，非本功能 |
+| 12 | flutter analyze | ✅ No issues found（lib/ + test/） |
+| 13 | flutter test 全套 | ✅ **274/274 passed**（前 264 + 新增 10，零回歸） |
+
+- 觀察（非阻擋）：7 欄月曆在窄螢幕下金幣字偏小屬密度取捨；UI 為彈窗、不影響主畫面（`home_screen_layout_test` 1.3 字級仍綠）。`checkIn` 新增必填 `inventoryController`，兩個 production 呼叫處皆已同步更新。
+- 裁決：✅ **通過驗收**，乾淨、可獨立回復的 checkpoint。
+- **建議 commit**：✅。commit message 建議：`feat: upgrade daily check-in calendar with fixed monthly rewards and gift days`。
+- **commit 範圍須顯式挑檔**：
+  - 新增：`lib/models/daily_reward.dart`、`test/models/daily_reward_test.dart`、`test/controllers/check_in_controller_test.dart`
+  - 修改：`lib/controllers/check_in_controller.dart`、`lib/services/check_in_storage_service.dart`、`lib/services/ai_tool_router.dart`、`lib/screens/home_screen.dart`
+  - 文件（可另行 / 一併）：`docs/CHANGE_REVIEW.md`
+  - **排除**（既有遺留 / runtime / 噪音）：`lib/screens/care_alert_screen.dart`、`test/screens/care_alert_screen_test.dart`、`caregiver_web/care_alert_display.test.js`、`docs/DEMO_SCRIPT.md`、`backend/stt_proxy/data/*.json`、`ios/...Runner.xcscheme`、`repomix-output.xml`、`devtools_options.yaml`、`.claude/worktrees/`、`assets/pets_raw/`
+
+---
+
+## CR-0014：語音 Realtime 連線中打字注入同一個 live 對話
+
+- 提出 agent：realtime-voice-agent（service + controller 實作）／主代理（home_screen UI 路由）
+- 日期：2026-06-01
+- 動機 / 問題：打字對話（`quickAction` → companion engine）與語音對話（OpenAI Realtime live session）原本是兩套獨立回覆引擎，只共用對話紀錄與脈絡；語音連線中打字會另走 quickAction 產生平行回覆，造成「各說各話 / 互相蓋台」的體驗（使用者回報「不理我了」）。需求：語音連線中打字時，把文字注入**同一個 live realtime session**，讓寵物用語音在同一個對話裡回覆。
+- 影響範圍（檔案）：
+  - `lib/services/realtime_voice_service.dart`（🔒）：新增 public `sendUserText(String)`（送 `conversation.item.create`(role=user/input_text) + `response.create`，沿用既有 `_sendEventPayload` / 排隊 / try-catch）；新增 `@visibleForTesting` seam。
+  - `lib/controllers/voice_agent_controller.dart`：新增 `Future<bool> sendTextDuringRealtime(String)`（可用才接手：顯示使用者氣泡 + 記 user turn + 注入；不可用回 false）。
+  - `lib/screens/home_screen.dart`：`_sendTextMessage` 改為先試 `sendTextDuringRealtime`，回 false 才 fallback `quickAction`。
+- 觸及 🔒？：是（`realtime_voice_service.dart`）——本次為**新增 public 方法 + 測試 seam**，不改 SDP/連線主流程、不送 `session.update`（避免動到純語音 server_vad 流程）、不改成 mock、無 demo fallback。
+- 牽涉哪些 agent：realtime-voice-agent（擁有 service + VoiceAgentController）、frontend-ux（home_screen 文字框路由，由主代理代為最小接線）。
+- 風險等級：medium（碰 Realtime 主流程檔，但屬純增量、純語音路徑不受影響）。
+- 測試計畫 / 結果：
+  - service 新增 2 測試（注入兩事件、空白忽略）、controller 新增 2 測試（未連線回 false、連線時注入 user turn + 觸發回覆）。
+  - `flutter analyze lib` → ✅ No issues。
+  - `flutter test test/realtime_voice_service_test.dart test/voice_agent_controller_realtime_lifecycle_test.dart test/home_screen_layout_test.dart test/realtime_timeout_test.dart test/realtime_turn_coordinator_test.dart` → ✅ 全綠（含新增 4 個）。
+- architecture-agent 裁決：⬜ 待補審（事後 review；實作已通過 analyze + 測試，純語音流程未受影響）。
+- 完成狀態：✅ 完成（程式 + 測試），實機驗證待使用者於語音連線中打字確認。
+
+---
+
 ## 待釐清項目 / 後續（Follow-ups）
 
 ### FU-0001：移除 legacy 容錯（待四級資料穩定後另開 CR）
