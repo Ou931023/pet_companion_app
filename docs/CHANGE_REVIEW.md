@@ -1204,3 +1204,69 @@ Audit the entire project for production-readiness risks before converting the gr
 
 ### Recommended Next CR
 CR-0034 — Production Environment and Config
+
+
+---
+
+## CR-0034 — Production Environment & Config（治理規劃與裁決）
+
+> 類型：Governance / 架構守門人裁決（**本區段不改業務程式碼**；僅更新 `PROJECT_ARCHITECTURE.md` §5.3.1 / §7.1 與本檔）。
+> 目標：把 CR-0033 稽核 P0-3（auth mock 預設開）、P0-4（無 fail-fast、缺 env 靜默降級）轉成可交付 backend-agent / frontend-ux-agent 的精確實作規格與批次。
+
+### 影響範圍 / Owner / 🔒 / 風險
+
+| 範圍 | Owner agent | 觸 🔒？ | 風險 |
+|---|---|---|---|
+| 後端集中 config + fail-fast + masked log | backend-agent | 是（server.js 啟動段） | medium |
+| 後端 JSON-fallback / mock guard（含 mockAllowed production=false） | backend-agent | 是（auth 行為 + server.js /notify 順序） | high |
+| Flutter EnvironmentConfig / AppConfig / dev-panel·mock guard | frontend-ux-agent | 否（不得碰 `realtime_voice_service.dart` 主流程） | low-medium |
+| caregiver_web API base URL config | frontend-ux-agent | 否 | low |
+| docs（.env.example / ENVIRONMENT_SETUP / PRODUCTION_CONFIG_CHECKLIST） | backend-agent | 否（`.env.example` 不得含真值） | low |
+
+### 裁決一：環境與 flag 治理
+統一 `development / staging / production`。flag 對應表與相容收斂規則見 `PROJECT_ARCHITECTURE.md §7.1`。重點：舊命名（`AUTH_ALLOW_MOCK` / `ALLOWED_ORIGINS` / `BACKEND_BASE_URL`）保留為可讀別名，由新模組 `backend/stt_proxy/config/env.js` 統一映射；不一次大破壞。`NODE_ENV=test` 永不解析為 production。
+
+### 裁決二：Backend fail-fast 規格
+集中於新模組 `config/env.js`：純函式 `validateProductionEnv(env)→{ok,missing[]}`（可單測）+ `assertProductionEnvOrExit()`（缺→印安全訊息+`process.exit(1)`）。呼叫點在 `server.js` `dotenv.config()` 後、掛路由前，**非 production / `NODE_ENV=test` 一律 no-op**。production 必檢 `DATABASE_URL` / `OPENAI_API_KEY` / `CORS_ALLOWED_ORIGINS` / Firebase 服務帳戶 / `ADMIN_API_TOKEN`；條件必檢 `TELEGRAM_BOT_TOKEN` / `PGVECTOR_ENABLED`；`SESSION_SECRET|JWT_SECRET` 待 CR-0038 納入。production + `ALLOW_JSON_FALLBACK=true` / `ALLOW_MOCK_SERVICES=true` / `REQUIRE_AUTH=false` / CORS 空 → 拒絕啟動。**只列缺哪些變數名稱、絕不印值**；提供 mask helper。詳見 `PROJECT_ARCHITECTURE.md §7.1.1`。
+
+### 裁決三：JSON fallback 在 production 的政策（關鍵，依環境分流）
+完整裁決見 `PROJECT_ARCHITECTURE.md §5.3.1`。摘要：
+- **care alert**：dev/staging 維持 DB-優先 + JSON fallback（零變更）；production（`ALLOW_JSON_FALLBACK=false`）改 **DB-required** — DB 例外時 `saveAlert` 回 `{success:false,error:'care_alert_persist_failed'}`（清楚錯誤、不丟例外、不寫 JSON 當權威），且 `/notify` 必須**解耦通知與持久化**：high/urgent 通知照送、持久化失敗以 `notification_logs` 明確記一列，**絕不靜默漏通知、絕不假成功、不改 /notify request/response 形狀**。
+- **auth / memory / consent / search**：production DB-required，缺 `DATABASE_URL` 由啟動層擋；runtime DB 例外回清楚錯誤，不降級 JSON 當權威。
+- **marketplace / dailyCareTask（JSON-only）**：production 以清楚 guard 阻擋（長者友善訊息），列為 **CR-0042 blocker**；屬已知且已文件化限制，需產品確認接受。
+
+### 裁決四：批次切分（逐批可驗證）
+
+- **B1（backend，🔒 server.js 啟動）**：新增 `config/env.js`（`APP_ENV` 正規化 / `isProduction` / boolean 安全解析 / `validateProductionEnv` / `assertProductionEnvOrExit` / mask helper）+ 接入 server.js 啟動段 + 單測。**先做這批**。
+- **B2（backend，🔒 auth 行為 + /notify 順序）**：`mockAllowed()` production 強制 false（修 P0-3）；`ALLOW_JSON_FALLBACK` 接入 careAlert（production DB-required + /notify 解耦）/ auth / memory / consent / search；marketplace / dailyCareTask production guard；補測試。
+- **B3（frontend-ux）**：Flutter `EnvironmentConfig`/`AppConfig` 加 `APP_ENV` / `API_BASE_URL` / `ALLOW_MOCK_SERVICES`；production 強制 `SHOW_DEV_PANELS`/`SHOW_DEMO_LOGIN`=false、`API_BASE_URL` 為 localhost/空時阻擋進正式主流程；mock service 注入改 guard；移除給長者看的 "Mock" 字樣（與 CR-0039/0040 協調，不重工）。**不得碰 `realtime_voice_service.dart` 主流程**。
+- **B4（frontend-ux）**：caregiver_web API base URL 改可配置、移除 `http://127.0.0.1:3001/api` 作為 production 預設、production 不顯示 debug UI。
+- **B5（backend / docs）**：`.env.example` 分區補齊（只列名稱、不放真值）、`docs/ENVIRONMENT_SETUP.md`、`docs/PRODUCTION_CONFIG_CHECKLIST.md`。
+
+### 🔒 核准裁決（架構守門人）
+- **B1 server.js 啟動段插入 fail-fast**：**核准（附條件）** — 僅啟動層、掛路由前；`NODE_ENV=test` / 非 production no-op；不得改任何路由 request/response；不得印 secret 值。
+- **B2 `mockAllowed()` production=false**：**核准** — `createSession` 對外契約不變；dev/test 行為不變；僅 production 收斂為強制驗證（修 P0-3）。
+- **B2 careAlert production DB-required + /notify 解耦**：**核准（附條件）** — 不得改 `/notify` request/response 形狀；不得讓 high/urgent 通知靜默漏掉；持久化失敗須 loud error + `notification_logs`，不得 JSON 假成功。
+- **B3 / B4 / B5**：**非 🔒，可直接執行**（B3 紅線：不得觸碰 Realtime 主流程；caregiver_web 屬 frontend-ux）。
+
+### 紅線（本 CR 全程）
+不碰 `.env`；不寫死 secret；不移除 Realtime 主流程 / Care Alert / 長期記憶；production 缺設定**不可自動切 mock / JSON**；不為過測試硬編假資料；**不改既有路由 request/response 形狀**（fail-fast 是啟動層、非 API 契約）；不破壞既有測試基線（flutter 476 / backend 246 / caregiver_web 51）。
+
+### 建議先做
+**B1**。第一步：建立 `backend/stt_proxy/config/env.js`，先實作純函式（`resolveAppEnv` / boolean 安全解析 / `validateProductionEnv→{ok,missing[]}` / `maskSecret`）與其單測，**暫不接入 server.js**（確保 246 測試全綠），再以 no-op-on-test 的 `assertProductionEnvOrExit()` 接入 server.js 啟動段。
+
+### 各批第一步（交付 owner）
+- B1 → 建 `config/env.js` 純函式 + 單測（backend-agent）。
+- B2 → 先改 `sessionService.mockAllowed()` 讀 `config.isProduction`（backend-agent），單測 production=false。
+- B3 → 建 `lib/config/environment_config.dart`（或擴充 `AppConfig`）加 `APP_ENV`/`API_BASE_URL`/`ALLOW_MOCK_SERVICES`（frontend-ux-agent）。
+- B4 → caregiver_web 抽出 `API_BASE` 設定來源、移除 localhost production 預設（frontend-ux-agent）。
+- B5 → 起草 `.env.example` 分區骨架（只列名稱）（backend-agent）。
+
+### Files Updated（本治理 CR）
+- `PROJECT_ARCHITECTURE.md`（新增 §5.3.1 production JSON fallback 政策、§7.1 環境/flag 治理 + §7.1.1 fail-fast 規格）
+- `docs/CHANGE_REVIEW.md`（本區段）
+- **無任何程式碼 / schema 改動。**
+
+### 測試
+本治理 CR 未改程式，未跑測試。基線維持 CR-0033：flutter 476 / backend 246 / caregiver_web 51。B1-B5 落地時各自補測並回報實跑結果。
+

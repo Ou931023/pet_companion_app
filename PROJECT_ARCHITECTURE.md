@@ -209,6 +209,30 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
 - **不自動遷移、不雙寫**：既有 `data/care_alerts.json` 舊資料**不自動匯入 DB、不 JSON↔DB 雙寫**（避免重複 alert / id 衝突）；歷史資料留在 JSON 路徑，啟用 DB 後新資料進 DB。一次性匯入如有需要另開 follow-up。
 - **狀態軌跡**：`care_alert_status_events` 為 append-only，DB 路徑於 `updateAlertStatus` 同步 append；JSON 路徑僅更新 alert 本體、不寫軌跡表。**暴露軌跡的 GET 路由屬契約改動，須另開 CR 先更新 §4/§5 契約再放行。**
 
+#### 5.3.1 Production JSON fallback 政策（CR-0034 治理裁決）
+
+> CR-0034 §3.4 要求 production 停用 JSON fallback；CR-P2A 又刻意保留 care alert 的 DB-優先 + JSON fallback 以免 `/notify` 漏掉 high/urgent。以下為架構守門人對兩者衝突的**正式裁決**（依環境分流，dev/staging 行為完全不變、不破壞既有 246 後端測試）。
+
+環境旗標：`ALLOW_JSON_FALLBACK`（development 預設 `true`、staging 可設、**production 強制 `false`**；production 顯式設 `true` → 啟動 fail-fast）。
+
+- **care alert（careAlertStoreService，可降級營運資料）**
+  - **development / staging（`ALLOW_JSON_FALLBACK=true`）**：維持現狀 — DB-優先，DB 例外 → `logError` 後降級 JSON，`/notify` 不失敗。**行為與本檔 §5.3 完全一致，零變更。**
+  - **production（`ALLOW_JSON_FALLBACK=false`）**：改為 **DB-required**。DB 連得上 → 一律走 DB。DB 例外時**禁止**靜默降級 JSON 假成功；正確行為為：
+    1. `saveAlert` 回 `{success:false, error:'care_alert_persist_failed'}`（**清楚錯誤、不丟例外讓 server crash、不寫 JSON 當權威**）。
+    2. `/api/care-alerts/notify` 必須把「送 Telegram 通知」與「持久化 alert」**解耦**：high/urgent 的通知仍要送出（這是安全關鍵路徑），持久化失敗以 `notification_logs` 的 `outcome=failed`（或 `persist_failed`）**明確記一列**，**絕不靜默漏通知、絕不假成功**。
+    3. `/notify` 的 **request / response 形狀不得改變**（解耦是 endpoint 內部順序調整，非 API 契約改動）。
+  - 一句話：production 下 care alert 的權威來源是 DB；DB 故障時「通知照送 + 大聲記錄失敗」，而不是「靜默 JSON 假成功」或「整條 notify 失敗」。
+
+- **auth / memory / consent / search（DB-優先 + JSON fallback 類）**
+  - development / staging：維持 DB-優先 + JSON fallback。
+  - production：DB-required，缺 `DATABASE_URL` 由啟動層 fail-fast（見 §7.1）擋下；runtime DB 例外回清楚錯誤，不降級 JSON 當權威。consent 既為 DB-only（§5.3 既有），維持不變。
+
+- **marketplace / dailyCareTask（JSON-only，無 DB 路徑）**
+  - 此兩 service **目前沒有 DB 路徑**，在 production 等同無持久化保證（PROD_AUDIT P1-4）。
+  - **裁決（依 CR-0034 §3.4.5）**：production 下以**清楚 guard 阻擋**，對使用者回長者友善訊息（例：「這個功能整備中，晚點再回來看看」），**不得**以 JSON-only 充當正式資料庫。列為 **CR-0042（PG 化）blocker**。
+  - 此為「production 暫時不提供 marketplace / daily care task」的**已知且已文件化限制**，需產品確認接受；dev/staging 不受影響。
+
+
 ---
 
 ## 6. 資料儲存
@@ -253,6 +277,37 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
 > Flutter 端 Firebase 設定（`google-services.json` / `GoogleService-Info.plist`、Google `REVERSED_CLIENT_ID`、Apple Service ID/Key）屬 client 平台設定檔，**不是後端 env、也不進 feature commit**。
 
 ---
+
+### 7.1 環境與 flag 治理（CR-0034，development / staging / production）
+
+統一三環境名稱：`development` / `staging` / `production`（不得用 testmode / real_demo / prod_test 等模糊名）。集中讀取於後端 `backend/stt_proxy/config/env.js`（新模組，B1），各 service 不再各自 `process.env` 解析旗標。
+
+`APP_ENV` 正規化：顯式 `APP_ENV` 優先；否則 `NODE_ENV==='production'` → production、`NODE_ENV==='test'` → 視為 development 語義（**`NODE_ENV=test` 永遠不得解析為 production**，以保 `careAlertCooldown` / `taigiAsr` 等既有 `NODE_ENV==='test'` 行為與 246 測試）。`isProduction = (APP_ENV==='production' || NODE_ENV==='production')`。
+
+| flag | development | staging | production | 對映 / 收斂的現有命名 |
+|---|---|---|---|---|
+| `APP_ENV` | development | staging | production | 新增（後端 + Flutter `--dart-define`） |
+| `ALLOW_MOCK_SERVICES` | true | false | **false（顯式 true → fail-fast）** | 收斂 `AUTH_ALLOW_MOCK`、Flutter mock 注入 |
+| `ALLOW_JSON_FALLBACK` | true | 可設 | **false（顯式 true → fail-fast）** | 新增；治理 §5.3.1 各 store |
+| `REQUIRE_AUTH` | false | true | **true（顯式 false → fail-fast）** | 收斂 `AUTH_ALLOW_MOCK`（production 強制驗 token） |
+| `REQUIRE_CONSENT` | false | true | true | 新增（對映 consent gate） |
+| `ENABLE_VERBOSE_LOGS` | true | false | false | 收斂散落 `console.*` |
+| `SHOW_DEV_PANELS`（Flutter） | 可開 | false | **false** | 既有 `lib/config/app_config.dart`，維持 |
+| `SHOW_DEMO_LOGIN`（Flutter） | 可開 | false | **false** | 既有，維持 |
+| `CORS_ALLOWED_ORIGINS`（後端） | 寬鬆 | 白名單 | **必填白名單（空 → fail-fast）** | 相容別名既有 `ALLOWED_ORIGINS`（修 P1-1） |
+| `PGVECTOR_ENABLED`（後端） | 可選 | 依用 | 若記憶向量啟用則必填 | 既有，維持（feature flag，與環境正交） |
+| `API_BASE_URL`（Flutter / caregiver_web） | localhost | staging URL | **正式 https 網域（localhost/空 → 阻擋進正式主流程）** | Flutter 收斂 `BACKEND_BASE_URL`；web 收斂 `DEFAULT_API_BASE` |
+
+**相容收斂原則（不一次大破壞）**：舊命名（`AUTH_ALLOW_MOCK`、`ALLOWED_ORIGINS`、`BACKEND_BASE_URL`）保留為**可讀別名**，由 `config/env.js` 統一映射到新語義；production 下新語義（強制安全值）覆蓋舊命名。`mockAllowed()` 在 production 一律回 `false`（修 P0-3），dev/test 行為不變。
+
+#### 7.1.1 Backend production fail-fast（B1）
+
+- **位置**：新模組 `backend/stt_proxy/config/env.js`，提供純函式 `validateProductionEnv(env) → {ok, missing[]}`（可單測，不退出），與薄包裝 `assertProductionEnvOrExit()`（缺 → 印安全訊息 + `process.exit(1)`）。
+- **呼叫點**：`server.js` 頂部 `dotenv.config()` 之後、掛路由之前呼叫一次；**`NODE_ENV==='test'` 或非 production 一律 no-op**（保 246 測試與 Demo 機）。🔒 server.js 啟動段改動，需守門人核准（本 CR 已附條件核准，見 CHANGE_REVIEW CR-0034）。
+- **production 必檢**：`DATABASE_URL`、`OPENAI_API_KEY`、`CORS_ALLOWED_ORIGINS`（空白單）、auth secret（現況=Firebase 服務帳戶 `GOOGLE_APPLICATION_CREDENTIALS` 或 `FIREBASE_PROJECT_ID`+`FIREBASE_CLIENT_EMAIL`+`FIREBASE_PRIVATE_KEY` 三件組）、`ADMIN_API_TOKEN`（admin 端點存在）。
+- **條件必檢**（功能啟用才檢）：`TELEGRAM_BOT_TOKEN`（Telegram 通知啟用時）、`PGVECTOR_ENABLED`（記憶向量啟用時）。`SESSION_SECRET` / `JWT_SECRET`：待 CR-0038 正式 admin/JWT 登入落地後納入必檢（現況 Firebase + ADMIN_API_TOKEN，先列 checklist）。
+- **production 額外 fail-fast**：`ALLOW_JSON_FALLBACK=true`、`ALLOW_MOCK_SERVICES=true`、`REQUIRE_AUTH=false`、`CORS_ALLOWED_ORIGINS` 空 → 任一成立即拒絕啟動。
+- **紅線**：缺設定**不可靜默啟動、不可自動切 JSON/mock**；錯誤訊息**只列缺哪些變數名稱**，**絕不印 token/secret 值**；提供 mask helper（`postgres://***`、`sk-***last4`、`ou***@example.com`）。fail-fast 是**啟動層**行為，**不改任何 API request/response 契約**。
 
 ## 8. 測試入口
 
