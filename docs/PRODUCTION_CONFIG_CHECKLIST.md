@@ -1,0 +1,145 @@
+# Production Config Checklist（正式上線前檢查表）
+
+> 對象：負責把本系統推上正式環境 / 上架的人。
+> 用途：production 部署前逐項勾選，確保 fail-fast 必要設定齊全、不安全旗標關閉、
+> 待辦（hosted URL / migrations / 上架身份）已處理。
+> 治理依據：`PROJECT_ARCHITECTURE.md` §7.1 / §7.1.1 / §5.3.1、CR-0034。
+>
+> 紅線：不要把 `.env` 或任何 token / API key 進版控；本文件只列名稱，不含真實值。
+> 啟動 / build 操作步驟見 `docs/ENVIRONMENT_SETUP.md`。
+
+---
+
+## 1. 環境 / flag 對照表（dev / staging / prod，引用 §7.1）
+
+| flag | development | staging | production | 備註 |
+|---|---|---|---|---|
+| `APP_ENV` | development | staging | production | 顯式優先；`NODE_ENV=test` 永不視為 production |
+| `ALLOW_MOCK_SERVICES` | true | false | **false（顯式 true → fail-fast）** | 收斂 `AUTH_ALLOW_MOCK` / Flutter mock 注入 |
+| `ALLOW_JSON_FALLBACK` | true | 可設 | **false（顯式 true → fail-fast）** | 治理 §5.3.1 各 store |
+| `REQUIRE_AUTH` | false | true | **true（顯式 false → fail-fast）** | production 強制驗 token |
+| `REQUIRE_CONSENT` | false | true | true | 治理表（後端尚未全面接入） |
+| `ENABLE_VERBOSE_LOGS` | true | false | false | production log 不得輸出 secret / 完整個資 |
+| `SHOW_DEV_PANELS`（Flutter） | 可開 | false | **false（強制）** | `lib/config/app_config.dart` |
+| `SHOW_DEMO_LOGIN`（Flutter） | 可開 | false | **false（強制）** | 同上 |
+| `CORS_ALLOWED_ORIGINS`（後端） | 寬鬆 | 白名單 | **必填白名單（空 → fail-fast）** | 相容別名 `ALLOWED_ORIGINS` |
+| `PGVECTOR_ENABLED`（後端） | 可選 | 依用 | 記憶向量啟用則必填 | 與環境正交的 feature flag |
+| `API_BASE_URL`（Flutter / web） | localhost | staging URL | **正式 https 網域（localhost/空 → 阻擋）** | Flutter 收斂 `BACKEND_BASE_URL` |
+
+---
+
+## 2. production 必要 env（fail-fast 必檢，缺一即 `process.exit(1)`）
+
+- [ ] `DATABASE_URL`
+- [ ] `OPENAI_API_KEY`
+- [ ] `CORS_ALLOWED_ORIGINS`（正式前端網域白名單，逗號分隔）
+- [ ] Firebase 服務帳戶（擇一）：
+  - [ ] `GOOGLE_APPLICATION_CREDENTIALS`（service account JSON 路徑），或
+  - [ ] `FIREBASE_PROJECT_ID` + `FIREBASE_CLIENT_EMAIL` + `FIREBASE_PRIVATE_KEY` 三件組
+- [ ] `ADMIN_API_TOKEN`（caregiver_web 存取 `/api/admin/*`）
+
+條件必檢（功能啟用才需要）：
+
+- [ ] `TELEGRAM_BOT_TOKEN`（若設了 `TELEGRAM_CARE_CHAT_ID` 啟用 Telegram 通知）
+- [ ] `PGVECTOR_ENABLED=true` 時須有 `DATABASE_URL`
+
+待 CR-0038（正式 admin / JWT 登入）落地後納入必檢，現況先列：
+
+- [ ] `SESSION_SECRET` / `JWT_SECRET`（目前未使用，現況走 Firebase + `ADMIN_API_TOKEN`）
+
+---
+
+## 3. fail-fast 行為（驗收方式）
+
+- [ ] 故意缺一個必要變數，`APP_ENV=production node server.js` 應退出，
+      log **只列缺哪些變數名稱**，且不含任何 token / secret 值。
+- [ ] 啟動成功時印出的設定摘要為遮蔽值（`postgres://***`、`sk-***last4`、
+      `ou***@example.com`、chat id 僅 `(set)/(unset)`）。
+- [ ] fail-fast 屬啟動層行為，未改任何 API request / response 形狀。
+
+---
+
+## 4. 不安全旗標必須為安全值（顯式打開即拒絕啟動）
+
+- [ ] `ALLOW_JSON_FALLBACK` 未設或為 false
+- [ ] `ALLOW_MOCK_SERVICES` 未設或為 false
+- [ ] `REQUIRE_AUTH` 未設或為 true
+- [ ] mock auth：production `mockAllowed()` 一律 false（不採信 client `firebaseUid`，
+      強制驗 `idToken`）
+
+---
+
+## 5. JSON fallback 政策（§5.3.1）
+
+- [ ] **care alert**：production DB-required。DB 例外時 `saveAlert` 回
+      `{success:false,error:'care_alert_persist_failed'}`，不靜默降級 JSON 假成功。
+- [ ] `/api/care-alerts/notify` 已解耦通知與持久化：high/urgent 通知照送，
+      持久化失敗以 `notification_logs`（`outcome=persist_failed`）明確記一列，
+      **絕不靜默漏通知、絕不假成功、不改 request/response 形狀**。
+- [ ] **auth / memory / consent / search**：production DB-required，DB 例外回清楚錯誤，
+      不降級 JSON 當權威。
+- [ ] **marketplace / dailyCareTask（JSON-only）**：production 以清楚 guard 阻擋
+      （長者友善訊息），目前 production **暫不可用**，為 **CR-0042（PG 化）blocker**，
+      屬已知且文件化限制，需產品確認接受。
+
+---
+
+## 6. Flutter build define（正式 build 時帶入）
+
+- [ ] `--dart-define=APP_ENV=production`
+- [ ] `--dart-define=API_BASE_URL=https://正式後端網域`（非 localhost / 非空）
+- [ ] `--dart-define=SHOW_DEV_PANELS=false`
+- [ ] `--dart-define=SHOW_DEMO_LOGIN=false`
+- [ ] `--dart-define=ALLOW_MOCK_SERVICES=false`
+- [ ] 驗收：production build 開啟不會出現開發面板 / Demo 登入；
+      若 `API_BASE_URL` 不安全會顯示長者友善守門畫面（不進主流程）。
+
+---
+
+## 7. caregiver_web APP_CONFIG
+
+- [ ] 設 `window.APP_CONFIG.apiBaseUrl = "https://api.正式網域/api"`
+      （複製 `config.example.js` 為 `config.js`，`config.js` 不進版控），或
+- [ ] 與後端同網域 / 反向代理，使用同源相對路徑 `/api`（`apiBaseUrl` 留 `null`）。
+- [ ] 確認未把 `http://127.0.0.1:3001/api` 當成正式預設。
+
+---
+
+## 8. 待辦（上架前必須處理）
+
+### 8.1 LegalConfig 4 個 hosted URL / Email（`lib/config/legal_config.dart`，現為 TODO 佔位）
+
+- [ ] `privacyPolicyUrl`（隱私權政策正式 hosted 頁面）
+- [ ] `termsOfServiceUrl`（服務條款正式 hosted 頁面）
+- [ ] `supportUrl`（技術支援 / 客服說明頁）
+- [ ] `contactEmail`（正式客服信箱）
+
+> 在填入正式值前，UI 以 `LegalConfig.isPlaceholder` 判斷不顯示外部連結入口
+> （避免長者點到不存在的頁面）。
+
+### 8.2 Migrations 實跑（`backend/stt_proxy/db/migrations/`）
+
+- [ ] `010_create_consent_records.sql`
+- [ ] `011_create_care_alerts.sql`（`care_alerts` / `care_alert_status_events`）
+- [ ] `012_create_notification_audit_logs.sql`（`notification_logs` / `audit_logs`）
+
+> production 啟用 PG 後需於正式 DB 實跑（`db/migrate.js`），確認上述表存在。
+
+### 8.3 iOS / Android 上架身份正式化
+
+- [ ] iOS Bundle ID：現為 `com.Andrew.petCompanionApp` → 確認 / 換成正式 App ID
+- [ ] Android applicationId：現為 `com.Andrew.petCompanionApp`
+      （namespace 仍為 `com.example.pet_companion_app`）→ 正式化
+- [ ] App 顯示名稱：iOS `CFBundleDisplayName`、Android `android:label`
+      （現為 `pet_companion_app`）→ 換成正式中文 / 對外名稱
+- [ ] App icon / launch screen / 權限文案（麥克風、通知）正式化
+- [ ] 無 debug banner、無「Demo / 測試 / 開發中」字樣
+
+---
+
+## 9. 相關文件
+
+- `docs/ENVIRONMENT_SETUP.md` — 三環境啟動步驟與排查。
+- `PROJECT_ARCHITECTURE.md` §7.1 / §7.1.1 / §5.3.1。
+- `backend/stt_proxy/.env.example` — 後端環境變數分區範本。
+- `backend/stt_proxy/config/env.js` — fail-fast 與 mask helper 實作。

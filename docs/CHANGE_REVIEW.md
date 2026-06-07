@@ -1318,3 +1318,44 @@ production 行為保證：
 **修改檔案**：`config/env.js`、`services/auth/sessionService.js`、`services/careAlertStoreService.js`、`services/marketplace/marketplaceStore.js`、`services/dailyCareTask/dailyCareTaskStore.js`、`server.js`（`/notify` 旁路稽核 + 啟動 masked 摘要，未動路由形狀）、`package.json`（新增 dailyCareTask store 測試與 check）。
 
 **測試**：`cd backend/stt_proxy && npm test` → **289 passed / 0 fail**（263 基線 + 既有 dailyCareTask store 11 條納入執行 + 新增 env/auth/careAlert-db/marketplace/notify 共約 15 條）。`npm run check` 全綠。既有測試斷言一字未改（僅在既有測試檔擴充 import 名單與新增 test，未動原斷言）。production 行為以 `options.env={APP_ENV:'production'}` 注入驗證（`NODE_ENV=test` 恆為 dev，基線不受影響）。
+
+---
+
+### CR-0034 B4 實作落地（frontend-ux，caregiver_web）
+
+caregiver_web API base URL 改為可配置、移除 localhost production 預設：
+
+- `app.js getApiBase` 解析順序：頁面「連線設定」手動輸入（localStorage，dev / 區網）→
+  `window.APP_CONFIG.apiBaseUrl`（部署注入）→ 同源相對路徑 `/api`（`DEFAULT_API_BASE`，**無 localhost 硬編**）。
+- 新增 `config.example.js`（部署範本，複製為 `config.js` 注入正式後端位址；`config.js` 不進版控）。
+- production 不顯示 debug UI。
+
+**修改檔案**：`caregiver_web/app.js`、`caregiver_web/config.example.js`、`caregiver_web/index.html`、`caregiver_web/config_api_base.test.js`。
+
+---
+
+### CR-0034 B5 實作落地（backend / docs，純文件）
+
+收尾批次，**只改文件、不動任何程式碼 / schema**。依 CR-0034 §四批次切分產出三份環境設定文件，所有檔案只列變數名稱與用途、**未放任何真實 secret**。
+
+- `backend/stt_proxy/.env.example`：依分區重整為 Environment / Server / Database / OpenAI·Realtime·Memory·Search / Auth·Session / Telegram / Admin / Privacy·Store Links / Development-only Flags，每個變數一行用途註解，值留空或佔位。變數名稱一律對齊 `config/env.js` 與後端實際讀取者；治理表 §7.1 中後端尚未全面接入者（`REQUIRE_CONSENT` / `ENABLE_VERBOSE_LOGS`）已明註，未捏造不存在的變數。Privacy 連結明記由 Flutter `LegalConfig` 管理、非後端 env。
+- `docs/ENVIRONMENT_SETUP.md`（新建）：development / staging / production 三端（backend / Flutter / caregiver_web）啟動步驟、Flutter production build dart-define 範例、backend production fail-fast 行為與訊息範例、caregiver_web production config、production 不允許旗標、常見錯誤與排查表。
+- `docs/PRODUCTION_CONFIG_CHECKLIST.md`（新建）：env / flag 對照表（引用 §7.1）、production 必要 env、fail-fast 驗收、不安全旗標、JSON fallback 政策（§5.3.1，含 marketplace / dailyCareTask 為 **CR-0042 blocker**）、Flutter build define、caregiver_web APP_CONFIG、待辦（LegalConfig 4 個 hosted URL/email、migrations 010/011/012 實跑、iOS/Android 上架身份正式化）。
+
+**修改檔案**：`backend/stt_proxy/.env.example`、`docs/ENVIRONMENT_SETUP.md`（新）、`docs/PRODUCTION_CONFIG_CHECKLIST.md`（新）、`docs/CHANGE_REVIEW.md`（本區段）。
+
+**測試**：純文件未跑程式測試。`config/env.js` 未動，後端測試基線不受影響。
+
+---
+
+### CR-0034 收尾狀態（B1–B5）
+
+| 批次 | 範圍 | 狀態 |
+|---|---|---|
+| B1 | backend `config/env.js`（fail-fast / mask helper）+ server.js 啟動段接入 + 單測 | ✅ shipped |
+| B2 | backend mock/JSON-fallback guard（`mockAllowed` production=false、careAlert DB-required + `/notify` 解耦、marketplace/dailyCareTask production guard） | ✅ shipped |
+| B3 | Flutter `AppConfig`（`APP_ENV`/`API_BASE_URL`/`ALLOW_MOCK_SERVICES` + production 守門） | ✅ shipped |
+| B4 | caregiver_web API base URL 可配置、移除 localhost production 預設 | ✅ shipped |
+| B5 | docs（`.env.example` 分區 / `ENVIRONMENT_SETUP.md` / `PRODUCTION_CONFIG_CHECKLIST.md`） | ✅ shipped |
+
+**CR-0042 blocker 登錄確認**：marketplace / dailyCareTask（JSON-only）在 production 由 guard 阻擋、無持久化保證，須待 PG 化（CR-0042）才能於 production 提供；已記於 §5.3.1、B2 落地說明、`PRODUCTION_CONFIG_CHECKLIST.md` §5 與 §8。屬已知且文件化限制，需產品確認接受。
