@@ -28,6 +28,10 @@ const authz = require("./authorizationService");
 const caregiverProvisioning = require("./caregiverProvisioningService");
 const linkProvisioning = require("./residentLinkProvisioningService");
 const auditLog = require("../auditLogService");
+// CR-0045 B2：/notify 改掛 requireResidentCaller；seeding alert 需帶 resident idToken。
+const {
+  installResidentCallerStub,
+} = require("../auth/residentCallerContext.testsupport");
 
 delete process.env.TELEGRAM_BOT_TOKEN;
 delete process.env.TELEGRAM_CARE_CHAT_ID;
@@ -206,6 +210,7 @@ function makeUnifiedPg({ elders = [], users = [], links = [] } = {}) {
 
 // 稽核捕捉 pg（讓 logAudit 實際寫入並可斷言）。
 let auditWrites = [];
+let restoreResident = null;
 function makeAuditPg() {
   return {
     isPostgresAvailable: async () => true,
@@ -229,6 +234,10 @@ beforeEach(() => {
   caregiverProvisioning.setPgForTest(unifiedPg);
   linkProvisioning.setPgForTest(unifiedPg);
   auditLog.setPgForTest(makeAuditPg());
+  restoreResident = installResidentCallerStub({
+    "res-a-token": { uid: "fb-res-a", userId: "user-res-a", elderId: ELDER_A },
+    "res-z-token": { uid: "fb-res-z", userId: "user-res-z", elderId: ELDER_Z },
+  });
 });
 
 afterEach(() => {
@@ -238,6 +247,8 @@ afterEach(() => {
   caregiverProvisioning.setPgForTest(null);
   linkProvisioning.setPgForTest(null);
   auditLog.setPgForTest(null);
+  if (restoreResident) restoreResident();
+  restoreResident = null;
 });
 
 function startServer() {
@@ -256,9 +267,13 @@ async function settleAudit() {
 }
 
 function postNotify(baseUrl, elderId) {
+  const tokens = { [ELDER_A]: "res-a-token", [ELDER_Z]: "res-z-token" };
   return fetch(`${baseUrl}/api/care-alerts/notify`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${tokens[elderId]}`,
+    },
     body: JSON.stringify({
       elderId,
       riskLevel: "urgent",

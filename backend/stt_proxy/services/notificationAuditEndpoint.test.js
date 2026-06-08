@@ -21,6 +21,17 @@ delete process.env.TELEGRAM_CARE_CHAT_ID;
 // CR-0039：admin 授權 header。
 const ADMIN_HEADERS = { Authorization: "Bearer test-admin-token" };
 
+// CR-0045 B2：/notify 掛 requireResidentCaller；安裝 resident-caller stub（獨立 pg seam，
+// 不受下面 notifLog / auditLog 的 throwing pg 影響）並帶 token。
+const { installResidentCallerStub } = require("./auth/residentCallerContext.testsupport");
+installResidentCallerStub({
+  "res-token": {
+    uid: "fb-res",
+    userId: "user-res",
+    elderId: "11111111-1111-1111-1111-111111111111",
+  },
+});
+
 // 注入「DB 可用但 query 必拋例外」的 mock pg：證明稽核寫入即使失敗，
 // 也被 service best-effort 吞掉，路由 response 完全不受影響、不致 unhandledRejection。
 const notifLog = require("./notificationLogService");
@@ -58,7 +69,7 @@ function startServer() {
 function postNotify(baseUrl, overrides = {}) {
   return fetch(`${baseUrl}/api/care-alerts/notify`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: "Bearer res-token" },
     body: JSON.stringify({
       riskLevel: "urgent",
       riskLevelLabel: "緊急",

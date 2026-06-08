@@ -22,6 +22,16 @@ delete process.env.TELEGRAM_CARE_CHAT_ID;
 // CR-0039：admin 讀取路由的授權 header。
 const ADMIN_HEADERS = { Authorization: "Bearer test-admin-token" };
 
+// CR-0045 B2：/notify 掛 requireResidentCaller；安裝 resident-caller stub 並帶 token。
+const { installResidentCallerStub } = require("./auth/residentCallerContext.testsupport");
+installResidentCallerStub({
+  "res-token": {
+    uid: "fb-res",
+    userId: "user-res",
+    elderId: "11111111-1111-1111-1111-111111111111",
+  },
+});
+
 beforeEach(() => {
   // 每個測試使用全新的 temp 檔（store 在呼叫時讀 env，所以動態切換有效）。
   process.env.CARE_ALERTS_DATA_FILE = path.join(
@@ -39,7 +49,7 @@ function startServer() {
 function postNotify(baseUrl, overrides = {}) {
   return fetch(`${baseUrl}/api/care-alerts/notify`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: "Bearer res-token" },
     body: JSON.stringify({
       riskLevel: "urgent",
       riskLevelLabel: "緊急",

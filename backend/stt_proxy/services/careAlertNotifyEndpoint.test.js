@@ -12,6 +12,16 @@ process.env.CARE_ALERTS_DATA_FILE = path.join(
 process.env.NODE_ENV = "test";
 const app = require("../server");
 const notificationLog = require("./notificationLogService");
+// CR-0045 B2：/notify 現在掛 requireResidentCaller；安裝 resident-caller stub 並帶 token。
+const { installResidentCallerStub } = require("./auth/residentCallerContext.testsupport");
+installResidentCallerStub({
+  "res-token": {
+    uid: "fb-res",
+    userId: "user-res",
+    elderId: "11111111-1111-1111-1111-111111111111",
+  },
+});
+const RES_AUTH = { Authorization: "Bearer res-token" };
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -40,7 +50,7 @@ test("POST /api/care-alerts/notify 缺欄位時回 400 invalid_payload", async (
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
     const response = await fetch(`${baseUrl}/api/care-alerts/notify`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...RES_AUTH },
       body: JSON.stringify({ riskLevel: "urgent" }),
     });
     const body = await response.json();
@@ -69,7 +79,7 @@ test("POST /api/care-alerts/notify 成功時回 success:true", async () => {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
     const response = await fetch(`${baseUrl}/api/care-alerts/notify`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...RES_AUTH },
       body: JSON.stringify(validBody),
     });
     const body = await response.json();
@@ -95,7 +105,7 @@ test("POST /api/care-alerts/notify 未設定 token 時回 success:false telegram
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
     const response = await fetch(`${baseUrl}/api/care-alerts/notify`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...RES_AUTH },
       body: JSON.stringify(validBody),
     });
     const body = await response.json();
@@ -152,7 +162,7 @@ test("POST /api/care-alerts/notify：持久化失敗仍送通知，且記一列 
     // 用獨立 source，避開與其他測試共用的 in-process Telegram cooldown。
     const response = await fetch(`${baseUrl}/api/care-alerts/notify`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...RES_AUTH },
       body: JSON.stringify({ ...validBody, source: "persist_fail_test" }),
     });
     const body = await response.json();

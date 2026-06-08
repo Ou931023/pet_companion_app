@@ -27,6 +27,11 @@ process.env.ADMIN_API_TOKEN = "test-admin-token";
 const app = require("../server");
 const authz = require("./admin/authorizationService");
 const adminAuth = require("./admin/adminAuthContext");
+// CR-0045 B2：/notify 改掛 requireResidentCaller（resident self）。此檔的 postNotify 改帶
+// 對應住民的 resident idToken；server 以 token 推導 elderId 蓋寫（body.elderId 須相符）。
+const {
+  installResidentCallerStub,
+} = require("./auth/residentCallerContext.testsupport");
 
 // require server 會載入 .env（含真實 Telegram token）→ 清掉確保測試絕不真的發 Telegram。
 delete process.env.TELEGRAM_BOT_TOKEN;
@@ -39,6 +44,10 @@ const CG_NONE_HEADERS = { Authorization: "Bearer cg-none-id-token" };
 
 const ELDER_A = "11111111-1111-1111-1111-111111111111";
 const ELDER_Z = "99999999-9999-9999-9999-999999999999";
+
+// resident self idToken（每位住民持自己的 token；server 由 token 推導 elderId）。
+const RES_TOKENS = { [ELDER_A]: "res-a-token", [ELDER_Z]: "res-z-token" };
+let restoreResident = null;
 
 // stub firebaseAdmin：idToken → firebase_uid。
 function firebaseStub() {
@@ -89,6 +98,13 @@ function installCaregiverAuth() {
   authz.setPgForTest(pg);
 }
 
+function installResidentAuth() {
+  restoreResident = installResidentCallerStub({
+    "res-a-token": { uid: "fb-res-a", userId: "user-res-a", elderId: ELDER_A },
+    "res-z-token": { uid: "fb-res-z", userId: "user-res-z", elderId: ELDER_Z },
+  });
+}
+
 beforeEach(() => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "care_alerts_scope_"));
   process.env.CARE_ALERTS_DATA_FILE = path.join(tmp, "care_alerts.json");
@@ -99,12 +115,16 @@ beforeEach(() => {
   );
   // caregiver 身分機制預設安裝（super_admin 路徑不受影響，仍走共享 token）。
   installCaregiverAuth();
+  // resident-caller（/notify seeding）身分安裝。
+  installResidentAuth();
 });
 
 afterEach(() => {
   adminAuth.setFirebaseAdminForTest(null);
   adminAuth.setPgForTest(null);
   authz.setPgForTest(null);
+  if (restoreResident) restoreResident();
+  restoreResident = null;
 });
 
 function startServer() {
@@ -116,7 +136,10 @@ function startServer() {
 function postNotify(baseUrl, elderId, overrides = {}) {
   return fetch(`${baseUrl}/api/care-alerts/notify`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${RES_TOKENS[elderId]}`,
+    },
     body: JSON.stringify({
       elderId,
       riskLevel: "urgent",
@@ -219,12 +242,38 @@ test("super_admin: PATCH 不存在 → 404 not_found（CR-0039 行為保留）",
   }
 });
 
-test("super_admin: POST /api/care-alerts/notify 仍無需 auth → 200（CR-0039 回歸）", async () => {
+test("resident: POST /api/care-alerts/notify 帶 resident idToken → 200（CR-0045 收斂）", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
     const res = await postNotify(baseUrl, ELDER_A);
     assert.equal(res.status, 200);
+  } finally {
+    server.close();
+  }
+});
+
+test("resident: /notify 無 token → 401（CR-0045 caller 驗證，先於 persist）", async () => {
+  const server = await startServer();
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const res = await fetch(`${baseUrl}/api/care-alerts/notify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        elderId: ELDER_A,
+        riskLevel: "urgent",
+        triggerSummary: "對話中偵測到需要關心的狀況",
+        transcriptSnippet: "我昨天晚上都睡不好",
+        source: "companion_analysis",
+      }),
+    });
+    assert.equal(res.status, 401);
+    // 未授權不建立 alert：list（admin）應為空。
+    const list = await (
+      await fetch(`${baseUrl}/api/care-alerts`, { headers: ADMIN_HEADERS })
+    ).json();
+    assert.deepEqual(list.alerts, []);
   } finally {
     server.close();
   }

@@ -113,6 +113,11 @@ const authz = require("./services/admin/authorizationService");
 const {
   resolveAdminAuthContext,
 } = require("./services/admin/adminAuthContext");
+// CR-0045 B2：/api/care-alerts/notify 的 resident-caller 驗證（長者本人；Firebase idToken →
+// users.elder_id）。server 權威推導 elderId 蓋寫在 alert 上。
+const {
+  requireResidentCaller,
+} = require("./services/auth/residentCallerContext");
 const { listSafeUsers } = require("./services/admin/adminUsersService");
 // CR-0043：caregiver 帳號 + resident-caregiver link provisioning（super_admin-only，掛 requireAdmin）。
 const caregiverProvisioning = require("./services/admin/caregiverProvisioningService");
@@ -392,10 +397,14 @@ app.post("/api/agent/route", (req, res) => {
   }
 });
 
-// CR-0039：此為長者端 App 建立 Care Alert + 觸發通知的核心路徑（fire-and-forget），
-// 刻意不掛 requireAdmin（長者端不該持有 admin token，掛上會打斷核心流程）。
-// caller 端驗證（選項 A：長者 session 驗證）列為 follow-up CR，於 auth 強化（CR-0041）後處理。
-app.post("/api/care-alerts/notify", async (req, res) => {
+// CR-0039：此為長者端 App 建立 Care Alert + 觸發通知的核心路徑（fire-and-forget）。
+// CR-0045 B2：掛 requireResidentCaller（長者本人 Firebase idToken → users.elder_id）。
+//   - 無 / 無效 token → 401；查無 / 無 elder 綁定 / inactive → 403（fail-closed）。
+//   - server 權威推導 elderId 並蓋寫在 alert（防偽造，順帶修復既有 elderId=null 缺口）；
+//     body 帶 elderId 且與 token 推導不符 → 403 forbidden_resident。
+//   - 驗證通過後，persist / cooldown / notification-log / Telegram 推播規則與
+//     { success, telegram } response 形狀一字不動。
+app.post("/api/care-alerts/notify", requireResidentCaller, async (req, res) => {
   const body = req.body || {};
   const summary =
     typeof body.triggerSummary === "string" ? body.triggerSummary.trim() : "";
@@ -404,6 +413,22 @@ app.post("/api/care-alerts/notify", async (req, res) => {
   if (!summary || !snippet) {
     return res.status(400).json({ success: false, error: "invalid_payload" });
   }
+  // CR-0045 B2：以 caller context 的 elderId 為權威來源（server-authoritative）。
+  //   - body 無 elderId → 用 token 推導（填補 elderId=null 缺口）。
+  //   - body 有 elderId 且 == token 推導 → 放行。
+  //   - body 有 elderId 且 != token 推導 → 403 forbidden_resident（防偽造）。
+  //   一律以 token 推導值寫入 alert；client 值僅供一致性檢核，永不採信為擁有者。
+  const callerElderId = (req.residentCaller && req.residentCaller.elderId) || null;
+  const bodyElderId =
+    typeof body.elderId === "string" && body.elderId.trim()
+      ? body.elderId.trim()
+      : body.elderId != null
+        ? String(body.elderId)
+        : null;
+  if (bodyElderId != null && callerElderId != null && bodyElderId !== callerElderId) {
+    return res.status(403).json({ success: false, error: "forbidden_resident" });
+  }
+  body.elderId = callerElderId ?? bodyElderId ?? null;
   // 持久化：供長照管理者網頁查詢。
   // CR-0034 B2：**解耦通知與持久化**——持久化失敗（含 production DB-required 失敗）
   // 絕不阻擋 high/urgent 通知、絕不假成功；失敗時於 notification_logs 明確記一列

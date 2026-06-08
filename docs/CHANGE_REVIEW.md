@@ -2003,3 +2003,134 @@ caregiver_web API base URL 改為可配置、移除 localhost production 預設�
   - **FU-CR-0043a**：caregiver 首次登入 email 自動認領（順帶解決編輯預填），未做。
   - **FU-CR-0044a（可選）**：後端「重新啟用既有 link」端點，使 UI 復用單列而非另建，未做。
   - **未驗證**：未對真 Postgres / 真 Firebase / 真 super_admin token 端到端驗證；provisioning UI 與後端 8 路由之實連屬部署前 checklist，非 code-level blocker。
+
+---
+
+### CR-0045 — Care Alert Notify Caller Authentication（Audit P0-2 殘留收斂；接 CR-0039–0044 授權鏈；正式上架 BLOCKER）
+- 提出 / 裁決 agent：architecture-agent（依使用者指派；CR-0039 §11 / AUTHORIZATION_MODEL §8 明列之 FU-CR「/notify caller 驗證」正式化）
+- 狀態：**提案 + 裁決完成，待派工落地**（本筆為規劃 / 裁決紀錄，未改業務碼）
+- 帳本正規 ID = **CR-0045**（沿用 CR-0039 §0「下一個空號」治理）
+
+#### 1. 動機（為何現在做）
+- `POST /api/care-alerts/notify` 是長者端 App 從 Realtime 對話建立 Care Alert + 觸發 Telegram 的核心路徑，CR-0039 起**刻意保留無 auth**（長者端不持 admin token，掛 requireAdmin 會打斷核心流程）。
+- 現有緩解：`globalLimiter` + Care Alert cooldown + `invalid_payload` 形狀檢查 + Telegram 僅 high/urgent。但正式版不能允許未驗證端任意 POST 偽造警示 / spam Telegram（Audit P0-2 殘留、CR-0039 §11 明列 blocker）。
+- 既有缺口（順帶修）：/notify 目前**不收 elderId** → 經此路徑建立的 alert 多為 `elderId=null`，使 CR-0040 resident scope 對這些 alert 形同無關聯。本案以「由 token 推導 elderId 並蓋上」一併修復。
+
+#### 2. 盤點覆核（architecture-agent 已驗證）
+- **Schema**：`users.elder_id UUID REFERENCES elders(id)`（migration 006）— 已存在「Firebase user → 自己的 elder」唯一綁定。token→firebase_uid→users.elder_id 即為 alert 擁有者，無需新欄位 / 新 migration。
+- **後端可重用件**：`adminAuthContext.js`（CR-0041）已有 idToken→firebase_uid→users row 驗證（含 `mockAllowed()` production 守門、CR-0043 status 停用閘、`setFirebaseAdminForTest`/`setPgForTest` seam）。但其輸出語意為 admin/caregiver（elder 角色 → 403），**不能直接複用為 resident caller**；可抽共用 primitive。
+- **/notify handler**（server.js ~398–470）：response 形狀 `{success, telegram}`；persist 與 Telegram 解耦；cooldown key=`source::riskLevel`；notification_logs 結構化白名單。本案須**完全保留**此形狀與規則。
+- **careAlertStoreService**：`normalizeAlert` 的 `elderId = payload.elderId ?? null`。本案改由 handler 在 saveCareAlert 前以 token 推導的 elderId 覆蓋 body.elderId。store 契約 0 改動。
+- **Flutter**：`care_alert_notification_service.dart` `notify()` 目前 body 不含 elderId、不帶 Authorization、fire-and-forget 全 try/catch（非 200 / 網路錯誤只 debugPrint，不 throw、不阻斷 Realtime 與本機 CareAlert）。Provider 為 `CareAlertNotificationService()` 裸建（app.dart:111），無 auth 注入。呼叫點唯一在 `voice_agent_controller.dart:890`（`_maybeCreateCareAlert` 旁路，非狀態機）。
+- **Flutter token**：`firebase_auth_service.currentUserAuthInfo()` / `user.getIdToken()` 可取新 idToken；`AuthService` mock 登入用 `idToken: 'mock-id-token-<uid>'`（非真 token）。AuthController authMode = firebase | mock（CR-0006/0041）。
+
+#### 3. 影響範圍（檔案）
+- 後端（owner=backend-agent）：
+  - 新增 `backend/stt_proxy/services/auth/residentCallerContext.js`（`resolveResidentCallerContext` / `requireResidentCaller`，新檔）。
+  - 共用 primitive 抽取（見 §5）：`backend/stt_proxy/services/admin/adminAuthContext.js` 的 `findUserByFirebaseUid` →（可選）抽到共用模組；**adminAuthContext 對外行為須 byte-identical**（CR-0041 350 測試回歸守）。
+  - 🔒 `backend/stt_proxy/server.js`：`/api/care-alerts/notify` 掛 `requireResidentCaller` + 以 token-derived elderId 覆蓋 body。
+  - 測試：新增 resident-caller 單元 + /notify HTTP 層（比照 `careAlertAuthScopeEndpoint.test.js`）。
+- 前端（owner=frontend-ux-agent）：
+  - `lib/services/care_alert_notification_service.dart`：`notify()` 帶 `Authorization` header；新增 `authTokenProvider` 注入。
+  - `lib/app.dart:111`：`CareAlertNotificationService` 注入 token 取得器（從 AuthController / firebase auth）。
+  - （如需）`lib/controllers/auth_controller.dart` / `lib/services/auth/firebase_auth_service.dart`：暴露 `getFreshIdToken()` 存取器。
+  - Flutter 測試：notify 帶 header / 取 token 失敗不送 / 401·403 可接受處理 / log 不顯 token。
+  - **`lib/controllers/voice_agent_controller.dart` 不改**（見 §6 設計：token 由 service 建構注入，呼叫點維持 byte-identical）。
+- 文件：`docs/CHANGE_REVIEW.md`（本筆）、`docs/AUTHORIZATION_MODEL.md`（§8 殘留改為已收斂 + 新增 resident-caller 段）、`.env.example`（若需註記，僅變數名）、（可選）新增 `docs/CARE_ALERT_NOTIFY_AUTH.md`。
+
+#### 4. 觸及 🔒 與牽涉 agent
+- 🔒 **server.js /notify 路由 + 行為契約**：是（高風險主線）。response 形狀（`{success, telegram}`）、persist/cooldown/notification-log 規則**不得變**；只在最前面加 caller gate、並在 persist 前覆蓋 elderId。
+- 🔒 **Care Alert 三方共用資料結構**：elderId 由「多為 null」變「token 推導非 null」——**填值，不改欄位 / 不改 schema / 不改 store 契約**。屬正向收斂，非破壞。
+- **DB schema / migration**：不觸及（users.elder_id 已存在）。
+- **Realtime 主流程 / Memory**：不觸及（notify 為旁路 fire-and-forget，呼叫點不動）。
+- 牽涉 agent：backend-agent（主）、frontend-ux-agent。**不需 realtime-voice-agent**（見 §6）。
+
+#### 5. 六項核心裁決
+1. **caller 身分機制 — 核准**：/notify 改用 Firebase idToken bearer → firebase_uid → users row → **users.elder_id** 為 alert 擁有者。**由 token 推導 elderId 並覆蓋 body**（server-authoritative，防偽造），順帶修 elderId=null 缺口。
+   - **共用 verifier 重構 — 核准（受限）**：新建 `residentCallerContext.js`（`resolveResidentCallerContext`/`requireResidentCaller`），**重用** firebaseAdmin verify + `findUserByFirebaseUid` + `mockAllowed()` 守門 + CR-0043 status 停用閘 + 既有 test seam 模式。允許將 `findUserByFirebaseUid`（含可選 status 欄位）**抽成共用小模組**供兩者引用，但 **adminAuthContext 對外行為必須 byte-identical**（CR-0041 350 測試為回歸守門）；不在本案改寫 adminAuthContext 的角色分派語意。更深層的 admin/resident verify 統一列為 FU，不在本案。
+   - resident caller context 形狀：`{ userId, firebaseUid, elderId, role:'resident', isSuperAdmin:false }`，其中 `elderId = users.elder_id`。`users.elder_id` 為 null → **403 `resident_not_linked`**（fail-closed：無 elder 綁定者不可建 alert）。
+2. **demo/mock 不破壞核心流程 — 核准（三道保險，同 AUTHORIZATION_MODEL §6）**：
+   - production（`mockAllowed()===false`）：**強制真 idToken + 真 users row + 非 null elder_id**；無 token / invalid → 401，無權 / 查無 → 403。fail-closed。
+   - dev/test（`mockAllowed()===true`，由 `AUTH_ALLOW_MOCK`/`APP_ENV`/`NODE_ENV` 守門）：允許 mock caller 路徑，仍須由（stub/dev）verifyIdToken 解析出 uid，讓 demo 仍能建 alert。
+   - **dev 與 admin 的刻意差異（明列）**：admin 路徑 dev mock 仍要求真 users row（§6 #3）；但長者 demo 常跑於**無 DB / JSON 模式**，要求 users row 會打斷 demo。故裁決：**dev + mockAllowed + 查無 users row** 時，resident verifier 可由 verified uid 推導 scoping elderId（dev-only seam，對齊 Flutter AuthController 已以 `session.elderId` 逐帳號隔離的做法）。**此寬鬆僅限 mockAllowed；production 恆 false → 必走真 token + 真 row**。嚴禁 production fake token / hardcoded resident。
+3. **caregiver / super_admin 代建 notify — 不納入（裁決）**：本路徑 caller **僅長者本人（resident self）**。理由：alert 由長者自己的 Realtime 對話觸發，caregiver/super_admin 無對話可觸發、代建非必要且擴大攻擊面。若日後有需求 → 另開 FU-CR 並走 `resident_caregiver_links` 檢查 + 明確測試。本案 super_admin 共享 token 命中 /notify → 視為非 resident caller → **不放行（403 或不適用該路徑）**，由落地測試固定。
+4. **resident ownership — 核准（hybrid，server-authoritative）**：
+   - body **無 elderId** → 用 token 推導之 elderId（填 null 缺口）。
+   - body **有 elderId 且 == token 推導** → 放行。
+   - body **有 elderId 且 != token 推導** → **403 `forbidden_resident`**（防偽造 + 滿足驗收 §10.3「resident 不符→403」）。
+   - 一律以 token 推導之 elderId 寫入 alert（client 值僅用於一致性檢核，永不採信為擁有者）。
+   - **建議 Flutter 不送 elderId**（server 推導即可），避免 403 誤殺。
+5. **Flutter token 取得 — 核准**：
+   - firebase 模式：呼叫 `getIdToken()` 取**新** token → `Authorization: Bearer <idToken>`。
+   - mock/demo 模式：無真 token → 送現有 `mock-id-token-<uid>`（dev 後端 mock 路徑接受）；**production 不會在 mock 模式**。
+   - notify 維持 fire-and-forget：401/403 不 throw、不阻斷 Realtime、本機 CareAlert 照常保留。production firebase 模式若取 token 失敗 → **不送 notify**（不發無 auth 請求），記長者友善狀態，本機 alert 仍在。
+   - log 不顯 token。
+6. **範圍 / 拆分 — 核准：單一 CR-0045，三批，不拆子 CR**（後端是核心、前端薄）。批次見 §7。
+
+#### 6. Flutter 注入設計（避免動到 realtime-voice 範圍）
+- token 取得器於 **建構期注入** `CareAlertNotificationService`（app.dart:111，frontend-ux 範圍），`notify()` 內部自取新 token 加 header。
+- `voice_agent_controller.dart:890` 呼叫點維持 `notify(sttProxyUrl, alert)` **byte-identical** → 不觸 realtime-voice controller、不碰狀態機 / SDP / DataChannel。**故本案不需 realtime-voice-agent 派工**。
+
+#### 7. 批次切分（owner / 順序 / 相依）
+- **B1（backend-agent）**：新建 `residentCallerContext.js`（`resolveResidentCallerContext`/`requireResidentCaller`）+（可選）抽共用 `findUserByFirebaseUid`。純模組 + 單元測試（無 token 401 / invalid 401 / mockAllowed 守門 / status 停用 / elder_id null→403 / dev no-row seam）。**不 wiring**。🔒 無（新檔；抽取若動 adminAuthContext 須回歸 CR-0041 350 綠）。
+- **B2（backend-agent）**：把 `requireResidentCaller` 掛上 `/api/care-alerts/notify`；persist 前以 token-derived elderId 覆蓋 / 檢核 body.elderId（mismatch→403）；**完全保留** persist/cooldown/notification-log/`{success,telegram}` 形狀。HTTP 層測試（§9 #1–#12）。🔒 server.js /notify（**最高風險批**，落地後須 architecture-agent checkpoint）。
+- **B3（frontend-ux-agent）**：`care_alert_notification_service` 加 `authTokenProvider` + Authorization header；app.dart 注入；（如需）auth 暴露 `getFreshIdToken()`；mock 模式送 mock token。Flutter 測試（§9 Flutter 段）。相依 B2 的 header 契約凍結後進行。
+- **順序**：B1 → B2 →（B2 契約凍結後）B3。B1+B2+B3 合併 + 測試綠 + checkpoint PASS = CR-0045 完成。
+- **不拆子 CR**（與 CR-0041 拆 CR-0042/0043 不同：本案前端薄、無獨立 UI 子系統）。
+
+#### 8. 環境變數（只列名稱，無新增 secret）
+- production 守門（既有）：`AUTH_ALLOW_MOCK`、`APP_ENV`、`NODE_ENV`。
+- Firebase 服務帳戶（與長者 / caregiver auth 共用，既有，擇一）：`GOOGLE_APPLICATION_CREDENTIALS`，或 `FIREBASE_PROJECT_ID` + `FIREBASE_CLIENT_EMAIL` + `FIREBASE_PRIVATE_KEY`。
+- **無新增後端 secret**（路線 A，不需 JWT_SECRET / SESSION_SECRET）。
+
+#### 9. 測試計畫（不可對真 DB / 真 Firebase 跑）
+- 後端 seam：`residentCallerContext.setFirebaseAdminForTest(stub)`（注入 isConfigured/verifyIdToken）、`setPgForTest(mockPg)`（users 查詢回 role/elder_id/status）、`careAlertStoreService.setPgForTest`、Telegram 發送 stub/spy；HTTP 層比照 `careAlertAuthScopeEndpoint.test.js`。
+- 後端案（§7.1）：無 header→401 / invalid→401 / valid 但查無 users row→（production 403、dev seam 放行）/ resident 自建→200 原契約 / resident A 建 B（body elderId 不符）→403 / 未授權不建 alert / 未授權不觸發 Telegram / high·urgent 授權仍通知 / cooldown 仍生效 / low 仍依規則不推 / production 不收 fake token / response 不含 token·sensitive error。
+- Flutter seam：注入 `http` MockClient + stub `authTokenProvider`；案：notify 帶 Authorization / 取 token 失敗不送 / 401·403 不 throw 且不破壞本機 alert / log 不顯 token。
+
+#### 10. 風險
+- **High（B2，server.js /notify 主線）**：錯誤即（a）打斷長者建 alert 成功路徑、或（b）放行未驗證 caller。緩解：B1 純模組先綠 → B2 小範圍掛載 + 保留 response 形狀 + HTTP 層全案 + 落地 checkpoint 覆核（CR-0039/0040/0041 回歸 + /notify 形狀不變 + 無 production 假 caller）。
+- **Medium（整體）**：dev mock seam 若洩入 production = 漏洞 → 由 `mockAllowed()` 三道保險擋（production 恆 false）。
+
+#### 11. 必守紅線（任務 §9，裁決確認全數納入）
+不破壞長者端建 Care Alert 成功路徑、不破壞 Realtime / Memory、不移除 cooldown、production 不放行未驗證 caller、不 hardcoded resident、不 fake token 過 production、log 不顯完整 token、不把所有 authenticated user 當可為任意 resident 建 alert、不為過測試關閉通知。保留 low/medium/high/urgent 規則 + cooldown + notification log + Care Alert store 契約 + `{success,telegram}` response 形狀。
+
+#### 12. 裁決
+- **✅ 核准本案（CR-0045）依 §5 六項裁決 + §7 三批（B1→B2→B3）落地，不拆子 CR，不需 realtime-voice-agent。**
+- 🔒 server.js /notify 改動：**條件式核准**——B2 落地後須 architecture-agent checkpoint 覆核（CR-0039/0040/0041 回歸綠 / `{success,telegram}` 形狀不變 / persist·cooldown·notification-log 規則不變 / production fail-closed 真 token+真 row / 無 hardcoded resident / 無 fake token / log 無 token / elderId 由 token 推導）方可結案。
+- AUTHORIZATION_MODEL §8 之「FU-CR：/notify caller 驗證」於本案結案後改標為已收斂。
+
+#### 13. 落地紀錄（B1 + B2，backend-agent）
+- **B1**：新建 `backend/stt_proxy/services/auth/residentCallerContext.js`
+  （`resolveResidentCallerContext` + `requireResidentCaller`）+ 共用測試 stub 安裝器
+  `residentCallerContext.testsupport.js` + 純單元測試 `residentCallerContext.test.js`（11 案）。
+  **未抽共用 `findUserByFirebaseUid`**：residentCallerContext 自帶（SELECT 多取 `elder_id`），
+  `adminAuthContext.js` **完全未改（git byte-identical）**，CR-0041 既有測試照常綠。
+- **B2**：`server.js` `/api/care-alerts/notify` 前掛 `requireResidentCaller`；handler 在 persist 前
+  以 caller context 的 elderId 蓋寫 / 檢核 `body.elderId`（不符→403 `forbidden_resident`）。
+  persist / cooldown / notification-log / `{ success, telegram }` response 形狀**未改**。
+  新增 HTTP 層測試 `careAlertNotifyAuthEndpoint.test.js`（§7.1 #1–#12）。
+- **既有 /notify 測試調整**：因加驗證，原本「無 auth → 200」的 seeding 測試改為帶 resident
+  idToken（透過 testsupport stub）。受影響檔：`careAlertNotifyEndpoint`、`careAlertListEndpoint`、
+  `careAlertStatusEndpoint`、`notificationAuditEndpoint`、`careAlertDemoFlow`、
+  `careAlertAuthScopeEndpoint`（postNotify 依 elderId 帶對應住民 token；原
+  「super_admin /notify 無需 auth → 200」改名為「resident 帶 idToken → 200」並新增「無 token→401」）、
+  `admin/caregiverProvisioningEndpoint`。
+- **測試結果**：`npm run check` 綠；`npm test` 424 pass / 0 fail（既有 + 新增）。
+  **未對真 DB / 真 Firebase 驗證**（全程 mock pg + stub firebaseAdmin + Telegram spy）。
+- **待 architecture-agent checkpoint**（§12 條件式核准）後結案；Flutter B3 另案。
+
+#### 14. 落地 checkpoint 覆核（architecture-agent，§12 條件式核准之履行）
+- **裁決：✅ PASS — B1 + B2 可結案**（B3 Flutter header 另案待做）。read-only（git diff / grep / 獨立 `npm run check` + `npm test`）覆核，未對真 DB / 真 Firebase 跑。
+- **(a) /notify 成功契約零變更**：`server.js` diff 僅兩處 hunk —（i）import `requireResidentCaller`、（ii）route 前掛中介層 + persist 前的 elderId 蓋寫/檢核區塊。persist / cooldown / notification-log / low·medium·high·urgent / `{success,telegram}` 形狀程式碼一字未動。測試 #4（`{success:false, telegram_not_configured}` 形狀不變）、#8（urgent→`{success:true}` + 1 次外連）、#9（cooldown→`skipped_cooldown`、僅 1 次外連）、#10（low→`{success:true, telegram:"skipped_low_risk"}`、0 次外連、仍持久化）佐證。
+- **(b) production fail-closed**：模組 L119（未 configured + `!mockAllowed`→401）、L132（查無 row + `!mockAllowed`→403）。測試 #11（production + 未 configured firebase→401，且事後 listAlerts 為空）佐證；dev-only seam（L137–140 uid 推導 elderId）僅 `mockAllowed()===true` 生效，production 恆 false（三道：`AUTH_ALLOW_MOCK` / `APP_ENV` / `NODE_ENV`）。
+- **(c) 未授權不建 alert、不觸發 Telegram**：Telegram spy（攔截 `api.telegram.org` 計數）驗證——#6（無 auth high/urgent→401、spy 0 次、listAlerts 空）、#7（forged token→401、spy 0 次）；#1/#2/#5 另以 listAlerts 為空確認不建 alert。
+- **(d) server 權威 elderId**：handler `body.elderId = callerElderId ?? bodyElderId ?? null`，一律以 token 推導值寫入；client 值僅供一致性檢核。#5（resident A 帶 B 的 elderId→403 `forbidden_resident`、不建 alert）、#5b（帶自己 elderId 相符→200）、#4（不帶 elderId→server 填 token 推導 = ELDER_A）佐證。
+- **(e) 無 hardcoded resident / 無 fake token 過 production / log 不顯 token / 錯誤不暴露 Firebase detail·stack**：模組無寫死住民；fake token 於 production 被 L119/L132 擋（#11）；`requireResidentCaller` catch 之 `console.error` 僅印 `error.message`（L177，不印 token）；#12 斷言 401 body 不含原 token 字面值、不含 `stack|Error:|firebase`，403 body 僅 `{success:false, error:"forbidden_resident"}`。
+- **(f) adminAuthContext.js byte-identical**：`git diff` 空輸出確認；CR-0039/0040/0041/0043 既有測試（authScope / list / status / audit / demoFlow / provisioning / adminAuthContext）全綠。
+- **(g) 既有 /notify 測試調整裁決：合理（加驗證後 seeding 帶 token），非放寬授權**：受影響檔僅在 postNotify seeding 加 resident idToken header（透過 testsupport stub），斷言主體不變。`careAlertAuthScopeEndpoint` 的「super_admin /notify 無需 auth→200」改為「resident 帶 idToken→200」**並新增「無 token→401 且不建 alert」**——屬授權收斂（tighten），非放寬。`careAlertNotifyEndpoint` 的 invalid_payload 測試帶 token 後仍回 400，佐證「中介層先於 payload 驗證」之順序正確。**無任何「為過測試關閉通知 / 降授權」之調整。**
+- **獨立覆驗**：`npm run check` 綠；`npm test` → tests 424 / pass 424 / fail 0（與 backend-agent 回報一致）。`git diff backend/stt_proxy/services/admin/adminAuthContext.js` 空。
+- **殘留（明確標註）**：
+  - **B3（Flutter）未做**：長者端 `/notify` 呼叫尚未帶 `Authorization: Bearer <idToken>`。**正式 build 一旦關閉 mock（production `mockAllowed()===false`），長者端建 Care Alert 會被 401/403 擋住** → B3 為正式上架 BLOCKER，須於 production flavor 啟用前完成。dev / mock 環境不受影響（現況 demo 可跑）。
+  - **未對真 DB / 真 Firebase 驗證**：全程 mock pg + stub firebaseAdmin + Telegram spy；真實 Firebase idToken 驗證、`users.elder_id` 真資料路徑、Telegram 真外送未在 CI 覆蓋（與既有 auth 測試策略一致，屬已知邊界）。
+- **結論**：§12 之 🔒 server.js /notify「條件式核准」其覆核條件全數滿足 → **B1 + B2 結案**。CR-0045 整體待 B3 合併後總結案；AUTHORIZATION_MODEL §8「FU-CR：/notify caller 驗證」於 B1+B2 結案後可標為已收斂（B3 僅補前端 header，不影響後端授權結論）。

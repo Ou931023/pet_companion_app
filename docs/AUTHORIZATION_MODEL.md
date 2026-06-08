@@ -45,10 +45,30 @@ caregiver-or-admin 路由掛 `resolveAdminAuthContext` 中介層，解析順序�
 `/api/admin/users`、`/api/admin/overview`、marketplace admin 路由仍掛 `requireAdmin`
 （只接受共享 `ADMIN_API_TOKEN`，非該 token → 403）。caregiver Firebase token 無法進入這些路由。
 
-### `/api/care-alerts/notify`
+### `/api/care-alerts/notify`（resident-caller，CR-0045）
 
-長者端建立 Care Alert 的路由**刻意不掛任何 admin 驗證**（長者端不持有 admin token）。
-本模型不改變此行為；其 caller 驗證屬另案（FU-CR）。
+長者端建立 Care Alert 的路由不掛 admin 驗證（長者端不持有 admin token），改掛
+`requireResidentCaller`（`services/auth/residentCallerContext.js`）：
+
+- caller = **長者本人**：Firebase idToken bearer → `firebase_uid` → `users` row → `users.elder_id`。
+  context 形狀：`{ userId, firebaseUid, elderId, role:'resident', isSuperAdmin:false }`。
+- **server 權威推導 elderId** 並蓋寫在 alert（防偽造，並修復既有 elderId=null 缺口）：
+  - body 無 elderId → 用 token 推導值；
+  - body 有且 == token 推導 → 放行；
+  - body 有且 != token 推導 → **403 `forbidden_resident`**；
+  - 一律以 token 推導值寫入 alert，client 值僅供一致性檢核。
+- fail-closed：無 / 無效 token → **401**；查無 users row（production）/ `users.elder_id` 為 null →
+  **403 `resident_not_linked`**；inactive 帳號（CR-0043 閘）→ **403 `resident_inactive`**。
+- **三道保險**（同 §6）：production（`mockAllowed()===false`）強制真 idToken + 真 users row +
+  非 null elder_id；無 token→401、無權→403。dev/test 允許 mock caller；**明列 dev-only seam**：
+  `mockAllowed()` 且查無 DB row 時，由 verified uid 推導 scoping elderId（僅 dev/mock，
+  production 恆走真 row）。
+- caregiver / super_admin 代建**不納入**（caller 僅長者本人）；通知 persist / cooldown /
+  notification-log / `{ success, telegram }` response 形狀不變。
+- 重用 adminAuthContext（CR-0041）的 firebaseAdmin verify / `mockAllowed()` 守門 / status 閘 /
+  test seam 模式；為避免動到 adminAuthContext 的 `SELECT id, role, status FROM users`
+  （CR-0041 byte-identical 回歸守門），residentCallerContext 自帶 `findUserByFirebaseUid`
+  （SELECT 多取 `elder_id`），不抽共用、不改 adminAuthContext。
 
 ---
 
@@ -141,6 +161,8 @@ caregiver 帳號與 `resident_caregiver_links` 的建立 / 修改 / 停用由 su
 - **FU-CR-0043a**：caregiver 首次登入以 Firebase-verified email 自動認領 pending caregiver。
 - **FU**：`requireSuperAdmin`（讓 DB-backed super_admin 也能用管理路由，目前僅共享 token）。
 - **FU**：caregiver email 全域唯一 DB unique index（目前為 app-level SELECT 檢查）。
-- **FU-CR**：`/api/care-alerts/notify` caller 驗證（長者 session）。
+- ~~**FU-CR**：`/api/care-alerts/notify` caller 驗證（長者 session）。~~
+  **已收斂於 CR-0045（B1+B2）**：resident-caller 驗證 + server 權威推導 elderId（見 §2
+  `/api/care-alerts/notify` 段）。Flutter 端帶 Authorization header 為 CR-0045 B3。
 - `/api/admin/overview` 目前為純聚合計數（無 per-resident 識別），維持 super_admin-only；
   若改回 per-resident 需補 scope。
