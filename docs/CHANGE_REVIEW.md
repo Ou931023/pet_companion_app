@@ -2134,3 +2134,25 @@ caregiver_web API base URL 改為可配置、移除 localhost production 預設�
   - **B3（Flutter）未做**：長者端 `/notify` 呼叫尚未帶 `Authorization: Bearer <idToken>`。**正式 build 一旦關閉 mock（production `mockAllowed()===false`），長者端建 Care Alert 會被 401/403 擋住** → B3 為正式上架 BLOCKER，須於 production flavor 啟用前完成。dev / mock 環境不受影響（現況 demo 可跑）。
   - **未對真 DB / 真 Firebase 驗證**：全程 mock pg + stub firebaseAdmin + Telegram spy；真實 Firebase idToken 驗證、`users.elder_id` 真資料路徑、Telegram 真外送未在 CI 覆蓋（與既有 auth 測試策略一致，屬已知邊界）。
 - **結論**：§12 之 🔒 server.js /notify「條件式核准」其覆核條件全數滿足 → **B1 + B2 結案**。CR-0045 整體待 B3 合併後總結案；AUTHORIZATION_MODEL §8「FU-CR：/notify caller 驗證」於 B1+B2 結案後可標為已收斂（B3 僅補前端 header，不影響後端授權結論）。
+
+#### 15. 落地紀錄（B3 Flutter 長者端 /notify 帶 Authorization，frontend-ux-agent）— 執行進度 ✅
+- `lib/services/care_alert_notification_service.dart`：建構子加 `authTokenProvider`（`Future<String?> Function()`）；notify() 先取 token，組 `Authorization: Bearer <token>`；token null/空→不送 POST（避免必然 401）；維持 fire-and-forget（token 取得失敗 / 401 / 403 / 網路錯誤都不 throw、不阻斷 Realtime 與本機 CareAlert；log 不印完整 token）；body 不含 elderId（server 由 token 推導）。
+- `lib/controllers/auth_controller.dart`：新增 `resolveNotifyAuthToken()`——正式帳號(email/google/apple)→取「新」Firebase idToken（`AuthService.currentIdToken()`→`FirebaseAuthService.currentIdToken()` 用 `user.getIdToken()` 續期）；Demo/未登入→非 production 回 `mock-id-token-<currentUserId>`、**production 一律回 null（不偽造身分）**；全程 try/catch 不 throw、不記錄完整 token。
+- `lib/services/auth/auth_service.dart` + `firebase_auth_service.dart`：加 `currentIdToken()` 封裝（Firebase 不可用 / 無 currentUser / 取得失敗→null，不 throw）。
+- `lib/app.dart`：`CareAlertNotificationService` 的 Provider **由原第 111 行（AuthController 之前、讀不到 AuthController）移到 AuthController 之後（第 123 行）**，注入 `() => context.read<AuthController>().resolveNotifyAuthToken()`。
+- 測試：`test/services/care_alert_notification_service_test.dart`（13 案，含 firebase/mock header、token=null 不送、provider 丟例外略過、401/403 不阻斷、log 不顯完整 token、body 不含 elderId）。
+- **驗收（frontend-ux-agent 自驗）**：`flutter analyze`（5 改動檔）No issues found；`flutter test` → care_alert_notification_service 13/13、auth_controller 27/27、voice_agent_controller_realtime_lifecycle 23/23 綠。
+
+#### 16. B3 落地 checkpoint 覆核（architecture-agent）
+- **裁決：✅ PASS — B3 結案；CR-0045 全案（B1+B2+B3）總結案。** read-only（`git diff` / `grep`）覆核，未跑整包 flutter test、未對真 DB / 真 Firebase 端到端聯調。
+- **(a) Realtime 主線零觸碰**：`git diff HEAD -- lib/services/realtime_voice_service.dart lib/controllers/voice_agent_controller.dart` 空輸出 → 兩檔 byte-identical；呼叫點 / 狀態機 / SDP / DataChannel 一字未動。`voice_agent_controller.dart:64`（`CareAlertNotificationService?` 欄位）為既有，未變。
+- **(b) fire-and-forget 維持**：notify() 全段 try/catch；token 取得另包一層 try/catch（例外→null）；token null/空→`debugPrint` 後 `return`，不送 POST；後續非 200（含 401/403）/ success:false / 網路錯誤沿用既有吞錯路徑，不 throw、不阻斷 Realtime 與本機 CareAlert。production demo/未登入 → `resolveNotifyAuthToken()` 回 null → 不送、不偽造。
+- **(c) header 行為正確**：firebase 真帳號→`Bearer <新 idToken>`（每次 `getIdToken()` 續期、不用舊存）；mock→`Bearer mock-id-token-<uid>`。測試三案（mock-id-token-default_user / 真 idToken / mock-id-token-elder_42）斷言 `Authorization` 值佐證。
+- **(d) app.dart provider 位移 — blast radius 可接受**：原位於 AuthController **之前**（closure 內 `context.read<AuthController>()` 會讀不到），移到 AuthController **之後**為正確修正。全專案 `CareAlertNotificationService` consumer 僅 `lib/app.dart` 三處 `context.read`（行 232 / 347 / 366），皆位於 MultiProvider 子樹深處（遠在新宣告位置 123 下游），**無任何上游 consumer 受位移影響**；注入的 closure 為 lazy（notify() 時才讀 AuthController），建立順序亦安全。其餘 provider 樹未動。**位移安全。**
+- **(e) 無 token 外洩 / 無 hardcoded token / production 不 fake**：service 與 auth 兩處 `debugPrint` 均不含 token 字面；測試「debug log 不顯示完整 token」以 401 分支斷言 log 不含 secret。`eyJ...` 僅出現在測試 fixture，非程式碼寫死。production fake 由 `resolveNotifyAuthToken()` 的 `AppConfig.isProduction → null` 封死（`app_config.dart:13`）。
+- **(f) 既有 Flutter 測試未破壞**：frontend-ux-agent 自驗 analyze 乾淨 + 三組相關測試綠（care_alert 13 / auth_controller 27 / realtime lifecycle 23）；architecture-agent **未重跑整包 flutter test**（誠實標註，見殘留）。
+- **AUTHORIZATION_MODEL §8「FU-CR：/notify caller 驗證」總標收斂**：B1+B2 後端授權鏈 + B3 前端 header 全到位，正式 build 關閉 mock（production `mockAllowed()===false`）後長者端 `/notify` 可帶真 idToken 通過驗證，CR-0045 BLOCKER 解除。§8 該項標為**已收斂**。
+- **殘留（明確標註）**：
+  - **未對真 DB / 真 Firebase 端到端聯調**：Flutter 端真 `getIdToken()` → 後端真 Firebase 驗證 → `users.elder_id` 真資料 → Telegram 真外送之完整鏈路未在自動化覆蓋（前後端各自 mock / stub，與既有測試策略一致）。建議正式 flavor 啟用前手動端到端 smoke 一次。
+  - **整包 `flutter test` 未跑**：僅跑相關三組測試；建議下次 CI 全量回歸。
+- **結論**：CR-0045 三批（B1 後端 caller context + B2 server.js /notify 掛驗證 + B3 Flutter header）全數 PASS，**CR-0045 全案完成結案**。

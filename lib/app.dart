@@ -108,7 +108,6 @@ class PetCompanionApp extends StatelessWidget {
         Provider(create: (_) => const EmotionFusionService()),
         Provider(create: (_) => const PetEmotionMapper()),
         Provider(create: (_) => AgentRouterService()),
-        Provider(create: (_) => CareAlertNotificationService()),
         Provider(create: (_) => CoachMarkKeys()),
         ChangeNotifierProvider(create: (_) => CoachMarkController()),
         ChangeNotifierProvider(create: (_) => AppNavigationController()),
@@ -116,6 +115,15 @@ class PetCompanionApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ConsentController()),
         ChangeNotifierProvider(
           create: (_) => AuthController(authService: AuthService()),
+        ),
+        // CR-0045 B3：Care Alert 通知服務需帶 Authorization: Bearer <idToken>，
+        // 由 AuthController 提供 token（firebase→新 idToken / mock→mock-id-token-<uid>）。
+        // 置於 AuthController 之後，注入的 closure 於 notify() 時才讀取 AuthController。
+        Provider(
+          create: (context) => CareAlertNotificationService(
+            authTokenProvider: () =>
+                context.read<AuthController>().resolveNotifyAuthToken(),
+          ),
         ),
         ChangeNotifierProvider(
           create: (context) =>

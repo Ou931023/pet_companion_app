@@ -275,6 +275,24 @@ class FirebaseAuthService {
     }
   }
 
+  /// 取得目前登入中 Firebase user 的「新」idToken（過期會自動續期）。
+  ///
+  /// CR-0045 B3：供需要帶 `Authorization: Bearer <idToken>` 的後端呼叫使用
+  /// （例如 Care Alert 通知）。Firebase 不可用 / 沒有目前使用者（Demo）→ 回 null；
+  /// 取得失敗也回 null（不外洩例外、不 throw）。
+  Future<String?> currentIdToken() async {
+    if (!_initializer.isAvailable) return null;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return null;
+    try {
+      final token = await user.getIdToken();
+      if (token == null || token.isEmpty) return null;
+      return token;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 用 Email 密碼重新驗證（刪除帳號等敏感操作前，Firebase 會要求近期登入）。
   ///
   /// - Firebase 不可用 / 沒有目前使用者 → 安全 no-op。

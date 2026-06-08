@@ -123,6 +123,11 @@ class AuthService {
     return stamped;
   }
 
+  /// 取得目前 Firebase user 的「新」idToken（過期自動續期），供需要帶
+  /// `Authorization: Bearer <idToken>` 的後端呼叫使用（CR-0045 B3）。
+  /// 沒有登入中的 Firebase user（Demo / 不可用）或取得失敗 → 回 null（不 throw）。
+  Future<String?> currentIdToken() => _firebaseAuthService.currentIdToken();
+
   /// 啟動時從 shared_preferences 還原 session；沒有則回 null。
   Future<AuthSession?> restoreSession() async {
     final prefs = await SharedPreferences.getInstance();

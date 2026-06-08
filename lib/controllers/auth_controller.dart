@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../config/app_config.dart';
 import '../models/auth_session.dart';
 import '../services/auth/auth_service.dart';
 import '../services/auth/firebase_auth_service.dart';
@@ -63,6 +64,30 @@ class AuthController extends ChangeNotifier {
   bool get _isRealAccount {
     final provider = _session?.provider;
     return provider == 'email' || provider == 'google' || provider == 'apple';
+  }
+
+  /// CR-0045 B3：取得呼叫後端 `POST /api/care-alerts/notify` 需要的
+  /// Bearer token（server 會由 token 權威推導 elderId）。
+  ///
+  /// - 正式帳號（email/google/apple，Firebase）→ 取「新的」Firebase idToken
+  ///   （idToken 會過期，務必每次取新，不用舊存的）。
+  /// - Demo / mock 帳號（僅非 production）→ `mock-id-token-<currentUserId>`，
+  ///   dev / test 後端接受；**production 一律回 null，不偽造身分**。
+  /// - 取不到（未登入 / Firebase 不可用 / 取得失敗）→ 回 null，呼叫端會略過通知。
+  ///
+  /// 全程 try/catch、不 throw，也**不會記錄完整 token**。
+  Future<String?> resolveNotifyAuthToken() async {
+    try {
+      if (_isRealAccount) {
+        return await _authService.currentIdToken();
+      }
+      // Demo / 未登入：production 不偽造；dev / test 用 mock token。
+      if (AppConfig.isProduction) return null;
+      return 'mock-id-token-$currentUserId';
+    } catch (_) {
+      debugPrint('[CARE_ALERT_NOTIFY] 取得身分權杖失敗（已忽略）。');
+      return null;
+    }
   }
 
   String _resolveDownstreamId(String? sessionId) {
