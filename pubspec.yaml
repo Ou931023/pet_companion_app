@@ -1,5 +1,5 @@
 name: pet_companion_app
-description: Ai companion pet demo for elderly care interactions.
+description: AI pet companion that accompanies older adults through everyday voice conversations and helps caregivers notice when someone needs attention.
 publish_to: "none"
 version: 1.0.0+1
 

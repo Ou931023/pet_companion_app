@@ -2156,3 +2156,156 @@ caregiver_web API base URL 改為可配置、移除 localhost production 預設�
   - **未對真 DB / 真 Firebase 端到端聯調**：Flutter 端真 `getIdToken()` → 後端真 Firebase 驗證 → `users.elder_id` 真資料 → Telegram 真外送之完整鏈路未在自動化覆蓋（前後端各自 mock / stub，與既有測試策略一致）。建議正式 flavor 啟用前手動端到端 smoke 一次。
   - **整包 `flutter test` 未跑**：僅跑相關三組測試；建議下次 CI 全量回歸。
 - **結論**：CR-0045 三批（B1 後端 caller context + B2 server.js /notify 掛驗證 + B3 Flutter header）全數 PASS，**CR-0045 全案完成結案**。
+
+---
+
+### CR-0046 — Store Readiness and Production Platform Hardening（雙平台上架前平台設定 + 商店/隱私文件；不碰授權鏈/Realtime/Memory/notify auth）
+- 提出 / 裁決 agent：architecture-agent（依使用者指派；接 CR-0033 §11 / §12 第 11–14 項與 P1-5 / P2-3 / P3-1 / P3-2 殘留）
+- 日期：2026-06-08
+- 狀態：**提案 + 裁決完成，待派工落地**（本筆為規劃 / 裁決紀錄，未改任何 config / 業務碼）
+- 帳本正規 ID = **CR-0046**（沿用「下一個空號」治理；CR-0045 已結案）
+
+#### 1. 動機（為何現在做）
+- CR-0039–0045 授權鏈已在 code 層閉合（P0-1 / P0-2 解除），重心轉向「正式上架前的平台設定與 production hardening」。
+- 仍未處理之上架阻擋項（CR-0033 殘留）：iOS ATS 全域 `NSAllowsArbitraryLoads=true`（P1-5）、Android `applicationId` 帶個人名 + `android:label` 為 dev 名（P2-3）、`pubspec.yaml` description 含 "demo"（P3-1）、iOS/Android 顯示名與品牌未定案（P3-2）、缺商店 metadata / 隱私政策 URL / data safety 文件（§11）。
+- 本案目標：把「現在能安全改、不破壞授權鏈/Realtime/更新路徑」的平台設定收斂，並把「需 owner 拍板或需外部素材/部署」的項目明確列為 blocker 文件，不假完成。
+
+#### 2. 盤點覆核（architecture-agent 已驗證，覆核使用者盤點）
+- **iOS Info.plist**：`NSAppTransportSecurity → NSAllowsArbitraryLoads=true`（全域 ATS 關閉，P1-5）；權限文案（Camera/Microphone/PhotoLibrary*2/SpeechRecognition/LocalNetwork）皆長者友善、**無 demo/test/mock/工程字眼**（已逐條讀過，符合 §5.2）；`CFBundleDisplayName="Pet Companion App"`、`CFBundleName="pet_companion_app"`（未定案，P3-2）；bundle id 走 `$(PRODUCT_BUNDLE_IDENTIFIER)`（pbxproj = `com.Andrew.petCompanionApp`）；`CFBundleURLSchemes` 為 Google OAuth **public client ID**（非 secret，維持）。
+- **Android**：`build.gradle.kts` `applicationId="com.Andrew.petCompanionApp"`（個人名 + 大小寫混用，P2-3）、`namespace="com.example.pet_companion_app"`（內部套件名，改動會牽動 MainActivity.kt 套件路徑，**非上架顯示項**）、`minSdk=maxOf(flutter,23)`、`targetSdk=flutter 預設`、release `signingConfig=debug`（TODO 佔位，未提交 keystore，符合紅線）；`AndroidManifest` `android:label="pet_companion_app"`（dev 名，P2-3）、`usesCleartextTraffic="true"`（Android 端對應 iOS ATS 的明文流量開關，與 P1-5 同源問題）；權限 INTERNET/RECORD_AUDIO/MODIFY_AUDIO_SETTINGS/POST_NOTIFICATIONS/ACCESS_NETWORK_STATE/READ_MEDIA_IMAGES/READ_EXTERNAL_STORAGE(maxSdk32) — **與功能相符，無多餘權限**。
+- **pubspec.yaml**：`description: Ai companion pet demo for elderly care interactions.`（含 "demo"，P3-1）；`version: 1.0.0+1`。
+- **app_config.dart（CR-0034 既有）**：`isProduction`、`isApiBaseUrlProductionSafe`（production 指向 localhost/127.0.0.1/10.0.2.2/空/無 scheme → false）、`mockServicesEnabled`/`demoLoginVisible`/`devPanelsVisible` 在 production 強制 false；dev 預設 `http://127.0.0.1:3001`。已是「production 不 silent fallback localhost」的守門基礎。
+- **caregiver_web/config.example.js**：`apiBaseUrl: null` → 預設同源 `/api`（CR-0034 B4，非 localhost 預設，符合）。
+- **docs/ENVIRONMENT_SETUP.md**：已完整描述三環境 + production fail-fast + Flutter 守門畫面行為。**三份商店/隱私文件尚不存在**（待本案新建）。
+
+#### 3. 影響範圍（檔案）
+- **可安全改（本案落地）**：
+  - `ios/Runner/Info.plist`（ATS 收斂；見 §5 結構建議）。
+  - `android/app/src/main/AndroidManifest.xml`（`usesCleartextTraffic` 收斂以對齊 iOS ATS；`android:label` 改正式顯示名 — 但顯示名最終字串需 owner 定案，故本案僅在 owner 給名後改，預設列 blocker）。
+  - `pubspec.yaml`（description 移除 "demo" → 正式描述；**description-only**）。
+- **新建文件**：`docs/STORE_RELEASE_CHECKLIST.md`、`docs/APP_STORE_METADATA.md`、`docs/GOOGLE_PLAY_DATA_SAFETY.md`。
+- **更新文件**：`docs/CHANGE_REVIEW.md`（本筆）、（如需）`docs/ENVIRONMENT_SETUP.md` 補 ATS / cleartext 設定說明。
+- **不改**：`lib/config/app_config.dart`（CR-0034 守門已足夠，見 §裁決 1c）、`caregiver_web/config.example.js`（已正確）、`build.gradle.kts` 的 `applicationId`/`namespace`/signing（列 owner blocker，見 §裁決 1d）、任何授權鏈 / Realtime / Memory / notify auth 檔。
+
+#### 4. 觸及 🔒 與牽涉 agent
+- **🔒 判定（裁決 2）**：
+  - `pubspec.yaml` description-only 編輯：**非 🔒**。🔒 原意是「跨前後端契約 / 主線依賴 / schema」，metadata 文字不影響任何契約或依賴；屬 low-risk doc-adjacent 編輯。
+  - `ios/Runner/Info.plist` ATS 收斂：**準 🔒 / medium**。不改 API 契約或 schema，但**直接影響 Realtime 同網段語音連線可達性**（LocalNetwork + 區網 http 後端），錯改會打斷 iOS 實機語音主流程 → 需 architecture-agent checkpoint + 實機/模擬器連線驗證後才結案。
+  - `android/app/src/main/AndroidManifest.xml` `usesCleartextTraffic` 收斂：**準 🔒 / medium**（同上，影響 Android 端區網 http 後端可達性）。
+  - `build.gradle.kts` `applicationId` / iOS bundle id：**🔒 / high**（改動破壞已安裝 App 的更新路徑與 Firebase/OAuth 設定綁定）→ **不在本案自動改，列 owner blocker**。
+  - `namespace`（Android 內部套件）：**非上架顯示項**，改動牽動 Kotlin 套件路徑，無上架必要 → 不改。
+- 牽涉 agent：
+  - **architecture-agent（主）**：規劃 / 裁決 / 文件（本案產出大宗為文件 + 平台設定審查）。
+  - **frontend-ux-agent**：Flutter 長者端 + caregiver_web UI owner，但 **iOS/Android 原生平台 config（Info.plist / Gradle / Manifest）非其明列範圍**（見 §裁決 3 ownership 釐清）。
+  - **不需** realtime-voice-agent（不改 `realtime_voice_service.dart` / SDP / DataChannel）、**不需** backend-agent（不改 server.js / DB）、**不需** companion-memory-agent。
+
+#### 5. 風險等級
+- 整案：**low–medium**。文件新建 = low；description-only = low；ATS / cleartext 收斂 = medium（可達性風險，需連線驗證）；owner blocker 項本案不動 = 0 風險。
+- 紅線守護：不破壞 CR-0039–0045 授權鏈、不改 Realtime/Memory/notify auth、不 hardcoded secret、不提交 keystore、不偽造已部署 privacy URL / 商店設定、不讓 production 預設 localhost、不為 release build 暫關必要權限或安全檢查。
+
+#### 6. 四項核心裁決
+
+##### 裁決 1 — 「現在改」清單 vs「owner blocker」清單
+**(1a) iOS ATS 收斂 — ✅ 核准本案做（medium，需連線驗證）。**
+- 移除全域 `NSAllowsArbitraryLoads=true`，改為「僅 localhost / 區網明文例外」。production https 後端不需任何例外（預設即被 ATS 接受）；dev / iPhone 實機 Demo 連區網 http 後端仍可走例外網域。
+- **保留理由覆核**：Realtime 採 WebRTC（媒體走 DTLS-SRTP，**不受 ATS 管制**）；ATS 只管 App 發起的 `URLSession`/HTTP（SDP 交換 `/api/realtime/call`、STT、各 REST API）。故收斂 ATS **不影響 WebRTC 媒體**，但**會影響 SDP 交換與 REST 打 http 區網後端**——因此例外必須涵蓋「明文 IP / 區網主機」情境（見 §7 結構建議含 `NSAllowsLocalNetworking`）。
+- **驗證為結案前置**：iOS 模擬器 / 實機對區網 http 後端跑一次語音連線 smoke（SDP 交換成功 + DataChannel 開 + transcript），通過才結案；失敗則回退保留全域 arbitrary loads 並改列 blocker（誠實標註，不假完成）。
+
+**(1b) Android `usesCleartextTraffic` 收斂 — ✅ 核准本案做（medium，與 1a 同源同驗證）。**
+- 對齊 iOS：移除全域 `usesCleartextTraffic="true"`，改用 `res/xml/network_security_config.xml` 僅允許區網明文 + production https 預設拒明文。
+- 同樣需 Android 區網 http 後端語音 smoke 驗證；失敗回退 + 列 blocker。
+
+**(1c) app_config production URL fail-fast — ✅ 維持 CR-0034，不強化（驗證已足夠）。**
+- 覆核：`isApiBaseUrlProductionSafe` 在 production 對「空 / 無 scheme / host 空 / localhost·127.0.0.1·10.0.2.2」回 false；ENVIRONMENT_SETUP §3.3 記載 App 據此顯示「服務暫時無法使用」長者友善守門畫面、**不進正式主流程**（非 silent fallback）。符合任務 §7 #4「fail-fast 或顯示部署 blocker，不可 silent fallback」。
+- **唯一待確認（移交 frontend-ux-agent 覆核，非本案改碼）**：守門邏輯是否真的在 App 啟動 / 進入 Realtime 前**被消費**（有對應 guard view 攔截），而非僅定義了 getter 卻無人讀。若覆核發現 getter 未被任何啟動流程消費 → 另開小 FU（不在 CR-0046 大改）。本案以文件記此覆核點，不主動改 app_config。
+
+**(1d) owner blocker 清單（本案 document，不自動改）：**
+1. **最終品牌 display name**（iOS `CFBundleDisplayName`/`CFBundleName`、Android `android:label`）— 需 owner 定案正式中/英文 App 名與在地化後才改。
+2. **Android `applicationId` / iOS bundle id 正式化**— 改動破壞已安裝更新路徑 + 綁定 Firebase/OAuth/Push 憑證，需 owner 拍板 + 同步重設第三方專案。
+3. **hosted privacy policy URL / terms URL / support URL / contact email**— Phase 1 `LegalConfig` 為 TODO 佔位；需實際部署可公開存取頁面，**嚴禁偽造已部署 URL**（紅線）。
+4. **app icon / adaptive icon / launch screen / screenshots**— 需設計素材，缺則文件列 placeholder，不假完成。
+5. **release signing key（keystore / iOS distribution cert）**— **嚴禁提交**；本案僅在 gradle 留 signing config 文件說明，不放實際 key。
+6. **production env**（Firebase / OpenAI / Telegram / DB / `CORS_ALLOWED_ORIGINS` 正式網域）— 走部署環境 secret，本案只列變數名（已在 ENVIRONMENT_SETUP §3.1）。
+
+##### 裁決 2 — 🔒 判定（見 §4，摘要）
+- pubspec description-only：**非 🔒**（low，無契約依賴）。
+- Info.plist ATS / Manifest cleartext：**準 🔒 medium**，需 checkpoint + 連線驗證。
+- applicationId / bundle id：**🔒 high**，列 blocker 不自動改。
+- app_config / 其餘文件：**非 🔒**。
+
+##### 裁決 3 — ownership / 批次 owner
+- **iOS/Android 原生平台 config（Info.plist / build.gradle.kts / AndroidManifest.xml）**：現有 5 agent 中**無明確 owner**（frontend-ux-agent 範圍為 Flutter UI + caregiver_web，明列「不改後端行為與 Realtime」，未涵蓋原生 build config；且 ATS/cleartext 改動有 Realtime 可達性風險，屬跨界）。**裁決：原生 config 由 architecture-agent 規劃 + 使用者（main）執行**，frontend-ux-agent 僅提供「Flutter 端是否依賴明文區網後端」之事實覆核與連線 smoke 協助。
+- **三份商店/隱私文件 + CHANGE_REVIEW + ENVIRONMENT_SETUP**：屬 architecture-agent 文件職責，由 architecture-agent / main 撰寫。
+- **pubspec description**：可由 main 直接改（low、非 🔒）。
+- **app_config 守門消費點覆核**：移交 frontend-ux-agent（Flutter 範圍內 read-only 覆核）。
+
+##### 裁決 4 — 三份新文件範圍與「佔位/blocker 明示」原則
+- **`docs/STORE_RELEASE_CHECKLIST.md`**：雙平台上架前 checklist（任務 §8.3 全項）。每項標狀態：✅ 已備 / ⏳ owner blocker / ❌ 缺。含 iOS build / Android build / privacy / terms / support / icon / screenshots / production backend URL / Firebase / PG migration / Telegram / OpenAI / no demo·mock·debug / no hardcoded secret / auth·Realtime·CareAlert smoke。
+- **`docs/APP_STORE_METADATA.md`**：App name / subtitle / short·full description（草稿，**移除 demo 字樣**）/ keywords / category / age rating 建議 / privacy·support URL **placeholder（明標「待部署，禁偽造」）** / review notes draft / demo account 策略。
+- **`docs/GOOGLE_PLAY_DATA_SAFETY.md`**：依任務 §8.2 列資料類型（account / voice·audio / messages·conversation / health-related inferred care signals / app activity / device id / notifications）× collected? shared? purpose? encrypted-in-transit? deletion-support?，對齊 Manifest 實際權限與後端實際蒐集（不得宣稱未實作的保護）。
+- **共同原則**：凡未部署 / 未定案 / 需外部素材 → 一律標 **「⏳ BLOCKER：<負責方> / <待辦>」**，不得寫成已完成；privacy/support URL 一律 placeholder + 明文警告禁偽造。
+
+#### 7. iOS ATS 收斂具體 plist 結構建議（若 1a 落地）
+取代現有 `NSAppTransportSecurity → {NSAllowsArbitraryLoads:true}`，改為（概念結構，實際 IP 由部署環境決定，不寫死正式網域於此）：
+- `NSAllowsArbitraryLoads` = `false`（或整個移除該 key，預設即 false）。
+- `NSAllowsLocalNetworking` = `true`（允許 .local / 區網 IP 明文，供 iPhone 實機連同網段 http 後端 + LocalNetwork 語音；此 key 不放寬公網 https 以外的任意明文）。
+- 如仍需顯式 localhost 例外，加 `NSExceptionDomains` → `localhost` → `{NSExceptionAllowsInsecureHTTPLoads:true, NSIncludesSubdomains:true}`。
+- **不加** 任何正式網域例外（production 走 https，預設即被接受，零例外）。
+- Android 對應：`network_security_config.xml` 設 `<base-config cleartextTrafficPermitted="false">` + `<domain-config cleartextTrafficPermitted="true">` 僅列區網 / localhost，Manifest 移除全域 `usesCleartextTraffic="true"` 改引用該 config。
+- **註**：`NSAllowsLocalNetworking` 對 App Store 審查友善度遠高於全域 `NSAllowsArbitraryLoads`，且保留 Demo 區網語音可達性——是「收斂 P1-5 又不破壞實機 Demo」的最小變更。最終仍以 §6 (1a) 連線 smoke 驗證為準。
+
+#### 8. 批次切分（owner / 順序 / 相依）
+- **B1（文件，architecture-agent / main）**：新建三份商店/隱私文件 + 本 CR 紀錄 +（如需）ENVIRONMENT_SETUP 補 ATS/cleartext 說明。**零程式 / 零 config 風險**，可先行。🔒 無。
+- **B2（low config，main）**：`pubspec.yaml` description 移除 "demo" → 正式描述。🔒 無。可與 B1 併。
+- **B3（medium config，architecture-agent 規劃 + main 執行 + frontend-ux 協助驗證）**：iOS Info.plist ATS 收斂 + Android Manifest cleartext 收斂（+ 新增 `network_security_config.xml`）。**相依：需先完成區網 http 後端語音 smoke 驗證**。落地後 architecture-agent checkpoint（確認 SDP 交換 / DataChannel / transcript 正常）。🔒 準（medium）。**失敗則回退並改列 blocker，不假完成**。
+- **B4（owner blocker 文件化，不改碼）**：把 §6 (1d) 六項 blocker 寫入 STORE_RELEASE_CHECKLIST 並標負責方 + 待辦。零風險。
+- **順序**：B1 + B2 + B4（文件 / low，可同批）→ B3（需驗證，最後）。**applicationId / bundle id / signing / 品牌名 / hosted URL / 素材 / production secret 全部不在落地批，僅 B4 文件化**。
+- **不拆子 CR**（範圍集中於平台 config + 文件，無獨立子系統）。
+
+#### 9. 測試 / build 策略
+- **B1 / B2 / B4（文件 + pubspec description）**：`flutter pub get`（確認 pubspec 仍可解析）+ `flutter analyze`。文件無需測試。預期通過。
+- **B3（ATS / cleartext）**：
+  - `flutter analyze` + `flutter test`（確認無 Dart 端回歸；ATS 為原生設定，Dart 測試不直接覆蓋，主要靠連線 smoke）。
+  - **連線 smoke（結案前置，手動）**：iOS 模擬器/實機 + Android 對「區網 http 後端」跑語音對話一次（麥克風 → SDP 交換 → DataChannel → partial/final transcript → assistant 回覆）。通過才結案。
+  - `flutter build ios --release --no-codesign --dart-define=APP_ENV=production --dart-define=API_BASE_URL=https://<正式網域>`：**嘗試**；若因簽章 / 素材 / 環境缺失失敗，**記錄 blocker 與錯誤摘要，不假裝通過**（任務 §9 / §12 #8）。
+  - `flutter build apk --release ...`：同上嘗試 + 誠實記錄。
+- **backend / caregiver_web**：本案不改其程式（僅可能補 ENVIRONMENT_SETUP 文字），不需跑 npm / node --test；若僅動文件則跳過，並於回報誠實標註「未跑」。
+- **誠實原則**：未實際跑的測試 / build 一律標「未執行 / 因 X blocker 未完成」，不偽造綠燈。
+
+#### 10. 紅線自檢（提案層）
+- production 仍預設 localhost？**否**（app_config 守門 CR-0034 維持；本案不改預設）。
+- iOS 仍全域 arbitrary loads？**B3 後否**（收斂為區網例外）；B3 未落地前維持現狀並標 blocker。
+- Android 仍 com.example？applicationId 已是 `com.Andrew.*`（非 com.example，但帶個人名，列 owner blocker 正式化）；namespace 仍 com.example 但**非上架顯示項**，不改。
+- demo/test/mock 字樣？pubspec "demo" 由 B2 移除；Info.plist 權限文案已無；文件一律不得新增 demo 字樣於正式 metadata。
+- hardcoded secret / 提交 signing key / 偽造 privacy URL / 偽造商店設定？**全否**（紅線，blocker 一律 placeholder + 明標）。
+- 破壞授權鏈 / Realtime / Memory / notify auth？**否**（本案完全不觸及該等檔案）。
+
+#### 11. architecture-agent 裁決
+- **✅ 核准本案（CR-0046）**依 §6 四項裁決 + §8 批次（B1+B2+B4 文件/low 先行 → B3 ATS/cleartext 經連線驗證後落地）落地。
+- **B3 為唯一 medium 批**，落地後須 architecture-agent checkpoint（連線 smoke PASS 才結案；FAIL 則回退 + 改列 blocker）。
+- **applicationId / bundle id / signing / 品牌名 / hosted privacy·support URL / 素材 / production secret**：**一律列 owner blocker，本案不自動改**。
+- 不需 realtime-voice-agent / backend-agent / companion-memory-agent 派工；frontend-ux-agent 僅 (1c) 守門消費點覆核 + B3 連線 smoke 協助。
+
+#### 12. 完成狀態
+- ⬜ 未開始（本筆為提案 + 裁決；待 main 依 §8 批次派工 / 執行）。
+
+#### 13. Checkpoint Review（architecture-agent，2026-06-08，main 執行 B1+B2+B4 後）
+
+**結論：PASS（B1/B2/B4 結案；B3 ⛔ 轉 blocker 待真環境 smoke）。**
+
+Read-only 核對結果：
+- (a) **pubspec 僅 description 文字改動** — `git diff pubspec.yaml` 確認只 1 行：description 由「Ai companion pet demo for elderly care interactions.」→ 正式描述，移除 "demo"（P3-1）。非依賴變更、非 🔒。✅
+- (b) **未碰授權鏈 / Realtime / Memory / notify auth / server.js / 原生 ATS config** — working tree 中 CR-0046 相關改動僅 `pubspec.yaml` + 三份新文件 + 本帳本；`realtime_voice_service.dart`、`backend/stt_proxy/server.js`、授權/記憶/通知碼皆未動。✅
+- (c) **三份文件無假值 / 無偽造已部署 URL / 無寫死 secret** — secret/real-URL 掃描（sk-/bot/AIza/外部網域）無命中；placeholder 一律標 ⛔ 待定 / TODO；醫療紅線用語皆為「非醫療診斷」否定式陳述，無診斷宣稱；§5 六項 owner blocker + ⛔ 標示清楚。✅
+- (d) **B3 確實未落地** — `ios/Runner/Info.plist` 仍 `NSAllowsArbitraryLoads=true`（行 45–46）；`AndroidManifest.xml` 仍 `usesCleartextTraffic="true"`、未加 `networkSecurityConfig`；`res/xml/network_security_config.xml` 不存在。收斂片段已備妥於 STORE_RELEASE_CHECKLIST §6（含 iOS plist / Android manifest+xml 片段 + smoke 驗證步驟 + checkout 回退規則），iOS/Android §2/§3 標 ⛔🔁 BLOCKER。✅
+
+**B3 裁決：符合 CR-0046 §11 validate-or-rollback。** 本環境無實機 / 真後端 / 真 OpenAI key / 區網，無法執行「區網 http 後端 iOS/Android 語音 smoke」。依規則「FAIL 或無法驗證 → 維持現狀 + 列 blocker + 不假完成」，B3 以「備妥片段 + 轉 blocker」結案正確，**不在無法 smoke 的環境盲套**。架構主線（WebRTC 媒體走 DTLS-SRTP，不受 ATS 管制；ATS 只管 SDP/REST 明文後端）未受影響。
+
+**驗收：** `flutter pub get` OK、`flutter analyze` → No issues found（main 回報，架構端未重跑；無實機/真環境故未跑 build/語音 smoke，誠實記錄）。
+
+#### 14. 完成狀態（更新，取代 §12）
+- ✅ **B1（文件）** STORE_RELEASE_CHECKLIST.md 完成。
+- ✅ **B2（config，low）** pubspec description 移除 "demo" 完成。
+- ✅ **B4（文件）** APP_STORE_METADATA.md + GOOGLE_PLAY_DATA_SAFETY.md 完成。
+- ⛔ **B3（medium config）** 轉 blocker — 區網語音 smoke PASS 後才套用 §6 片段；FAIL 則回退維持現狀。
+- **殘留 blocker：** (1) B3 真環境區網語音 smoke 後套用；(2) §5 六項 owner blocker（品牌名 / app 識別碼 / hosted 法務·支援 URL / 視覺素材 / signing / production 環境 + secret）；(3) §1·§7 真 Postgres+真 Firebase 端到端授權鏈驗證 + 真環境 release build / 三大 smoke。
