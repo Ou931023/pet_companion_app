@@ -192,11 +192,17 @@ class PetCompanionApp extends StatelessWidget {
         Provider(create: (_) => TextToSpeechService()),
         Provider(create: (_) => TaigiAsrService()),
         Provider(create: (_) => RealtimeVoiceService()),
+        // CR-0048：MockTaigiAsrStrategy 僅於 dev / test（mockServicesEnabled）
+        // 納入 ASR strategy 清單；production 只保留正式的 OpenAiRealtimeAsrStrategy。
+        // AsrStrategyService.strategyFor / LanguageRoutingService 對缺席的台語
+        // strategy 已有 graceful fallback（回 OpenAI Realtime），故正式版不注入
+        // 此 mock 不影響語音路由。MockAiService / MockSpeechToTextService 仍為
+        // production runtime live 依賴，隔離移交 CR-0049，本案不動（見 line 189-190）。
         Provider(
           create: (_) => AsrStrategyService(
-            strategies: const [
-              OpenAiRealtimeAsrStrategy(),
-              MockTaigiAsrStrategy(),
+            strategies: [
+              const OpenAiRealtimeAsrStrategy(),
+              if (AppConfig.mockServicesEnabled) const MockTaigiAsrStrategy(),
             ],
           ),
         ),

@@ -143,6 +143,10 @@ android:networkSecurityConfig="@xml/network_security_config"
 
 - ✅ App 內無 demo/test/mock/debug 對使用者可見字樣（dev panel / Demo 登入由 flag 隔離、production 強制關）
 - ✅ pubspec `description` 已移除 "demo"（CR-0046）
+- 🔁 mock service build-flavor 隔離（CR-0048，詳見 `docs/FLUTTER_BUILD_FLAVORS.md`）：
+  - ✅ `MockShopService` 已隔離（production 不注入）。
+  - ✅ `MockTaigiAsrStrategy` 已隔離（production 不注入；settings 手動 ASR 下拉的台語 mock 選項在正式版隱藏；語音路由 fallback 回 OpenAI Realtime）。
+  - ⛔ `MockAiService` / `MockSpeechToTextService` **尚未隔離**，目前 production 仍會用到（按住說話與 Realtime 本地指令回覆/STT 的 live 依賴），隔離延後 **CR-0049**（送審前須完成）。
 - ⛔ **BLOCKER** Google Play Data Safety 表單填寫（依 `docs/GOOGLE_PLAY_DATA_SAFETY.md`）
 - ⛔ **BLOCKER** App Store 隱私問卷 / metadata（依 `docs/APP_STORE_METADATA.md`）
 - ⛔ **BLOCKER** 對外可存取的隱私政策 URL（Apple/Google 皆要求）

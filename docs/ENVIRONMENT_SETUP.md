@@ -149,6 +149,11 @@ flutter build ios --release --no-codesign \
 
 - production 下 `AppConfig` 一律強制關閉開發面板、Demo 登入與 mock 注入
   （即使 dart-define 傳 true 也被 `&& !isProduction` 蓋掉）。
+- mock service 隔離現況（CR-0048）：build-flavor 切換與逐項隔離狀態（含尚未完成、延後
+  CR-0049 的兩個 live 依賴）詳見 `docs/FLUTTER_BUILD_FLAVORS.md`。摘要：
+  `MockShopService` ✅ 已隔離、`MockTaigiAsrStrategy` ✅ 已隔離（production 不注入，
+  語音路由 graceful fallback 回 OpenAI Realtime）、`MockAiService` /
+  `MockSpeechToTextService` ⛔ 仍為 production runtime live 依賴，隔離延後 CR-0049。
 - `API_BASE_URL` 必須是正式 https 網域；若為 localhost / 127.0.0.1 / 10.0.2.2 / 空，
   `isApiBaseUrlProductionSafe` 回 false，App 會顯示長者友善的「服務暫時無法使用」守門畫面，
   不進入正式主流程（避免長者連到不存在的本機服務）。

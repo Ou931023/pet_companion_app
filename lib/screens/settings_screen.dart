@@ -217,15 +217,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     labelText: '手動指定 ASR strategy',
                     border: OutlineInputBorder(),
                   ),
-                  items: const [
-                    DropdownMenuItem(
+                  items: [
+                    const DropdownMenuItem(
                       value: 'defaultOpenAiRealtime',
                       child: Text('OpenAI Realtime'),
                     ),
-                    DropdownMenuItem(
-                      value: 'mockTaigiAsr',
-                      child: Text('台語 ASR adapter'),
-                    ),
+                    // CR-0048：mockTaigiAsr 僅在 dev / test 顯示。production 不注入
+                    // MockTaigiAsrStrategy，此選項在正式版會被解析成 OpenAI Realtime，
+                    // 故正式版直接隱藏，避免殘留無實效的 mock 選項。
+                    if (AppConfig.mockServicesEnabled)
+                      const DropdownMenuItem(
+                        value: 'mockTaigiAsr',
+                        child: Text('台語 ASR adapter'),
+                      ),
                   ],
                   onChanged: (value) {
                     if (value != null) {

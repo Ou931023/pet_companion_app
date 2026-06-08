@@ -2474,3 +2474,109 @@ checkpoint 裁決（read-only git diff / grep 覆核）：
 - **FU-3**：考慮在 server.js 全域 error handler 統一套 safeLogPayload（若後續發現散點仍有未遮蔽 extra）。
 - **FU-4**：CI lint 守護——新增 `debugPrint` 高風險用法須走 `AppLog`/`kDebugMode`（lint rule / pre-commit grep），避免回潮。
 - **FU-5**：裝置端驗證——以 release build 在 iOS 實機實測，確認 `kReleaseMode` 路徑下 AppLog 確為 no-op、log 不外洩 token/逐字稿（本案僅靜態 + 單元/分析層驗證，未跑 release 裝置驗證）。
+
+
+### CR-0048 — Production Mock Service Build-Flavor Isolation（接 CR-0047；修 Audit P2-5 / P2-6；只做 Flutter mock 注入隔離，不碰 Realtime 主流程/Memory 契約/Care Alert notify auth/後端授權鏈）
+- 提出 / 裁決 agent：architecture-agent（依使用者指派；任務書 `tasks/CR-0048-production-mock-service-build-flavor-isolation.md`）
+- 日期：2026-06-09
+- 帳本正規 ID = **CR-0048**（沿用「下一個空號」；CR-0047 已結案）
+
+#### 1. 動機
+授權鏈（CR-0039–0045）、平台/商店（CR-0046）、log redaction（CR-0047）已收斂。殘留正式版風險（Audit P2-5 / P2-6）：
+> Flutter `lib/app.dart` provider tree 仍有**無條件注入的 mock service**。即使 `AppConfig` 已把 `mockServicesEnabled` 在 production 強制 false，正式 build 的 provider 樹仍建立 `MockAiService` / `MockSpeechToTextService` / `MockTaigiAsrStrategy`，且這些 mock **被 consumer 於 runtime 選用**（非死碼）。
+
+CLAUDE.md（store 版）§2.1：正式版不得包含 mock service / fake response / JSON fallback 作為正式資料來源；§2.2：mock 只能於 dev/test，且須以環境變數 / build flag 明確隔離。
+
+#### 2. consumer 調查結論（已精讀，本案最關鍵的前置）
+逐一追 line 189/190/199 三個 mock 的真實 runtime 路徑，結論是**三者性質不同，不能一刀切**：
+
+1. **MockTaigiAsrStrategy（app.dart line 199）** — 以 `const` 元素塞進 `AsrStrategyService(strategies: [...])` 的清單，**不是 provider、不被任何 `context.read` 取用**。
+   - `AsrStrategyService.strategyFor()`（asr_strategy_service.dart 66-70）查無對應 strategy 時**已 graceful fallback** 到 `defaultOpenAiRealtime`；`taigiStrategy` getter（74-79）找不到 supportsTaigi 時回 `null`。
+   - `LanguageRoutingService._routeTaigiPreferred()`（language_routing_service.dart 162-172）對 `taigiStrategy == null` **已有正式 fallback**（回 openai-realtime，isFallback=true，不丟例外）；`_routeManualOverride()`（206-210）經 `strategyFor()` 同樣 graceful。
+   - 結論：**consumer 不依賴此 mock 的存在**。production 不注入它，settings 的 `mockTaigiAsr` 選項只會解析成 OpenAI Realtime。**屬純 wiring、可安全 gating（比照 MockShopService line 179）。**
+
+2. **MockAiService（app.dart line 189→216）** — 是 `Provider`，被 `AiToolRouter` 建構子 `context.read<MockAiService>()` 取用，於 `AiToolRouter._chat()`（ai_tool_router.dart 476-502）**always** 呼叫 `replyForChat()` 產生回覆文字。
+   - `_chat` 是 `AiToolRouter.route()`（39-68）所有非工具語句的**最終落點**。
+   - 被**兩條 production 路徑**選用：(a) 按住說話 `ConversationController`（toolRouter.route）；(b) **Realtime 本地指令路由** `VoiceAgentController._handleLocalRealtimeCommand()`（voice_agent_controller.dart 677）→ `toolRouter.route(text)`，非工具語句會落到 `_chat` 並 `shouldSpeak=true`。
+   - 結論：**MockAiService 是 production runtime live 依賴，非死碼。** 直接從 provider 樹移除 → `context.read<MockAiService>()` 丟 ProviderNotFoundException（crash）；改 optional → `_chat` 在 production 無回覆引擎。要安全隔離**必須改 consumer 選用邏輯**（為 `_chat` 接正式回覆引擎），屬陪伴回覆策略 / 對話邏輯，**非純 wiring**。
+
+3. **MockSpeechToTextService（app.dart line 190→286）** — 是 `Provider`，被 `ConversationController` `context.read` 取用。`_currentSttService()`（conversation_controller.dart 371-376）在 `sttMode != openAiProxy` 時回傳它；`onPressToTalkEnd()`（417-422）在 `sttMode == mock` 時直接用它。
+   - **預設 `sttMode == 'mock'`**（user_profile.dart line 62 / profile_controller.dart 36-37）。即 production 按住說話**預設走 mock STT**。
+   - 結論：同樣**runtime live 依賴**。安全隔離需 (a) production 預設 `sttMode → openAiProxy` 且 (b) consumer 不依賴 mock 存在，**亦屬 consumer 邏輯改動，非純 wiring。**
+
+> 核心裁定：三 mock 中只有 **MockTaigiAsrStrategy 可純 wiring gating**；MockAiService / MockSpeechToTextService 是「被 production runtime 選用」的 live 依賴，移除等於改變按住說話與 Realtime 本地指令的回覆/STT 引擎，**牽涉 companion-memory-agent（回覆策略）與對話/Realtime owner，須另批、另 owner**，不可由 frontend-ux-agent 在 wiring 批內硬拔（會 crash 或產生無回覆 / 假回覆）。
+
+#### 3. 影響範圍（檔案 / 行號）
+本案（CR-0048）允許觸及：
+- `lib/app.dart` 195-202（`AsrStrategyService` strategies 清單，gating `MockTaigiAsrStrategy`）— App root 敏感 wiring，須 architecture checkpoint。
+- `lib/screens/settings_screen.dart` 214-236（手動 ASR strategy dropdown，production 隱藏 `mockTaigiAsr` 選項）— 選配 B2。
+- `test/**`（新增 production-wiring / AppConfig gating 測試）。
+- `docs/CHANGE_REVIEW.md`（本筆）、`docs/ENVIRONMENT_SETUP.md`、`docs/STORE_RELEASE_CHECKLIST.md`、新增 `docs/FLUTTER_BUILD_FLAVORS.md`。
+
+本案**明確不動**（移交 CR-0049）：
+- `lib/app.dart` 189-190（MockAiService / MockSpeechToTextService 注入）。
+- `lib/services/ai_tool_router.dart`（`_chat`）、`lib/controllers/conversation_controller.dart`（STT 選用）、`sttMode` 預設。
+
+#### 4. 觸及 🔒 / 牽涉 agent
+- 🔒：不觸及。`realtime_voice_service.dart`、`backend/stt_proxy/server.js`、授權鏈四檔、Memory API、Care Alert notify auth **全部不碰**。
+- agent：**frontend-ux-agent**（純 Flutter wiring + 測試 + 文件）。**companion-memory-agent / 對話·Realtime owner 僅在 CR-0049 才派工**（本案知會即可）。
+
+#### 5. 風險
+- CR-0048 本批：**low**。MockTaigiAsrStrategy gating 有既存 graceful fallback 兜底；既有測試**自建** `AsrStrategyService(strategies:[..., MockTaigiAsrStrategy()])`（見 conversation_controller_ui_state_test 683 / voice_agent_controller_realtime_lifecycle_test 740/757），**不依賴 app.dart 注入**，故 gating 不破壞 dev/test。app.dart 為 App root → 仍要 checkpoint。
+- 延後項（CR-0049）：**medium**。改 `_chat` 回覆引擎 / `sttMode` 預設牽動按住說話與 Realtime 本地指令回覆品質，須 owner 審。
+
+#### 6. 裁決（針對任務 5 問）
+1. **隔離策略**：分流。
+   - **MockTaigiAsrStrategy → 本案純 wiring gating**：`strategies: [const OpenAiRealtimeAsrStrategy(), if (AppConfig.mockServicesEnabled) const MockTaigiAsrStrategy()]`。consumer 不需改（已 graceful fallback）。
+   - **MockAiService / MockSpeechToTextService → 不在本案處理，移交 CR-0049**：須先讓 consumer 在 production 改用正式回覆引擎 / 正式 STT（`_chat` 接正式來源、`sttMode` production 預設 `openAiProxy`），再 gating 注入。理由：兩者為 runtime live 依賴，純拔會 crash 或破壞 Realtime 本地指令/按住說話，且屬回覆策略 owner（companion-memory-agent）+ 對話/Realtime owner 的邏輯權責。
+2. **不破壞 dev/test**：development/test 維持以 dart-define `ALLOW_MOCK_SERVICES=true` 或**直接於測試建構 mock**（既有測試即此模式）。本案 gating 只影響 app.dart 注入，已驗證既有 mock 測試自建依賴 → 不受影響。要求 frontend-ux-agent 跑全 `flutter test` 回歸確認綠。
+3. **fail-fast vs 安全錯誤**：本案範圍**沿用 CR-0034 既有機制即足**，不需新增 fail-fast。MockTaigiAsr 缺席由 AsrStrategyService graceful fallback 處理（非缺正式 config 情境）；production 缺正式 API base URL 仍由 `isApiBaseUrlProductionSafe` + `_ServiceUnavailableView`（app.dart 391-393）攔截。**不新增 mock fallback。**
+4. **Demo/Dev UI**：`demoLoginVisible` / `devPanelsVisible` 已於 CR-0034 production 強制 false，覆核無遺漏。settings 的 `mockTaigiAsr` dropdown **label 已是「台語 ASR adapter」非工程字樣**；建議本案 **B2 將該選項於 `!AppConfig.mockServicesEnabled` 時隱藏**（避免 production 殘留無實效的 mock 選項）。**「Mock STT」工程字樣維持 CR-0039 範圍**，本案不動。
+5. **批次切分 + owner + checkpoint**：見 §7。**需 checkpoint**（app.dart 為 App root 敏感 wiring）。
+
+#### 7. 批次切分（owner = frontend-ux-agent）
+- **B1**（low，須 architecture read-only checkpoint）：`lib/app.dart` 195-202 gating `MockTaigiAsrStrategy` 於 `AppConfig.mockServicesEnabled`。**只准動這段清單**，不得碰 189-190。
+- **B2**（low，選配）：`lib/screens/settings_screen.dart` 214-236 在 `!AppConfig.mockServicesEnabled` 隱藏 `mockTaigiAsr` 選項；不得改 VoiceLanguageMode 行為、不得改 manualOverride 路由邏輯。
+- **B3**（low）：測試。新增/更新：production AppConfig 強制 `mockServicesEnabled==false`（即使 dart-define 傳 ALLOW_MOCK_SERVICES=true）；app.dart production 樹不含 MockTaigiAsrStrategy（或以 AsrStrategyService.taigiStrategy 斷言）；dev/test flag 下 mock 仍可注入；既有 mock 測試全綠回歸。
+- **B4**（low）：文件。更新 ENVIRONMENT_SETUP（mock 隔離現況：哪些已 gating、哪兩個延後 CR-0049）、STORE_RELEASE_CHECKLIST（mock isolation 狀態）、新增 FLUTTER_BUILD_FLAVORS（dev/staging/production 切換、production dart-define 範例、release 前確認 mock 已關）。
+- 順序：**B1 →（checkpoint）→ B2∥B3 → B4**。
+
+#### 8. 測試計畫
+- `flutter analyze`（改動檔）→ No issues。
+- `flutter test test/config/app_config_test.dart`（補 production mock 強制關閉斷言）。
+- 新增 app.dart / AsrStrategyService 注入測試（production 無 taigi mock strategy；dev flag 下有）。
+- `flutter test`（全量回歸，確認既有 mock 依賴測試不被改壞）。
+- 無法跑 release 裝置驗證者誠實列為殘留（同 CR-0047 慣例）。
+
+#### 9. 允許修改檔案清單（CR-0048 紅線）
+**允許**：`lib/app.dart`（限 195-202）、`lib/screens/settings_screen.dart`（限手動 ASR dropdown）、`test/**`、`docs/CHANGE_REVIEW.md` / `docs/ENVIRONMENT_SETUP.md` / `docs/STORE_RELEASE_CHECKLIST.md` / `docs/FLUTTER_BUILD_FLAVORS.md`。
+**紅線（不得碰）**：`lib/app.dart` 189-190、`realtime_voice_service.dart`、`voice_agent_controller.dart` 狀態機、`conversation_controller.dart` STT 選用、`ai_tool_router.dart` `_chat`、`sttMode` 預設、後端任何檔、授權鏈、Memory API、Care Alert notify auth。不得為過測試把正式 service 改 mock、不得 production fallback mock、不得移除 dev/test 測試替身、不得 hardcoded token、不得偽造 release build 通過。
+
+#### 10. 裁決結論
+- **✅ 核准 CR-0048（縮減範圍版）**：本案僅隔離 **MockTaigiAsrStrategy**（B1）+ 選配隱藏 mock dropdown（B2）+ 測試（B3）+ 文件（B4），由 frontend-ux-agent 執行，B1 後須 architecture read-only checkpoint（驗 diff 僅 195-202、189-190 未動、既有測試綠、無新 mock fallback）。
+- **MockAiService / MockSpeechToTextService 隔離 → 退回本案範圍，另開 CR-0049**（owner=companion-memory-agent + 對話/Realtime owner；需先以正式回覆引擎 / 正式 STT 取代 consumer 選用，再 gating 注入；medium 風險、需 checkpoint）。理由：兩者為 production runtime live 依賴，純 wiring 移除會 crash 或破壞 Realtime 本地指令與按住說話，逾越 frontend-ux-agent 權責與本 CR「純 wiring 隔離」定位。
+- **待辦（未由 architecture 親自改碼）**：B1–B4 交 frontend-ux-agent；CR-0049 待派工。本筆為提案 + 裁決，尚未執行任何程式改動與測試。
+
+#### 11. 執行進度與 checkpoint 裁決（frontend-ux-agent 實作；architecture read-only checkpoint）
+- **執行進度**：
+  - B1 ✅ `lib/app.dart` AsrStrategyService strategies → `[const OpenAiRealtimeAsrStrategy(), if (AppConfig.mockServicesEnabled) const MockTaigiAsrStrategy()]`（加註解說明 fallback 與 CR-0049 移交）。
+  - B2 ✅ `lib/screens/settings_screen.dart` 手動 ASR dropdown 的 `mockTaigiAsr` 選項以 `if (AppConfig.mockServicesEnabled)` 條件化（production 隱藏）。
+  - B3 ✅ `test/config/asr_strategy_mock_gating_test.dart`（鏡像 app.dart 注入條件，dev/production 分流）。
+  - B4 ✅ `docs/FLUTTER_BUILD_FLAVORS.md`（§3 隔離現況表誠實標註）+ `docs/ENVIRONMENT_SETUP.md` / `docs/STORE_RELEASE_CHECKLIST.md` 更新。
+- **驗收（architecture 獨立覆驗）**：
+  - `flutter test test/config/asr_strategy_mock_gating_test.dart`（dev）→ **5/5 passed**（architecture 親跑）。
+  - 同檔 `--dart-define=APP_ENV=production --dart-define=API_BASE_URL=https://api.example.com --dart-define=ALLOW_MOCK_SERVICES=true`（誤帶 mock=true）→ **5/5 passed**（architecture 親跑；production 強制 mockServicesEnabled=false、不注入台語 mock、`strategyFor('mockTaigiAsr')` graceful fallback 回 `OpenAiRealtimeAsrStrategy`）。
+  - frontend-ux-agent 回報全量 `flutter test` 501 passed + `flutter analyze` 乾淨（architecture 未親跑全量，採信其回報；單檔 gating 已親驗）。
+- **checkpoint 逐項裁決（read-only diff / grep / 親跑）**：
+  - (a) ✅ `app.dart` diff 僅限 AsrStrategyService strategies 區段；**189-190 MockAiService / MockSpeechToTextService 原樣未動**（`sed` 確認無條件 Provider 仍在）。
+  - (b) ✅ `settings_screen.dart` 僅手動 ASR dropdown 條件化，其餘設定未動。
+  - (c) ✅ production（mockServicesEnabled=false）不注入 MockTaigiAsrStrategy；`AsrStrategyService` 仍以 OpenAiRealtimeAsrStrategy 建構，`strategyFor` 三層 fallback（具名 → defaultOpenAiRealtime → `const OpenAiRealtimeAsrStrategy()`）保 Realtime ASR 不破（親跑測試佐證）。
+  - (d) ✅ 無新增 mock fallback；未為過測試把正式 service 改 mock；未移除 dev/test 測試替身（既有自建 `AsrStrategyService(strategies:[...MockTaigiAsrStrategy()])` 測試不依賴 app.dart 注入，續綠）。
+  - (e) ✅ `realtime_voice_service.dart` / `voice_agent_controller.dart` / `conversation_controller.dart` / `ai_tool_router.dart` `git diff --quiet` 確認**未碰**；`sttMode` 預設、`_chat`、狀態機、STT 選用未動（不在 diff 名單）。
+  - (f) ✅ 文件誠實標註 `MockAiService` / `MockSpeechToTextService` 仍為 production runtime live 依賴、延後 **CR-0049**，未聲稱已全數隔離（FLUTTER_BUILD_FLAVORS.md §3 表格 ⛔ + §送審 blocker 註記）。
+- **checkpoint 裁決：✅ PASS**。CR-0048（縮減範圍版）按核准紅線落地，未越界、未破壞 Realtime 主流程。
+- **完成狀態：CLOSED（已實作 + 已驗收 + checkpoint PASS）**。commit 由 frontend-ux-agent 執行（排除噪音檔 `CLAUDE.md` / `ios/.../Runner.xcscheme` / `PROJECT_REPORT_DRAFT.md`）。
+- **明確殘留（移交 CR-0049，送審 blocker）**：
+  1. `MockAiService` production 隔離：`AiToolRouter._chat()` 須先改接正式回覆引擎，再 gating 注入。
+  2. `MockSpeechToTextService` production 隔離：`ConversationController` 的 `sttMode` production 預設須改 `openAiProxy`，再 gating 注入。
+  3. release 裝置（iOS Release build，無 debug banner / 無 mock）驗證列為 CR-0049 後續 FU；本案僅 host/test 驗證，未做 release 裝置驗證。
