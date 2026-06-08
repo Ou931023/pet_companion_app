@@ -193,12 +193,34 @@ test("admin 讀取路由 無 Authorization → 401 missing_admin_token", async (
   }
 });
 
-test("admin 讀取路由 錯誤 token → 403 admin_permission_required", async () => {
+// super_admin-only 路由（overview）仍掛 requireAdmin → 錯 token = 403 admin_permission_required。
+test("admin super_admin-only 路由 錯誤 token → 403 admin_permission_required", async () => {
+  const server = await startServer();
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const paths = ["/api/admin/overview"];
+    for (const p of paths) {
+      const res = await fetch(`${baseUrl}${p}`, {
+        headers: { Authorization: "Bearer wrong-token" },
+      });
+      const body = await res.json();
+      assert.equal(res.status, 403, `${p} 錯 token 應 403`);
+      assert.deepEqual(body, { ok: false, error: "admin_permission_required" });
+    }
+  } finally {
+    server.close();
+  }
+});
+
+// CR-0041 D2 語意變更：elders analytics 路由改掛 resolveAdminAuthContext（caregiver-or-admin）。
+// 非共享 token 一律當 Firebase idToken 驗證；不匹配 = 無效 session → 401 invalid_session
+// （而非舊的 403 admin_permission_required）。無 token 仍 401 missing_admin_token（上方測試保留），
+// 授權未放寬：無效身分被拒，只是錯誤碼從 403 改為更精確的 401。
+test("admin elders 讀取路由 非共享 / 無效 token → 401 invalid_session（CR-0041 語意變更）", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
     const paths = [
-      "/api/admin/overview",
       "/api/admin/elders",
       `/api/admin/elders/${KNOWN_ELDER_ID}`,
       `/api/admin/elders/${KNOWN_ELDER_ID}/physio`,
@@ -210,8 +232,8 @@ test("admin 讀取路由 錯誤 token → 403 admin_permission_required", async 
         headers: { Authorization: "Bearer wrong-token" },
       });
       const body = await res.json();
-      assert.equal(res.status, 403, `${p} 錯 token 應 403`);
-      assert.deepEqual(body, { ok: false, error: "admin_permission_required" });
+      assert.equal(res.status, 401, `${p} 無效 token 應 401`);
+      assert.deepEqual(body, { ok: false, error: "invalid_session" });
     }
   } finally {
     server.close();

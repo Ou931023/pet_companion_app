@@ -4,61 +4,106 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-// CR-0040 Batch C：care-alert + admin analytics 路由的授權範圍過濾端點測試。
-// 紅線驗證：super_admin（共享 ADMIN_API_TOKEN）行為零變更；caregiver authContext（測試 seam）
-// 才觸發過濾 / 403。requireAdmin 仍在最前面擋門。
+// CR-0041 D2：care-alert + admin analytics + daily-care-tasks 路由的授權範圍過濾端點測試。
+//
+// 與 CR-0040 的差異：caregiver 身分不再以 authorizationService 測試 seam 注入，而是走「真正的
+// HTTP 路徑」—— resolveAdminAuthContext 中介層（路線 A）：Bearer = Firebase idToken →
+// 注入 stub firebaseAdmin 驗證 → uid → mock pg 查 users(role) → caregiver。共享 ADMIN_API_TOKEN
+// 仍解析為 super_admin（行為零變更）。
+//
+// 紅線驗證：super_admin 行為零變更；caregiver 只見授權住民、跨住民 403、無授權空集合；
+// daily-care-tasks 已 scope（CR-0040 §14 BLOCKER）；無 token → 401；非共享 / 無效 token → 401。
 
-process.env.CARE_ALERTS_DATA_FILE = path.join(
-  fs.mkdtempSync(path.join(os.tmpdir(), "care_alerts_scope_")),
-  "care_alerts.json",
+const scopeTmp = fs.mkdtempSync(path.join(os.tmpdir(), "care_alerts_scope_"));
+process.env.CARE_ALERTS_DATA_FILE = path.join(scopeTmp, "care_alerts.json");
+process.env.DAILY_CARE_TASKS_DATA_FILE = path.join(scopeTmp, "daily_care_tasks.json");
+process.env.DAILY_CARE_TASK_SUBMISSIONS_DATA_FILE = path.join(
+  scopeTmp,
+  "daily_care_task_submissions.json",
 );
 process.env.NODE_ENV = "test";
 process.env.ADMIN_API_TOKEN = "test-admin-token";
 
 const app = require("../server");
 const authz = require("./admin/authorizationService");
+const adminAuth = require("./admin/adminAuthContext");
 
 // require server 會載入 .env（含真實 Telegram token）→ 清掉確保測試絕不真的發 Telegram。
 delete process.env.TELEGRAM_BOT_TOKEN;
 delete process.env.TELEGRAM_CARE_CHAT_ID;
 
 const ADMIN_HEADERS = { Authorization: "Bearer test-admin-token" };
+// caregiver Firebase idToken（由 stub firebaseAdmin 解析為 uid）。
+const CG1_HEADERS = { Authorization: "Bearer cg-1-id-token" };
+const CG_NONE_HEADERS = { Authorization: "Bearer cg-none-id-token" };
 
 const ELDER_A = "11111111-1111-1111-1111-111111111111";
 const ELDER_Z = "99999999-9999-9999-9999-999999999999";
 
-// mock pg：caregiver cg-1 只被授權 ELDER_A。
-function mockPgForCaregiver(authorizedElderIds) {
+// stub firebaseAdmin：idToken → firebase_uid。
+function firebaseStub() {
+  const map = {
+    "cg-1-id-token": "fb-cg-1",
+    "cg-none-id-token": "fb-cg-none",
+  };
+  return {
+    isConfigured: () => true,
+    verifyIdToken: async (token) => (map[token] ? { uid: map[token] } : null),
+  };
+}
+
+// 共用 mock pg：同時服務「users 查詢」（adminAuthContext）與
+// 「resident_caregiver_links 查詢」（authorizationService）。
+//   - cg-1（firebase_uid fb-cg-1）：role=caregiver，授權 [ELDER_A]。
+//   - cg-none（firebase_uid fb-cg-none）：role=caregiver，無任何授權。
+function sharedMockPg() {
+  const usersByUid = {
+    "fb-cg-1": { id: "cg-1", role: "caregiver" },
+    "fb-cg-none": { id: "cg-none", role: "caregiver" },
+  };
+  const linksByCaregiver = {
+    "cg-1": [ELDER_A],
+    "cg-none": [],
+  };
   return {
     isPostgresAvailable: async () => true,
-    query: async (_text, params) => {
-      const caregiverId = params && params[0];
-      if (caregiverId !== "cg-1") return { rows: [] };
-      return { rows: authorizedElderIds.map((elder_id) => ({ elder_id })) };
+    query: async (text, params) => {
+      const key = params && params[0];
+      if (/FROM users/i.test(text)) {
+        const row = usersByUid[key];
+        return { rows: row ? [row] : [] };
+      }
+      if (/resident_caregiver_links/i.test(text)) {
+        const elderIds = linksByCaregiver[key] || [];
+        return { rows: elderIds.map((elder_id) => ({ elder_id })) };
+      }
+      return { rows: [] };
     },
   };
 }
 
-function asCaregiver() {
-  authz.setAuthContextResolverForTest(() => ({
-    role: authz.ROLE_CAREGIVER,
-    caregiverId: "cg-1",
-  }));
-  authz.setPgForTest(mockPgForCaregiver([ELDER_A]));
+function installCaregiverAuth() {
+  adminAuth.setFirebaseAdminForTest(firebaseStub());
+  const pg = sharedMockPg();
+  adminAuth.setPgForTest(pg);
+  authz.setPgForTest(pg);
 }
 
 beforeEach(() => {
-  process.env.CARE_ALERTS_DATA_FILE = path.join(
-    fs.mkdtempSync(path.join(os.tmpdir(), "care_alerts_scope_")),
-    "care_alerts.json",
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "care_alerts_scope_"));
+  process.env.CARE_ALERTS_DATA_FILE = path.join(tmp, "care_alerts.json");
+  process.env.DAILY_CARE_TASKS_DATA_FILE = path.join(tmp, "daily_care_tasks.json");
+  process.env.DAILY_CARE_TASK_SUBMISSIONS_DATA_FILE = path.join(
+    tmp,
+    "daily_care_task_submissions.json",
   );
-  // 預設每個測試以 super_admin（無 override）起跑。
-  authz.setAuthContextResolverForTest(null);
-  authz.setPgForTest(null);
+  // caregiver 身分機制預設安裝（super_admin 路徑不受影響，仍走共享 token）。
+  installCaregiverAuth();
 });
 
 afterEach(() => {
-  authz.setAuthContextResolverForTest(null);
+  adminAuth.setFirebaseAdminForTest(null);
+  adminAuth.setPgForTest(null);
   authz.setPgForTest(null);
 });
 
@@ -84,6 +129,14 @@ function postNotify(baseUrl, elderId, overrides = {}) {
       source: "companion_analysis",
       ...overrides,
     }),
+  });
+}
+
+function postTask(baseUrl, elderId, title) {
+  return fetch(`${baseUrl}/api/daily-care-tasks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ elderId, title, taskType: "medication" }),
   });
 }
 
@@ -177,18 +230,16 @@ test("super_admin: POST /api/care-alerts/notify 仍無需 auth → 200（CR-0039
   }
 });
 
-// --- caregiver scoped（測試 seam）---
+// --- caregiver scoped（真 HTTP：Firebase idToken）---
 
 test("caregiver: GET /api/care-alerts 只見授權住民", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    // 以 super_admin（預設 null override）建立兩筆，再切 caregiver 讀。
     await postNotify(baseUrl, ELDER_A);
     await postNotify(baseUrl, ELDER_Z);
 
-    asCaregiver();
-    const res = await fetch(`${baseUrl}/api/care-alerts`, { headers: ADMIN_HEADERS });
+    const res = await fetch(`${baseUrl}/api/care-alerts`, { headers: CG1_HEADERS });
     const body = await res.json();
     assert.equal(res.status, 200);
     assert.equal(body.alerts.length, 1);
@@ -204,13 +255,7 @@ test("caregiver: 無任何授權 → list 空集合", async () => {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
     await postNotify(baseUrl, ELDER_A);
 
-    authz.setAuthContextResolverForTest(() => ({
-      role: authz.ROLE_CAREGIVER,
-      caregiverId: "cg-none",
-    }));
-    authz.setPgForTest(mockPgForCaregiver([ELDER_A])); // cg-none 不在 mock → 空
-
-    const res = await fetch(`${baseUrl}/api/care-alerts`, { headers: ADMIN_HEADERS });
+    const res = await fetch(`${baseUrl}/api/care-alerts`, { headers: CG_NONE_HEADERS });
     const body = await res.json();
     assert.equal(res.status, 200);
     assert.deepEqual(body.alerts, []);
@@ -231,12 +276,11 @@ test("caregiver: GET /:id 跨住民 → 403；授權住民 → 200", async () =>
     const aId = alerts.find((a) => a.elderId === ELDER_A).id;
     const zId = alerts.find((a) => a.elderId === ELDER_Z).id;
 
-    asCaregiver();
-    const forbidden = await fetch(`${baseUrl}/api/care-alerts/${zId}`, { headers: ADMIN_HEADERS });
+    const forbidden = await fetch(`${baseUrl}/api/care-alerts/${zId}`, { headers: CG1_HEADERS });
     assert.equal(forbidden.status, 403);
     assert.deepEqual(await forbidden.json(), { success: false, error: "forbidden" });
 
-    const allowed = await fetch(`${baseUrl}/api/care-alerts/${aId}`, { headers: ADMIN_HEADERS });
+    const allowed = await fetch(`${baseUrl}/api/care-alerts/${aId}`, { headers: CG1_HEADERS });
     const allowedBody = await allowed.json();
     assert.equal(allowed.status, 200);
     assert.equal(allowedBody.alert.id, aId);
@@ -257,17 +301,16 @@ test("caregiver: PATCH status 跨住民 → 403；授權住民 → 200", async (
     const aId = alerts.find((a) => a.elderId === ELDER_A).id;
     const zId = alerts.find((a) => a.elderId === ELDER_Z).id;
 
-    asCaregiver();
     const forbidden = await fetch(`${baseUrl}/api/care-alerts/${zId}/status`, {
       method: "PATCH",
-      headers: { ...ADMIN_HEADERS, "Content-Type": "application/json" },
+      headers: { ...CG1_HEADERS, "Content-Type": "application/json" },
       body: JSON.stringify({ status: "acknowledged" }),
     });
     assert.equal(forbidden.status, 403);
 
     const allowed = await fetch(`${baseUrl}/api/care-alerts/${aId}/status`, {
       method: "PATCH",
-      headers: { ...ADMIN_HEADERS, "Content-Type": "application/json" },
+      headers: { ...CG1_HEADERS, "Content-Type": "application/json" },
       body: JSON.stringify({ status: "acknowledged" }),
     });
     const allowedBody = await allowed.json();
@@ -278,11 +321,10 @@ test("caregiver: PATCH status 跨住民 → 403；授權住民 → 200", async (
   }
 });
 
-test("caregiver: 仍受 requireAdmin 擋門（無 token → 401，先於 scope）", async () => {
+test("caregiver: 仍受 authN 擋門（無 token → 401 missing_admin_token，先於 scope）", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    asCaregiver();
     const res = await fetch(`${baseUrl}/api/care-alerts`); // 無 Authorization
     const body = await res.json();
     assert.equal(res.status, 401);
@@ -292,13 +334,28 @@ test("caregiver: 仍受 requireAdmin 擋門（無 token → 401，先於 scope�
   }
 });
 
+test("非共享 / 無效 idToken → 401 invalid_session（不放行、不退化 super_admin）", async () => {
+  const server = await startServer();
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    await postNotify(baseUrl, ELDER_A);
+    const res = await fetch(`${baseUrl}/api/care-alerts`, {
+      headers: { Authorization: "Bearer forged-token-not-in-stub" },
+    });
+    const body = await res.json();
+    assert.equal(res.status, 401);
+    assert.deepEqual(body, { ok: false, error: "invalid_session" });
+  } finally {
+    server.close();
+  }
+});
+
 test("caregiver: GET /api/admin/elders/:elderId 跨住民 → 403", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    asCaregiver();
     const res = await fetch(`${baseUrl}/api/admin/elders/${ELDER_Z}`, {
-      headers: ADMIN_HEADERS,
+      headers: CG1_HEADERS,
     });
     assert.equal(res.status, 403);
     assert.deepEqual(await res.json(), { success: false, error: "forbidden" });
@@ -311,8 +368,7 @@ test("caregiver: GET /api/admin/elders 只回授權住民（含空集合）", as
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    asCaregiver();
-    const res = await fetch(`${baseUrl}/api/admin/elders`, { headers: ADMIN_HEADERS });
+    const res = await fetch(`${baseUrl}/api/admin/elders`, { headers: CG1_HEADERS });
     const body = await res.json();
     assert.equal(res.status, 200);
     assert.ok(Array.isArray(body));
@@ -320,6 +376,93 @@ test("caregiver: GET /api/admin/elders 只回授權住民（含空集合）", as
     for (const row of body) {
       assert.equal(row.elderId, ELDER_A);
     }
+  } finally {
+    server.close();
+  }
+});
+
+// --- daily-care-tasks scope（CR-0040 §14 Batch D BLOCKER → 本案修補）---
+
+test("super_admin: GET /api/admin/daily-care-tasks 回全部住民任務", async () => {
+  const server = await startServer();
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    await postTask(baseUrl, ELDER_A, "吃藥A");
+    await postTask(baseUrl, ELDER_Z, "吃藥Z");
+
+    const res = await fetch(`${baseUrl}/api/admin/daily-care-tasks`, {
+      headers: ADMIN_HEADERS,
+    });
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.success, true);
+    assert.equal(body.tasks.length, 2);
+  } finally {
+    server.close();
+  }
+});
+
+test("caregiver: GET /api/admin/daily-care-tasks 只見授權住民任務（不跨住民洩漏）", async () => {
+  const server = await startServer();
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    await postTask(baseUrl, ELDER_A, "吃藥A");
+    await postTask(baseUrl, ELDER_Z, "吃藥Z");
+
+    const res = await fetch(`${baseUrl}/api/admin/daily-care-tasks`, {
+      headers: CG1_HEADERS,
+    });
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.tasks.length, 1);
+    assert.equal(body.tasks[0].elderId, ELDER_A);
+  } finally {
+    server.close();
+  }
+});
+
+test("caregiver: daily-care-tasks 帶跨住民 elderId → 403", async () => {
+  const server = await startServer();
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    await postTask(baseUrl, ELDER_Z, "吃藥Z");
+
+    const res = await fetch(
+      `${baseUrl}/api/admin/daily-care-tasks?elderId=${ELDER_Z}`,
+      { headers: CG1_HEADERS },
+    );
+    assert.equal(res.status, 403);
+    assert.deepEqual(await res.json(), { success: false, error: "forbidden" });
+  } finally {
+    server.close();
+  }
+});
+
+test("caregiver: daily-care-tasks 無授權 → 空陣列（fail-closed）", async () => {
+  const server = await startServer();
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    await postTask(baseUrl, ELDER_A, "吃藥A");
+
+    const res = await fetch(`${baseUrl}/api/admin/daily-care-tasks`, {
+      headers: CG_NONE_HEADERS,
+    });
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.deepEqual(body.tasks, []);
+  } finally {
+    server.close();
+  }
+});
+
+test("daily-care-tasks 無 token → 401 missing_admin_token", async () => {
+  const server = await startServer();
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const res = await fetch(`${baseUrl}/api/admin/daily-care-tasks`);
+    const body = await res.json();
+    assert.equal(res.status, 401);
+    assert.deepEqual(body, { ok: false, error: "missing_admin_token" });
   } finally {
     server.close();
   }

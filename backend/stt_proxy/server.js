@@ -105,10 +105,14 @@ const {
 } = require("./services/dailyCareTask/dailyCareTaskVisionService");
 const adminAnalysis = require("./services/admin/adminAnalysisService");
 const requireAdmin = require("./services/admin/requireAdmin");
-// CR-0040 Batch C：resident-caregiver 授權範圍過濾。requireAdmin 仍在路由最前面擋門；
-// 本服務在其後依 authContext 角色套 scope。production 只解析得到 super_admin（行為零變更），
-// caregiver scoped 路徑由測試 seam 驅動（見 services/admin/authorizationService.js）。
+// CR-0040 Batch C：resident-caregiver 授權範圍過濾（純 scope 函式）。
+// CR-0041 D2：caregiver-or-admin 路由改掛 resolveAdminAuthContext（路線 A：Firebase idToken
+// 當 bearer / 共享 ADMIN_API_TOKEN→super_admin），把解析結果掛到 req.authContext；
+// route body 依 req.authContext 角色套 scope。super_admin-only 路由仍續用 requireAdmin。
 const authz = require("./services/admin/authorizationService");
+const {
+  resolveAdminAuthContext,
+} = require("./services/admin/adminAuthContext");
 const { listSafeUsers } = require("./services/admin/adminUsersService");
 const marketplaceStore = require("./services/marketplace/marketplaceStore");
 
@@ -502,9 +506,9 @@ app.post("/api/care-alerts/notify", async (req, res) => {
   }
 });
 
-app.get("/api/care-alerts", requireAdmin, async (req, res) => {
+app.get("/api/care-alerts", resolveAdminAuthContext, async (req, res) => {
   try {
-    const authContext = authz.resolveAuthContext(req);
+    const authContext = req.authContext;
     const alerts = await listCareAlerts({
       limit: req.query.limit,
       riskLevel: req.query.riskLevel,
@@ -524,9 +528,9 @@ app.get("/api/care-alerts", requireAdmin, async (req, res) => {
   }
 });
 
-app.get("/api/care-alerts/:id", requireAdmin, async (req, res) => {
+app.get("/api/care-alerts/:id", resolveAdminAuthContext, async (req, res) => {
   try {
-    const authContext = authz.resolveAuthContext(req);
+    const authContext = req.authContext;
     const alert = await getCareAlertById(req.params.id);
     if (!alert) {
       return res.status(404).json({ success: false, error: "not_found" });
@@ -546,13 +550,13 @@ app.get("/api/care-alerts/:id", requireAdmin, async (req, res) => {
   }
 });
 
-app.patch("/api/care-alerts/:id/status", requireAdmin, async (req, res) => {
+app.patch("/api/care-alerts/:id/status", resolveAdminAuthContext, async (req, res) => {
   const status =
     req.body && typeof req.body.status === "string" ? req.body.status : "";
   try {
     // CR-0040：caregiver 須先通過授權檢查（跨住民 → 403）。super_admin 跳過此前置讀取，
     // 保持原流程與 response 完全不變（行為零變更）。
-    const authContext = authz.resolveAuthContext(req);
+    const authContext = req.authContext;
     if (!authz.isSuperAdmin(authContext)) {
       const existing = await getCareAlertById(req.params.id);
       if (!existing) {
@@ -569,10 +573,12 @@ app.patch("/api/care-alerts/:id/status", requireAdmin, async (req, res) => {
     const result = await updateCareAlertStatus(req.params.id, status);
     if (result.success) {
       // CR-P2B：Care Alert 狀態變更為敏感操作 → best-effort 稽核。metadata 僅
-      // 結構化（to status）；無原文 / PII。actorId 暫無認證 caregiver 身分 → null。
+      // 結構化（to status）；無原文 / PII。
+      // CR-0041：actorId 取 authContext.userId（super_admin 共享 token 為 null；
+      // caregiver / DB-admin 為 users.id，純識別子、非 PII）。
       recordAuditLog({
-        actorType: "caregiver",
-        actorId: null,
+        actorType: authContext.role === authz.ROLE_CAREGIVER ? "caregiver" : "admin",
+        actorId: authContext.userId ?? null,
         action: "care_alert_status_change",
         targetType: "care_alert",
         targetId: req.params.id,
@@ -986,8 +992,12 @@ app.patch("/api/daily-care-tasks/:id/status", async (req, res) => {
 });
 
 // 管理者端：列出所有任務 + 每筆最新 submission（含 AI 結果），供 caregiver_web。
-app.get("/api/admin/daily-care-tasks", requireAdmin, async (req, res) => {
+// CR-0041 D2：套 resident scope（CR-0040 §14 Batch D 硬前置 BLOCKER）。
+//   - super_admin → 全量（行為零變更）。
+//   - caregiver   → 只見授權住民的任務；若帶 elderId 但非授權 → 403；無授權 → 空陣列。
+app.get("/api/admin/daily-care-tasks", resolveAdminAuthContext, async (req, res) => {
   try {
+    const authContext = req.authContext;
     const elderId =
       typeof req.query.elderId === "string" && req.query.elderId.trim()
         ? req.query.elderId.trim()
@@ -996,7 +1006,30 @@ app.get("/api/admin/daily-care-tasks", requireAdmin, async (req, res) => {
       typeof req.query.status === "string" && req.query.status.trim()
         ? req.query.status.trim()
         : null;
-    const tasks = await listDailyCareTasksForAdmin({ elderId, status });
+
+    if (authz.isSuperAdmin(authContext)) {
+      const tasks = await listDailyCareTasksForAdmin({ elderId, status });
+      return res.json({ success: true, tasks });
+    }
+
+    // caregiver：若指定 elderId，須在授權範圍內（跨住民 → 403）。
+    if (elderId) {
+      const ok = await authz.assertCanAccessResident(authContext, elderId);
+      if (!ok) {
+        return res.status(403).json({ success: false, error: "forbidden" });
+      }
+      const tasks = await listDailyCareTasksForAdmin({ elderId, status });
+      return res.json({ success: true, tasks });
+    }
+
+    // 未指定 elderId：取全部後依授權住民過濾（無授權 → 空陣列，fail-closed）。
+    const authorized = await authz.getAuthorizedResidentIdsForCaregiver(
+      authContext.caregiverId,
+    );
+    const all = await listDailyCareTasksForAdmin({ elderId: null, status });
+    const tasks = (all || []).filter(
+      (task) => task && task.elderId != null && authorized.has(task.elderId),
+    );
     return res.json({ success: true, tasks });
   } catch (error) {
     logError("admin daily care tasks exception", {
@@ -1051,9 +1084,9 @@ app.get("/api/admin/overview", requireAdmin, async (_req, res) => {
   }
 });
 
-app.get("/api/admin/elders", requireAdmin, async (req, res) => {
+app.get("/api/admin/elders", resolveAdminAuthContext, async (req, res) => {
   try {
-    const authContext = authz.resolveAuthContext(req);
+    const authContext = req.authContext;
     const elders = await adminAnalysis.listElderSummaries();
     // CR-0040：super_admin 不變；caregiver 只回授權住民。
     if (authz.isSuperAdmin(authContext)) {
@@ -1069,10 +1102,10 @@ app.get("/api/admin/elders", requireAdmin, async (req, res) => {
   }
 });
 
-app.get("/api/admin/elders/:elderId", requireAdmin, async (req, res) => {
+app.get("/api/admin/elders/:elderId", resolveAdminAuthContext, async (req, res) => {
   try {
     // CR-0040：caregiver 跨住民 → 403；super_admin 不變。
-    const authContext = authz.resolveAuthContext(req);
+    const authContext = req.authContext;
     if (!authz.isSuperAdmin(authContext)) {
       const ok = await authz.assertCanAccessResident(authContext, req.params.elderId);
       if (!ok) {
@@ -1090,10 +1123,10 @@ app.get("/api/admin/elders/:elderId", requireAdmin, async (req, res) => {
   }
 });
 
-app.get("/api/admin/elders/:elderId/physio", requireAdmin, async (req, res) => {
+app.get("/api/admin/elders/:elderId/physio", resolveAdminAuthContext, async (req, res) => {
   try {
     // CR-0040：caregiver 跨住民 → 403；super_admin 不變。
-    const authContext = authz.resolveAuthContext(req);
+    const authContext = req.authContext;
     if (!authz.isSuperAdmin(authContext)) {
       const ok = await authz.assertCanAccessResident(authContext, req.params.elderId);
       if (!ok) {
@@ -1111,10 +1144,10 @@ app.get("/api/admin/elders/:elderId/physio", requireAdmin, async (req, res) => {
   }
 });
 
-app.get("/api/admin/elders/:elderId/emotion", requireAdmin, async (req, res) => {
+app.get("/api/admin/elders/:elderId/emotion", resolveAdminAuthContext, async (req, res) => {
   try {
     // CR-0040：caregiver 跨住民 → 403；super_admin 不變。
-    const authContext = authz.resolveAuthContext(req);
+    const authContext = req.authContext;
     if (!authz.isSuperAdmin(authContext)) {
       const ok = await authz.assertCanAccessResident(authContext, req.params.elderId);
       if (!ok) {
@@ -1132,10 +1165,10 @@ app.get("/api/admin/elders/:elderId/emotion", requireAdmin, async (req, res) => 
   }
 });
 
-app.get("/api/admin/elders/:elderId/game-metrics", requireAdmin, async (req, res) => {
+app.get("/api/admin/elders/:elderId/game-metrics", resolveAdminAuthContext, async (req, res) => {
   try {
     // CR-0040：caregiver 跨住民 → 403；super_admin 不變。
-    const authContext = authz.resolveAuthContext(req);
+    const authContext = req.authContext;
     if (!authz.isSuperAdmin(authContext)) {
       const ok = await authz.assertCanAccessResident(authContext, req.params.elderId);
       if (!ok) {

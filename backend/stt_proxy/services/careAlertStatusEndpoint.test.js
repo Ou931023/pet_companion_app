@@ -176,7 +176,9 @@ test("PATCH /api/care-alerts/:id/status 無 Authorization → 401 missing_admin_
   }
 });
 
-test("PATCH /api/care-alerts/:id/status 錯誤 token → 403 admin_permission_required", async () => {
+// CR-0041 D2 語意變更：改掛 resolveAdminAuthContext，非共享 token 當 idToken 驗證；
+// 不匹配 → 401 invalid_session（而非舊的 403）。授權未放寬。
+test("PATCH /api/care-alerts/:id/status 非共享 / 無效 token → 401 invalid_session（CR-0041 語意變更）", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -190,8 +192,8 @@ test("PATCH /api/care-alerts/:id/status 錯誤 token → 403 admin_permission_re
       body: JSON.stringify({ status: "acknowledged" }),
     });
     const body = await res.json();
-    assert.equal(res.status, 403);
-    assert.deepEqual(body, { ok: false, error: "admin_permission_required" });
+    assert.equal(res.status, 401);
+    assert.deepEqual(body, { ok: false, error: "invalid_session" });
   } finally {
     server.close();
   }

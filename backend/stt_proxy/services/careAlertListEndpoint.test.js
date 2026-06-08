@@ -145,7 +145,11 @@ test("GET /api/care-alerts 無 Authorization → 401 missing_admin_token", async
   }
 });
 
-test("GET /api/care-alerts 錯誤 token → 403 admin_permission_required", async () => {
+// CR-0041 D2 語意變更：此路由由 requireAdmin 改掛 resolveAdminAuthContext（接受 caregiver
+// Firebase idToken）。非共享 token 的 bearer 一律當 idToken 驗證；不匹配 = 無效 session
+// → 401 invalid_session（而非舊的 403 admin_permission_required）。授權未放寬：無 token 仍 401，
+// 共享 token 仍 200，無效身分被拒。
+test("GET /api/care-alerts 非共享 / 無效 token → 401 invalid_session（CR-0041 語意變更）", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -153,8 +157,8 @@ test("GET /api/care-alerts 錯誤 token → 403 admin_permission_required", asyn
       headers: { Authorization: "Bearer wrong-token" },
     });
     const body = await res.json();
-    assert.equal(res.status, 403);
-    assert.deepEqual(body, { ok: false, error: "admin_permission_required" });
+    assert.equal(res.status, 401);
+    assert.deepEqual(body, { ok: false, error: "invalid_session" });
   } finally {
     server.close();
   }
