@@ -124,6 +124,7 @@ const caregiverProvisioning = require("./services/admin/caregiverProvisioningSer
 const residentLinkProvisioning = require("./services/admin/residentLinkProvisioningService");
 const marketplaceStore = require("./services/marketplace/marketplaceStore");
 const { safeLogPayload, safeErrorMessage } = require("./services/privacy/redaction");
+const { generateCompanionReply } = require("./services/companionChatService");
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -1662,6 +1663,65 @@ app.post("/api/companion/analyze", async (req, res) => {
       knowledgeAnswer: "",
     });
   }
+});
+
+// 正式陪伴聊天回覆（CR-0049-B1）：長者打字 / 非即時文字訊息的正式 AI 回覆來源，
+// 取代 Flutter 端 MockAiService 罐頭回覆。OpenAI 由後端代理、金鑰留後端。
+//
+// 契約：
+//   Request  { userText: string, petName?, memoryContextSummary?, languageHint?, replyLanguage? }
+//   Success  { success: true, reply }
+//   Failure  { success: false, error: 'invalid_input' | 'openai_unavailable' }
+//
+// persona / instructions 重用既有 `buildRealtimeInstructions`（同 Realtime 主流程 persona），
+// 不自創 persona、不硬寫罐頭；memoryContextSummary 由前端傳入既有摘要，
+// 本端點**不在此重查跨住民記憶**（避免跨住民記憶洩漏）。
+// 失敗一律回明確 error code，不回 fake reply、不回 stack；log 經 redaction。
+app.post("/api/companion/chat", async (req, res) => {
+  const userText = (req.body?.userText || "").toString();
+  if (!userText.trim()) {
+    return res.status(400).json({ success: false, error: "invalid_input" });
+  }
+
+  const petName = (req.body?.petName || "").toString();
+  const memoryContextSummary = (req.body?.memoryContextSummary || "")
+    .toString()
+    .trim();
+  const memoryBlock = memoryContextSummary
+    ? `以下是你自然記得的使用者近況：
+${memoryContextSummary}
+請自然地關心使用者，不要說「根據紀錄」或「資料庫顯示」。如果使用者不想聊這件事，請溫柔轉換話題。`
+    : "";
+
+  const systemPrompt = buildRealtimeInstructions(
+    petName,
+    [],
+    memoryBlock,
+    "",
+    {
+      languageHint: req.body?.languageHint,
+      replyLanguage: req.body?.replyLanguage,
+    },
+  );
+
+  const result = await generateCompanionReply(
+    { userText, systemPrompt },
+    {
+      client,
+      hasApiKey: Boolean(process.env.OPENAI_API_KEY),
+      model:
+        process.env.COMPANION_CHAT_MODEL ||
+        process.env.MEMORY_MODEL ||
+        "gpt-4o-mini",
+      logError,
+    },
+  );
+
+  if (!result.success) {
+    const status = result.error === "invalid_input" ? 400 : 503;
+    return res.status(status).json({ success: false, error: result.error });
+  }
+  return res.json({ success: true, reply: result.reply });
 });
 
 app.post("/api/stt/transcribe", upload.single("audio"), async (req, res) => {

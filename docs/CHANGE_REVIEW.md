@@ -2580,3 +2580,140 @@ CLAUDE.md（store 版）§2.1：正式版不得包含 mock service / fake respon
   1. `MockAiService` production 隔離：`AiToolRouter._chat()` 須先改接正式回覆引擎，再 gating 注入。
   2. `MockSpeechToTextService` production 隔離：`ConversationController` 的 `sttMode` production 預設須改 `openAiProxy`，再 gating 注入。
   3. release 裝置（iOS Release build，無 debug banner / 無 mock）驗證列為 CR-0049 後續 FU；本案僅 host/test 驗證，未做 release 裝置驗證。
+
+---
+
+### CR-0049 — Production AI and STT Service Replacement Before Mock Gating（接 CR-0048；解 CR-0048 揭露的兩個送審 blocker：`MockAiService` / `MockSpeechToTextService` 仍為 production runtime live 依賴；高風險跨層 CR，先替換正式 service 再 gating，不得破壞 Realtime 主流程 / Care Alert notify auth / Memory / Companion Engine）
+- 提出 / 裁決 agent：architecture-agent（依使用者指派；任務書 `tasks/CR-0049-production-ai-and-stt-service-replacement-before-mock-gating.md`）
+- 日期：2026-06-09
+- 帳本正規 ID = **CR-0049**（沿用「下一個空號」；CR-0048 已 CLOSED）
+- 狀態：**提案 + 裁決（含拆 CR）+ 批次切分。尚未執行任何程式改動，未跑測試。** 內含一個需使用者拍板的產品/範圍決策點（見 §8）。
+
+#### 1. 動機
+CR-0048 收斂時明確標註兩個未解送審 blocker（本檔 2580-2582、`FLUTTER_BUILD_FLAVORS.md` §3 表格 ⛔）：正式 build 仍**無條件**注入 `MockAiService`（app.dart:189）與 `MockSpeechToTextService`（app.dart:190），且兩者**被 production runtime 選用**（非死碼）。CLAUDE.md（store 版）§2.1 列「mock service / fake response / fake transcript / JSON fallback 作為正式資料來源」為正式版不可接受內容。本 CR 須先讓 consumer 在 production 改用**正式回覆引擎 / 正式 STT**，再做注入 gating（純拔會 crash 或產生假回覆/無回覆）。
+
+#### 2. 深入調查結論（A–D，已逐檔精讀並覆核 CR-0048 盤點）
+
+**A. press-to-talk `_chat` 罐頭回覆是正式功能還是 dev/demo-only？**
+- **正式語音主路徑 = OpenAI Realtime**（`VoiceAgentController` + `RealtimeVoiceService`，data channel 產生真回覆）。`_chat`→`MockAiService.replyForChat()` 是**同步罐頭文字**（mock_ai_service.dart 全檔為關鍵字模板），非真 AI。
+- **press-to-talk 音訊方法（`onPressToTalkStart/End`）目前在 UI 完全未接線**（`grep` 全 lib 僅 controller 內定義，無任何 screen/widget 呼叫）→ 屬 legacy/dead 入口，**「按住說話 STT」目前不對使用者開放**。
+- `_chat` 的**真正 production live consumer**是：
+  1. **打字聊天**：`home_screen._sendTextMessage()`（535）在「**不在 Realtime live 對話**」時 → `conversationController.quickAction()` → `_handleUserText` → `toolRouter.route()` → 非工具語句落 `_chat` → MockAiService 罐頭。**這是 production 可達、且會產生假回覆的路徑 → blocker 主因。**
+  2. `task_screen` 指令按鈕 → `quickAction()`（多為工具意圖，但自由語句也會落 `_chat`）。
+  3. **Realtime 本地指令邊界**：`voice_agent_controller._routeToolsForTranscript()`（741）→ `shouldHandleAsLocalCommand()` 為 true 時呼叫 `_handleLocalRealtimeCommand()`（674-685）→ `toolRouter.route(text)`。`shouldHandleAsLocalCommand` 含**提醒指令**，但 `route()` **沒有提醒分支**（提醒在 `_handleUserText` 處理，不在 router），故「提醒類」transcript 進 `route()` 會**穿透落 `_chat`**，且 `result.shouldSpeak=true` → 經 `realtimeVoiceService.speakToolOutcome()` **把罐頭句念出來**（疊在真正的 Realtime 回覆之上）。
+- 結論：press-to-talk `_chat` 罐頭在 production **是會被觸發的假回覆**（主要經打字聊天 offline + Realtime 提醒邊界），**非單純 dev-only**；正式語音對話本體仍是 Realtime 真回覆。
+
+**B. 是否已有可用的正式「聊天回覆」來源？**
+- **沒有。** 後端 `/api/companion/analyze`（server.js:1579）回的是 `emotion / replyStrategy / implicitMeaning / memory / safety / nextStrategy / fusion`——**分析資料，不含可顯示的 chat reply 文字**。
+- 後端唯二用 LLM 產生自然語句的端點是 `/api/memory/greeting`（1842，只產問候）與 `/api/conversation/title`（1928，只產標題），**都不是通用聊天回覆**。
+- 結論：**正式「文字聊天回覆」目前無後端 endpoint。** 要做真回覆，需 backend-agent **新增一支 chat adapter**（例如 `POST /api/companion/chat`，回 `{success, reply}`）；**Flutter 端不可放 OpenAI key**。打字聊天回覆無法靠現有 API 取代 mock。
+
+**C. Realtime 本地指令用 MockAiService 罐頭，production 可接受嗎？**
+- **不可接受。** 在 Realtime live 對話中，本應由 OpenAI Realtime 產生回覆；`_handleLocalRealtimeCommand` 對「穿透到 `_chat` 的罐頭句」做 `speakToolOutcome` 會疊念一段假罐頭。**裁決：Realtime 本地指令路徑只念「確定性工具結果」（簽到/購買/設定/查詢/陪伴內容），不念 `_chat` 罐頭**，聊天回覆交給 Realtime。
+
+**D. STT：production 預設改 openAiProxy 是否足夠且安全？443/772 fallback 如何處理？**
+- 預設改 `openAiProxy` **足夠且安全**：`OpenAiSpeechToTextService`（→ `/api/stt/transcribe`，server.js:1667，`gpt-4o-transcribe`）金鑰在後端，Flutter 不持 key。`OpenAiSpeechToTextService` 與 `MockSpeechToTextService` **皆 implements `SpeechToTextService`**（介面乾淨，可直接替換注入）。
+- `conversation_controller` **443 / 772 兩處 `setSttMode(SttMode.mock)` 是 production fallback-to-mock**，且 774/439 對長者顯示「**已為你切換到 Mock STT**」工程字樣——**雙重違規**（production fallback mock + 工程字樣）。**裁決：production 移除這兩條 mock fallback，改長者友善錯誤訊息（不切 mock、不假成功）。**
+- press-to-talk 音訊 STT 入口未接線（見 A），**production 無需隱藏額外 UI**；STT 替換實質只需 (1) 預設值 (2) 移除兩處 fallback (3) provider 注入正式 service。設定頁亦**無 user-facing STT mode 下拉**（settings 僅手動 ASR strategy 下拉，CR-0048 已處理），無「Mock STT」可見選項殘留。
+
+#### 3. 五點裁決
+1. **AI 路徑**：採 **(i)+(ii) 混合**——
+   - **(i) 正式 chat adapter**：backend-agent 新增 `POST /api/companion/chat`（companion persona + 可選 memory context，回 `{success, reply}`；不破壞 `/api/companion/analyze` 契約；不碰 Realtime 路由）。Flutter 新增 `CompanionChatService`（HTTP，無 key）。`AiToolRouter._chat` 在 production 改用它；失敗 → **陪伴式白話錯誤**（不假 AI 成功、不 silent mock）。reply 組裝/persona/memory 由 companion-memory-agent 主導。
+   - **(ii) Realtime 本地指令不念 `_chat` 罐頭**（見 C）：聊天回覆交 Realtime。
+   - dev/test 仍可注入 `MockAiService` 作 `_chat` 後援。
+2. **STT 路徑**：production 預設 `sttMode → openAiProxy`；移除 conversation_controller 443/772 的 mock fallback → 長者友善錯誤（不切 mock）；`ConversationController` 的 STT 欄位由具體 `MockSpeechToTextService` **泛化為 `SpeechToTextService` 介面**，production 注入 `OpenAiSpeechToTextService`，dev/test 注入 mock。press-to-talk 音訊入口維持未接線（不另開、不 mock）。
+3. **拆 CR**：**是，拆三子 CR**（本案同動 AI + STT + 新後端 endpoint + Realtime 邊界，過大且風險不一）：
+   - **CR-0049-A（STT 替換）**：medium-low。預設值 + 移除兩處 fallback + STT 介面注入 + 測試。**不動 AI、不動後端、可獨立驗證。先做。**
+   - **CR-0049-B（AI 聊天回覆替換）**：high（跨 backend / companion-memory / 對話 / Realtime 邊界）。新增 `/api/companion/chat` + `CompanionChatService` + `_chat` rewire + Realtime 本地指令不念罐頭 + 測試。
+   - **CR-0049-C（最終 gating）**：medium。app.dart 189-190 把兩 mock 注入收進 `if (AppConfig.mockServicesEnabled)`；測試斷言 production 樹無 mock。**須在 A、B 都落地後才做**（兩 consumer 在 production 都不再依賴 mock 才能安全 gating）。
+   - 順序：**A → B →（兩者皆綠後）C**。A、B 檔案不重疊，可部分並行；C 必為最後。
+4. **批次切分 + owner + 🔒/checkpoint**：見 §5。
+5. **app.dart 189-190 gating 前置條件**：唯有當 (A) `ConversationController` 在 production 不再需要 mock STT（介面注入已切正式）**且** (B) `AiToolRouter._chat` 在 production 不再依賴 `MockAiService`（chat adapter 已接）後，才可把 189-190 改為 `if (AppConfig.mockServicesEnabled)`。同時 `AiToolRouter` / `ConversationController` 建構子須改成接受**正式 service**（不可仍 require mock 型別），否則 gating 後 production 缺 provider 會 crash。此即 CR-0049-C。
+
+#### 4. 觸及 🔒 / 牽涉 agent
+- 🔒：**CR-0049-B 觸及 `backend/stt_proxy/server.js`（新增 `/api/companion/chat`，須先更新 `PROJECT_ARCHITECTURE.md` 契約再放行，architecture checkpoint）**。`realtime_voice_service.dart` **全程不得碰**。app.dart（App root）+ conversation_controller STT 選用 + voice_agent 本地指令 = Realtime-adjacent，**均需 architecture read-only checkpoint**。
+- agent：**conversation/Realtime owner**（A1 STT 選用、B4 本地指令念讀）、**companion-memory-agent**（B2/B3 回覆來源/persona/memory）、**backend-agent**（B1 新 endpoint）、**frontend-ux-agent**（A2/B2 wiring、C gating、settings/docs）。
+
+#### 5. 批次切分（含 owner / 順序 / 🔒 / checkpoint / 允許檔案）
+
+**CR-0049-A（STT 替換）— owner：conversation/Realtime owner（A1）+ frontend-ux-agent（A2/A3）**
+- **A1**（medium-low，**checkpoint**；conversation_controller 屬 Realtime-adjacent）：`lib/controllers/conversation_controller.dart` 將 `mockSttService` 欄位泛化為 `SpeechToTextService sttService`（建構子注入），`_currentSttService()` 於 `openAiProxy` 回注入的正式 service；**移除 443、772 兩處 `setSttMode(SttMode.mock)` fallback**，改長者友善錯誤（不切 mock、不假成功、不顯示「Mock STT」）。**不得改 Realtime transcript 流程（`commit/updateRealtime*`）、不得改狀態機。**
+- **A2**（low，**checkpoint**；app.dart App root）：`lib/models/user_profile.dart`（或 `profile_controller` 預設解析）production 預設 `sttMode → openAiProxy`（以 `AppConfig` 區分 dev/prod，避免硬切影響既有測試預期）；`lib/app.dart` STT provider 注入——production 注入 `OpenAiSpeechToTextService`，mock 僅 `if (AppConfig.mockServicesEnabled)`。**本批不動 189-190 的最終 gating 形態（留給 C），但須讓 ConversationController 改吃介面。**
+- **A3**（low）：測試。production 預設非 mock；STT 失敗 → 友善錯誤、**不 fallback mock**；dev/test 可注入 mock；既有 conversation/Realtime 測試全綠。
+- 允許檔案：`conversation_controller.dart`（STT 選用區，限 371-376 / 413-445 / 767-785）、`user_profile.dart` / `profile_controller.dart`（sttMode 預設）、`app.dart`（STT provider 注入）、`test/**`、本文件 / `FLUTTER_BUILD_FLAVORS.md` / `STORE_RELEASE_CHECKLIST.md`。
+
+**CR-0049-B（AI 聊天回覆替換）— owner：backend-agent（B1）+ companion-memory-agent（B2/B3）+ conversation/Realtime owner（B4）+ frontend-ux-agent（wiring）**
+- **B1**（high，🔒，**先更新 `PROJECT_ARCHITECTURE.md` 再放行 + checkpoint**）：`backend/stt_proxy/server.js` 新增 `POST /api/companion/chat`（companion persona + 可選 memory context，回 `{success, reply, ...}`）。**不得改 `/api/companion/analyze`、`/api/stt/transcribe`、任何 `/api/realtime/*` 契約；不得提交 `.env` / token / runtime `data/*.json`。**
+- **B2**（medium，companion-memory-agent + frontend-ux-agent）：Flutter `CompanionChatService`（HTTP → `/api/companion/chat`，無 key）；persona/memory 組裝邏輯由 companion-memory-agent 定。
+- **B3**（high，companion-memory-agent + conversation owner，**checkpoint**）：`ai_tool_router.dart` `_chat` production 改用 `CompanionChatService`；失敗 → 陪伴式白話錯誤（**不假成功、不 silent mock**）。**工具 flow（route 其餘分支）一字不動**；dev/test 仍可走 `MockAiService`。
+- **B4**（medium，conversation/Realtime owner，**checkpoint**）：`voice_agent_controller._handleLocalRealtimeCommand` / `_routeToolsForTranscript`——Realtime 本地指令**只念確定性工具結果，不念 `_chat` 罐頭**（聊天交 Realtime）。**不得改語音狀態機、不得碰 `realtime_voice_service.dart`。**
+- **B5**（low）：測試。`_chat` production 走正式 adapter；正式 AI 失敗不 fallback mock；Realtime 本地指令不念罐頭；既有 tool calling / Realtime 測試全綠；Care Alert notify auth 測試不受影響。
+- 允許檔案：`server.js`（限新增 `/api/companion/chat`）、新增 `lib/services/companion_chat_service.dart`、`ai_tool_router.dart`（限 `_chat`）、`voice_agent_controller.dart`（限本地指令念讀）、companion reply 相關 service、`app.dart`（chat service provider）、`test/**`、`PROJECT_ARCHITECTURE.md`、本文件。
+
+**CR-0049-C（最終 gating）— owner：frontend-ux-agent**
+- **C1**（medium，**checkpoint**；App root）：`lib/app.dart` 189-190 → `if (AppConfig.mockServicesEnabled)` 包覆兩 mock 注入；確保 `AiToolRouter` / `ConversationController` 建構子已吃正式 service（A、B 完成後）。
+- **C2**（low）：測試斷言 production provider 樹**不含** `MockAiService` / `MockSpeechToTextService`；`FLUTTER_BUILD_FLAVORS.md` §3 表格兩列 ⛔ → ✅、移除送審 blocker 註記；`STORE_RELEASE_CHECKLIST.md` 更新。
+- **前置**：A、B 全綠且 checkpoint PASS 才可動 C（見 §3 裁決 5）。
+
+#### 6. 風險
+- CR-0049-A：**medium-low**（移除 fallback 與介面泛化牽動按住說話/打字 STT 錯誤路徑，但 press-to-talk 入口未接線、介面乾淨）。
+- CR-0049-B：**high**（新後端 endpoint + `_chat` 回覆引擎更換 + Realtime 邊界；跨四 owner）。
+- CR-0049-C：**medium**（App root wiring；但前置已讓 consumer 不依賴 mock，故為收尾）。
+
+#### 7. 必守紅線（任務 §11，全子 CR 適用）
+不破壞 Realtime WebRTC 主流程 / Care Alert notify auth / Memory API / Companion Engine；**Flutter 端不放 OpenAI key**；不用 fake response 取代正式 AI；不用 fake transcript 取代正式 STT；**production 不 fallback mock**；不硬刪 mock 害 dev/test 失效；不為過測試放寬 production guard；不提交 `.env` / token / runtime `data/*.json`；`realtime_voice_service.dart` 不得碰。
+
+#### 8. 需使用者拍板的決策點（派工前）
+- **CR-0049-B 的 AI 路徑成本/範圍**：principled 解法是 backend-agent 新增 `POST /api/companion/chat`（一支 LLM chat completion，含 persona + memory；有 token 成本與後端工作量）。**替代輕量方案**：production 打字輸入只路由「工具/指令/查詢/陪伴內容/Realtime」，純閒聊打字（offline）改顯示「我們用語音聊更自然喔」的引導，不產任何罐頭回覆——可不新增 LLM endpoint 即移除假回覆，但降級打字閒聊體驗。**此為產品/範圍取捨，建議由使用者拍板採『新增 chat endpoint』或『限制打字閒聊』後，再派 CR-0049-B。** CR-0049-A 與此決策無關，可立即派工。
+
+#### 9. 裁決結論
+- **✅ 核准 CR-0049 拆為 A / B / C 三子 CR**，順序 A → B →（皆綠後）C。
+- **CR-0049-A 可立即派工**（owner：conversation/Realtime owner + frontend-ux-agent；A1 checkpoint）。
+- **CR-0049-B 待 §8 產品決策拍板後派工**（owner：backend-agent + companion-memory-agent + conversation/Realtime owner + frontend-ux-agent；B1 🔒 須先更 `PROJECT_ARCHITECTURE.md`）。
+- **CR-0049-C 為最後收尾**（owner：frontend-ux-agent），前置 = A、B 全綠 + checkpoint PASS。
+- 本筆為 architecture 提案 + 裁決，**未執行任何程式改動、未跑測試**。
+
+---
+
+### CR-0049-A / CR-0049-B1 — Checkpoint Review（architecture-agent，read-only 覆驗）
+
+**範圍**：CR-0049-A（Flutter STT 替換，frontend-ux + conversation owner）已落地；CR-0049-B1（後端 `POST /api/companion/chat`，backend-agent，🔒）已落地。本筆為實作後的 checkpoint 審查與裁決。
+
+#### 執行進度
+
+- **CR-0049-A**：✅ 已實作。
+  - production 雙重守衛：`user_profile.dart` `UserProfile.initial()` `sttMode = AppConfig.isProduction ? 'openAiProxy' : 'mock'`；`profile_controller.sttMode` getter 於 `AppConfig.isProduction` 強制回 `SttMode.openAiProxy`（即使儲存值為舊 `'mock'`）。
+  - `conversation_controller.dart` 欄位 `mockSttService` → `SpeechToTextService sttService`（介面注入）；`_currentSttService()` 回注入服務；`app.dart` 依 `AppConfig.mockServicesEnabled` 注入 `OpenAiSpeechToTextService(proxyUrl)` 或 mock。
+  - 移除兩處 production mock fallback（`onPressToTalkEnd` / `_processSttResult`），改長者友善白話錯誤，dev/test 以 `AppConfig.mockServicesEnabled` 守衛保留 mock 備援。
+  - `openai_speech_to_text_service.dart` 兩則訊息去「Mock 模式/STT」工程字樣。
+  - 新增 `test/conversation_controller_stt_production_test.dart`；5 個既有測試建構子 `mockSttService` → `sttService`。
+- **CR-0049-B1**：✅ 已實作。
+  - 新增 `services/companionChatService.js`（純函式，OpenAI client / model / logger 由 deps 注入）+ `server.js` `POST /api/companion/chat`。
+  - persona 重用 `buildRealtimeInstructions`（簽名相容：`(petName, [], memoryBlock, "", {languageHint, replyLanguage})`，memoryBlock 進 memoryContext 參數）；金鑰留後端。
+  - 先更 `PROJECT_ARCHITECTURE.md` §4 契約再實作（契約與實作一致）。
+  - 新增 `companionChatService.test.js` + `companionChatEndpoint.test.js`（8 案）；`package.json` check/test 已掛入。
+
+#### Checkpoint 驗收（architecture-agent 獨立覆驗，非僅採信回報）
+
+- 🔒 守線：`realtime_voice_service.dart` / `ai_tool_router.dart` / `mock_ai_service.dart` `git diff --quiet` = **UNTOUCHED**；`app.dart` 190-191 `MockAiService` / `MockSpeechToTextService` Provider 仍無條件宣告（C 範圍，未動）；line 223 `mockAiService` 仍接 `AiToolRouter`（_chat 路徑屬 B2/B3，未動）。
+- A 驗收：(a) production 雙重守衛 → `openAiProxy` ✅；(b) 移除 mock fallback、改白話錯誤、無「Mock/STT」工程字樣 ✅（新測試斷言 `latestReply` 不含 `Mock`/`STT` 且 `sttMode` 仍 `openAiProxy`）；(c) dev/test mock 以 `mockServicesEnabled` 守衛仍可用 ✅；(d) 未碰 realtime/_chat/MockAiService/app.dart 190-191 ✅；(e) 既有測試綠 ✅。
+- B1 驗收：(f) 失敗回 `{success:false,error}`（400 `invalid_input` / 503 `openai_unavailable`），不回 fake reply/stack ✅；(g) Flutter 不放 key、OpenAI 後端代理 ✅；(h) 未破壞 `/api/companion/analyze`（diff 僅在其後新增 route）、`/api/stt/transcribe`、Realtime、Memory、Care Alert notify 契約 ✅；(i) `PROJECT_ARCHITECTURE.md` §4 契約與實作一致 ✅；(j) log 經 `safeErrorMessage` redaction、成功路徑不呼叫 logError、不外洩 userText/reply/token ✅（測試覆蓋）。
+
+#### 覆驗測試結果（architecture-agent 實跑）
+
+- backend `npm test`：**446/446 pass（含新 8 案）**，0 fail。
+- `node --test companionChatService.test.js companionChatEndpoint.test.js`：8/8 pass。
+- `flutter analyze`（5 個觸及檔）：**No issues found**。
+- `flutter test conversation_controller_stt_production + conversation_controller_ui_state + voice_agent_controller_realtime_lifecycle`：**54 passed**。
+
+#### 裁決
+
+- **PASS** — CR-0049-A 與 CR-0049-B1 通過 checkpoint，併入主線。🔒 `server.js` 路由新增經 architecture-agent 核准（契約先行、紅線未越）。
+
+#### 待做 / follow-up（尚未實作）
+
+- **CR-0049-B2**（frontend-ux + companion-memory）：Flutter `CompanionChatService`（HTTP → `/api/companion/chat`，前端不放 key）。
+- **CR-0049-B3**（companion-memory + conversation owner，checkpoint）：`ai_tool_router.dart` `_chat` production 改用 `CompanionChatService`，失敗給陪伴式白話錯誤（不假成功、不 silent mock）；dev/test 仍走 `MockAiService`。
+- **CR-0049-B4**（conversation/Realtime owner，checkpoint）：Realtime 本地指令只念確定性工具結果、不念 `_chat` 罐頭；不碰 `realtime_voice_service.dart` 與狀態機。
+- **CR-0049-C**（frontend-ux，checkpoint）：`app.dart` 190-191 兩 mock Provider 以 `if (AppConfig.mockServicesEnabled)` 包覆 + 測試斷言 production provider 樹不含 mock；前置 = A、B 全綠 + checkpoint PASS。
+- **persona follow-up**（companion-memory）：`buildRealtimeInstructions` persona 偏即時語音/工具化，打字閒聊建議後續細修 chat 變體，使打字回覆語氣更貼近陪伴而非工具化。

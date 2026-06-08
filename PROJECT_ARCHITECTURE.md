@@ -90,6 +90,7 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
 | GET | `/api/care-alerts/:id` | 單筆 Care Alert | backend |
 | PATCH | `/api/care-alerts/:id/status` | 更新狀態 new/acknowledged/resolved | backend |
 | POST | `/api/companion/analyze` | 陪伴分析（情緒 / 風險 / 策略） | companion-memory（邏輯）+ backend（端點） |
+| POST | `/api/companion/chat` | 正式陪伴聊天回覆（打字 / 非即時文字；取代 MockAiService 罐頭） | companion-memory（persona）+ backend（端點） |
 | POST | `/api/stt/transcribe` | 語音轉文字 | backend + realtime |
 | GET | `/api/asr/taigi/status` | 台語 ASR 狀態 | backend |
 | POST | `/api/asr/taigi/warmup` | 台語 ASR 預熱 | backend |
@@ -115,6 +116,16 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
 
 > 註：本表為現況快照；新增 / 修改路由時請同步維護。
 > auth / admin 路由為 CR-0006 / CR-0007 新增（見 `docs/CHANGE_REVIEW.md`），契約定義見 §10、§11。
+
+**`POST /api/companion/chat` 契約（CR-0049-B1）**
+
+- Request（JSON）：`{ userText: string（必填）, petName?: string, memoryContextSummary?: string, languageHint?: string, replyLanguage?: string }`。
+  - `memoryContextSummary` 由前端傳入既有摘要；本端點**不重查跨住民記憶**，避免跨住民洩漏。
+- Response 成功：`{ success: true, reply: string }`（reply = 陪伴語氣自然回覆）。
+- Response 失敗：`{ success: false, error: 'invalid_input' | 'openai_unavailable' }`；
+  缺 `userText` → `400 invalid_input`；OpenAI 不可用 / 失敗 / 回空 → `503 openai_unavailable`。
+- 紅線：**不回 fake/罐頭回覆假裝成功、不回 stack**；OpenAI 金鑰留後端、前端不放 key；log 經 redaction（不輸出完整 `userText` / `reply` / token）。
+- persona 重用 Realtime 主流程的 `buildRealtimeInstructions`（同一份陪伴 persona），不自創文案。
 
 ---
 
