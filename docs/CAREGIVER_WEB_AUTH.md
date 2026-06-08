@@ -110,5 +110,56 @@ authState = {
   token 輸入入口（最小可行 UI）。
 - **caregiver 帳號與 `resident_caregiver_links` provisioning 後端**（super_admin-only 端點）：
   **已於 CR-0043 完成**（8 條路由 + 停用閘 + audit）。見 `docs/CAREGIVER_PROVISIONING.md`。
-  對應的 caregiver_web 管理 UI（caregiver 管理 + 授權指派，super_admin-only）= **CR-0044**（前端，未做）。
+  對應的 caregiver_web 管理 UI（caregiver 管理 + 授權指派，super_admin-only）：
+  **已於 CR-0044 完成**（見 §6）。
 - `/api/care-alerts/notify` caller 驗證（長者 session）：FU-CR。
+
+---
+
+## 6. super_admin-only provisioning UI（CR-0044）
+
+caregiver_web 新增兩個 **super_admin-only** 管理分頁，前端消費 CR-0043 後端 8 條
+provisioning 端點（本案不改後端）：
+
+- **照護人員管理**（`view-caregivers`）：建立 / 編輯 / 停用 caregiver 帳號、綁定 `firebaseUid`。
+- **住民授權指派**（`view-assignments`）：建立 / 改角色 / 停用 `resident_caregiver_links`。
+
+### 6.1 顯示與防呆
+
+- 兩入口比照既有 users / products / orders 分頁，**僅非 caregiver 模式顯示**；
+  `applyAuthModeUi()` 在 caregiver 模式隱藏 `elCG.tab` / `elAS.tab`，並把停在這兩頁的
+  caregiver 切回照護提醒。
+- 防呆：`loadCaregivers()` / `loadAssignments()` 在發 `fetch` 前先 `isCaregiverMode()`
+  早退（顯示權限不足，**絕不送出 management API request**）。
+
+### 6.2 Header 行為（紅線）
+
+- provisioning 的讀（GET）一律用 `adminAuthHeaders()`、寫（POST/PATCH/DELETE）一律用
+  `adminJsonHeaders()`——**只帶 super_admin token**，不使用 caregiver scoped
+  `authHeaders()` / `authJsonHeaders()`。
+- 住民下拉取自 `GET /api/admin/elders`、照護人員下拉取自 `GET /api/admin/caregivers`，
+  皆用 super_admin token，**不以假資料填 UI**。
+
+### 6.3 契約對應（以後端真值為準）
+
+| 操作 | 端點 | 備註 |
+| --- | --- | --- |
+| 列出 caregiver | `GET /api/admin/caregivers` | 回 `{ ok, caregivers }`，欄位含 `emailMasked` / `firebaseUid` / `status(active\|inactive)` |
+| 建立 caregiver | `POST /api/admin/caregivers` | `{ email(必填), displayName, firebaseUid? }`；`email_exists`→友善提示 |
+| 編輯 caregiver | `PATCH /api/admin/caregivers/:id` | `displayName` / `email` / `firebaseUid`；email 留空＝不變更 |
+| 停用 / 啟用 caregiver | `PATCH /api/admin/caregivers/:id/status` | `{ status: active\|inactive }` |
+| 列出授權 | `GET /api/admin/resident-caregiver-links` | 回 `{ ok, links }`，`status` 對外為 `active\|inactive` |
+| 建立授權 | `POST /api/admin/resident-caregiver-links` | `{ residentId, caregiverId, role }` |
+| 改角色 | `PATCH /api/admin/resident-caregiver-links/:id` | **只支援 role**（後端契約） |
+| 停用授權 | `DELETE /api/admin/resident-caregiver-links/:id` | soft-disable → 回 `status:'inactive'` |
+
+**role enum 以後端 migration 013 真值為準：`primary` / `secondary` / `viewer`**
+（任務書曾誤植 `backup`；UI select 採後端真值，`backup` 僅後端接受作 `secondary` 之 alias）。
+
+**授權「重新啟用」**：後端無 re-activate 端點；UI 以相同 `residentId+caregiverId+role`
+呼叫 `POST` 另建一筆有效授權達成（不改後端，舊的已停用關聯保留作稽核軌跡）。
+
+### 6.4 401 / 403 / 空狀態
+
+沿用 §3 行為。新增空狀態文案：空 caregiver 清單「目前尚無照護人員」；空授權清單
+「目前尚無住民授權指派」；select 來源為空時提示需先建立 caregiver / 住民資料。

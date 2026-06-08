@@ -1962,3 +1962,44 @@ caregiver_web API base URL 改為可配置、移除 localhost production 預設�
   - **FU**：`requireSuperAdmin`（resolveAdminAuthContext + assert role==='super_admin'）讓 DB-backed super_admin 也能用管理路由（目前僅共享 token），未做。
   - **FU-CR**：`/api/care-alerts/notify` caller 驗證（長者 session，正式版 blocker），未做。
   - **未驗證**：全程 mock pg（`setPgForTest`）+ stub firebaseAdmin；**未對真 Postgres / 真 Firebase 金鑰驗證**；migration 014 **未對真 DB 跑**（僅靜態冪等覆核）。真 DB/Firebase 端到端驗證列為部署前 checklist，非本案 code-level blocker。
+
+---
+
+### CR-0044 — Caregiver Web Provisioning UI（super_admin-only；接 CR-0043 後端 8 路由）— ✅ 完成（2026-06-08）
+
+- **owner**：frontend-ux-agent。**範圍**：caregiver_web 純前端，**未改後端**（server.js / Realtime / Memory / 授權規則零改動）。
+- **目標**：補齊 caregiver_web 兩個 super_admin-only 管理頁，前端消費 CR-0043 provisioning 端點。
+- **修改檔案**：
+  - `caregiver_web/index.html`：新增 `tab-caregivers` / `tab-assignments` 兩入口、`view-caregivers` / `view-assignments` 兩 view、caregiver 表單 modal（`caregiver-overlay`）、授權表單 modal（`assignment-overlay`）。
+  - `caregiver_web/app.js`：新增 `elCG` / `elAS` 元素快取；`loadCaregivers` / `renderCaregivers` / `submitCaregiverForm` / `toggleCaregiverStatus` / `loadAssignments` / `renderAssignments` / `populateAssignmentSelects` / `submitAssignmentForm` / `submitProvisioning` / `disableAssignment` / `enableAssignment` 等；`showView` / `applyAuthModeUi` / `currentViewName` / `reloadActiveView` / init 事件接線擴充；新增空狀態 / role 文案常數。
+  - 文件：`caregiver_web/README.md`、`docs/CAREGIVER_WEB_AUTH.md`（§6）、`docs/CAREGIVER_PROVISIONING.md`。
+  - 測試：`caregiver_web/caregiver_provisioning_ui.test.js`（新增，16 項靜態回歸）。
+- **header 行為（紅線達成）**：provisioning 讀用 `adminAuthHeaders()`、寫用 `adminJsonHeaders()`（**只帶 super_admin token**）；不使用 caregiver scoped `authHeaders()` / `authJsonHeaders()`。caregiver 模式**隱藏入口且 `fetch` 前 `isCaregiverMode()` 早退（不發 management API request）**。
+- **採用的 role enum**：**`primary` / `secondary` / `viewer`**（後端 migration 013 真值；任務書誤植的 `backup` 未採用，僅後端接受作 `secondary` alias）。
+- **link 修改 / 停用 / 重新啟用對應後端實況**：`PATCH` 只支援改 role；停用走 `DELETE`（soft-disable→`status:'inactive'`）；後端**無 re-activate 端點**，UI「重新啟用」以相同 residentId+caregiverId+role 呼叫 `POST` 另建一筆有效授權（不改後端）。
+- **401 / 403 / 空狀態**：401「登入已失效，請重新登入」（`handleSessionExpired`，停止重複請求）；403「目前帳號沒有權限查看此資料」（不清 token）；空 caregiver「目前尚無照護人員」、空授權「目前尚無住民授權指派」；select 來源為空時提示需先建立 caregiver / 住民資料。不顯 undefined / null / raw stack / 假資料。
+- **測試結果**：`cd caregiver_web && node --test *.test.js` → tests 85 / pass 85 / fail 0（既有 69 全綠 + 新增 16）。後端未改，未跑 backend tests。
+- **正式版風險自評**：caregiver 看不到 provisioning UI 且不發 API（✅）；provisioning 一律 admin header（✅）；無 hardcoded caregiver id / fake token（✅）；select 由後端真資料帶入、無假住民 / 假照護人員（✅）；UI / console 不顯完整 token（✅，無 `console.*` 印 token、無硬編 Bearer）；未改 backend（✅）。
+- **殘留**：caregiver email 編輯無法預填（後端只回 `emailMasked`，留空＝不變更，屬後端契約限制）；授權「重新啟用」會留下舊的已停用 row 作稽核軌跡（後端無 re-activate 端點，非 bug）；caregiver_web 仍為靜態源碼檢查、無 DOM 測試環境（沿用既有測試策略）。
+
+#### checkpoint 覆核（architecture-agent，2026-06-08；read-only，未改任何程式碼）
+- **裁決：✅ 核准並驗收（PASS）。** CR-0044 純前端（caregiver_web + docs），**未觸 🔒**（backend/stt_proxy/server.js 路由與 response 形狀、DB schema / migration、Realtime 主流程、Care Alert 三方共用資料結構與分級欄位、Memory、授權規則、notify 全部零改動）。覆核方式：read-only（git status / git diff / grep / 檔案閱讀）+ architecture-agent 獨立重跑測試。
+- **🔒 確認**：`git status --porcelain backend/` 為空（後端 0 行）；`git diff --stat` 改動僅 `caregiver_web/{index.html,app.js,README.md}` + `docs/{CAREGIVER_PROVISIONING,CAREGIVER_WEB_AUTH,CHANGE_REVIEW}.md` + 新增 `caregiver_web/caregiver_provisioning_ui.test.js`。`CLAUDE.md` / `ios/...Runner.xcscheme` / `PROJECT_REPORT_DRAFT.md` 為本案無關的既存工作區噪音，不屬 CR-0044，commit 時排除。
+- **獨立驗收（非僅採信回報）**：`cd caregiver_web && node --check app.js` exit 0；`node --test *.test.js` → tests 85 / pass 85 / fail 0（69 既有基線維持綠 + 16 新；既有 dashboard / Care Alert / CR-0042 斷言零調整）。
+- 七項門檻獨立覆核（對映使用者指派 a–g）：
+  - (a) 未改 backend / server.js / Realtime / Memory / 授權規則 / notify：`git status backend/` 空、`git diff` 無後端檔。✅
+  - (b) provisioning 一律 admin header、caregiver 模式絕不發 management request 且入口隱藏：provisioning 讀全走 `adminAuthHeaders()`（caregivers / resident-caregiver-links / elders GET）、寫全走 `adminJsonHeaders()`（POST/PATCH/DELETE 與 status），皆 super_admin token，無一處用 caregiver scoped `authHeaders()/authJsonHeaders()`；每個 provisioning 函式 `fetch` 前 `if (isCaregiverMode() ...) return` 早退（app.js 2619/2767/2843/2918/3177/3195/3213/3291/3334）；`applyAuthModeUi` 對 `elCG.tab`/`elAS.tab` `classList.toggle("hidden", caregiver)` 且 caregiver 停在 super_admin-only view 時 `showView("alerts")` 反彈。雙重保護。✅
+  - (c) 無 console.* 印 token、無硬編 Bearer：`grep -nE "console\.(log|debug|info|warn|error)" app.js` 零命中（全檔無 console 語句）；`Bearer` 僅出現在 header helper 以 runtime `getActiveToken()/getAdminToken()` 串接，無字面 token。✅
+  - (d) 無 hardcode caregiver id、無假住民 / 假照護人員填 select：`populateAssignmentSelects` 由 `GET /api/admin/elders` + `GET /api/admin/caregivers`（真資料）填入，任一來源為空時清楚提示需先建資料並 `save.disabled=true`，不以假資料補。✅
+  - (e) role enum 用後端真值 primary / secondary / viewer：`ROLE_LABELS = {primary, secondary, viewer}`（對齊 migration 013），預設 fallback `"primary"`；任務書誤植的 `backup` 未採用。✅
+  - (f) 空狀態 / 401 / 403 沿用 CR-0042、不顯 undefined / null / raw stack：401→`handleSessionExpired` + 「登入已失效」、403→`FORBIDDEN_MSG`（不清 token）、空狀態走 `EMPTY_*` 常數；render 全程 `escapeHtml`、`l.role || "primary"` 等保底，無 raw error 外洩。✅
+  - (g) 既有 dashboard / Care Alert / CR-0042 測試未破壞：85/85 綠，含「長者端文案不外洩工程訊息」「商品 / 訂單管理帶 Admin 權杖」等既有案全通過。✅
+- **兩個契約限制裁決：可接受結案。**
+  - email 編輯留空＝不變更：後端 `toSafeCaregiver` 只回 `emailMasked`（不回原文，正確隱私設計），前端無從預填屬**後端契約必然**，非 bug。以文件標註結案，若日後要支援可開 **FU-CR-0043a**（caregiver 首次登入以 Firebase-verified email 自動認領）順帶收斂。
+  - 重新啟用＝另建 active row（舊 row 留稽核）：後端 CR-0043 無 re-activate 端點（DELETE 為 soft→`inactive`），UI 以相同 resident+caregiver+role `POST` 另建一筆，舊列保留為稽核軌跡，**不跨安全邊界、不破壞授權 scope**。可接受結案；如要單列復用可開可選 **FU-CR-0044a**（後端新增「重新啟用 link」端點 + 前端改呼叫）。
+- **完成狀態：✅ 完成（CR-0044 caregiver_web provisioning UI 落地，85/85 綠，architecture-agent checkpoint PASS，未觸 🔒）。** commit 由使用者執行（architecture-agent 不自行 commit）。
+- **明確標註殘留（不宣稱已做）**：
+  - **行為層測試**：caregiver_web 仍為靜態源碼回歸，無 DOM / headless 互動測試環境（沿用既有策略，非本案 blocker）。
+  - **FU-CR-0043a**：caregiver 首次登入 email 自動認領（順帶解決編輯預填），未做。
+  - **FU-CR-0044a（可選）**：後端「重新啟用既有 link」端點，使 UI 復用單列而非另建，未做。
+  - **未驗證**：未對真 Postgres / 真 Firebase / 真 super_admin token 端到端驗證；provisioning UI 與後端 8 路由之實連屬部署前 checklist，非 code-level blocker。

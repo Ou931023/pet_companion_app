@@ -118,5 +118,9 @@
   - `services/admin/caregiverProvisioningEndpoint.test.js`
   - `services/admin/adminAuthContext.test.js`（含停用閘）
   - `db/migration014.test.js`
-- caregiver_web 管理 UI = **CR-0044**（frontend-ux，本案不含）。
+- caregiver_web 管理 UI = **CR-0044**（frontend-ux）：**已完成**。super_admin-only 兩分頁
+  （照護人員管理 + 住民授權指派），消費本文件 8 條端點；header 一律 super_admin token，
+  caregiver 模式不顯示入口且不發送 management API。role select 採本文件 §5 真值
+  `primary | secondary | viewer`。授權「重新啟用」以另建一筆有效關聯達成（後端無 re-activate 端點）。
+  見 `docs/CAREGIVER_WEB_AUTH.md` §6 與 `caregiver_web/README.md`。
 - email 自動認領 = **FU-CR-0043a**（本案不含）。

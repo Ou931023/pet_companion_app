@@ -27,6 +27,17 @@
   var SESSION_EXPIRED_MSG = "登入已失效，請重新登入";
   var FORBIDDEN_MSG = "目前帳號沒有權限查看此資料";
   var NEED_LOGIN_MSG = "請先在上方選擇身分並登入。";
+  // CR-0044：provisioning（super_admin-only）空狀態文案。
+  var EMPTY_CAREGIVERS_MSG = "目前尚無照護人員";
+  var EMPTY_ASSIGNMENTS_MSG = "目前尚無住民授權指派";
+  var NEED_ADMIN_MSG = "請先以管理者身分登入（在上方選「管理者」並貼上管理者權杖）。";
+
+  // CR-0044：授權角色對外文案（對齊後端 migration 013 真值 primary|secondary|viewer）。
+  var ROLE_LABELS = {
+    primary: "主要照護",
+    secondary: "備援照護",
+    viewer: "唯讀",
+  };
 
   // CR-0042：身分狀態。語意清楚區分 super_admin / caregiver / none。
   // displayName 不在前端偽造（未做 Firebase 驗證），維持 null。
@@ -631,6 +642,53 @@
   };
   var ordersLoaded = false;
 
+  // CR-0044 照護人員管理 view（super_admin-only）元素參照。
+  var elCG = {
+    tab: document.getElementById("tab-caregivers"),
+    view: document.getElementById("view-caregivers"),
+    refresh: document.getElementById("caregivers-refresh"),
+    add: document.getElementById("caregiver-add"),
+    status: document.getElementById("caregivers-status"),
+    count: document.getElementById("caregivers-count"),
+    tableWrap: document.getElementById("caregivers-table-wrap"),
+    overlay: document.getElementById("caregiver-overlay"),
+    formTitle: document.getElementById("caregiver-form-title"),
+    form: document.getElementById("caregiver-form"),
+    formClose: document.getElementById("caregiver-form-close"),
+    formCancel: document.getElementById("caregiver-form-cancel"),
+    formStatus: document.getElementById("caregiver-form-status"),
+    fId: document.getElementById("cgf-id"),
+    fName: document.getElementById("cgf-name"),
+    fEmail: document.getElementById("cgf-email"),
+    fEmailHint: document.getElementById("cgf-email-hint"),
+    fFirebase: document.getElementById("cgf-firebase"),
+  };
+  var caregiversLoaded = false;
+  var caregiversCache = [];
+
+  // CR-0044 住民授權指派 view（super_admin-only）元素參照。
+  var elAS = {
+    tab: document.getElementById("tab-assignments"),
+    view: document.getElementById("view-assignments"),
+    refresh: document.getElementById("assignments-refresh"),
+    add: document.getElementById("assignment-add"),
+    status: document.getElementById("assignments-status"),
+    count: document.getElementById("assignments-count"),
+    tableWrap: document.getElementById("assignments-table-wrap"),
+    overlay: document.getElementById("assignment-overlay"),
+    formTitle: document.getElementById("assignment-form-title"),
+    form: document.getElementById("assignment-form"),
+    formClose: document.getElementById("assignment-form-close"),
+    formCancel: document.getElementById("assignment-form-cancel"),
+    formStatus: document.getElementById("assignment-form-status"),
+    fId: document.getElementById("asf-id"),
+    fResident: document.getElementById("asf-resident"),
+    fCaregiver: document.getElementById("asf-caregiver"),
+    fRole: document.getElementById("asf-role"),
+    save: document.getElementById("assignment-form-save"),
+  };
+  var assignmentsLoaded = false;
+
   var ORDER_STATUS_LABELS = {
     pending: "待處理",
     confirmed: "已確認",
@@ -712,6 +770,8 @@
       users: { view: elU.viewUsers, tab: elU.tabUsers },
       products: { view: elP.viewProducts, tab: elP.tabProducts },
       orders: { view: elO.viewOrders, tab: elO.tabOrders },
+      caregivers: { view: elCG.view, tab: elCG.tab },
+      assignments: { view: elAS.view, tab: elAS.tab },
     };
     Object.keys(views).forEach(function (key) {
       var active = key === name;
@@ -742,6 +802,14 @@
     if (name === "orders" && !ordersLoaded) {
       ordersLoaded = true;
       loadOrders();
+    }
+    if (name === "caregivers" && !caregiversLoaded) {
+      caregiversLoaded = true;
+      loadCaregivers();
+    }
+    if (name === "assignments" && !assignmentsLoaded) {
+      assignmentsLoaded = true;
+      loadAssignments();
     }
   }
 
@@ -920,13 +988,21 @@
       elU && elU.tabUsers,
       elP && elP.tabProducts,
       elO && elO.tabOrders,
+      elCG && elCG.tab,
+      elAS && elAS.tab,
     ].forEach(function (tab) {
       if (tab) tab.classList.toggle("hidden", caregiver);
     });
     // caregiver 模式若正停在 super_admin-only 分頁，切回照護提醒。
     if (caregiver) {
       var name = currentViewName();
-      if (name === "users" || name === "products" || name === "orders") {
+      if (
+        name === "users" ||
+        name === "products" ||
+        name === "orders" ||
+        name === "caregivers" ||
+        name === "assignments"
+      ) {
         showView("alerts");
       }
     }
@@ -940,6 +1016,8 @@
     if (elU.viewUsers && !elU.viewUsers.classList.contains("hidden")) return "users";
     if (elP.viewProducts && !elP.viewProducts.classList.contains("hidden")) return "products";
     if (elO.viewOrders && !elO.viewOrders.classList.contains("hidden")) return "orders";
+    if (elCG.view && !elCG.view.classList.contains("hidden")) return "caregivers";
+    if (elAS.view && !elAS.view.classList.contains("hidden")) return "assignments";
     return "alerts";
   }
 
@@ -954,6 +1032,8 @@
     else if (name === "users") loadUsers();
     else if (name === "products") loadProducts();
     else if (name === "orders") loadOrders();
+    else if (name === "caregivers") loadCaregivers();
+    else if (name === "assignments") loadAssignments();
     else loadAlerts();
   }
 
@@ -2478,6 +2558,803 @@
       });
   }
 
+  // ===================================================================
+  // CR-0044 照護人員 / 住民授權指派管理（super_admin-only provisioning）
+  // -------------------------------------------------------------------
+  // 全部走 super_admin token（adminAuthHeaders / adminJsonHeaders），
+  // 端點 GET/POST/PATCH/DELETE /api/admin/caregivers 與
+  // /api/admin/resident-caregiver-links（CR-0043 後端契約，本案不改後端）。
+  // caregiver 模式不顯示入口、且絕不發送這些 management API request。
+  // ===================================================================
+
+  // 後端回應 { ok:false, error } → 友善白話訊息（不顯示原始錯誤碼 / stack）。
+  function provisioningErrorMessage(error, map) {
+    if (error && map && map[error]) return map[error];
+    return "操作沒有成功，請稍後再試。";
+  }
+
+  var CAREGIVER_ERROR_MSG = {
+    email_required: "請填寫 Email。",
+    email_exists: "這個 Email 已經有人使用了，請換一個。",
+    invalid_payload: "沒有要更新的內容。",
+    invalid_status: "狀態設定不正確。",
+    not_found: "找不到這位照護人員，請重新整理後再試。",
+  };
+  var LINK_ERROR_MSG = {
+    invalid_payload: "請選擇住民與照護人員。",
+    invalid_role: "授權角色設定不正確。",
+    resident_not_found: "找不到這位住民，請重新整理後再試。",
+    caregiver_not_found: "找不到這位照護人員，請重新整理後再試。",
+    link_exists: "這位照護人員已經有這位住民的有效授權了。",
+    not_found: "找不到這筆授權，請重新整理後再試。",
+  };
+
+  // ---- 照護人員管理 ----
+
+  function setCaregiversStatus(msg, kind) {
+    if (!elCG.status) return;
+    elCG.status.textContent = msg || "";
+    elCG.status.classList.toggle("error", kind === "error");
+  }
+
+  function caregiverFirebaseLabel(uid) {
+    return uid ? "已綁定" : "待綁定";
+  }
+
+  function caregiverStatusBadge(status) {
+    var on = status === "active";
+    return (
+      '<span class="badge status ' +
+      (on ? "status-resolved" : "status-off") +
+      '">' +
+      (on ? "啟用中" : "已停用") +
+      "</span>"
+    );
+  }
+
+  // GET /api/admin/caregivers（super_admin-only）。caregiver 模式不打 API。
+  function loadCaregivers() {
+    if (elCG.tableWrap) elCG.tableWrap.innerHTML = "";
+    if (elCG.count) elCG.count.textContent = "";
+    if (isCaregiverMode()) {
+      setCaregiversStatus(FORBIDDEN_MSG, "error");
+      return;
+    }
+    if (sessionInvalid) {
+      setCaregiversStatus(SESSION_EXPIRED_MSG, "error");
+      return;
+    }
+    if (!getAdminToken()) {
+      setCaregiversStatus(NEED_ADMIN_MSG, "error");
+      return;
+    }
+    setCaregiversStatus("照護人員載入中…", "");
+    fetch(adminUrl("/caregivers"), { headers: adminAuthHeaders() })
+      .then(function (r) {
+        if (r.status === 401) {
+          handleSessionExpired();
+          throw new Error("session_expired");
+        }
+        if (r.status === 403) throw new Error("forbidden");
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (body) {
+        if (!body || body.ok !== true || !Array.isArray(body.caregivers)) {
+          throw new Error("bad_payload");
+        }
+        caregiversCache = body.caregivers;
+        renderCaregivers(body.caregivers);
+      })
+      .catch(function (err) {
+        if (elCG.tableWrap) elCG.tableWrap.innerHTML = "";
+        if (elCG.count) elCG.count.textContent = "";
+        if (err && err.message === "session_expired") {
+          setCaregiversStatus(SESSION_EXPIRED_MSG, "error");
+        } else if (err && err.message === "forbidden") {
+          setCaregiversStatus(FORBIDDEN_MSG, "error");
+        } else {
+          setCaregiversStatus("目前連不到後端，待會再重新整理看看。", "error");
+        }
+      });
+  }
+
+  function renderCaregivers(list) {
+    if (elCG.count) {
+      elCG.count.textContent = list.length ? "共 " + list.length + " 位" : "";
+    }
+    if (!list.length) {
+      setCaregiversStatus(EMPTY_CAREGIVERS_MSG, "");
+      elCG.tableWrap.innerHTML = "";
+      return;
+    }
+    setCaregiversStatus("", "");
+    var rows = list
+      .map(function (c) {
+        var active = c.status === "active";
+        return (
+          "<tr>" +
+          "<td>" + escapeHtml(c.displayName || "—") + "</td>" +
+          "<td>" + escapeHtml(c.emailMasked || "—") + "</td>" +
+          "<td>" + escapeHtml(caregiverFirebaseLabel(c.firebaseUid)) + "</td>" +
+          "<td>" + caregiverStatusBadge(c.status) + "</td>" +
+          "<td>" + escapeHtml(formatTime(c.createdAt)) + "</td>" +
+          "<td>" + escapeHtml(c.updatedAt ? formatTime(c.updatedAt) : "—") + "</td>" +
+          '<td class="row-actions">' +
+          '<button class="btn btn-sm" data-action="edit" data-id="' +
+          escapeHtml(c.id) +
+          '">編輯</button>' +
+          '<button class="btn btn-sm" data-action="toggle" data-id="' +
+          escapeHtml(c.id) +
+          '" data-status="' +
+          escapeHtml(c.status) +
+          '">' +
+          (active ? "停用" : "啟用") +
+          "</button>" +
+          "</td>" +
+          "</tr>"
+        );
+      })
+      .join("");
+    elCG.tableWrap.innerHTML =
+      '<table class="users-table"><thead><tr>' +
+      "<th>顯示名稱</th><th>Email</th><th>Firebase 綁定</th><th>狀態</th><th>建立時間</th><th>更新時間</th><th>操作</th>" +
+      "</tr></thead><tbody>" +
+      rows +
+      "</tbody></table>";
+    var btns = elCG.tableWrap.querySelectorAll("button[data-action]");
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].addEventListener("click", onCaregiverAction);
+    }
+  }
+
+  function onCaregiverAction(e) {
+    var btn = e.currentTarget;
+    var id = btn.getAttribute("data-id");
+    var action = btn.getAttribute("data-action");
+    if (action === "edit") {
+      var found = null;
+      for (var i = 0; i < caregiversCache.length; i++) {
+        if (caregiversCache[i].id === id) {
+          found = caregiversCache[i];
+          break;
+        }
+      }
+      openCaregiverForm(found);
+    } else if (action === "toggle") {
+      toggleCaregiverStatus(id, btn.getAttribute("data-status"));
+    }
+  }
+
+  function caregiverFormError(msg) {
+    if (!elCG.formStatus) return;
+    elCG.formStatus.textContent = msg || "";
+    elCG.formStatus.classList.toggle("error", !!msg);
+  }
+
+  // caregiver 為 null → 新增；否則編輯（email 後端只回遮蔽值，編輯時留空＝不變更）。
+  function openCaregiverForm(caregiver) {
+    if (elCG.form) elCG.form.reset();
+    caregiverFormError("");
+    if (caregiver) {
+      elCG.formTitle.textContent = "編輯照護人員";
+      elCG.fId.value = caregiver.id || "";
+      elCG.fName.value = caregiver.displayName || "";
+      elCG.fEmail.value = "";
+      if (elCG.fEmailHint) {
+        elCG.fEmailHint.textContent =
+          "目前 Email：" +
+          (caregiver.emailMasked || "—") +
+          "。留空表示不變更；要更換才填新的 Email。";
+      }
+      elCG.fFirebase.value = caregiver.firebaseUid || "";
+    } else {
+      elCG.formTitle.textContent = "新增照護人員";
+      elCG.fId.value = "";
+      if (elCG.fEmailHint) {
+        elCG.fEmailHint.textContent = "照護人員的登入 Email，需全系統唯一。";
+      }
+    }
+    if (elCG.overlay) elCG.overlay.classList.remove("hidden");
+  }
+
+  function closeCaregiverForm() {
+    if (elCG.overlay) elCG.overlay.classList.add("hidden");
+  }
+
+  function submitCaregiverForm(e) {
+    if (e) e.preventDefault();
+    if (isCaregiverMode() || !getAdminToken()) {
+      caregiverFormError(NEED_ADMIN_MSG);
+      return;
+    }
+    var id = (elCG.fId.value || "").trim();
+    var name = (elCG.fName.value || "").trim();
+    var email = (elCG.fEmail.value || "").trim();
+    var firebaseUid = (elCG.fFirebase.value || "").trim();
+    if (!name) {
+      caregiverFormError("請填寫顯示名稱。");
+      return;
+    }
+    var payload;
+    var url;
+    var method;
+    if (id) {
+      // 編輯：displayName / firebaseUid 一律送；email 留空＝不變更。
+      payload = { displayName: name, firebaseUid: firebaseUid };
+      if (email) payload.email = email;
+      url = adminUrl("/caregivers/" + encodeURIComponent(id));
+      method = "PATCH";
+    } else {
+      // 新增：email 必填。
+      if (!email) {
+        caregiverFormError("請填寫 Email。");
+        return;
+      }
+      payload = { email: email, displayName: name };
+      if (firebaseUid) payload.firebaseUid = firebaseUid;
+      url = adminUrl("/caregivers");
+      method = "POST";
+    }
+    caregiverFormError("");
+    if (elCG.formStatus) elCG.formStatus.textContent = "儲存中…";
+    fetch(url, {
+      method: method,
+      headers: adminJsonHeaders(),
+      body: JSON.stringify(payload),
+    })
+      .then(function (r) {
+        if (r.status === 401) {
+          handleSessionExpired();
+          throw new Error("session_expired");
+        }
+        if (r.status === 403) throw new Error("forbidden");
+        return r.json().then(function (body) {
+          if (!r.ok || !body || body.ok !== true) {
+            throw new Error(
+              "api:" + (body && body.error ? body.error : "unknown")
+            );
+          }
+          return body;
+        });
+      })
+      .then(function () {
+        closeCaregiverForm();
+        loadCaregivers(); // 建立 / 編輯成功後刷新列表。
+      })
+      .catch(function (err) {
+        var msg = err && err.message ? err.message : "";
+        if (msg === "session_expired") {
+          caregiverFormError(SESSION_EXPIRED_MSG);
+        } else if (msg === "forbidden") {
+          caregiverFormError(FORBIDDEN_MSG);
+        } else if (msg.indexOf("api:") === 0) {
+          caregiverFormError(
+            provisioningErrorMessage(msg.slice(4), CAREGIVER_ERROR_MSG)
+          );
+        } else {
+          caregiverFormError("儲存沒有成功，請稍後再試。");
+        }
+      });
+  }
+
+  function toggleCaregiverStatus(id, currentStatus) {
+    if (!id) return;
+    if (isCaregiverMode() || !getAdminToken()) {
+      setCaregiversStatus(NEED_ADMIN_MSG, "error");
+      return;
+    }
+    var next = currentStatus === "active" ? "inactive" : "active";
+    if (next === "inactive") {
+      // 停用提示（白話說明影響）。
+      if (
+        !window.confirm(
+          "停用後，該照護人員將無法查看被指派住民資料。\n確定要停用嗎？"
+        )
+      ) {
+        return;
+      }
+    }
+    setCaregiversStatus("更新中…", "");
+    fetch(adminUrl("/caregivers/" + encodeURIComponent(id) + "/status"), {
+      method: "PATCH",
+      headers: adminJsonHeaders(),
+      body: JSON.stringify({ status: next }),
+    })
+      .then(function (r) {
+        if (r.status === 401) {
+          handleSessionExpired();
+          throw new Error("session_expired");
+        }
+        if (r.status === 403) throw new Error("forbidden");
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function () {
+        loadCaregivers();
+        setCaregiversStatus(
+          next === "active" ? "已啟用此照護人員。" : "已停用此照護人員。",
+          ""
+        );
+      })
+      .catch(function (err) {
+        if (err && err.message === "session_expired") {
+          setCaregiversStatus(SESSION_EXPIRED_MSG, "error");
+        } else if (err && err.message === "forbidden") {
+          setCaregiversStatus(FORBIDDEN_MSG, "error");
+        } else {
+          setCaregiversStatus("狀態更新沒有成功，請稍後再試。", "error");
+        }
+      });
+  }
+
+  // ---- 住民授權指派 ----
+
+  function setAssignmentsStatus(msg, kind) {
+    if (!elAS.status) return;
+    elAS.status.textContent = msg || "";
+    elAS.status.classList.toggle("error", kind === "error");
+  }
+
+  function roleLabel(role) {
+    return ROLE_LABELS[role] || role || "—";
+  }
+
+  function linkStatusBadge(status) {
+    var on = status === "active";
+    return (
+      '<span class="badge status ' +
+      (on ? "status-resolved" : "status-off") +
+      '">' +
+      (on ? "生效中" : "已停用") +
+      "</span>"
+    );
+  }
+
+  // GET /api/admin/resident-caregiver-links（super_admin-only）。caregiver 模式不打 API。
+  function loadAssignments() {
+    if (elAS.tableWrap) elAS.tableWrap.innerHTML = "";
+    if (elAS.count) elAS.count.textContent = "";
+    if (isCaregiverMode()) {
+      setAssignmentsStatus(FORBIDDEN_MSG, "error");
+      return;
+    }
+    if (sessionInvalid) {
+      setAssignmentsStatus(SESSION_EXPIRED_MSG, "error");
+      return;
+    }
+    if (!getAdminToken()) {
+      setAssignmentsStatus(NEED_ADMIN_MSG, "error");
+      return;
+    }
+    setAssignmentsStatus("授權指派載入中…", "");
+    fetch(adminUrl("/resident-caregiver-links"), { headers: adminAuthHeaders() })
+      .then(function (r) {
+        if (r.status === 401) {
+          handleSessionExpired();
+          throw new Error("session_expired");
+        }
+        if (r.status === 403) throw new Error("forbidden");
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (body) {
+        if (!body || body.ok !== true || !Array.isArray(body.links)) {
+          throw new Error("bad_payload");
+        }
+        renderAssignments(body.links);
+      })
+      .catch(function (err) {
+        if (elAS.tableWrap) elAS.tableWrap.innerHTML = "";
+        if (elAS.count) elAS.count.textContent = "";
+        if (err && err.message === "session_expired") {
+          setAssignmentsStatus(SESSION_EXPIRED_MSG, "error");
+        } else if (err && err.message === "forbidden") {
+          setAssignmentsStatus(FORBIDDEN_MSG, "error");
+        } else {
+          setAssignmentsStatus("目前連不到後端，待會再重新整理看看。", "error");
+        }
+      });
+  }
+
+  function renderAssignments(list) {
+    if (elAS.count) {
+      elAS.count.textContent = list.length ? "共 " + list.length + " 筆" : "";
+    }
+    if (!list.length) {
+      setAssignmentsStatus(EMPTY_ASSIGNMENTS_MSG, "");
+      elAS.tableWrap.innerHTML = "";
+      return;
+    }
+    setAssignmentsStatus("", "");
+    var rows = list
+      .map(function (l) {
+        var active = l.status === "active";
+        var actions =
+          '<button class="btn btn-sm" data-action="role" data-id="' +
+          escapeHtml(l.id) +
+          '" data-role="' +
+          escapeHtml(l.role || "primary") +
+          '"' +
+          (active ? "" : " disabled") +
+          ">改角色</button>";
+        if (active) {
+          actions +=
+            '<button class="btn btn-sm" data-action="disable" data-id="' +
+            escapeHtml(l.id) +
+            '">停用</button>';
+        } else {
+          // 後端無「重新啟用既有關聯」端點；重新啟用＝以相同住民+人員+角色另建一筆 active 關聯。
+          actions +=
+            '<button class="btn btn-sm" data-action="enable"' +
+            ' data-resident="' +
+            escapeHtml(l.residentId || "") +
+            '" data-caregiver="' +
+            escapeHtml(l.caregiverId || "") +
+            '" data-role="' +
+            escapeHtml(l.role || "primary") +
+            '">重新啟用</button>';
+        }
+        return (
+          "<tr>" +
+          "<td>" + escapeHtml(l.residentName || l.residentId || "—") + "</td>" +
+          "<td>" + escapeHtml(l.caregiverName || l.caregiverId || "—") + "</td>" +
+          "<td>" + escapeHtml(roleLabel(l.role)) + "</td>" +
+          "<td>" + linkStatusBadge(l.status) + "</td>" +
+          "<td>" + escapeHtml(formatTime(l.createdAt)) + "</td>" +
+          "<td>" + escapeHtml(l.updatedAt ? formatTime(l.updatedAt) : "—") + "</td>" +
+          '<td class="row-actions">' +
+          actions +
+          "</td>" +
+          "</tr>"
+        );
+      })
+      .join("");
+    elAS.tableWrap.innerHTML =
+      '<table class="users-table"><thead><tr>' +
+      "<th>住民</th><th>照護人員</th><th>角色</th><th>狀態</th><th>建立時間</th><th>更新時間</th><th>操作</th>" +
+      "</tr></thead><tbody>" +
+      rows +
+      "</tbody></table>";
+    var btns = elAS.tableWrap.querySelectorAll("button[data-action]");
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].addEventListener("click", onAssignmentAction);
+    }
+  }
+
+  function onAssignmentAction(e) {
+    var btn = e.currentTarget;
+    var action = btn.getAttribute("data-action");
+    if (action === "role") {
+      openAssignmentRoleForm(
+        btn.getAttribute("data-id"),
+        btn.getAttribute("data-role")
+      );
+    } else if (action === "disable") {
+      disableAssignment(btn.getAttribute("data-id"));
+    } else if (action === "enable") {
+      enableAssignment(
+        btn.getAttribute("data-resident"),
+        btn.getAttribute("data-caregiver"),
+        btn.getAttribute("data-role")
+      );
+    }
+  }
+
+  function assignmentFormError(msg) {
+    if (!elAS.formStatus) return;
+    elAS.formStatus.textContent = msg || "";
+    elAS.formStatus.classList.toggle("error", !!msg);
+  }
+
+  function closeAssignmentForm() {
+    if (elAS.overlay) elAS.overlay.classList.add("hidden");
+  }
+
+  // 以後端真資料填 select：住民＝GET /api/admin/elders、照護人員＝GET /api/admin/caregivers。
+  // 不以假資料補；任一來源為空 → 清楚提示需先建立資料並停用送出。
+  function populateAssignmentSelects(onReady) {
+    elAS.fResident.innerHTML = '<option value="">載入中…</option>';
+    elAS.fCaregiver.innerHTML = '<option value="">載入中…</option>';
+    if (elAS.save) elAS.save.disabled = true;
+    var elders = null;
+    var caregivers = null;
+
+    function tryFinish() {
+      if (elders === null || caregivers === null) return;
+      var problems = [];
+      if (!elders.length) problems.push("請先到「健康分析」確認已有住民資料");
+      if (!caregivers.length) problems.push("請先在「照護人員管理」新增照護人員");
+      if (problems.length) {
+        elAS.fResident.innerHTML = elders.length
+          ? residentOptions(elders)
+          : '<option value="">尚無住民</option>';
+        elAS.fCaregiver.innerHTML = caregivers.length
+          ? caregiverOptions(caregivers)
+          : '<option value="">尚無照護人員</option>';
+        assignmentFormError("無法建立授權：" + problems.join("；") + "。");
+        if (elAS.save) elAS.save.disabled = true;
+        return;
+      }
+      elAS.fResident.innerHTML = residentOptions(elders);
+      elAS.fCaregiver.innerHTML = caregiverOptions(caregivers);
+      if (elAS.save) elAS.save.disabled = false;
+      if (onReady) onReady();
+    }
+
+    fetch(adminUrl("/elders"), { headers: adminAuthHeaders() })
+      .then(function (r) {
+        if (r.status === 401) {
+          handleSessionExpired();
+          throw new Error("session_expired");
+        }
+        if (r.status === 403) throw new Error("forbidden");
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        elders = Array.isArray(data) ? data : [];
+        tryFinish();
+      })
+      .catch(function (err) {
+        elders = [];
+        if (err && err.message === "session_expired") {
+          assignmentFormError(SESSION_EXPIRED_MSG);
+        } else if (err && err.message === "forbidden") {
+          assignmentFormError(FORBIDDEN_MSG);
+        } else {
+          assignmentFormError("讀不到住民清單，請稍後再試。");
+        }
+        tryFinish();
+      });
+
+    fetch(adminUrl("/caregivers"), { headers: adminAuthHeaders() })
+      .then(function (r) {
+        if (r.status === 401) {
+          handleSessionExpired();
+          throw new Error("session_expired");
+        }
+        if (r.status === 403) throw new Error("forbidden");
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (body) {
+        caregivers =
+          body && Array.isArray(body.caregivers)
+            ? body.caregivers.filter(function (c) {
+                return c.status === "active";
+              })
+            : [];
+        tryFinish();
+      })
+      .catch(function (err) {
+        caregivers = [];
+        if (err && err.message === "session_expired") {
+          assignmentFormError(SESSION_EXPIRED_MSG);
+        } else if (err && err.message === "forbidden") {
+          assignmentFormError(FORBIDDEN_MSG);
+        }
+        tryFinish();
+      });
+  }
+
+  function residentOptions(elders) {
+    return (
+      '<option value="">請選擇住民</option>' +
+      elders
+        .map(function (e) {
+          return (
+            '<option value="' +
+            escapeHtml(e.elderId) +
+            '">' +
+            escapeHtml(e.displayName || e.elderId) +
+            "</option>"
+          );
+        })
+        .join("")
+    );
+  }
+
+  function caregiverOptions(caregivers) {
+    return (
+      '<option value="">請選擇照護人員</option>' +
+      caregivers
+        .map(function (c) {
+          return (
+            '<option value="' +
+            escapeHtml(c.id) +
+            '">' +
+            escapeHtml(c.displayName || c.emailMasked || c.id) +
+            "</option>"
+          );
+        })
+        .join("")
+    );
+  }
+
+  // 新增授權：選 住民 + 照護人員 + 角色。
+  function openAssignmentForm() {
+    if (isCaregiverMode() || !getAdminToken()) {
+      setAssignmentsStatus(NEED_ADMIN_MSG, "error");
+      return;
+    }
+    if (elAS.form) elAS.form.reset();
+    assignmentFormError("");
+    elAS.fId.value = "";
+    elAS.fRole.value = "primary";
+    elAS.fResident.disabled = false;
+    elAS.fCaregiver.disabled = false;
+    elAS.formTitle.textContent = "新增授權指派";
+    if (elAS.overlay) elAS.overlay.classList.remove("hidden");
+    populateAssignmentSelects();
+  }
+
+  // 改角色：沿用同一表單，鎖住民 / 照護人員 select，只改角色（PATCH 只支援 role）。
+  function openAssignmentRoleForm(id, role) {
+    if (!id) return;
+    if (isCaregiverMode() || !getAdminToken()) {
+      setAssignmentsStatus(NEED_ADMIN_MSG, "error");
+      return;
+    }
+    assignmentFormError("");
+    elAS.fId.value = id;
+    elAS.fRole.value = ROLE_LABELS[role] ? role : "primary";
+    elAS.fResident.innerHTML = '<option value="">（沿用原住民）</option>';
+    elAS.fCaregiver.innerHTML = '<option value="">（沿用原照護人員）</option>';
+    elAS.fResident.disabled = true;
+    elAS.fCaregiver.disabled = true;
+    if (elAS.save) elAS.save.disabled = false;
+    elAS.formTitle.textContent = "修改授權角色";
+    if (elAS.overlay) elAS.overlay.classList.remove("hidden");
+  }
+
+  function submitAssignmentForm(e) {
+    if (e) e.preventDefault();
+    if (isCaregiverMode() || !getAdminToken()) {
+      assignmentFormError(NEED_ADMIN_MSG);
+      return;
+    }
+    var id = (elAS.fId.value || "").trim();
+    var role = elAS.fRole.value;
+    if (id) {
+      // 修改角色（PATCH，只送 role）。
+      submitProvisioning(
+        adminUrl("/resident-caregiver-links/" + encodeURIComponent(id)),
+        "PATCH",
+        { role: role },
+        LINK_ERROR_MSG,
+        assignmentFormError,
+        function () {
+          closeAssignmentForm();
+          loadAssignments();
+        }
+      );
+      return;
+    }
+    var residentId = elAS.fResident.value;
+    var caregiverId = elAS.fCaregiver.value;
+    if (!residentId || !caregiverId) {
+      assignmentFormError("請選擇住民與照護人員。");
+      return;
+    }
+    submitProvisioning(
+      adminUrl("/resident-caregiver-links"),
+      "POST",
+      { residentId: residentId, caregiverId: caregiverId, role: role },
+      LINK_ERROR_MSG,
+      assignmentFormError,
+      function () {
+        closeAssignmentForm();
+        loadAssignments(); // 建立成功後刷新列表。
+      }
+    );
+  }
+
+  // 共用：送出 provisioning 寫入請求並處理 401/403/業務錯誤。
+  function submitProvisioning(url, method, payload, errorMap, onError, onSuccess) {
+    onError("");
+    fetch(url, {
+      method: method,
+      headers: adminJsonHeaders(),
+      body: JSON.stringify(payload),
+    })
+      .then(function (r) {
+        if (r.status === 401) {
+          handleSessionExpired();
+          throw new Error("session_expired");
+        }
+        if (r.status === 403) throw new Error("forbidden");
+        return r.json().then(function (body) {
+          if (!r.ok || !body || body.ok !== true) {
+            throw new Error(
+              "api:" + (body && body.error ? body.error : "unknown")
+            );
+          }
+          return body;
+        });
+      })
+      .then(function () {
+        if (onSuccess) onSuccess();
+      })
+      .catch(function (err) {
+        var msg = err && err.message ? err.message : "";
+        if (msg === "session_expired") onError(SESSION_EXPIRED_MSG);
+        else if (msg === "forbidden") onError(FORBIDDEN_MSG);
+        else if (msg.indexOf("api:") === 0)
+          onError(provisioningErrorMessage(msg.slice(4), errorMap));
+        else onError("操作沒有成功，請稍後再試。");
+      });
+  }
+
+  function disableAssignment(id) {
+    if (!id) return;
+    if (isCaregiverMode() || !getAdminToken()) {
+      setAssignmentsStatus(NEED_ADMIN_MSG, "error");
+      return;
+    }
+    if (
+      !window.confirm(
+        "停用後，該照護人員將不能再查看此住民的資料。\n確定要停用嗎？"
+      )
+    ) {
+      return;
+    }
+    setAssignmentsStatus("更新中…", "");
+    fetch(adminUrl("/resident-caregiver-links/" + encodeURIComponent(id)), {
+      method: "DELETE",
+      headers: adminAuthHeaders(),
+    })
+      .then(function (r) {
+        if (r.status === 401) {
+          handleSessionExpired();
+          throw new Error("session_expired");
+        }
+        if (r.status === 403) throw new Error("forbidden");
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function () {
+        loadAssignments();
+        setAssignmentsStatus("已停用此授權。", "");
+      })
+      .catch(function (err) {
+        if (err && err.message === "session_expired") {
+          setAssignmentsStatus(SESSION_EXPIRED_MSG, "error");
+        } else if (err && err.message === "forbidden") {
+          setAssignmentsStatus(FORBIDDEN_MSG, "error");
+        } else {
+          setAssignmentsStatus("停用沒有成功，請稍後再試。", "error");
+        }
+      });
+  }
+
+  // 重新啟用：後端無 re-activate 端點，以相同住民+人員+角色另建一筆 active 關聯。
+  function enableAssignment(residentId, caregiverId, role) {
+    if (!residentId || !caregiverId) return;
+    if (isCaregiverMode() || !getAdminToken()) {
+      setAssignmentsStatus(NEED_ADMIN_MSG, "error");
+      return;
+    }
+    setAssignmentsStatus("更新中…", "");
+    submitProvisioning(
+      adminUrl("/resident-caregiver-links"),
+      "POST",
+      {
+        residentId: residentId,
+        caregiverId: caregiverId,
+        role: ROLE_LABELS[role] ? role : "primary",
+      },
+      LINK_ERROR_MSG,
+      function (msg) {
+        setAssignmentsStatus(msg || "", "error");
+      },
+      function () {
+        loadAssignments();
+        setAssignmentsStatus("已重新啟用此授權。", "");
+      }
+    );
+  }
+
   // 把目前 admin token 同步到所有分頁的權杖輸入框，存一次三頁通用。
   function syncAdminTokenInputs() {
     var token = getAdminToken();
@@ -2543,6 +3420,8 @@
         closeDetail();
         closeProductForm();
         closeOrderDetail();
+        closeCaregiverForm();
+        closeAssignmentForm();
       }
     });
 
@@ -2635,6 +3514,49 @@
         if (e.target === elO.overlay) closeOrderDetail();
       });
     }
+
+    // CR-0044 照護人員管理分頁（super_admin-only）。
+    if (elCG.tab) {
+      elCG.tab.addEventListener("click", function () {
+        showView("caregivers");
+      });
+    }
+    if (elCG.refresh) elCG.refresh.addEventListener("click", loadCaregivers);
+    if (elCG.add) {
+      elCG.add.addEventListener("click", function () {
+        openCaregiverForm(null);
+      });
+    }
+    if (elCG.form) elCG.form.addEventListener("submit", submitCaregiverForm);
+    if (elCG.formClose) elCG.formClose.addEventListener("click", closeCaregiverForm);
+    if (elCG.formCancel) elCG.formCancel.addEventListener("click", closeCaregiverForm);
+    if (elCG.overlay) {
+      elCG.overlay.addEventListener("click", function (e) {
+        if (e.target === elCG.overlay) closeCaregiverForm();
+      });
+    }
+
+    // CR-0044 住民授權指派分頁（super_admin-only）。
+    if (elAS.tab) {
+      elAS.tab.addEventListener("click", function () {
+        showView("assignments");
+      });
+    }
+    if (elAS.refresh) elAS.refresh.addEventListener("click", loadAssignments);
+    if (elAS.add) {
+      elAS.add.addEventListener("click", function () {
+        openAssignmentForm();
+      });
+    }
+    if (elAS.form) elAS.form.addEventListener("submit", submitAssignmentForm);
+    if (elAS.formClose) elAS.formClose.addEventListener("click", closeAssignmentForm);
+    if (elAS.formCancel) elAS.formCancel.addEventListener("click", closeAssignmentForm);
+    if (elAS.overlay) {
+      elAS.overlay.addEventListener("click", function (e) {
+        if (e.target === elAS.overlay) closeAssignmentForm();
+      });
+    }
+
     syncAdminTokenInputs();
     applyAuthModeUi();
 

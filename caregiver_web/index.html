@@ -79,6 +79,12 @@
         <button id="tab-orders" class="view-tab" type="button" role="tab">
           訂單管理
         </button>
+        <button id="tab-caregivers" class="view-tab" type="button" role="tab">
+          照護人員管理
+        </button>
+        <button id="tab-assignments" class="view-tab" type="button" role="tab">
+          住民授權指派
+        </button>
       </nav>
 
       <div id="view-alerts">
@@ -452,6 +458,54 @@
         </section>
       </section>
 
+      <!-- 照護人員管理 view（CR-0044，super_admin-only）：建立 / 編輯 / 停用 caregiver 帳號 -->
+      <section id="view-caregivers" class="view-caregivers hidden" aria-hidden="true">
+        <section class="list-section">
+          <div class="list-head">
+            <h2 class="section-title">照護人員管理</h2>
+            <span id="caregivers-count" class="list-count"></span>
+          </div>
+          <p class="hint care-disclaimer">
+            在這裡建立照護人員帳號，並綁定其 Firebase 登入身分。照護人員不在此設定密碼，
+            登入一律使用自己的 Firebase 帳號。此功能僅限管理者使用。
+          </p>
+
+          <div class="panel-head">
+            <div class="row">
+              <button id="caregivers-refresh" class="btn">重新整理</button>
+              <button id="caregiver-add" class="btn btn-primary">＋ 新增照護人員</button>
+            </div>
+          </div>
+
+          <p id="caregivers-status" class="status-message"></p>
+          <div id="caregivers-table-wrap" class="users-table-wrap"></div>
+        </section>
+      </section>
+
+      <!-- 住民授權指派 view（CR-0044，super_admin-only）：建立 / 改角色 / 停用授權關聯 -->
+      <section id="view-assignments" class="view-assignments hidden" aria-hidden="true">
+        <section class="list-section">
+          <div class="list-head">
+            <h2 class="section-title">住民授權指派</h2>
+            <span id="assignments-count" class="list-count"></span>
+          </div>
+          <p class="hint care-disclaimer">
+            指派哪位照護人員可以查看哪位住民的照護提醒與分析。停用授權後，該照護人員會立即看不到該住民的資料。
+            此功能僅限管理者使用。
+          </p>
+
+          <div class="panel-head">
+            <div class="row">
+              <button id="assignments-refresh" class="btn">重新整理</button>
+              <button id="assignment-add" class="btn btn-primary">＋ 新增授權指派</button>
+            </div>
+          </div>
+
+          <p id="assignments-status" class="status-message"></p>
+          <div id="assignments-table-wrap" class="users-table-wrap"></div>
+        </section>
+      </section>
+
       <!-- 後端連線設定（次要，平常收合） -->
       <details class="settings">
         <summary>連線設定</summary>
@@ -568,6 +622,82 @@
           <button id="order-detail-close" class="btn-close" aria-label="關閉">×</button>
         </div>
         <div id="order-detail-body" class="modal-body"></div>
+      </div>
+    </div>
+
+    <!-- 照護人員 新增 / 編輯 modal（CR-0044） -->
+    <div id="caregiver-overlay" class="overlay hidden">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="caregiver-form-title">
+        <div class="modal-head">
+          <h2 id="caregiver-form-title">新增照護人員</h2>
+          <button id="caregiver-form-close" class="btn-close" aria-label="關閉">×</button>
+        </div>
+        <div class="modal-body">
+          <form id="caregiver-form" autocomplete="off">
+            <input type="hidden" id="cgf-id" />
+            <div class="form-grid">
+              <div class="form-field form-field-full">
+                <label class="field-label" for="cgf-name">顯示名稱</label>
+                <input id="cgf-name" type="text" class="text-input" required />
+              </div>
+              <div class="form-field form-field-full">
+                <label class="field-label" for="cgf-email">Email</label>
+                <input id="cgf-email" type="email" class="text-input" autocomplete="off" />
+                <p class="hint" id="cgf-email-hint"></p>
+              </div>
+              <div class="form-field form-field-full">
+                <label class="field-label" for="cgf-firebase">Firebase UID（選填）</label>
+                <input id="cgf-firebase" type="text" class="text-input" placeholder="尚未取得可留空，狀態會是「待綁定」" />
+                <p class="hint">
+                  照護人員以 Firebase 登入後會取得自己的 UID，由機構轉交後填入這裡完成綁定。留空代表稍後再綁定。
+                </p>
+              </div>
+            </div>
+            <p id="caregiver-form-status" class="status-message"></p>
+            <div class="form-actions">
+              <button type="button" id="caregiver-form-cancel" class="btn">取消</button>
+              <button type="submit" id="caregiver-form-save" class="btn btn-primary">儲存</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- 住民授權指派 新增 / 編輯 modal（CR-0044） -->
+    <div id="assignment-overlay" class="overlay hidden">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="assignment-form-title">
+        <div class="modal-head">
+          <h2 id="assignment-form-title">新增授權指派</h2>
+          <button id="assignment-form-close" class="btn-close" aria-label="關閉">×</button>
+        </div>
+        <div class="modal-body">
+          <form id="assignment-form" autocomplete="off">
+            <input type="hidden" id="asf-id" />
+            <div class="form-grid">
+              <div class="form-field form-field-full">
+                <label class="field-label" for="asf-resident">住民</label>
+                <select id="asf-resident" class="select"></select>
+              </div>
+              <div class="form-field form-field-full">
+                <label class="field-label" for="asf-caregiver">照護人員</label>
+                <select id="asf-caregiver" class="select"></select>
+              </div>
+              <div class="form-field form-field-full">
+                <label class="field-label" for="asf-role">授權角色</label>
+                <select id="asf-role" class="select">
+                  <option value="primary">主要照護</option>
+                  <option value="secondary">備援照護</option>
+                  <option value="viewer">唯讀</option>
+                </select>
+              </div>
+            </div>
+            <p id="assignment-form-status" class="status-message"></p>
+            <div class="form-actions">
+              <button type="button" id="assignment-form-cancel" class="btn">取消</button>
+              <button type="submit" id="assignment-form-save" class="btn btn-primary">儲存</button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
 

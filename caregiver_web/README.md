@@ -73,6 +73,48 @@ API base URL 為可配置，解析順序（擇先非空者）：
 > 註：完整 Firebase 一鍵登入（免手動貼 token）為後續 CR；本版先提供清楚標示的
 > token 輸入入口。
 
+## 照護人員管理 / 住民授權指派（CR-0044，super_admin-only）
+
+兩個分頁僅在「管理者（super_admin）」身分顯示；caregiver 身分完全看不到入口，
+也不會發送這些管理 API。所有 provisioning 請求一律帶 super_admin token
+（`adminAuthHeaders()` / `adminJsonHeaders()`），對應後端 CR-0043 的 8 條
+`/api/admin/caregivers`、`/api/admin/resident-caregiver-links` 端點。
+
+### 如何進入
+
+以管理者身分登入（在頂部選「管理者」並貼上 `ADMIN_API_TOKEN`），上方分頁列即出現
+「照護人員管理」與「住民授權指派」。
+
+### 照護人員管理
+
+- **列表**：顯示名稱、Email（遮蔽）、Firebase 綁定狀態（已綁定 / 待綁定）、狀態
+  （啟用中 / 已停用）、建立 / 更新時間。
+- **新增照護人員**：填顯示名稱（必填）、Email（必填、需全系統唯一）、Firebase UID（選填）。
+  不設定密碼——照護人員一律以自己的 Firebase 帳號登入。Email 重複會顯示白話錯誤。
+- **綁定 Firebase UID**：照護人員以 Firebase 登入後取得自己的 UID，由機構轉交後，在該筆
+  「編輯」中填入 Firebase UID 完成綁定（即路線 B）。留空 = 待綁定。
+- **停用 / 啟用**：停用前提示「停用後，該照護人員將無法查看被指派住民資料。」停用即時生效
+  （該帳號讀受保護資料會被後端擋下）。
+
+### 住民授權指派
+
+- **列表**：住民、照護人員、角色（主要照護 / 備援照護 / 唯讀）、狀態（生效中 / 已停用）、
+  建立 / 更新時間。
+- **新增授權**：住民下拉來自既有住民清單（`/api/admin/elders`）、照護人員下拉來自
+  `/api/admin/caregivers`（皆為後端真資料，不用假資料）；角色採後端真值
+  **primary / secondary / viewer**。重複的有效授權會顯示白話錯誤。
+  任一來源為空時清楚提示需先建立資料。
+- **改角色**：只改授權角色（對應後端 `PATCH`，僅支援 role）。
+- **停用授權**：提示「停用後，該照護人員將不能再查看此住民的資料。」停用後該照護人員
+  立即看不到此住民的提醒與分析。
+- **重新啟用**：後端無「重新啟用既有關聯」端點，UI 以相同住民 + 照護人員 + 角色另建一筆
+  有效授權達成（呼叫既有建立端點，不改後端）。
+
+### 正式環境提醒
+
+`ADMIN_API_TOKEN` 是最高權限共享密鑰，**正式環境不可發給一般照護人員**。一般照護人員
+只應以自己的 Firebase 帳號登入（caregiver 身分），其可見範圍由授權指派決定。
+
 ## 狀態說明
 
 - `new`：新提醒（尚未查看）
@@ -83,5 +125,7 @@ API base URL 為可配置，解析順序（擇先非空者）：
 
 - 尚未內嵌 Firebase popup 登入；caregiver 需手動貼上自己的 ID Token / session 權杖（後續 CR 補）。
 - 只能依「new → acknowledged → resolved」標記狀態，無法復原為較早狀態（後端允許，但前端 UI 以單向流程為主）。
-- 尚無 super_admin 管理頁（caregiver 帳號管理 + 住民授權指派）。對應後端 provisioning 端點
-  已於 **CR-0043** 完成（見 `docs/CAREGIVER_PROVISIONING.md`）；caregiver_web 管理 UI = **CR-0044**（未做）。
+- super_admin 管理頁（caregiver 帳號管理 + 住民授權指派）已於 **CR-0044** 完成
+  （見上方「照護人員管理 / 住民授權指派」；對應後端 provisioning 端點 = **CR-0043**，
+  見 `docs/CAREGIVER_PROVISIONING.md`）。
+- 授權「重新啟用」以另建一筆有效關聯達成（後端無 re-activate 端點）；舊的已停用關聯會保留作稽核軌跡。
