@@ -1594,3 +1594,50 @@ code {
     grid-template-columns: 1fr;
   }
 }
+
+/* ===================================================================
+   CR-0042 身分 / 登入列（照護人員 vs 管理者）
+   =================================================================== */
+.auth-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.auth-status-line {
+  font-size: 16px;
+}
+.auth-status-label {
+  color: #5b6573;
+}
+.auth-status-value {
+  font-weight: 700;
+  color: #1f3a5f;
+}
+.auth-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.auth-mode-select {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.auth-mode-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  cursor: pointer;
+}
+.auth-token-row {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.auth-token-row .text-input {
+  flex: 1 1 240px;
+}
+.auth-hint {
+  margin: 0;
+}

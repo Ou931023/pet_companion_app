@@ -12,8 +12,32 @@
   // window.APP_CONFIG.apiBaseUrl = "https://api.your-domain.com/api"。
   // 本機開發若後端在另一個 port（例如 3001），可在頁面「連線設定」輸入後端位址。
   var DEFAULT_API_BASE = "/api";
-  // CR-0029：管理者權杖只存在本機 localStorage，不寫死、不進 Git。
+  // CR-0029：管理者（super_admin）權杖只存在本機 localStorage，不寫死、不進 Git。
+  // 這是「最高權限」共享 token（ADMIN_API_TOKEN），可檢視全部住民。
   var ADMIN_TOKEN_KEY = "caregiver_admin_token";
+  // CR-0042：照護人員（caregiver）登入權杖獨立儲存，與 super_admin token 分開，
+  // 絕不寫入 ADMIN_TOKEN_KEY。caregiver 只會看到被指派的住民。
+  var CAREGIVER_TOKEN_KEY = "caregiver_login_token";
+  // CR-0042：目前身分模式（'super_admin' | 'caregiver' | 'none'）。
+  var AUTH_MODE_KEY = "caregiver_auth_mode";
+
+  // CR-0042：友善文案（白話、非工程術語、不顯示完整 token / stack）。
+  var EMPTY_CAREGIVER_MSG =
+    "目前尚未被指派可查看的住民。請聯絡管理者確認權限設定。";
+  var SESSION_EXPIRED_MSG = "登入已失效，請重新登入";
+  var FORBIDDEN_MSG = "目前帳號沒有權限查看此資料";
+  var NEED_LOGIN_MSG = "請先在上方選擇身分並登入。";
+
+  // CR-0042：身分狀態。語意清楚區分 super_admin / caregiver / none。
+  // displayName 不在前端偽造（未做 Firebase 驗證），維持 null。
+  var authState = {
+    authMode: "none",
+    token: null,
+    displayName: null,
+    role: null,
+  };
+  // 401 之後設為 true，停止重複狂打受保護 API，直到使用者重新登入。
+  var sessionInvalid = false;
 
   // 同時支援權威四級（low/medium/high/urgent）與舊代碼（normal/attention）。
   var RISK_LABELS = {
@@ -250,11 +274,25 @@
 
   // ---- data ----
   function loadAlerts() {
-    setStatus("載入中…", false);
     el.list.innerHTML = "";
+    if (
+      !ensureCanFetch(function (msg) {
+        resetStats();
+        setListCount(0);
+        setStatus(msg, true);
+      })
+    ) {
+      return;
+    }
+    setStatus("載入中…", false);
     var url = getApiBase() + "/care-alerts" + buildQuery();
-    fetch(url, { headers: adminAuthHeaders() })
+    fetch(url, { headers: authHeaders() })
       .then(function (res) {
+        if (res.status === 401) {
+          handleSessionExpired();
+          throw new Error("session_expired");
+        }
+        if (res.status === 403) throw new Error("forbidden");
         if (!res.ok) throw new Error("HTTP " + res.status);
         return res.json();
       })
@@ -265,27 +303,50 @@
         renderStats(data.alerts);
         setListCount(data.alerts.length);
         if (data.alerts.length === 0) {
-          setStatus("目前一切平安，沒有需要關心的提醒 🌿", false);
+          // caregiver 無授權住民時，後端回空陣列 → 友善空狀態（不顯示全部）。
+          setStatus(
+            isCaregiverMode()
+              ? EMPTY_CAREGIVER_MSG
+              : "目前一切平安，沒有需要關心的提醒 🌿",
+            false
+          );
           return;
         }
         setStatus("", false);
         renderList(data.alerts);
       })
-      .catch(function () {
+      .catch(function (err) {
         resetStats();
         setListCount(0);
+        if (err && err.message === "session_expired") {
+          setStatus(SESSION_EXPIRED_MSG, true);
+          return;
+        }
+        if (err && err.message === "forbidden") {
+          setStatus(FORBIDDEN_MSG, true);
+          return;
+        }
         setStatus("暫時連不上後端，請確認服務是否已啟動後再重新整理", true);
       });
   }
 
   function openDetail(id) {
     if (!id) return;
+    if (sessionInvalid || !hasActiveToken()) {
+      handleSessionExpired();
+      return;
+    }
     el.detailBody.innerHTML = '<p class="status-message">載入中…</p>';
     el.overlay.classList.remove("hidden");
     fetch(getApiBase() + "/care-alerts/" + encodeURIComponent(id), {
-      headers: adminAuthHeaders(),
+      headers: authHeaders(),
     })
       .then(function (res) {
+        if (res.status === 401) {
+          handleSessionExpired();
+          throw new Error("session_expired");
+        }
+        if (res.status === 403) throw new Error("forbidden");
         if (!res.ok) throw new Error("HTTP " + res.status);
         return res.json();
       })
@@ -295,7 +356,18 @@
         }
         renderDetail(data.alert);
       })
-      .catch(function () {
+      .catch(function (err) {
+        if (err && err.message === "session_expired") {
+          el.detailBody.innerHTML =
+            '<p class="status-message error">' + SESSION_EXPIRED_MSG + "</p>";
+          return;
+        }
+        if (err && err.message === "forbidden") {
+          // 跨住民 / 無權限：顯示權限不足，不清 token。
+          el.detailBody.innerHTML =
+            '<p class="status-message error">' + FORBIDDEN_MSG + "</p>";
+          return;
+        }
         el.detailBody.innerHTML =
           '<p class="status-message error">無法取得此筆提醒詳情，請稍後再試</p>';
       });
@@ -409,10 +481,15 @@
 
     fetch(getApiBase() + "/care-alerts/" + encodeURIComponent(id) + "/status", {
       method: "PATCH",
-      headers: adminJsonHeaders(),
+      headers: authJsonHeaders(),
       body: JSON.stringify({ status: status }),
     })
       .then(function (res) {
+        if (res.status === 401) {
+          handleSessionExpired();
+          throw new Error("session_expired");
+        }
+        if (res.status === 403) throw new Error("forbidden");
         if (!res.ok) throw new Error("HTTP " + res.status);
         return res.json();
       })
@@ -427,10 +504,18 @@
         );
         loadAlerts(); // 重新 fetch 列表 + 更新 Dashboard 統計
       })
-      .catch(function () {
+      .catch(function (err) {
         Array.prototype.forEach.call(buttons, function (b) {
           b.disabled = false;
         });
+        if (err && err.message === "session_expired") {
+          setDetailMsg(SESSION_EXPIRED_MSG, true);
+          return;
+        }
+        if (err && err.message === "forbidden") {
+          setDetailMsg(FORBIDDEN_MSG, true);
+          return;
+        }
         setDetailMsg("狀態更新失敗，請確認後端是否啟動", true);
       });
   }
@@ -662,14 +747,242 @@
 
   // ---- CR-0029 使用者管理 ----
 
+  // super_admin（最高權限）共享 token。只有 super_admin-only 端點才用它。
   function getAdminToken() {
     return (localStorage.getItem(ADMIN_TOKEN_KEY) || "").trim();
   }
 
-  // 帶 Admin token 的 fetch headers（無 token 時不帶，由後端回 401）。
+  // caregiver 登入權杖（Firebase ID Token / caregiver session token），
+  // 與 super_admin token 分開儲存，絕不存進 ADMIN_TOKEN_KEY。
+  function getCaregiverToken() {
+    return (localStorage.getItem(CAREGIVER_TOKEN_KEY) || "").trim();
+  }
+
+  function isSuperAdminMode() {
+    return authState.authMode === "super_admin";
+  }
+  function isCaregiverMode() {
+    return authState.authMode === "caregiver";
+  }
+
+  // CR-0042：依目前身分模式取出要帶的 token。
+  // super_admin → super_admin token；caregiver → caregiver token；none → 空。
+  function getActiveToken() {
+    if (isSuperAdminMode()) return getAdminToken();
+    if (isCaregiverMode()) return getCaregiverToken();
+    return "";
+  }
+  function hasActiveToken() {
+    return !!getActiveToken();
+  }
+
+  // CR-0042：統一的受驗證 API header helper（caregiver-or-admin 端點用）。
+  // 依 authMode 帶正確 token；不把 token 印到 console。
+  function authHeaders() {
+    var token = getActiveToken();
+    return token ? { Authorization: "Bearer " + token } : {};
+  }
+  function authJsonHeaders() {
+    var h = { "Content-Type": "application/json" };
+    var token = getActiveToken();
+    if (token) h.Authorization = "Bearer " + token;
+    return h;
+  }
+
+  // 帶 super_admin token 的 fetch headers（僅 super_admin-only 端點用：
+  // /admin/users、/admin/overview、marketplace admin）。無 token 時不帶。
   function adminAuthHeaders() {
     var token = getAdminToken();
     return token ? { Authorization: "Bearer " + token } : {};
+  }
+
+  // CR-0042：從 localStorage 還原身分狀態。
+  function loadAuthState() {
+    var mode = (localStorage.getItem(AUTH_MODE_KEY) || "").trim();
+    if (mode !== "super_admin" && mode !== "caregiver") {
+      // 向後相容：舊版只有 super_admin 共享 token、無 authMode 記錄。
+      mode = getAdminToken() ? "super_admin" : "none";
+    }
+    authState.authMode = mode;
+    authState.role = mode === "none" ? null : mode;
+    authState.token = mode === "none" ? null : getActiveToken();
+    authState.displayName = null; // 不偽造名稱（未在前端驗證 token）。
+  }
+
+  // CR-0042：登入 = 儲存對應 token + 設定模式（caregiver token 不進 admin key）。
+  function applyLogin(mode, token) {
+    if (mode === "super_admin") {
+      localStorage.setItem(ADMIN_TOKEN_KEY, token);
+    } else if (mode === "caregiver") {
+      localStorage.setItem(CAREGIVER_TOKEN_KEY, token);
+    } else {
+      return;
+    }
+    localStorage.setItem(AUTH_MODE_KEY, mode);
+    sessionInvalid = false;
+    loadAuthState();
+    syncAdminTokenInputs();
+    applyAuthModeUi();
+  }
+
+  // CR-0042：登出 = 清掉兩種 token 與模式，回到未登入。
+  function logout() {
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+    localStorage.removeItem(CAREGIVER_TOKEN_KEY);
+    localStorage.setItem(AUTH_MODE_KEY, "none");
+    sessionInvalid = false;
+    loadAuthState();
+    syncAdminTokenInputs();
+    applyAuthModeUi();
+  }
+
+  // CR-0042：受保護請求前的守門。無 token / session 失效 → 不發送請求。
+  function ensureCanFetch(onBlocked) {
+    if (sessionInvalid) {
+      if (onBlocked) onBlocked(SESSION_EXPIRED_MSG);
+      return false;
+    }
+    if (!hasActiveToken()) {
+      if (onBlocked) onBlocked(NEED_LOGIN_MSG);
+      return false;
+    }
+    return true;
+  }
+
+  // CR-0042：收到 401 → 標記 session 失效、提示重新登入、停止後續請求。
+  function handleSessionExpired() {
+    sessionInvalid = true;
+    showAuthMessage(SESSION_EXPIRED_MSG, true);
+    var bar = document.getElementById("auth-bar");
+    if (bar && bar.scrollIntoView) {
+      bar.scrollIntoView({ block: "start", behavior: "auto" });
+    }
+  }
+
+  // ---- CR-0042 身分 / 登入列 ----
+  var elA = {
+    bar: document.getElementById("auth-bar"),
+    statusValue: document.getElementById("auth-status-value"),
+    modeCaregiver: document.getElementById("auth-mode-caregiver"),
+    modeSuper: document.getElementById("auth-mode-super"),
+    tokenInput: document.getElementById("auth-token-input"),
+    login: document.getElementById("auth-login"),
+    logout: document.getElementById("auth-logout"),
+    hint: document.getElementById("auth-hint"),
+    message: document.getElementById("auth-message"),
+  };
+
+  var CAREGIVER_HINT =
+    "照護人員請貼上自己的登入權杖（Firebase 登入後取得的 ID Token，或機構提供的 caregiver session 權杖）。登入後只會看到您被指派的住民。完整的一鍵登入畫面為後續更新項目。";
+  var SUPER_ADMIN_HINT =
+    "管理者權杖（ADMIN_API_TOKEN）擁有最高權限、可檢視全部住民資料，正式環境請勿提供給一般照護人員。";
+
+  function showAuthMessage(text, isError) {
+    if (!elA.message) return;
+    elA.message.textContent = text || "";
+    elA.message.classList.toggle("error", !!isError);
+  }
+
+  // 目前 radio 選到的模式（未選時回 none）。
+  function selectedAuthMode() {
+    if (elA.modeSuper && elA.modeSuper.checked) return "super_admin";
+    if (elA.modeCaregiver && elA.modeCaregiver.checked) return "caregiver";
+    return "none";
+  }
+
+  function updateAuthHint() {
+    if (!elA.hint) return;
+    var mode = selectedAuthMode();
+    if (mode === "super_admin") elA.hint.textContent = SUPER_ADMIN_HINT;
+    else if (mode === "caregiver") elA.hint.textContent = CAREGIVER_HINT;
+    else elA.hint.textContent = CAREGIVER_HINT;
+  }
+
+  function updateAuthStatusUi() {
+    if (elA.statusValue) {
+      if (isSuperAdminMode()) {
+        elA.statusValue.textContent = "管理者（可檢視全部住民）";
+      } else if (isCaregiverMode()) {
+        elA.statusValue.textContent = "照護人員（僅檢視被指派的住民）";
+      } else {
+        elA.statusValue.textContent = "尚未登入";
+      }
+    }
+    if (elA.logout) {
+      elA.logout.classList.toggle("hidden", authState.authMode === "none");
+    }
+  }
+
+  // CR-0042：依身分模式調整入口。caregiver 不顯示 super_admin-only 分頁。
+  function applyAuthModeUi() {
+    var caregiver = isCaregiverMode();
+    [
+      elU && elU.tabUsers,
+      elP && elP.tabProducts,
+      elO && elO.tabOrders,
+    ].forEach(function (tab) {
+      if (tab) tab.classList.toggle("hidden", caregiver);
+    });
+    // caregiver 模式若正停在 super_admin-only 分頁，切回照護提醒。
+    if (caregiver) {
+      var name = currentViewName();
+      if (name === "users" || name === "products" || name === "orders") {
+        showView("alerts");
+      }
+    }
+    updateAuthStatusUi();
+  }
+
+  // 目前顯示中的分頁名稱（含 super_admin-only 分頁，供 applyAuthModeUi 判斷）。
+  function currentViewName() {
+    if (elH.viewHealth && !elH.viewHealth.classList.contains("hidden")) return "health";
+    if (elT.viewTasks && !elT.viewTasks.classList.contains("hidden")) return "tasks";
+    if (elU.viewUsers && !elU.viewUsers.classList.contains("hidden")) return "users";
+    if (elP.viewProducts && !elP.viewProducts.classList.contains("hidden")) return "products";
+    if (elO.viewOrders && !elO.viewOrders.classList.contains("hidden")) return "orders";
+    return "alerts";
+  }
+
+  // 重新載入目前分頁資料（登入後刷新）。
+  function reloadActiveView() {
+    var name = currentViewName();
+    if (name === "alerts") loadAlerts();
+    else if (name === "health") {
+      loadHealthOverview();
+      loadElderList();
+    } else if (name === "tasks") loadDailyTasks();
+    else if (name === "users") loadUsers();
+    else if (name === "products") loadProducts();
+    else if (name === "orders") loadOrders();
+    else loadAlerts();
+  }
+
+  function onLoginClick() {
+    var mode = selectedAuthMode();
+    if (mode === "none") {
+      showAuthMessage("請先選擇身分（照護人員或管理者）。", true);
+      return;
+    }
+    var token = elA.tokenInput ? (elA.tokenInput.value || "").trim() : "";
+    if (!token) {
+      showAuthMessage("請貼上登入權杖再登入。", true);
+      return;
+    }
+    applyLogin(mode, token);
+    if (elA.tokenInput) elA.tokenInput.value = "";
+    // 不宣稱「已驗證」；實際由後端回應決定（401 → 重新登入）。
+    showAuthMessage(
+      mode === "caregiver"
+        ? "正在以照護人員身分載入資料…"
+        : "正在以管理者身分載入資料…",
+      false
+    );
+    reloadActiveView();
+  }
+
+  function onLogoutClick() {
+    logout();
+    showAuthMessage("已登出。", false);
   }
 
   function authProviderLabel(provider) {
@@ -741,6 +1054,15 @@
   function loadUsers() {
     elU.usersTableWrap.innerHTML = "";
     elU.usersCount.textContent = "";
+    // 使用者管理為 super_admin-only：caregiver 顯示權限不足，不打 API。
+    if (isCaregiverMode()) {
+      setUsersStatus(FORBIDDEN_MSG, "error");
+      return;
+    }
+    if (sessionInvalid) {
+      setUsersStatus(SESSION_EXPIRED_MSG, "error");
+      return;
+    }
     if (!getAdminToken()) {
       setUsersStatus("請先在下方輸入管理者權杖（Admin Token），再重新整理。", "error");
       return;
@@ -748,9 +1070,11 @@
     setUsersStatus("使用者資料載入中...", "");
     fetch(adminUrl("/users"), { headers: adminAuthHeaders() })
       .then(function (res) {
-        if (res.status === 401 || res.status === 403) {
-          throw new Error("unauthorized");
+        if (res.status === 401) {
+          handleSessionExpired();
+          throw new Error("session_expired");
         }
+        if (res.status === 403) throw new Error("forbidden");
         if (!res.ok) throw new Error("HTTP " + res.status);
         return res.json();
       })
@@ -761,11 +1085,10 @@
         renderUsers(body.users);
       })
       .catch(function (err) {
-        if (err && err.message === "unauthorized") {
-          setUsersStatus(
-            "管理者權杖無效或未授權，請確認 Admin Token 是否正確。",
-            "error"
-          );
+        if (err && err.message === "session_expired") {
+          setUsersStatus(SESSION_EXPIRED_MSG, "error");
+        } else if (err && err.message === "forbidden") {
+          setUsersStatus(FORBIDDEN_MSG, "error");
         } else {
           setUsersStatus(
             "使用者資料載入失敗，請確認後端與資料庫是否已啟動。",
@@ -905,39 +1228,87 @@
 
   // GET /api/admin/daily-care-tasks → 任務 + 最新 submission（含 AI 結果）。
   // 後端連不到時 mock-safe：顯示白話訊息、清空統計，不 crash、不假裝有資料。
+  function clearDailyTaskStats() {
+    ["statTotal", "statCompleted", "statPending", "statReview", "statMissed"].forEach(
+      function (k) {
+        if (elT[k]) elT[k].textContent = "—";
+      }
+    );
+    if (elT.taskList) elT.taskList.innerHTML = "";
+  }
+
   function loadDailyTasks() {
+    if (
+      !ensureCanFetch(function (msg) {
+        clearDailyTaskStats();
+        if (elT.tasksStatus) elT.tasksStatus.textContent = msg;
+      })
+    ) {
+      return;
+    }
     var filter = elT.tasksFilter ? elT.tasksFilter.value : "";
     var url = adminUrl("/daily-care-tasks");
     if (filter) url += "?status=" + encodeURIComponent(filter);
     if (elT.tasksStatus) elT.tasksStatus.textContent = "載入中…";
 
-    fetch(url, { headers: adminAuthHeaders() })
+    fetch(url, { headers: authHeaders() })
       .then(function (r) {
+        if (r.status === 401) {
+          handleSessionExpired();
+          throw new Error("session_expired");
+        }
+        if (r.status === 403) throw new Error("forbidden");
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
       })
       .then(function (data) {
         var tasks = data && Array.isArray(data.tasks) ? data.tasks : [];
         renderDailyTasks(tasks);
-        if (elT.tasksStatus) elT.tasksStatus.textContent = "";
-      })
-      .catch(function () {
-        ["statTotal", "statCompleted", "statPending", "statReview", "statMissed"].forEach(
-          function (k) {
-            if (elT[k]) elT[k].textContent = "—";
-          }
-        );
-        if (elT.taskList) elT.taskList.innerHTML = "";
         if (elT.tasksStatus) {
-          elT.tasksStatus.textContent = "目前連不到後端，待會再重新整理看看。";
+          // caregiver 無授權住民 → 空清單，顯示友善空狀態。
+          elT.tasksStatus.textContent =
+            tasks.length === 0 && isCaregiverMode() ? EMPTY_CAREGIVER_MSG : "";
+        }
+      })
+      .catch(function (err) {
+        clearDailyTaskStats();
+        if (elT.tasksStatus) {
+          if (err && err.message === "session_expired") {
+            elT.tasksStatus.textContent = SESSION_EXPIRED_MSG;
+          } else if (err && err.message === "forbidden") {
+            elT.tasksStatus.textContent = FORBIDDEN_MSG;
+          } else {
+            elT.tasksStatus.textContent = "目前連不到後端，待會再重新整理看看。";
+          }
         }
       });
   }
 
-  // GET /api/admin/overview → 六指標
+  function clearHealthOverview() {
+    ["ovTotal", "ovActive", "ovAlerts", "ovHighrisk", "ovEmotion", "ovCognitive"].forEach(
+      function (k) {
+        elH[k].textContent = "—";
+      }
+    );
+  }
+
+  // GET /api/admin/overview → 六指標。此端點為 super_admin-only，
+  // caregiver 模式不打 API（避免一直 403 洗版），整體概況留「—」。
   function loadHealthOverview() {
+    if (isCaregiverMode()) {
+      clearHealthOverview();
+      return;
+    }
+    if (sessionInvalid || !getAdminToken()) {
+      clearHealthOverview();
+      return;
+    }
     fetch(adminUrl("/overview"), { headers: adminAuthHeaders() })
       .then(function (r) {
+        if (r.status === 401) {
+          handleSessionExpired();
+          throw new Error("session_expired");
+        }
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
       })
@@ -950,35 +1321,53 @@
         elH.ovCognitive.textContent = o.cognitiveDeclineElders;
       })
       .catch(function () {
-        ["ovTotal", "ovActive", "ovAlerts", "ovHighrisk", "ovEmotion", "ovCognitive"].forEach(
-          function (k) {
-            elH[k].textContent = "—";
-          }
-        );
+        clearHealthOverview();
       });
   }
 
-  // GET /api/admin/elders → 長者列表
+  // GET /api/admin/elders → 長者列表（caregiver-capable，後端依授權住民過濾）。
   function loadElderList() {
+    if (
+      !ensureCanFetch(function (msg) {
+        elH.elderListStatus.textContent = msg;
+        elH.elderList.innerHTML = "";
+      })
+    ) {
+      return;
+    }
     elH.elderListStatus.textContent = "載入中…";
-    fetch(adminUrl("/elders"), { headers: adminAuthHeaders() })
+    fetch(adminUrl("/elders"), { headers: authHeaders() })
       .then(function (r) {
+        if (r.status === 401) {
+          handleSessionExpired();
+          throw new Error("session_expired");
+        }
+        if (r.status === 403) throw new Error("forbidden");
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
       })
       .then(function (rows) {
         if (!Array.isArray(rows) || rows.length === 0) {
-          elH.elderListStatus.textContent = "目前沒有長者資料。";
+          // caregiver 無授權住民 → 空陣列 → 友善空狀態。
+          elH.elderListStatus.textContent = isCaregiverMode()
+            ? EMPTY_CAREGIVER_MSG
+            : "目前沒有長者資料。";
           elH.elderList.innerHTML = "";
           return;
         }
         elH.elderListStatus.textContent = "";
         renderElderList(rows);
       })
-      .catch(function () {
-        elH.elderListStatus.textContent =
-          "暫時連不上後端，請確認服務已啟動後再重新整理。";
+      .catch(function (err) {
         elH.elderList.innerHTML = "";
+        if (err && err.message === "session_expired") {
+          elH.elderListStatus.textContent = SESSION_EXPIRED_MSG;
+        } else if (err && err.message === "forbidden") {
+          elH.elderListStatus.textContent = FORBIDDEN_MSG;
+        } else {
+          elH.elderListStatus.textContent =
+            "暫時連不上後端，請確認服務已啟動後再重新整理。";
+        }
       });
   }
 
@@ -1042,11 +1431,22 @@
   // GET /api/admin/elders/:elderId → 個人完整分析
   function loadElderAnalysis(elderId) {
     elH.elderAnalysis.classList.add("hidden");
+    if (sessionInvalid || !hasActiveToken()) {
+      elH.healthStatus.textContent = sessionInvalid
+        ? SESSION_EXPIRED_MSG
+        : NEED_LOGIN_MSG;
+      return;
+    }
     elH.healthStatus.textContent = "載入中…";
     fetch(adminUrl("/elders/" + encodeURIComponent(elderId)), {
-      headers: adminAuthHeaders(),
+      headers: authHeaders(),
     })
       .then(function (r) {
+        if (r.status === 401) {
+          handleSessionExpired();
+          throw new Error("session_expired");
+        }
+        if (r.status === 403) throw new Error("forbidden");
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
       })
@@ -1060,9 +1460,16 @@
         renderHealthAlerts(a.careAlerts || []);
         elH.elderAnalysis.classList.remove("hidden");
       })
-      .catch(function () {
-        elH.healthStatus.textContent =
-          "暫時讀不到這位長者的健康分析，請稍後再試。";
+      .catch(function (err) {
+        if (err && err.message === "session_expired") {
+          elH.healthStatus.textContent = SESSION_EXPIRED_MSG;
+        } else if (err && err.message === "forbidden") {
+          // 跨住民 / 無權限：權限不足，不清 token。
+          elH.healthStatus.textContent = FORBIDDEN_MSG;
+        } else {
+          elH.healthStatus.textContent =
+            "暫時讀不到這位長者的健康分析，請稍後再試。";
+        }
       });
   }
 
@@ -1843,6 +2250,17 @@
   }
 
   function loadOrders() {
+    // 訂單管理為 super_admin-only：caregiver 顯示權限不足，不打 API。
+    if (isCaregiverMode()) {
+      setOrdersStatus(FORBIDDEN_MSG, "error");
+      if (elO.list) elO.list.innerHTML = "";
+      if (elO.count) elO.count.textContent = "";
+      return;
+    }
+    if (sessionInvalid) {
+      setOrdersStatus(SESSION_EXPIRED_MSG, "error");
+      return;
+    }
     if (!getAdminToken()) {
       setOrdersStatus("請先輸入管理者權杖（Admin Token），再重新整理。", "error");
       if (elO.list) elO.list.innerHTML = "";
@@ -2069,13 +2487,40 @@
   }
 
   function saveAdminTokenFrom(inputEl, reload) {
-    localStorage.setItem(ADMIN_TOKEN_KEY, (inputEl.value || "").trim());
+    var t = (inputEl.value || "").trim();
+    localStorage.setItem(ADMIN_TOKEN_KEY, t);
+    // 這些分頁（使用者 / 商品 / 訂單）為 super_admin-only，貼上管理者權杖
+    // 即視為以 super_admin 身分登入。
+    if (t) localStorage.setItem(AUTH_MODE_KEY, "super_admin");
+    sessionInvalid = false;
+    loadAuthState();
     syncAdminTokenInputs();
+    applyAuthModeUi();
     if (reload) reload();
   }
 
   function init() {
     el.apiBase.value = getApiBase();
+
+    // CR-0042：先還原身分狀態，再決定要不要打受保護 API。
+    loadAuthState();
+
+    // 身分 / 登入列（CR-0042）。
+    if (elA.login) elA.login.addEventListener("click", onLoginClick);
+    if (elA.logout) elA.logout.addEventListener("click", onLogoutClick);
+    if (elA.modeCaregiver) {
+      elA.modeCaregiver.addEventListener("change", updateAuthHint);
+    }
+    if (elA.modeSuper) {
+      elA.modeSuper.addEventListener("change", updateAuthHint);
+    }
+    // 預設選到目前模式（caregiver 為主要對象，未登入時預選照護人員）。
+    if (isSuperAdminMode() && elA.modeSuper) {
+      elA.modeSuper.checked = true;
+    } else if (elA.modeCaregiver) {
+      elA.modeCaregiver.checked = true;
+    }
+    updateAuthHint();
 
     el.saveApiBase.addEventListener("click", function () {
       var next = normalizeBase(el.apiBase.value) || DEFAULT_API_BASE;
@@ -2191,6 +2636,7 @@
       });
     }
     syncAdminTokenInputs();
+    applyAuthModeUi();
 
     setupGuidedTour();
     loadAlerts();

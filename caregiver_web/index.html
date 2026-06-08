@@ -25,6 +25,40 @@
     </header>
 
     <main class="container">
+      <!-- 身分與登入（CR-0042）：清楚區分「照護人員」與「管理者」 -->
+      <section class="auth-bar panel" id="auth-bar" aria-label="登入身分">
+        <div class="auth-status-line">
+          <span class="auth-status-label">目前身分：</span>
+          <span id="auth-status-value" class="auth-status-value">尚未登入</span>
+        </div>
+        <div class="auth-controls">
+          <div class="auth-mode-select" role="radiogroup" aria-label="選擇登入身分">
+            <label class="auth-mode-option">
+              <input type="radio" name="auth-mode" id="auth-mode-caregiver" value="caregiver" />
+              照護人員（只看被指派的住民）
+            </label>
+            <label class="auth-mode-option">
+              <input type="radio" name="auth-mode" id="auth-mode-super" value="super_admin" />
+              管理者（可看全部住民）
+            </label>
+          </div>
+          <div class="row auth-token-row">
+            <input
+              id="auth-token-input"
+              type="password"
+              class="text-input"
+              placeholder="貼上登入權杖"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <button id="auth-login" class="btn btn-primary" type="button">登入</button>
+            <button id="auth-logout" class="btn hidden" type="button">登出</button>
+          </div>
+          <p id="auth-hint" class="hint auth-hint"></p>
+          <p id="auth-message" class="status-message"></p>
+        </div>
+      </section>
+
       <!-- 分頁：照護提醒 / 健康分析 -->
       <nav class="view-tabs" role="tablist" aria-label="檢視切換">
         <button id="tab-alerts" class="view-tab is-active" type="button" role="tab">

@@ -19,6 +19,13 @@
 //   - 正式環境請填真正的後端網域，例如 "https://api.your-domain.com/api"。
 //   - 留 null 代表使用同源相對路徑 "/api"。
 //   - 請勿把 localhost / 127.0.0.1 當成正式預設；本機開發位址只在 dev 設定。
+//
+// 身分 / 登入（CR-0042，見 docs/CAREGIVER_WEB_AUTH.md）：
+//   - 本檔「不放任何 token」。super_admin（ADMIN_API_TOKEN）與 caregiver
+//     （Firebase ID Token / caregiver session 權杖）一律在頁面頂部「身分與登入」列
+//     手動輸入，存在本機瀏覽器 localStorage（caregiver 與 admin token 使用不同 key）。
+//   - 正式環境請勿把 super_admin token 發給一般照護人員；照護人員應以自己的
+//     caregiver 權杖登入，後端會自動套住民範圍。
 
 window.APP_CONFIG = {
   // 正式部署：改成後端正式 API 位址，例如 "https://api.your-domain.com/api"。

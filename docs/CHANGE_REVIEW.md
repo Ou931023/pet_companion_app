@@ -1772,3 +1772,45 @@ caregiver_web API base URL 改為可配置、移除 localhost production 預設�
 - **commit 交付清單（architecture-agent 建議，交使用者決定 commit 時機，未自行 commit）**：
   - 納入 CR-0041 commit：`backend/stt_proxy/services/admin/adminAuthContext.js`、`backend/stt_proxy/services/admin/adminAuthContext.test.js`、`backend/stt_proxy/server.js`、`backend/stt_proxy/services/admin/adminEndpoint.test.js`、`backend/stt_proxy/services/careAlertAuthScopeEndpoint.test.js`、`backend/stt_proxy/services/careAlertListEndpoint.test.js`、`backend/stt_proxy/services/careAlertStatusEndpoint.test.js`、`backend/stt_proxy/package.json`、`backend/stt_proxy/.env.example`、`docs/AUTHORIZATION_MODEL.md`、`docs/CHANGE_REVIEW.md`、`tasks/CR-0041-caregiver-web-auth-integration-and-scoped-admin-session.md`。
   - **排除（噪音 / 非本案）**：`CLAUDE.md`、`ios/Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme`、`PROJECT_REPORT_DRAFT.md`（未追蹤草稿）。
+
+---
+
+### CR-0042 — Caregiver Web Auth UI, Role Header, 401/403 Handling, and Empty State（P1-6；CR-0041 後端正餐的前端收尾）
+- 提出 / owner agent：frontend-ux（依使用者指派；架構守門人於 CR-0041 §16「裁決」預先界定本 CR 範圍 = caregiver_web 完整 Firebase 登入 UI 子 CR）
+- 日期：2026-06-08
+- 動機 / 問題：CR-0041 已固定後端身分契約（`resolveAdminAuthContext`：super_admin 共享 token / caregiver Firebase idToken / 401 / 403），但 caregiver_web 仍只有單一共享 admin token 機制，無 caregiver 身分、無 401/403/empty-state 友善處理（稽核 P1-6）。
+- 影響範圍（檔案，皆 frontend-ux 擁有）：
+  - `caregiver_web/app.js`：身分狀態 + 統一 header helper + 401/403/empty-state + super_admin-only 入口控管。
+  - `caregiver_web/index.html`：身分 / 登入列（caregiver / super_admin 模式選擇 + token 輸入 + 登入/登出）。
+  - `caregiver_web/styles.css`：`.auth-bar` 等樣式。
+  - `caregiver_web/auth_mode.test.js`（新增，14 案）、`caregiver_web/README.md`、`caregiver_web/config.example.js`。
+  - `docs/CAREGIVER_WEB_AUTH.md`（新增）、`docs/CHANGE_REVIEW.md`（本筆）。
+- 觸及 🔒？：否。**未改任何 backend**（server.js / Realtime / Memory / `/api/care-alerts/notify` 皆未動）、未改 API response 契約、未動 `.env`。純前端消費既有 CR-0041 契約。
+- 牽涉哪些 agent：frontend-ux（本案）；消費 backend-agent 既有契約（無需 backend 改動）。
+- 風險等級：low（純前端、靜態頁、向後相容）。
+- 範圍決策（依任務 §5.3，架構守門人預先界定）：**最小可行 UI** —— 不在靜態頁堆完整 Firebase Web SDK popup 登入，改做清楚標示的 caregiver token / super_admin token 輸入；完整 Firebase 一鍵登入列為 follow-up CR。嚴禁 fake login / hardcode token / 未驗證進 dashboard / 把共享 super_admin token 當一般照護人員登入方式。
+- auth mode 設計：
+  - `authState = { authMode: 'super_admin'|'caregiver'|'none', token, displayName(null,不偽造), role }`。
+  - localStorage 三 key：super_admin `caregiver_admin_token`（沿用）、caregiver `caregiver_login_token`（**獨立 key，不與 admin 共用**）、模式 `caregiver_auth_mode`。
+  - 向後相容：無 `caregiver_auth_mode` 但有 admin token → 視為 super_admin（既有管理者體驗零變更）。
+- header / token 行為：
+  - 統一 helper `authHeaders()` / `authJsonHeaders()`（caregiver-or-admin 端點：care-alerts ×3、elders 列表 + 個人分析、daily-care-tasks）依 `authMode` 帶對的 token（`getActiveToken`）。
+  - `adminAuthHeaders()` / `adminJsonHeaders()` 僅 super_admin-only 端點用（users / overview / marketplace），只帶 super_admin token。
+  - caregiver token 不寫入 admin key、不命名為 admin token；無任何 `console.*` 印 token；無 token 時 `ensureCanFetch` 守門不發請求。
+- 401 / 403 / empty state：
+  - 401 → 「登入已失效，請重新登入」+ `sessionInvalid=true` 停止重複請求 + 捲回登入列；不顯示 stack / 完整 token / 工程錯誤碼。
+  - 403 → 「目前帳號沒有權限查看此資料」；不清 token；detail/update 顯權限不足、list 依語意顯權限不足或空狀態。
+  - caregiver 空授權 / API 回空陣列 → 「目前尚未被指派可查看的住民。請聯絡管理者確認權限設定。」不顯示全部資料 / 假資料 / undefined。
+  - super_admin-only 入口：caregiver 模式隱藏 users / products / orders 分頁；overview 不打 API（避免 403 洗版，留「—」）；loadUsers / loadOrders 對 caregiver 顯權限不足、不打 API。
+- 測試計畫 / 結果：`cd caregiver_web && node --test *.test.js` → **tests 69 / pass 69 / fail 0**（既有 55 仍綠 + 新增 14）。靜態來源檢查（與本資料夾既有測試一致，無 DOM runner）。
+- 紅線自評（任務 §9）：未改 `/notify`、未改 backend、未 hardcode caregiver id、未 fake token、未把 caregiver 當 super_admin、未把所有 API 改 super_admin-only、UI/console 不顯完整 token、空狀態不用假資料、未為過測試放寬後端授權。
+- 殘留 / follow-up：完整 Firebase popup 登入（免手貼 token）= 後續 CR；caregiver 帳號 + `resident_caregiver_links` provisioning = CR-0043；`/notify` caller 驗證 = FU-CR。
+- 完成狀態：✅ 完成（前端）。未自行 commit。
+- architecture-agent 裁決：✅ **核准並驗收**（2026-06-08，checkpoint review，read-only）。
+  - 觸 🔒 判定：**否**。改動僅 `caregiver_web/*` + `docs/*`，屬 frontend-ux-agent 自有範圍 + 文件。`git diff --name-only` 確認 **0 行 backend**（無 `backend/`、`server.js`、Realtime、Memory、`/api/care-alerts/notify`）；未動 API response 契約、未動 `.env`、未動依賴。
+  - 安全紅線覆驗（grep / read-only）：(a) caregiver token 只寫入 `CAREGIVER_TOKEN_KEY`、super_admin 只寫入 `ADMIN_TOKEN_KEY`，`applyLogin`/`saveAdminTokenFrom` 無交叉污染；(b) 無 `console.*` 印 token、無硬編 `Bearer <token>`、無 hardcode caregiver id/token、無 fake login（grep 命中之 "mock-safe" 僅後端連不到時的白話降級註解，非假資料）；(c) 向後相容：無 `caregiver_auth_mode` 但有 admin token → `loadAuthState` 回 super_admin，既有管理者 dashboard 行為零變更。
+  - 端點 header 映射覆驗：`authHeaders()`/`authJsonHeaders()`（caregiver-or-admin）僅用於 care-alerts ×3（L289/342/484）、daily-care-tasks（L1254）、elders 列表（L1339）、個人分析（L1442）；`adminAuthHeaders()`/`adminJsonHeaders()`（super_admin-only）僅用於 users（L1071）、overview（L1306，caregiver 模式直接 return 不打 API）、marketplace products/orders（L2196/2224/2274/2458）。與 CR-0041 caregiver-scoped 契約一致。
+  - 401/403/empty/隱藏覆驗：401→`handleSessionExpired`（`sessionInvalid=true` 阻止重複請求）；403→顯 `FORBIDDEN_MSG` 不清 token；caregiver 空授權→`EMPTY_CAREGIVER_MSG`（care-alerts L309 / daily-tasks L1270 / elders L1353，皆 server 回空、非假資料）；`applyAuthModeUi` 對 caregiver 隱藏 users/products/orders 分頁並自 super_admin-only view 切回 alerts。UI/CSS 無工程術語（grep SDP/ICE/DataChannel/socket/Demo/debug = NONE）。
+  - 驗收（architecture-agent 獨立重跑）：`cd caregiver_web && node --check app.js` OK、`node --check auth_mode.test.js` OK；`node --test *.test.js` → **tests 69 / pass 69 / fail 0**（55 基線 + 14 新）。backend 未改、未重跑（CR-0041 契約不變）。
+  - 殘留（已登錄、非本 CR blocker）：完整 Firebase popup 一鍵登入（免手貼 token）= follow-up CR；caregiver 帳號 + `resident_caregiver_links` provisioning = **CR-0043**；`/api/care-alerts/notify` caller 驗證 = **FU-CR**。
+  - Commit 建議（本 CR 應納入）：`caregiver_web/app.js`、`caregiver_web/index.html`、`caregiver_web/styles.css`、`caregiver_web/README.md`、`caregiver_web/config.example.js`、`caregiver_web/auth_mode.test.js`（新）、`docs/CAREGIVER_WEB_AUTH.md`（新）、`docs/CHANGE_REVIEW.md`（本筆）。**排除噪音**（與本 CR 無關，勿混入）：`CLAUDE.md`（root 中→英整檔重寫）、`ios/.../Runner.xcscheme`（CRLF/行尾噪音）、`PROJECT_REPORT_DRAFT.md`（未追蹤草稿）、`tasks/CR-0042-*.md`（任務筆記，依團隊慣例可另計）。
