@@ -14,12 +14,18 @@ process.env.NODE_ENV = "test";
 delete process.env.CARE_ALERT_TELEGRAM_COOLDOWN_ENABLED;
 delete process.env.CARE_ALERT_TELEGRAM_COOLDOWN_MS;
 
+// CR-0039：Care Alert 讀取 / 狀態變更路由掛了 requireAdmin。
+process.env.ADMIN_API_TOKEN = "test-admin-token";
+
 const app = require("../server");
 const { resetCooldown } = require("./careAlertCooldown");
 
 // require server 會載入 .env（可能含真 Telegram token）；清掉以確保不真的外送。
 delete process.env.TELEGRAM_BOT_TOKEN;
 delete process.env.TELEGRAM_CARE_CHAT_ID;
+
+// CR-0039：admin 授權 header（讀取 / 狀態變更路由）。
+const ADMIN_HEADERS = { Authorization: "Bearer test-admin-token" };
 
 function startServer() {
   return new Promise((resolve) => {
@@ -135,7 +141,9 @@ test("#3 medium 風險不觸發 Telegram，但仍持久化供 caregiver_web 查�
     assert.equal(r.body.telegram, "skipped_low_risk");
     assert.equal(spy.calls.length, 0, "medium 不應推 Telegram");
 
-    const list = await fetch(`${base}/api/care-alerts`).then((x) => x.json());
+    const list = await fetch(`${base}/api/care-alerts`, {
+      headers: ADMIN_HEADERS,
+    }).then((x) => x.json());
     assert.ok(
       list.alerts.some((a) => a.riskLevel === "medium"),
       "medium alert 仍應存入 store",
@@ -172,13 +180,15 @@ test("#6 alert status 可從 new → acknowledged → resolved", async () => {
   try {
     const base = `http://127.0.0.1:${server.address().port}`;
     await postNotify(base, baseBody({ riskLevel: "urgent" }));
-    const list = await fetch(`${base}/api/care-alerts?limit=1`).then((x) => x.json());
+    const list = await fetch(`${base}/api/care-alerts?limit=1`, {
+      headers: ADMIN_HEADERS,
+    }).then((x) => x.json());
     const id = list.alerts[0].id;
     assert.equal(list.alerts[0].status, "new");
 
     const ack = await fetch(`${base}/api/care-alerts/${id}/status`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...ADMIN_HEADERS },
       body: JSON.stringify({ status: "acknowledged" }),
     }).then((x) => x.json());
     assert.equal(ack.success, true);
@@ -187,7 +197,7 @@ test("#6 alert status 可從 new → acknowledged → resolved", async () => {
 
     const resolved = await fetch(`${base}/api/care-alerts/${id}/status`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...ADMIN_HEADERS },
       body: JSON.stringify({ status: "resolved" }),
     }).then((x) => x.json());
     assert.equal(resolved.success, true);

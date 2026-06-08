@@ -381,6 +381,9 @@ app.post("/api/agent/route", (req, res) => {
   }
 });
 
+// CR-0039：此為長者端 App 建立 Care Alert + 觸發通知的核心路徑（fire-and-forget），
+// 刻意不掛 requireAdmin（長者端不該持有 admin token，掛上會打斷核心流程）。
+// caller 端驗證（選項 A：長者 session 驗證）列為 follow-up CR，於 auth 強化（CR-0041）後處理。
 app.post("/api/care-alerts/notify", async (req, res) => {
   const body = req.body || {};
   const summary =
@@ -495,7 +498,7 @@ app.post("/api/care-alerts/notify", async (req, res) => {
   }
 });
 
-app.get("/api/care-alerts", async (req, res) => {
+app.get("/api/care-alerts", requireAdmin, async (req, res) => {
   try {
     const alerts = await listCareAlerts({
       limit: req.query.limit,
@@ -511,7 +514,7 @@ app.get("/api/care-alerts", async (req, res) => {
   }
 });
 
-app.get("/api/care-alerts/:id", async (req, res) => {
+app.get("/api/care-alerts/:id", requireAdmin, async (req, res) => {
   try {
     const alert = await getCareAlertById(req.params.id);
     if (!alert) {
@@ -524,7 +527,7 @@ app.get("/api/care-alerts/:id", async (req, res) => {
   }
 });
 
-app.patch("/api/care-alerts/:id/status", async (req, res) => {
+app.patch("/api/care-alerts/:id/status", requireAdmin, async (req, res) => {
   const status =
     req.body && typeof req.body.status === "string" ? req.body.status : "";
   try {
@@ -948,7 +951,7 @@ app.patch("/api/daily-care-tasks/:id/status", async (req, res) => {
 });
 
 // 管理者端：列出所有任務 + 每筆最新 submission（含 AI 結果），供 caregiver_web。
-app.get("/api/admin/daily-care-tasks", async (req, res) => {
+app.get("/api/admin/daily-care-tasks", requireAdmin, async (req, res) => {
   try {
     const elderId =
       typeof req.query.elderId === "string" && req.query.elderId.trim()
@@ -1003,7 +1006,7 @@ app.get("/api/daily-care-tasks/proof/:submissionId", async (req, res) => {
 // 只新增路由，不改既有路由形狀。生理 / 情緒 / 遊戲指標為確定性產生器供給，
 // elders / care alert 為真實資料。未知 elderId → 404 elder_not_found。
 
-app.get("/api/admin/overview", async (_req, res) => {
+app.get("/api/admin/overview", requireAdmin, async (_req, res) => {
   try {
     const overview = await adminAnalysis.getOverview();
     return res.json(overview);
@@ -1013,7 +1016,7 @@ app.get("/api/admin/overview", async (_req, res) => {
   }
 });
 
-app.get("/api/admin/elders", async (_req, res) => {
+app.get("/api/admin/elders", requireAdmin, async (_req, res) => {
   try {
     const elders = await adminAnalysis.listElderSummaries();
     return res.json(elders);
@@ -1023,7 +1026,7 @@ app.get("/api/admin/elders", async (_req, res) => {
   }
 });
 
-app.get("/api/admin/elders/:elderId", async (req, res) => {
+app.get("/api/admin/elders/:elderId", requireAdmin, async (req, res) => {
   try {
     const analysis = await adminAnalysis.getElderAnalysis(req.params.elderId);
     if (!analysis) {
@@ -1036,7 +1039,7 @@ app.get("/api/admin/elders/:elderId", async (req, res) => {
   }
 });
 
-app.get("/api/admin/elders/:elderId/physio", async (req, res) => {
+app.get("/api/admin/elders/:elderId/physio", requireAdmin, async (req, res) => {
   try {
     const physio = await adminAnalysis.getElderPhysio(req.params.elderId);
     if (!physio) {
@@ -1049,7 +1052,7 @@ app.get("/api/admin/elders/:elderId/physio", async (req, res) => {
   }
 });
 
-app.get("/api/admin/elders/:elderId/emotion", async (req, res) => {
+app.get("/api/admin/elders/:elderId/emotion", requireAdmin, async (req, res) => {
   try {
     const emotion = await adminAnalysis.getElderEmotion(req.params.elderId);
     if (!emotion) {
@@ -1062,7 +1065,7 @@ app.get("/api/admin/elders/:elderId/emotion", async (req, res) => {
   }
 });
 
-app.get("/api/admin/elders/:elderId/game-metrics", async (req, res) => {
+app.get("/api/admin/elders/:elderId/game-metrics", requireAdmin, async (req, res) => {
   try {
     const game = await adminAnalysis.getElderGameMetrics(req.params.elderId);
     if (!game) {

@@ -14,6 +14,8 @@ process.env.ELDERS_DATA_FILE = path.join(tmpDir, "elders.json");
 process.env.USERS_DATA_FILE = path.join(tmpDir, "users.json");
 process.env.CARE_ALERTS_DATA_FILE = path.join(tmpDir, "care_alerts.json");
 process.env.NODE_ENV = "test";
+// CR-0039：admin 讀取路由掛了 requireAdmin，測試以固定 admin token 通過擋門。
+process.env.ADMIN_API_TOKEN = "test-admin-token";
 
 const app = require("../../server");
 const { SEED_ELDERS } = require("./eldersSource");
@@ -21,6 +23,9 @@ const { SEED_ELDERS } = require("./eldersSource");
 // 確保測試絕不真的發 Telegram。
 delete process.env.TELEGRAM_BOT_TOKEN;
 delete process.env.TELEGRAM_CARE_CHAT_ID;
+
+// CR-0039：admin 授權 header。
+const ADMIN_HEADERS = { Authorization: "Bearer test-admin-token" };
 
 function startServer() {
   return new Promise((resolve) => {
@@ -34,7 +39,7 @@ test("GET /api/admin/overview 回六指標", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    const res = await fetch(`${baseUrl}/api/admin/overview`);
+    const res = await fetch(`${baseUrl}/api/admin/overview`, { headers: ADMIN_HEADERS });
     const body = await res.json();
     assert.equal(res.status, 200);
     for (const key of [
@@ -57,7 +62,7 @@ test("GET /api/admin/elders 回長者列表", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    const res = await fetch(`${baseUrl}/api/admin/elders`);
+    const res = await fetch(`${baseUrl}/api/admin/elders`, { headers: ADMIN_HEADERS });
     const body = await res.json();
     assert.equal(res.status, 200);
     assert.ok(Array.isArray(body));
@@ -77,7 +82,9 @@ test("GET /api/admin/elders/:elderId 個人分析 200", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    const res = await fetch(`${baseUrl}/api/admin/elders/${KNOWN_ELDER_ID}`);
+    const res = await fetch(`${baseUrl}/api/admin/elders/${KNOWN_ELDER_ID}`, {
+      headers: ADMIN_HEADERS,
+    });
     const body = await res.json();
     assert.equal(res.status, 200);
     assert.equal(body.profile.elderId, KNOWN_ELDER_ID);
@@ -94,7 +101,9 @@ test("GET /api/admin/elders/:elderId/physio 200", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    const res = await fetch(`${baseUrl}/api/admin/elders/${KNOWN_ELDER_ID}/physio`);
+    const res = await fetch(`${baseUrl}/api/admin/elders/${KNOWN_ELDER_ID}/physio`, {
+      headers: ADMIN_HEADERS,
+    });
     const body = await res.json();
     assert.equal(res.status, 200);
     assert.ok(Array.isArray(body.series));
@@ -108,7 +117,9 @@ test("GET /api/admin/elders/:elderId/emotion 200", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    const res = await fetch(`${baseUrl}/api/admin/elders/${KNOWN_ELDER_ID}/emotion`);
+    const res = await fetch(`${baseUrl}/api/admin/elders/${KNOWN_ELDER_ID}/emotion`, {
+      headers: ADMIN_HEADERS,
+    });
     const body = await res.json();
     assert.equal(res.status, 200);
     assert.ok(Array.isArray(body.series));
@@ -125,6 +136,7 @@ test("GET /api/admin/elders/:elderId/game-metrics 200", async () => {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
     const res = await fetch(
       `${baseUrl}/api/admin/elders/${KNOWN_ELDER_ID}/game-metrics`,
+      { headers: ADMIN_HEADERS },
     );
     const body = await res.json();
     assert.equal(res.status, 200);
@@ -146,11 +158,60 @@ test("未知 elderId → 404 elder_not_found（各 sub-route）", async () => {
       "/api/admin/elders/nobody/game-metrics",
     ];
     for (const p of paths) {
-      const res = await fetch(`${baseUrl}${p}`);
+      const res = await fetch(`${baseUrl}${p}`, { headers: ADMIN_HEADERS });
       const body = await res.json();
       assert.equal(res.status, 404, `${p} 應 404`);
       assert.equal(body.success, false);
       assert.equal(body.error, "elder_not_found");
+    }
+  } finally {
+    server.close();
+  }
+});
+
+// CR-0039：admin 讀取路由 requireAdmin 擋門 — 未帶 / 錯誤 token 應被擋下。
+test("admin 讀取路由 無 Authorization → 401 missing_admin_token", async () => {
+  const server = await startServer();
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const paths = [
+      "/api/admin/overview",
+      "/api/admin/elders",
+      `/api/admin/elders/${KNOWN_ELDER_ID}`,
+      `/api/admin/elders/${KNOWN_ELDER_ID}/physio`,
+      `/api/admin/elders/${KNOWN_ELDER_ID}/emotion`,
+      `/api/admin/elders/${KNOWN_ELDER_ID}/game-metrics`,
+    ];
+    for (const p of paths) {
+      const res = await fetch(`${baseUrl}${p}`);
+      const body = await res.json();
+      assert.equal(res.status, 401, `${p} 無 token 應 401`);
+      assert.deepEqual(body, { ok: false, error: "missing_admin_token" });
+    }
+  } finally {
+    server.close();
+  }
+});
+
+test("admin 讀取路由 錯誤 token → 403 admin_permission_required", async () => {
+  const server = await startServer();
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const paths = [
+      "/api/admin/overview",
+      "/api/admin/elders",
+      `/api/admin/elders/${KNOWN_ELDER_ID}`,
+      `/api/admin/elders/${KNOWN_ELDER_ID}/physio`,
+      `/api/admin/elders/${KNOWN_ELDER_ID}/emotion`,
+      `/api/admin/elders/${KNOWN_ELDER_ID}/game-metrics`,
+    ];
+    for (const p of paths) {
+      const res = await fetch(`${baseUrl}${p}`, {
+        headers: { Authorization: "Bearer wrong-token" },
+      });
+      const body = await res.json();
+      assert.equal(res.status, 403, `${p} 錯 token 應 403`);
+      assert.deepEqual(body, { ok: false, error: "admin_permission_required" });
     }
   } finally {
     server.close();

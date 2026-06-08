@@ -10,11 +10,16 @@ process.env.CARE_ALERTS_DATA_FILE = path.join(
   "care_alerts.json",
 );
 process.env.NODE_ENV = "test";
+// CR-0039：Care Alert 讀取 / 狀態變更路由掛了 requireAdmin。
+process.env.ADMIN_API_TOKEN = "test-admin-token";
 const app = require("../server");
 
 // 清掉 Telegram 設定，確保不真的發送（high/urgent 會走 telegram_not_configured → failed）。
 delete process.env.TELEGRAM_BOT_TOKEN;
 delete process.env.TELEGRAM_CARE_CHAT_ID;
+
+// CR-0039：admin 授權 header。
+const ADMIN_HEADERS = { Authorization: "Bearer test-admin-token" };
 
 // 注入「DB 可用但 query 必拋例外」的 mock pg：證明稽核寫入即使失敗，
 // 也被 service best-effort 吞掉，路由 response 完全不受影響、不致 unhandledRejection。
@@ -101,11 +106,13 @@ test("PATCH /api/care-alerts/:id/status：稽核寫入失敗不改成功回應",
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
     await postNotify(baseUrl);
-    const { alerts } = await (await fetch(`${baseUrl}/api/care-alerts`)).json();
+    const { alerts } = await (
+      await fetch(`${baseUrl}/api/care-alerts`, { headers: ADMIN_HEADERS })
+    ).json();
     const id = alerts[0].id;
     const res = await fetch(`${baseUrl}/api/care-alerts/${id}/status`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...ADMIN_HEADERS },
       body: JSON.stringify({ status: "acknowledged" }),
     });
     const body = await res.json();

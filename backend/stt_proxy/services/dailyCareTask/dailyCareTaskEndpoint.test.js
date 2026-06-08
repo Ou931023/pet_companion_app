@@ -16,8 +16,13 @@ process.env.OPENAI_API_KEY = "";
 process.env.PGVECTOR_ENABLED = "false";
 delete process.env.DATABASE_URL;
 process.env.NODE_ENV = "test";
+// CR-0039：/api/admin/daily-care-tasks 掛了 requireAdmin。
+process.env.ADMIN_API_TOKEN = "test-admin-token";
 
 const app = require("../../server");
+
+// CR-0039：admin 授權 header。
+const ADMIN_HEADERS = { Authorization: "Bearer test-admin-token" };
 
 function startServer() {
   return new Promise((resolve) => {
@@ -25,8 +30,8 @@ function startServer() {
   });
 }
 
-async function getJson(baseUrl, route) {
-  const r = await fetch(`${baseUrl}${route}`);
+async function getJson(baseUrl, route, headers = {}) {
+  const r = await fetch(`${baseUrl}${route}`, { headers });
   return { status: r.status, body: await r.json() };
 }
 
@@ -197,6 +202,7 @@ test("GET /api/admin/daily-care-tasks → 任務含最新 submission 與 AI 結�
     const admin = await getJson(
       baseUrl,
       "/api/admin/daily-care-tasks?elderId=elder-ep-admin",
+      ADMIN_HEADERS,
     );
     assert.equal(admin.status, 200);
     assert.equal(admin.body.tasks.length, 1);

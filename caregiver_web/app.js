@@ -253,7 +253,7 @@
     setStatus("載入中…", false);
     el.list.innerHTML = "";
     var url = getApiBase() + "/care-alerts" + buildQuery();
-    fetch(url)
+    fetch(url, { headers: adminAuthHeaders() })
       .then(function (res) {
         if (!res.ok) throw new Error("HTTP " + res.status);
         return res.json();
@@ -282,7 +282,9 @@
     if (!id) return;
     el.detailBody.innerHTML = '<p class="status-message">載入中…</p>';
     el.overlay.classList.remove("hidden");
-    fetch(getApiBase() + "/care-alerts/" + encodeURIComponent(id))
+    fetch(getApiBase() + "/care-alerts/" + encodeURIComponent(id), {
+      headers: adminAuthHeaders(),
+    })
       .then(function (res) {
         if (!res.ok) throw new Error("HTTP " + res.status);
         return res.json();
@@ -407,7 +409,7 @@
 
     fetch(getApiBase() + "/care-alerts/" + encodeURIComponent(id) + "/status", {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: adminJsonHeaders(),
       body: JSON.stringify({ status: status }),
     })
       .then(function (res) {
@@ -909,7 +911,7 @@
     if (filter) url += "?status=" + encodeURIComponent(filter);
     if (elT.tasksStatus) elT.tasksStatus.textContent = "載入中…";
 
-    fetch(url)
+    fetch(url, { headers: adminAuthHeaders() })
       .then(function (r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
@@ -934,7 +936,7 @@
 
   // GET /api/admin/overview → 六指標
   function loadHealthOverview() {
-    fetch(adminUrl("/overview"))
+    fetch(adminUrl("/overview"), { headers: adminAuthHeaders() })
       .then(function (r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
@@ -959,7 +961,7 @@
   // GET /api/admin/elders → 長者列表
   function loadElderList() {
     elH.elderListStatus.textContent = "載入中…";
-    fetch(adminUrl("/elders"))
+    fetch(adminUrl("/elders"), { headers: adminAuthHeaders() })
       .then(function (r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
@@ -1041,7 +1043,9 @@
   function loadElderAnalysis(elderId) {
     elH.elderAnalysis.classList.add("hidden");
     elH.healthStatus.textContent = "載入中…";
-    fetch(adminUrl("/elders/" + encodeURIComponent(elderId)))
+    fetch(adminUrl("/elders/" + encodeURIComponent(elderId)), {
+      headers: adminAuthHeaders(),
+    })
       .then(function (r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();

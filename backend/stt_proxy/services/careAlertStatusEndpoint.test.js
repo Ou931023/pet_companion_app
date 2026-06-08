@@ -10,11 +10,16 @@ process.env.CARE_ALERTS_DATA_FILE = path.join(
   "care_alerts.json",
 );
 process.env.NODE_ENV = "test";
+// CR-0039：Care Alert 讀取 / 狀態變更路由掛了 requireAdmin。
+process.env.ADMIN_API_TOKEN = "test-admin-token";
 const app = require("../server");
 
 // require server 會載入 .env（含真 Telegram token）；清掉以確保不真的發 Telegram。
 delete process.env.TELEGRAM_BOT_TOKEN;
 delete process.env.TELEGRAM_CARE_CHAT_ID;
+
+// CR-0039：admin 授權 header。
+const ADMIN_HEADERS = { Authorization: "Bearer test-admin-token" };
 
 beforeEach(() => {
   process.env.CARE_ALERTS_DATA_FILE = path.join(
@@ -48,14 +53,16 @@ function postNotify(baseUrl) {
 
 async function createAlertAndGetId(baseUrl) {
   await postNotify(baseUrl);
-  const { alerts } = await (await fetch(`${baseUrl}/api/care-alerts`)).json();
+  const { alerts } = await (
+    await fetch(`${baseUrl}/api/care-alerts`, { headers: ADMIN_HEADERS })
+  ).json();
   return alerts[0].id;
 }
 
 function patchStatus(baseUrl, id, body) {
   return fetch(`${baseUrl}/api/care-alerts/${id}/status`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...ADMIN_HEADERS },
     body: JSON.stringify(body),
   });
 }
@@ -139,10 +146,52 @@ test("PATCH 後 GET /api/care-alerts/:id 讀得到更新後 status", async () =>
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
     const id = await createAlertAndGetId(baseUrl);
     await patchStatus(baseUrl, id, { status: "resolved" });
-    const body = await (await fetch(`${baseUrl}/api/care-alerts/${id}`)).json();
+    const body = await (
+      await fetch(`${baseUrl}/api/care-alerts/${id}`, { headers: ADMIN_HEADERS })
+    ).json();
     assert.equal(body.success, true);
     assert.equal(body.alert.status, "resolved");
     assert.ok(body.alert.resolvedAt);
+  } finally {
+    server.close();
+  }
+});
+
+// CR-0039：PATCH 狀態變更為 admin 動作，未帶 / 錯誤 token 應被擋下。
+test("PATCH /api/care-alerts/:id/status 無 Authorization → 401 missing_admin_token", async () => {
+  const server = await startServer();
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const id = await createAlertAndGetId(baseUrl);
+    const res = await fetch(`${baseUrl}/api/care-alerts/${id}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "acknowledged" }),
+    });
+    const body = await res.json();
+    assert.equal(res.status, 401);
+    assert.deepEqual(body, { ok: false, error: "missing_admin_token" });
+  } finally {
+    server.close();
+  }
+});
+
+test("PATCH /api/care-alerts/:id/status 錯誤 token → 403 admin_permission_required", async () => {
+  const server = await startServer();
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const id = await createAlertAndGetId(baseUrl);
+    const res = await fetch(`${baseUrl}/api/care-alerts/${id}/status`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer wrong-token",
+      },
+      body: JSON.stringify({ status: "acknowledged" }),
+    });
+    const body = await res.json();
+    assert.equal(res.status, 403);
+    assert.deepEqual(body, { ok: false, error: "admin_permission_required" });
   } finally {
     server.close();
   }

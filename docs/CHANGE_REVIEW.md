@@ -1359,3 +1359,117 @@ caregiver_web API base URL 改為可配置、移除 localhost production 預設�
 | B5 | docs（`.env.example` 分區 / `ENVIRONMENT_SETUP.md` / `PRODUCTION_CONFIG_CHECKLIST.md`） | ✅ shipped |
 
 **CR-0042 blocker 登錄確認**：marketplace / dailyCareTask（JSON-only）在 production 由 guard 阻擋、無持久化保證，須待 PG 化（CR-0042）才能於 production 提供；已記於 §5.3.1、B2 落地說明、`PRODUCTION_CONFIG_CHECKLIST.md` §5 與 §8。屬已知且文件化限制，需產品確認接受。
+
+---
+
+### CR-0039 — Backend Authorization Boundary Part 1（Audit CR0033 §12 #2；原規劃代號「CR-0035」）
+- 提出 agent：architecture-agent（依使用者指派 + Audit CR0033 §12 第 2 項）
+- 日期：2026-06-08
+- 完成狀態：✅ 完成（Batch 1/2/3 已落地、測試全綠、architecture-agent 已驗收，2026-06-08）
+
+#### 0. 編號治理註記（重要）
+- 使用者 / 稽核 §12 把本案稱為「CR-0035 後端授權邊界 Part 1」，但帳本中 **CR-0035 已被佔用**（2026-06-03「搜尋來源政策」，本檔行 941）。稽核 §12 的整段規劃編號（CR-0034…CR-0047）與既有 live CR（CR-0035 搜尋、CR-0036 consent、CR-0037 mockFallback、CR-0038 Realtime）**全面撞號**；稽核報告自身的開頭（把 CR-0036/0037/0038 列為「已完成」）與 §12（把 0036/0038 重新指派為新工作）也互相矛盾。
+- 裁決：本案帳本正規 ID = **CR-0039**（帳本下一個空號），標題保留稽核別名以利追溯。§12 後續項目一律改用「下一個空號」分配，不再沿用 §12 字面編號。對照如下（避免再撞號）：
+  - §12 #2 後端授權邊界 Part 1 → **CR-0039**（本案）
+  - §12 #3 resident_caregiver_links + 授權範圍過濾 → 之後開 CR-0040
+  - §12 #4 production Firebase auth 強制（AUTH_ALLOW_MOCK=false fail-fast）→ 之後開 CR-0041
+  - （其餘 §12 項目於開立時依序取空號，並在該 CR 標註對應 §12 編號）
+
+#### 1. 動機 / 問題
+- 修補 Audit CR0033 的 **P0-1**（admin 讀取 API 多數未掛 `requireAdmin`，任何能連到後端者可讀住民情緒 / 生理 / 健康 / 遊戲指標）與 **P0-2 的「擋門」層**（Care Alert 讀取 / 狀態變更未驗證）。
+- 本案只做 **authentication（擋門）**：要求合法 admin 憑證才能到達上述讀取 / 管理路由。**不做** per-resident 授權範圍過濾（需 `resident_caregiver_links`，該表不存在＝P2-1）。
+
+#### 2. 擋門 vs 授權範圍過濾 — 邊界裁決
+- ✅ **CR-0039（本案）= authentication 擋門**：對既有未保護的 admin 讀取路由與 Care Alert 讀取 / 管理路由掛上**既有** `requireAdmin`（與 `/api/admin/users`、marketplace 一致）。
+- ⏭ **授權範圍過濾（依授權住民過濾 alert / elder 資料）= 另開 CR-0040**（Audit §12 #3），需先建 `resident_caregiver_links` schema。本案完成後，所有持 `ADMIN_API_TOKEN` 者仍可見全部住民（這是已知殘留風險，由 CR-0040 收斂；與稽核 P1-2「無 RBAC / 無住民 scope」一致）。
+- 理由：使用者任務 #3「檢查住民與照護人員授權關係」依賴尚不存在的關聯表；硬塞進本案會把「小批次擋門」變成「大改 + schema 變更」，違反最小可控修改。明確分界可獨立驗證、獨立回滾。
+
+#### 3. `/api/care-alerts/notify` 裁決 —— 採「選項 B」（本案不擋 /notify caller，列為明確 blocker follow-up）
+- 現況（已覆核）：`POST /api/care-alerts/notify`（server.js:384）是**長者端 App 建立 Care Alert + 觸發 Telegram 的核心路徑**；caller `lib/services/care_alert_notification_service.dart:36-50` 為 fire-and-forget，**只帶 `Content-Type`、不帶任何 auth**。這不是 admin 動作。
+- 裁決：**本案不對 /notify 掛任何驗證**。理由：
+  1. 紅線「不得擋掉長者端 Care Alert 建立流程」。掛 `requireAdmin` 會直接打斷長者端（且長者端永遠不該持有 admin token）。
+  2. 選項 A（改長者 Firebase session 驗證）是**正確的最終狀態**，但牽涉：(a) 長者端要把 session token 接進 fire-and-forget 的 notify 呼叫；(b) 依賴 production Firebase auth 強制（CR-0041 / Audit §12 #4）才有可信 session 可驗；(c) fire-and-forget 不可因驗證失敗而靜默漏報高風險 alert。這是跨前後端、體量大於「擋門 Part 1」的改動，應於 **auth 強化（CR-0041）之後**獨立成 CR。
+- **殘留風險（誠實記錄，blocker）**：/notify 在本案後仍可被未驗證端 POST → 可偽造 Care Alert + 觸發 Telegram（spam / 偽造警示）。現有緩解：`globalLimiter`（全域 rate limit）+ Care Alert cooldown + `invalid_payload` 形狀檢查；Telegram 僅 high/urgent 推播且有 cooldown。**正式上架前必須**以「選項 A：長者 session 驗證」收斂 → 開 **FU-CR：/notify caller 驗證（排程於 CR-0041 auth 強化之後，正式版 blocker）**。本案不視為已修 P0-2 全部，只修 P0-2 的「讀取 / 管理擋門」子集。
+
+#### 4. 影響範圍（檔案 + 行號，已覆核）
+- backend：`backend/stt_proxy/server.js`
+  - admin 讀取路由（掛 `requireAdmin`）：`/api/admin/daily-care-tasks`(951)、`/api/admin/overview`(1006)、`/api/admin/elders`(1016)、`/api/admin/elders/:elderId`(1026)、`/api/admin/elders/:elderId/physio`(1039)、`/api/admin/elders/:elderId/emotion`(1052)、`/api/admin/elders/:elderId/game-metrics`(1065)。
+  - Care Alert 讀取 / 管理路由（掛 `requireAdmin`）：`GET /api/care-alerts`(498)、`GET /api/care-alerts/:id`(514)、`PATCH /api/care-alerts/:id/status`(527)。
+  - **不動**：`POST /api/care-alerts/notify`(384)（見 §3）。
+  - 沿用既有中介層 `backend/stt_proxy/services/admin/requireAdmin.js`（不改其行為：無 token→401 `missing_admin_token`；token 不符 / 未設→403 `admin_permission_required`）。
+- 測試：`backend/stt_proxy/__tests__/`（或既有 test 目錄）新增本案路由的權限測試。
+- frontend：`caregiver_web/app.js`
+  - care-alerts fetch 補 header：列表 `fetch(url)`(256) + `buildQuery`、詳情 `fetch(.../:id)`(285) → 補 `adminAuthHeaders()`；狀態 PATCH `fetch(.../:id/status,{...})`(408) → headers 由 `{ "Content-Type": ... }` 改為 `adminJsonHeaders()`。
+  - admin-analytics fetch 補 `adminAuthHeaders()`：daily-care-tasks(912)、overview(937)、elders(962)、elders/:id(1044)。
+  - 沿用既有 `adminAuthHeaders()`(668) / `adminJsonHeaders()`(1598) / `getAdminToken()`(663)，不新增 token 機制。
+- 註：後端 `/elders/:id/physio|emotion|game-metrics`(1039/1052/1065) caregiver_web 目前未直接呼叫（走合併的 `/elders/:id`(1044)），但仍需掛驗證（defence-in-depth，這些路由獨立可達）。
+
+#### 5. 觸及 🔒？
+- 是。`server.js` 路由為 🔒（路由 / response 契約）。**但本案只加 middleware、不改任何成功路徑的 request/response 形狀**；新增的只有「未授權時的 401/403」錯誤回應（沿用 requireAdmin 既有格式 `{ ok:false, error }`）。需 architecture-agent 核准（本提案即核准）。
+- 不觸及：Realtime / SDP / DataChannel、Memory schema、Care Alert 共用資料結構、`.env` / token 值、`db/migrate.js`、`pubspec.yaml` / `package.json`。
+
+#### 6. 牽涉 agent
+- backend-agent：server.js 掛 `requireAdmin` + 後端測試（B2、B3）。
+- frontend-ux-agent：caregiver_web 補 auth header（B1）。
+- 不牽涉 realtime-voice-agent、companion-memory-agent（Care Alert 建立邏輯 /notify 不動）。
+
+#### 7. 風險等級：medium
+- 跨前後端契約（401/403 新增）+ caregiver_web 一旦後端啟用驗證、未帶 header 會 401。需嚴格控制落地順序（見 §8）。
+- 殘留：/notify 未擋（§3）、無住民 scope（§2）— 皆已明確轉後續 CR，非本案宣稱已修。
+
+#### 8. 批次切分（順序重要：先前端帶 header，再後端啟用驗證，避免管理端 401 空窗）
+- **Batch 1 — frontend-ux-agent（先做，向下相容、可獨立合併）**
+  - 範圍：`caregiver_web/app.js` 為 care-alerts(256/285) 與 admin-analytics(912/937/962/1044) 的 GET fetch 補 `adminAuthHeaders()`；PATCH(408) 改用 `adminJsonHeaders()`。
+  - 為何先做：對「尚未檢查 token 的路由」多帶一個 Authorization header 完全無害；先落地可消除後端啟用驗證後的破窗期。
+  - 不得：改後端、改 token 取得方式、改 response 解析邏輯。
+  - 驗證：`cd caregiver_web && node --test *.test.js`（既有 51 應維持綠；若新增 header 相關斷言則一併更新）。手動：帶正確 token 時各頁正常載入。
+- **Batch 2 — backend-agent（admin 讀取路由擋門）**
+  - 範圍：`server.js` 對 §4 列的 7 條 `/api/admin/*` 讀取路由插入既有 `requireAdmin`（與 `/api/admin/users`(1081) 同寫法）。不改成功路徑 response。
+  - 驗證：新增測試 — 無 header→401 `missing_admin_token`；錯 token / 未設 `ADMIN_API_TOKEN`→403 `admin_permission_required`；正確 token→原 response 形狀不變。`cd backend/stt_proxy && npm run check && npm test`。
+- **Batch 3 — backend-agent（Care Alert 讀取 / 管理擋門）**
+  - 範圍：`server.js` 對 `GET /api/care-alerts`(498)、`GET /api/care-alerts/:id`(514)、`PATCH /api/care-alerts/:id/status`(527) 插入 `requireAdmin`。**明確不動 `POST /api/care-alerts/notify`(384)**（程式註解標明「長者端建立路徑，caller 驗證見 follow-up CR」）。
+  - 驗證：新增測試 — 三條路由 401/403/通過；外加一條**回歸測試**：未帶 auth 的 `POST /notify` 仍維持既有行為（high/urgent→嘗試通知、low/medium→`skipped_low_risk`、形狀不變），確保長者端建立流程未被波及。`cd backend/stt_proxy && npm run check && npm test`。
+- 批次相依：Batch 1 先合併；Batch 2 / Batch 3 可平行（皆 backend-agent，建議依序提交以利審查）。三批合併後才視為本 CR 完成。
+
+#### 9. 測試計畫（彙整）
+- backend（node --test）：每條受保護路由覆蓋 missing_token(401) / wrong_token(403) / valid_token(pass + 原 response 形狀)。/notify 未受影響回歸測試。
+- caregiver_web（node --test DOM）：既有測試維持綠；fetch 帶 header 的單元斷言（可選）。
+- 不需真 DB / 真金鑰（requireAdmin 純比對 env token；測試以注入 `ADMIN_API_TOKEN` 或測試替身）。**測試需要的環境變數：`ADMIN_API_TOKEN`（測試值，請手動設定，勿貼真實值）**。
+- 全域回歸：`flutter analyze` / `flutter test` 不受本案影響（未改 Flutter；長者端 /notify caller 不動），可選跑確認 0 回歸。
+
+#### 10. 紅線（落地時必守）
+- 不得破壞 Realtime / Memory / Care Alert 既有**成功路徑契約**（只新增 401/403，不改 200 形狀）。
+- 不得擋掉長者端 Care Alert 建立流程（`POST /notify` 不掛驗證）。
+- 不碰 `.env` / token 值；沿用既有 `requireAdmin` 與既有 caregiver_web token 機制，不新增憑證來源。
+- 不做 RBAC / 住民 scope / 正式 admin 登入（分別屬 CR-0040 / 後續），本案僅「擋門」。
+
+#### 11. architecture-agent 裁決
+- ✅ 核准（按 §8 批次與順序執行；Batch 1 先行）。
+- 範圍鎖定為 authentication 擋門；/notify 採選項 B（caller 驗證轉 follow-up，正式版 blocker）；授權範圍過濾轉 CR-0040。
+- 本案完成僅代表 P0-1 全修、P0-2 的「讀取 / 管理擋門」子集修復；P0-2 的 /notify caller 驗證與住民 scope 尚未關閉，需後續 CR，**不得對外宣稱 P0-2 已全數修復**。
+
+#### 12. 落地與 checkpoint review（architecture-agent，2026-06-08）
+
+**執行進度**
+- ✅ Batch 1（frontend-ux-agent）：`caregiver_web/app.js` 為 care-alerts（loadAlerts GET `/care-alerts`、openDetail GET `/care-alerts/:id`、updateStatus PATCH `/care-alerts/:id/status` 由純 `Content-Type` 改 `adminJsonHeaders()`）與 admin-analytics（loadDailyTasks、loadHealthOverview、loadElderList、loadElderAnalysis 的 GET）補上既有 `adminAuthHeaders()` / `adminJsonHeaders()`。未新建 token 邏輯、未改 UI 文案。
+- ✅ Batch 2（backend-agent）：`server.js` 對 7 條 admin 讀取路由（daily-care-tasks、overview、elders、elders/:id、elders/:id/physio|emotion|game-metrics）插入既有 `requireAdmin`。
+- ✅ Batch 3（backend-agent）：`server.js` 對 `GET /api/care-alerts`、`GET /:id`、`PATCH /:id/status` 插入 `requireAdmin`。`POST /api/care-alerts/notify` 依 §3 選項 B 未掛驗證，僅加程式註解標明長者端建立路徑。
+
+**驗收結果（architecture-agent 獨立覆驗，全綠）**
+- backend：`cd backend/stt_proxy && npm test` → tests 296 / pass 296 / fail 0。（npm run check 由實作 agent 回報 OK）
+- caregiver_web：`cd caregiver_web && node --test *.test.js` → tests 55 / pass 55 / fail 0。
+- Flutter：本案 0 行 `lib/` 變更，長者端 /notify caller 未動 → 判定不受影響、未跑 `flutter test`（判斷合理）。
+- 測試覆蓋確認：careAlertListEndpoint / careAlertStatusEndpoint / adminEndpoint / notificationAuditEndpoint / careAlertDemoFlow / dailyCareTaskEndpoint 皆補 admin header；新增 401(missing_admin_token) / 403(admin_permission_required) 擋門案例；demo flow 的 `postNotify` 全程不帶 admin header 仍 200 → 構成 /notify 無 auth 回歸保護。
+
+**checkpoint 核對（read-only，git diff / grep 覆核）**
+- (a) ✅ 只新增 401/403：server.js 各路由僅於 handler 前插入 `requireAdmin`，handler 函式體與成功 200 response 形狀完全未改。
+- (b) ✅ /notify 確未掛驗證：diff 僅新增註解、無 middleware；測試以無 auth postNotify 證明長者端建立流程不受影響。
+- (c) ✅ 未碰 `.env` / 真實 token：測試使用字面值 `test-admin-token`；`requireAdmin.js` 行為未改；未觸 Realtime / SDP / DataChannel、Memory schema、Care Alert 共用資料結構。
+- (d) ✅ 未做住民 scope 過濾：無任何 resident scope 邏輯，依裁決保留至 CR-0040。
+
+**殘留 / 觀察**
+- daily-care-tasks 無「專屬」401/403 案例（door 覆蓋集中於 adminEndpoint 與 careAlert 測試），同一 `requireAdmin` 中介層；視為可接受的次要覆蓋缺口，非 blocker。
+- /notify caller 驗證（選項 A）與住民 scope 仍為已知殘留風險，分別轉 FU-CR / CR-0040；本案不宣稱 P0-2 全修。
+
+#### 13. architecture-agent 裁決（checkpoint）
+- ✅ **核准並驗收（PASS）**。三批均符合 §8 範圍與 §10 紅線：只加擋門、不改成功契約、/notify 不擋、未碰 .env/token、未做住民 scope。CR-0039 標記為完成。
