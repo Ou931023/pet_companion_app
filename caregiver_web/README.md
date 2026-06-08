@@ -83,3 +83,5 @@ API base URL 為可配置，解析順序（擇先非空者）：
 
 - 尚未內嵌 Firebase popup 登入；caregiver 需手動貼上自己的 ID Token / session 權杖（後續 CR 補）。
 - 只能依「new → acknowledged → resolved」標記狀態，無法復原為較早狀態（後端允許，但前端 UI 以單向流程為主）。
+- 尚無 super_admin 管理頁（caregiver 帳號管理 + 住民授權指派）。對應後端 provisioning 端點
+  已於 **CR-0043** 完成（見 `docs/CAREGIVER_PROVISIONING.md`）；caregiver_web 管理 UI = **CR-0044**（未做）。

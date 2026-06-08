@@ -151,6 +151,67 @@ test("DB 不可用 → caregiver 解析 fail-closed → 403（不退化成 super
   assert.deepEqual(result, { ok: false, status: 403, error: "admin_permission_required" });
 });
 
+// --- CR-0043 B3：inactive 停用閘（migration 014 users.status） ---
+
+test("CR-0043: inactive caregiver → 403 admin_permission_required（即時失效）", async () => {
+  const result = await adminAuth.buildAuthContext(reqWith("Bearer cg-token"), {
+    env: DEV_ENV,
+    firebaseAdmin: firebaseStub({ "cg-token": "fb-cg-1" }),
+    pg: mockPg({ "fb-cg-1": { id: "cg-1", role: "caregiver", status: "inactive" } }),
+  });
+  assert.deepEqual(result, { ok: false, status: 403, error: "admin_permission_required" });
+});
+
+test("CR-0043: active caregiver（status='active'）→ 照舊解析為 caregiver", async () => {
+  const result = await adminAuth.buildAuthContext(reqWith("Bearer cg-token"), {
+    env: DEV_ENV,
+    firebaseAdmin: firebaseStub({ "cg-token": "fb-cg-1" }),
+    pg: mockPg({ "fb-cg-1": { id: "cg-1", role: "caregiver", status: "active" } }),
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.authContext.role, "caregiver");
+  assert.equal(result.authContext.caregiverId, "cg-1");
+});
+
+test("CR-0043: status 欄缺值 / NULL（舊 row）→ 視為 active（向後相容）", async () => {
+  const nullStatus = await adminAuth.buildAuthContext(reqWith("Bearer cg-token"), {
+    env: DEV_ENV,
+    firebaseAdmin: firebaseStub({ "cg-token": "fb-cg-1" }),
+    pg: mockPg({ "fb-cg-1": { id: "cg-1", role: "caregiver", status: null } }),
+  });
+  assert.equal(nullStatus.ok, true);
+  assert.equal(nullStatus.authContext.role, "caregiver");
+
+  // 完全沒有 status 欄位（migration 014 未跑）→ 一樣視為 active。
+  const noField = await adminAuth.buildAuthContext(reqWith("Bearer cg-token"), {
+    env: DEV_ENV,
+    firebaseAdmin: firebaseStub({ "cg-token": "fb-cg-1" }),
+    pg: mockPg({ "fb-cg-1": { id: "cg-1", role: "caregiver" } }),
+  });
+  assert.equal(noField.ok, true);
+  assert.equal(noField.authContext.role, "caregiver");
+});
+
+test("CR-0043: inactive DB-admin → 403（閘對 DB-admin 亦適用，更安全）", async () => {
+  const result = await adminAuth.buildAuthContext(reqWith("Bearer admin-token"), {
+    env: DEV_ENV,
+    firebaseAdmin: firebaseStub({ "admin-token": "fb-admin" }),
+    pg: mockPg({ "fb-admin": { id: "admin-1", role: "admin", status: "inactive" } }),
+  });
+  assert.deepEqual(result, { ok: false, status: 403, error: "admin_permission_required" });
+});
+
+test("CR-0043: 共享 super_admin token 不查 DB → 不受 status 閘影響", async () => {
+  const result = await adminAuth.buildAuthContext(reqWith(`Bearer ${SHARED_TOKEN}`), {
+    env: DEV_ENV,
+    // 即便注入會回 inactive 的 pg，也不該被觸碰（共享 token 早退）。
+    firebaseAdmin: firebaseStub({}),
+    pg: mockPg({}),
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.authContext.role, "super_admin");
+});
+
 test("resolveAdminAuthContext 中介層：成功 → 掛 req.authContext + next()", async () => {
   adminAuth.setFirebaseAdminForTest(firebaseStub({ "cg-token": "fb-cg-1" }));
   adminAuth.setPgForTest(mockPg({ "fb-cg-1": { id: "cg-1", role: "caregiver" } }));

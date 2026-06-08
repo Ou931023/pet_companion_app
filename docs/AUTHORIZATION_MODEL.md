@@ -110,11 +110,37 @@ fail-closed：`caregiverId` 缺、DB 不可用、查無授權 → 一律視為�
 
 ---
 
-## 7. 殘留（後續 CR）
+## 6.5 Caregiver 帳號停用閘（CR-0043）
 
-- **CR-0042**：caregiver_web Firebase 登入 + per-role auth header + 401/403/empty-state（P1-6）。
-- **CR-0043**：caregiver 帳號與 `resident_caregiver_links` provisioning（super_admin-only 端點）。
-  目前 `createUserPostgres` 寫死 `role='elder'`，dev 以 SQL / seed 提供 caregiver 帳號與授權關聯。
+`adminAuthContext.findUserByFirebaseUid` 的 SELECT 補 `status`（migration 014 `users.status`）。
+身分解析時，於 **role 分派之前**檢查：
+
+- `users.status === 'inactive'` → **403 `admin_permission_required`**（停用即時失效；對 caregiver 與
+  DB-admin 皆適用，更安全）。
+- `status` 為 NULL / 缺值（舊 row、未跑 migration 014）→ 視為 `active`（向後相容，不放寬既有判定）。
+- 共享 super_admin token 路徑不查 DB → 不受此閘影響。
+
+---
+
+## 7. Provisioning（CR-0043，super_admin-only）
+
+caregiver 帳號與 `resident_caregiver_links` 的建立 / 修改 / 停用由 super_admin-only 端點管理
+（全部掛 `requireAdmin`，caregiver idToken 也進不來）。詳見 `docs/CAREGIVER_PROVISIONING.md`：
+
+- 8 條路由：`/api/admin/caregivers`（GET/POST/PATCH/PATCH status）、
+  `/api/admin/resident-caregiver-links`（GET/POST/PATCH/DELETE soft-disable）。
+- caregiver 綁定採**路線 B**（super_admin 顯式設 `firebaseUid`），不做 email 自動認領（FU-CR-0043a）。
+- link DB 維持 `active`/`revoked`，API 對外 `active`/`inactive`（service 映射）；`authorizationService.js` 零改動。
+- 停用 link → caregiver 立即看不到該住民（`authorizationService` 只查 `status='active'`）。
+
+---
+
+## 8. 殘留（後續 CR）
+
+- **CR-0044**：caregiver_web 兩個 super_admin-only 管理 UI（caregiver 管理 + 授權指派）。
+- **FU-CR-0043a**：caregiver 首次登入以 Firebase-verified email 自動認領 pending caregiver。
+- **FU**：`requireSuperAdmin`（讓 DB-backed super_admin 也能用管理路由，目前僅共享 token）。
+- **FU**：caregiver email 全域唯一 DB unique index（目前為 app-level SELECT 檢查）。
 - **FU-CR**：`/api/care-alerts/notify` caller 驗證（長者 session）。
 - `/api/admin/overview` 目前為純聚合計數（無 per-resident 識別），維持 super_admin-only；
   若改回 per-resident 需補 scope。

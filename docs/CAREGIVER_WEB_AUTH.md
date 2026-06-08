@@ -108,5 +108,7 @@ authState = {
 - **完整 Firebase popup 登入**（caregiver_web 內嵌 Firebase Web SDK，一鍵 Google / Email
   登入後自動取得 ID Token，免手動貼 token）：列為後續 CR，本 CR 先提供清楚標示的
   token 輸入入口（最小可行 UI）。
-- caregiver 帳號與 `resident_caregiver_links` provisioning（super_admin-only 端點）：CR-0043。
+- **caregiver 帳號與 `resident_caregiver_links` provisioning 後端**（super_admin-only 端點）：
+  **已於 CR-0043 完成**（8 條路由 + 停用閘 + audit）。見 `docs/CAREGIVER_PROVISIONING.md`。
+  對應的 caregiver_web 管理 UI（caregiver 管理 + 授權指派，super_admin-only）= **CR-0044**（前端，未做）。
 - `/api/care-alerts/notify` caller 驗證（長者 session）：FU-CR。

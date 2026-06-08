@@ -1814,3 +1814,151 @@ caregiver_web API base URL 改為可配置、移除 localhost production 預設�
   - 驗收（architecture-agent 獨立重跑）：`cd caregiver_web && node --check app.js` OK、`node --check auth_mode.test.js` OK；`node --test *.test.js` → **tests 69 / pass 69 / fail 0**（55 基線 + 14 新）。backend 未改、未重跑（CR-0041 契約不變）。
   - 殘留（已登錄、非本 CR blocker）：完整 Firebase popup 一鍵登入（免手貼 token）= follow-up CR；caregiver 帳號 + `resident_caregiver_links` provisioning = **CR-0043**；`/api/care-alerts/notify` caller 驗證 = **FU-CR**。
   - Commit 建議（本 CR 應納入）：`caregiver_web/app.js`、`caregiver_web/index.html`、`caregiver_web/styles.css`、`caregiver_web/README.md`、`caregiver_web/config.example.js`、`caregiver_web/auth_mode.test.js`（新）、`docs/CAREGIVER_WEB_AUTH.md`（新）、`docs/CHANGE_REVIEW.md`（本筆）。**排除噪音**（與本 CR 無關，勿混入）：`CLAUDE.md`（root 中→英整檔重寫）、`ios/.../Runner.xcscheme`（CRLF/行尾噪音）、`PROJECT_REPORT_DRAFT.md`（未追蹤草稿）、`tasks/CR-0042-*.md`（任務筆記，依團隊慣例可另計）。
+
+---
+
+### CR-0043 — Caregiver Account and Resident-Caregiver Link Provisioning（接 CR-0040/0041/0042；補 §12 #5 帳號管理層）
+- 提出 / 裁決 agent：architecture-agent（架構守門人；依使用者指派）
+- 日期：2026-06-08
+- 狀態：**✅ 完成（後端 B1–B5 落地，399/399 綠，architecture-agent B3/B4 落地 checkpoint PASS — 見 §15）**。caregiver_web 管理 UI=CR-0044、email 自動認領=FU-CR-0043a、email DB unique index=FU-CR-0043b、`/notify` caller 驗證=FU-CR 為已知殘留。原規劃 / 裁決見 §1–§13、落地紀錄見 §14。
+- 帳本正規 ID = **CR-0043**（沿用空號治理）。對應 Audit §12 #5「帳號管理」provisioning 層、CR-0041 §15/§17 明列之殘留「caregiver 帳號 + `resident_caregiver_links` provisioning（super_admin-only 端點）」。
+
+#### 1. 動機 / 問題
+- CR-0040 建 scope 機制、CR-0041 建 caregiver 身分解析（Firebase idToken→`users.role='caregiver'`→scope）、CR-0042 建 caregiver_web 登入 UI。但**沒有正式 provisioning 流程**：`createUserPostgres` 寫死 `role='elder'`（sessionService.js:152），無「建立 caregiver 帳號」「指派 `resident_caregiver_links`」「停用 caregiver / link」的 super_admin-only 端點。今日只能靠 SQL / seed 手動造資料 → caregiver scoped auth 無法端到端驗證。
+- 本案目標：建立 super_admin-only 的 caregiver 帳號 + resident-caregiver 授權關聯 provisioning，使 CR-0040/0041 的 scope 能被真實管理並端到端驗證。
+
+#### 2. 現況盤點（architecture-agent 已驗證）
+- caregiver = `users.role='caregiver'`（**無獨立 caregivers 表**）。`users`（migration 006）：id / firebase_uid(UNIQUE, 可空) / elder_id FK→elders / role(預設 elder) / email(**無 UNIQUE**) / email_verified / display_name / auth_provider / provider_user_id / binding_status(預設 pending) / binding_deadline / created_at / verified_at / updated_at / last_login_at。**無 `status` 欄**（只有 binding_status，語意=長者端 Firebase 綁定生命週期，與「caregiver 啟用/停用」無關）。
+- `resident_caregiver_links`（migration 013）：id / elder_id FK→elders / caregiver_id FK→users / role(primary|secondary|viewer, 預設 primary) / **status(active|revoked, 預設 active)** / created_at / updated_at / revoked_at；部分唯一索引 `idx_rcl_unique_active`（elder_id+caregiver_id WHERE status='active'）。
+- `authorizationService.js`（CR-0040）：`getAuthorizedResidentIdsForCaregiver` 查 `status='active'` link；`assertCanAccessResident` / `filterAlertsByAuthorizedResidents`；pg seam。
+- `adminAuthContext.js`（CR-0041）：`buildAuthContext` 解析 super_admin（共享 token / DB role∈admin,super_admin）/ caregiver（DB role=caregiver）；`findUserByFirebaseUid` 只 SELECT id, role；**未檢查 caregiver 是否停用**。
+- `auditLogService.logAudit(input, options)`：白名單 actorType/actorId/action/targetType/targetId/outcome/metadata，DB-only-best-effort、絕不丟例外、PII 紅線——可直接重用（targetType 新增 `caregiver` / `resident_caregiver_link`）。
+- `adminUsersService.js`：`SELECT_SAFE_USERS_SQL` 白名單 + `maskEmail` + `toSafeUser`，絕不回 password_hash/provider_user_id——provisioning 對外格式沿用同模式。
+- super_admin-only 既有路由（`/api/admin/users`、`/api/admin/overview`、marketplace admin ×6）皆掛 `requireAdmin`（共享 token only）；caregiver-or-admin 路由掛 `resolveAdminAuthContext`。
+
+#### 3. 關鍵設計裁決（6 點）
+1. **caregiver status 模型 → 新增 migration 014 `users.status`（裁決：獨立欄，不復用 binding_status）。** `binding_status` 語意是長者端 Firebase 綁定（pending/verified），復用會污染語意且影響長者登入流程。新增 `users.status TEXT NOT NULL DEFAULT 'active'`（值域 active|inactive），`ADD COLUMN IF NOT EXISTS` 冪等，比照 006/013 寫法。**migration 014 需要**。無法對真 DB 跑 → 測試策略：migration 檔只做「冪等性 / 語法人工覆核」，service / 中介層一律以 mock pg seam 注入 rows 單測（沿用 `setPgForTest`），不要求真 Postgres。
+2. **pending caregiver provisioning 與 firebase_uid 綁定 → 裁決：本案採「super_admin 顯式設定 firebase_uid」(路線 B)；「首次登入以 Firebase-verified email 自動認領」(路線 A) 拆為 FU-CR-0043a。** 理由：路線 A 會重開 CR-0041 的**登入解析路徑**（需把 decoded.email + email_verified 接進 `findUserByFirebaseUid`、處理多筆 / 未驗證 email 的劫持風險），逾本案最小切片且觸及 auth 主線。本案：`POST /api/admin/caregivers` 可建 pending caregiver（role=caregiver, firebase_uid=null, email 設定, status=active, **無密碼欄位**——路線 A 全程 Firebase，`users` 無 password_hash）；`PATCH /api/admin/caregivers/:id` 可後補 `firebaseUid`（caregiver 由 App/Firebase console 取得自己的 uid，經機構帶給 super_admin 設定）。綁定後該 caregiver 首次以 idToken 登入即被 `findUserByFirebaseUid` 命中→解析為 caregiver。**不明文密碼、不 fake token、不 hardcode**。FU-CR-0043a（email 自動認領）需嚴格：僅接受 `email_verified===true` 且唯一一筆 pending caregiver row，否則 403。
+3. **管理 API middleware → 裁決：用 `requireAdmin`（共享 super_admin token only），與既有 super_admin-only 路由（users/overview/marketplace）一致。** 保證持有效 caregiver idToken 者**也進不來**（requireAdmin 只認字面 ADMIN_API_TOKEN，非匹配→403，連 idToken 驗證都不走）。fail-closed。**取捨（誠實標註）**：共享 token 無 per-actor 身分 → audit `actorType='super_admin'`、`actorId=null`（與現有 super_admin-only 路由同限制）。若未來要 DB-backed super_admin（role=admin via idToken）也能用這些管理路由，需另做 `requireSuperAdmin = resolveAdminAuthContext + assert role==='super_admin'` 包裝 → 列 FU，不進本案。
+4. **inactive caregiver 即時失效 → 裁決：改 `adminAuthContext.js`（CR-0041 檔），在身分解析加「user.status==='inactive' → 403」閘。** 範圍最小且 fail-closed：`findUserByFirebaseUid` 的 SELECT 補 `status` 欄；`buildAuthContext` 取得 user row 後、**role 分派之前**，若 `status==='inactive'` 一律回 403 `admin_permission_required`（對 caregiver 與 DB-admin 皆適用，更安全）。共享 token 路徑（super_admin）不受影響（不查 DB）。**此為 CR-0041 owned 檔案改動 → 條件式核准 + 落地 checkpoint**。需補測試：inactive caregiver→403、active caregiver→照舊解析、status 欄不存在（舊 row, NULL）視為 active（向後相容）。
+5. **scope refresh → 裁決：`authorizationService.js` 零改動即已涵蓋。** 新增 link（status='active'）→ 立即可見；停用 link（status→'revoked'）→ 查詢 `status='active'` 自動排除→不可見；inactive caregiver→由 #4 在身分層擋下（403，根本進不到 scope）；inactive link→同停用；super_admin→`isSuperAdmin` 早退不受限。**link 狀態詞彙裁決**：DB 維持 `active`/`revoked`（對齊 migration 013 + authorizationService 查詢 + 唯一索引），**不改 schema**；provisioning API 對外以 `active`/`inactive` 呈現，service 層做 `inactive↔revoked` 映射（停用 link = UPDATE status='revoked', revoked_at=NOW()）。避免任何 authorizationService 破壞。
+6. **範圍 / 拆分 → 裁決：拆兩個 CR。CR-0043 = 後端（migration + provisioning service + 8 路由 + audit + adminAuthContext 閘 + 後端測試 + 文件）；CR-0044 = caregiver_web 兩個管理 UI（owner=frontend-ux-agent）。** 比照 CR-0041（後端正餐）/ CR-0042（前端收尾）成功模式：後端先固定契約並上綠，前端再消費。caregiver_web app.js 已 2646 行、tab 架構，新增兩個管理 view（caregiver 管理 + 授權指派）+ 表單 + 14+ 測試，體量足以獨立成 CR，且 owner 邊界不同。
+
+#### 4. 影響範圍（檔案）
+**CR-0043（backend-agent）**
+- 新增 `backend/stt_proxy/db/migrations/014_add_users_status.sql`（🔒 schema，純新增欄、冪等）。
+- 新增 `backend/stt_proxy/services/admin/caregiverProvisioningService.js`（建立/查詢/改/停用 caregiver；email 重複檢查；安全對外格式 + maskEmail；pg seam）。
+- 新增 `backend/stt_proxy/services/admin/residentLinkProvisioningService.js`（建立/查詢/改/停用 link；resident+caregiver 存在性檢查；重複 active 防護；active↔revoked 映射；pg seam）。
+- 新增對應 `*.test.js`（service 單元，mock pg）+ HTTP 層測試（沿用既有 endpoint test 模式）。
+- 修改 `backend/stt_proxy/server.js`（🔒 API 契約 — **純新增** 8 條 super_admin-only 路由掛 `requireAdmin`，不動既有路由 / 回應形狀）。
+- 修改 `backend/stt_proxy/services/admin/adminAuthContext.js`（🔒 CR-0041 auth 路徑 — 加 inactive 閘 + SELECT 補 status；附測試）。
+- 修改 `backend/stt_proxy/package.json`（check + test script 納新檔）。
+- `backend/stt_proxy/.env.example`：無新增 secret（僅文件註解，若需要）。
+- 文件：`docs/CHANGE_REVIEW.md`（落地紀錄）、`docs/AUTHORIZATION_MODEL.md`（補 provisioning 段 + status 閘）、新增 `docs/CAREGIVER_PROVISIONING.md`。
+- **不改**：`authorizationService.js`（#5 裁決零改動）、`/api/care-alerts/notify`、Realtime、Memory、Care Alert 既有回應形狀。
+
+**CR-0044（frontend-ux-agent，子 CR，待 CR-0043 後端契約穩定後開）**
+- `caregiver_web/app.js` / `index.html` / `styles.css`：新增「照護人員管理」「住民授權指派」兩個 super_admin-only view（caregiver 模式隱藏 / 顯示權限不足）；沿用 CR-0042 `adminAuthHeaders`（super_admin-only）+ 401/403/empty-state；操作成功/失敗友善提示；不顯完整 token / 敏感資料 / 假資料。
+- `caregiver_web/auth_mode.test.js` 或新測試檔；`caregiver_web/README.md`；`docs/CAREGIVER_WEB_AUTH.md`（補管理頁）。
+
+#### 5. 觸及 🔒？
+**是。** 觸及三類受控線，但皆**新增 / fail-closed 閘、無既有契約破壞**：
+- `db/migrations/014`（schema）：純 `ADD COLUMN IF NOT EXISTS users.status`，對既有 row 預設 active、零破壞。
+- `server.js`（API 契約）：純新增 8 條 super_admin-only 路由；既有路由 / response 形狀 / 排序零變更。
+- `adminAuthContext.js`（CR-0041 auth 主線）：新增 inactive 閘（更嚴格），不放寬任何既有判定。
+→ **條件式核准 + 落地 checkpoint**（見 §8）。
+
+#### 6. 牽涉 agent
+- **backend-agent**：CR-0043 全部（migration + 2 services + 8 路由 + audit 接入 + adminAuthContext 閘 + 後端測試 + 後端文件）。
+- **frontend-ux-agent**：CR-0044 子 CR（caregiver_web 兩管理 UI + 前端測試 + 前端文件），待 §7 B4 契約穩定後開。
+- **architecture-agent**：本提案 + adminAuthContext / server.js 落地 checkpoint 覆核。
+- companion-memory-agent / realtime-voice-agent：**不牽涉**（本案不碰陪伴策略 / Realtime）。
+
+#### 7. 批次切分（CR-0043 backend，依序；每批可獨立回滾）
+- **B1（migration only）**：`014_add_users_status.sql`。只建欄、冪等，不接任何 service。owner=backend-agent。低風險。
+- **B2（provisioning services）**：`caregiverProvisioningService` + `residentLinkProvisioningService` + 單元測試（mock pg）。純新增、無路由、無 server.js。owner=backend-agent。低風險。
+- **B3（adminAuthContext inactive 閘）**：改 CR-0041 檔 + 測試（inactive→403 / active→照舊 / NULL→active 相容）。owner=backend-agent。**條件式核准**（觸 auth 主線）。中風險。
+- **B4（server.js 8 路由 + audit 接入 + HTTP 測試）**：caregivers ×4（GET/POST/PATCH/PATCH status）+ links ×4（GET/POST/PATCH/PATCH status 或 DELETE soft）掛 `requireAdmin`；每筆寫 `logAudit`。owner=backend-agent。**條件式核准**（觸 API 契約）。中風險。
+- **B5（文件）**：CHANGE_REVIEW 落地紀錄 + AUTHORIZATION_MODEL + 新增 CAREGIVER_PROVISIONING.md。owner=backend-agent。低風險。
+- 相依：B1→B2→B3→B4→B5。B4 完成且契約穩定 → 開 **CR-0044**（frontend-ux）。
+
+#### 8. 落地 checkpoint 門檻（B3/B4，architecture-agent 覆核後方可結案）
+- (a) 既有路由 200 形狀 / 排序 / 欄位**零變更**（care-alerts / elders / daily-care-tasks / users / overview / marketplace）。
+- (b) 新增 8 路由皆 `requireAdmin`：無 token→401、caregiver idToken→403、共享 token→2xx；**caregiver 進不來**。
+- (c) `/api/care-alerts/notify` 未觸及（仍無 authN）。
+- (d) adminAuthContext inactive 閘：inactive caregiver→403、active→照舊、status NULL→視為 active（向後相容）；共享 token super_admin 路徑不受影響。
+- (e) 停用 link 後 caregiver 立即看不到該 resident（scope refresh，authorizationService 未改仍成立）；重複 active link 不建第二筆。
+- (f) API 回應**不含** token / password_hash / provider_user_id；email 經遮蔽（除非 super_admin 明示需要全 email，且仍不回敏感）。
+- (g) audit：建立/停用/修改 caregiver 與 link 各寫一列，metadata 結構化、**無 token / email 原文 / PII**。
+- (h) 無 hardcode caregiver/elder id、無 fake token、無 production 假身分、log 不印 token。
+
+#### 9. 測試計畫（驗收門檻）
+- backend：`cd backend/stt_proxy && npm run check && npm test`，CR-0041 後 **350 基線維持綠** + 新增（任務 §8.1 #1–#12）：caregiver 呼叫管理 API→403、無 token→401、super_admin 建 caregiver→2xx、重複 email→409、建 link→2xx、重複 active link 不建第二筆、停用 link 後 caregiver 看不到該 alert、inactive caregiver 讀 scoped API→擋、super_admin 看全部、audit 有寫、API 不回 token、invalid resident/caregiver id→400/404。
+- **不可對真 DB / 真 Firebase**：全程 mock pg（`setPgForTest`）+ stub firebaseAdmin（沿用 CR-0041 seam）。migration 014 只人工覆核冪等性，不實跑。誠實標註未對真 Postgres / 真 Firebase 驗證。
+- CR-0044：`cd caregiver_web && node --test *.test.js`，既有 69 綠 + 任務 §8.2 新增。
+
+#### 10. 環境變數（僅列名稱，不碰值）
+- 既有續用：`ADMIN_API_TOKEN`（super_admin 共享 token，management 路由 fail-closed）、`FIREBASE_PROJECT_ID` / `FIREBASE_CLIENT_EMAIL` / `FIREBASE_PRIVATE_KEY` / `GOOGLE_APPLICATION_CREDENTIALS`（caregiver idToken 驗證）、`AUTH_ALLOW_MOCK`、`APP_ENV` / `NODE_ENV`（production 守門）。
+- **無新增後端 secret**。
+
+#### 11. 紅線（本案全程，依任務 §10）
+- 不破壞 `/api/care-alerts/notify`、Realtime、Memory、Care Alert 既有契約。
+- 不 hardcode caregiver id、不 fake token；caregiver 不可自我授權、不可管理其他 caregiver（管理路由 super_admin-only）。
+- inactive link/caregiver 不得當 active；停用即時生效。
+- log / UI 不顯完整 token；audit metadata 無 PII。
+- 不放寬 CR-0039/0040/0041 授權；不一次重寫 auth。
+
+#### 12. 🔒 裁決（architecture-agent）
+- **B1 核准**（純新增欄、冪等，零破壞）。
+- **B2 核准**（純新增 service + seam，未改既有路由 / 契約）。
+- **B3 條件式核准**（觸 CR-0041 auth 主線）：須落地 checkpoint §8(d)——inactive 閘 fail-closed、active 照舊、NULL 相容、共享 token 不受影響、無放寬既有判定。
+- **B4 條件式核准**（觸 server.js API 契約）：須落地 checkpoint §8(a)(b)(c)(e)(f)(g)(h)——既有路由零變更、新路由 super_admin-only 擋 caregiver、/notify 未動、scope refresh 成立、不回敏感、audit 無 PII、無假身分。
+- **B5 核准**（純文件；AUTHORIZATION_MODEL 跨契約段落先於 B4 對齊）。
+- **CR-0044 另案裁決**（frontend-ux，待 B4 契約穩定後開）。
+- **完成定義**：B1–B5 合併 + 測試綠 + B3/B4 checkpoint PASS。本案修 §12 #5 provisioning 層；**不宣稱** caregiver_web 管理 UI 已做（CR-0044）、不宣稱 email 自動認領已做（FU-CR-0043a）、不宣稱 /notify caller 驗證已修（FU-CR）。
+
+#### 13. 殘留 / 下一個 CR
+- **CR-0044**（frontend-ux）：caregiver_web caregiver 管理 + 授權指派 UI（super_admin-only）。
+- **FU-CR-0043a**：caregiver 首次登入以 Firebase-verified email 自動認領 pending caregiver（重開登入路徑，需嚴格防劫持）。
+- **FU**：`requireSuperAdmin`（resolveAdminAuthContext + assert role==super_admin）讓 DB-backed super_admin 也能用管理路由（目前僅共享 token）。
+- **FU**：caregiver email 全域唯一（DB 層 unique index）——本案以 app-level SELECT 檢查（super_admin-only 低併發可接受，誠實標註競態窗口），未加 DB 約束以免衝撞既有 elder email。
+- **FU-CR**：`/api/care-alerts/notify` caller 驗證（長者 session，正式版 blocker）。
+
+#### 14. 落地紀錄（backend-agent，2026-06-08；B1–B5 執行）
+- 狀態：**後端 B1–B5 落地，399/399 綠（CR-0041 後 350 基線維持綠 + 新增 49）**。caregiver_web 管理 UI（CR-0044）未做、email 自動認領（FU-CR-0043a）未做、`/notify` caller 驗證（FU-CR）未做——皆如裁決保留。**待 architecture-agent B3/B4 落地 checkpoint 覆核**。
+- 新增檔案：
+  - `backend/stt_proxy/db/migrations/014_add_users_status.sql`（B1，`ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'`，冪等）。
+  - `backend/stt_proxy/db/migration014.test.js`（靜態冪等覆核）。
+  - `backend/stt_proxy/services/admin/caregiverProvisioningService.js` + `.test.js`（B2，pg seam）。
+  - `backend/stt_proxy/services/admin/residentLinkProvisioningService.js` + `.test.js`（B2，pg seam，active↔revoked 映射）。
+  - `backend/stt_proxy/services/admin/caregiverProvisioningEndpoint.test.js`（B4，HTTP 端到端，任務 §8.1 #1–#12）。
+  - `docs/CAREGIVER_PROVISIONING.md`（B5）。
+- 修改檔案：
+  - `backend/stt_proxy/services/admin/adminAuthContext.js`（B3，SELECT 補 `status` + inactive 閘；`adminAuthContext.test.js` 加 6 測試，既有測試全綠）。
+  - `backend/stt_proxy/server.js`（B4，純新增 8 條 super_admin-only 路由掛 `requireAdmin` + audit；既有路由 / response 形狀零變更）。
+  - `backend/stt_proxy/package.json`（check + test 納新檔）。
+  - `docs/AUTHORIZATION_MODEL.md`（§6.5 停用閘、§7 provisioning）、`docs/CAREGIVER_WEB_AUTH.md`、`caregiver_web/README.md`（標 CR-0043 後端完成 / CR-0044 前端未做）。
+- 落地 checkpoint 自評（§8）：(a) 既有路由零變更（純新增，full suite 既有測試全綠）；(b) 8 路由皆 `requireAdmin`，無 token→401、caregiver idToken→403、共享 token→2xx（HTTP 測試覆蓋）；(c) `/notify` 未觸及；(d) inactive→403 / active→照舊 / NULL→active 相容 / 共享 token 不受影響（單元+HTTP 測試）；(e) 停用 link 後 caregiver 立即看不到（端到端測試）、重複 active link 不建第二筆；(f) 回應不含 token / password_hash / provider_user_id，email 遮蔽；(g) audit 每筆寫一列、metadata 無 PII / token（capture mock 驗證）；(h) 無 hardcode id、無 fake token、log 不印 token。
+- 誠實標註：全程 **mock pg（`setPgForTest`）+ stub firebaseAdmin**；**未對真 Postgres / 真 Firebase 金鑰驗證**；migration 014 **未對真 DB 跑**（只靜態冪等覆核）。
+
+#### 15. 落地 checkpoint 覆核（architecture-agent，2026-06-08；B3/B4 條件式核准結案）
+- **裁決：PASS。** B1–B5 落地符合 §8 八項門檻與 §12 條件式核准要件；B3（adminAuthContext auth 主線）、B4（server.js API 契約）准予結案。覆核方式：read-only（git diff / grep / 檔案閱讀）+ architecture-agent 獨立重跑測試，未改任何程式碼。
+- **獨立驗收（非僅採信回報）**：`npm run check` exit 0；`npm test` → tests 399 / pass 399 / fail 0（CR-0041 後 350 基線 + 49 新；既有斷言零調整）。測試 log 中的 stack trace 屬負路徑測試刻意觸發的錯誤記錄，非失敗。
+- 八項門檻獨立覆核（對映使用者指派 a–h）：
+  - (a) 管理 8 路由 super_admin-only：`server.js` 全掛 `requireAdmin`（grep 確認 1253/1263/1287/1313/1336/1346/1372/1394）；`requireAdmin.js` 只認字面 `ADMIN_API_TOKEN`，不走 idToken 驗證 → caregiver idToken 進不來。端點測試覆蓋 caregiver idToken→403、無 token→401（caregiverProvisioningEndpoint.test.js:295/309/578）。✅
+  - (b) caregiver 不可自我授權 / 不可管理其他 caregiver：所有 provisioning 路由 super_admin-only（同 a），caregiver 角色無任何路徑寫 `users` / `resident_caregiver_links`。✅
+  - (c) inactive caregiver→403 即時、inactive link→不授權：`adminAuthContext.js` 在 role 分派前加 `status==='inactive'→403` 閘（diff 確認）；`authorizationService.js` **git status 零改動**，`status='active'` 查詢自動排除 revoked link。端到端測試：建 link→看得到 alert→停用 link（DELETE=soft revoked）→看不到（caregiverProvisioningEndpoint.test.js:428）；inactive caregiver 讀 scoped API→403（:469）。✅
+  - (d) super_admin 行為零變更 + 既有測試全綠：inactive 閘只在 DB-查詢路徑（caregiver/DB-admin）生效，共享 token super_admin 路徑不查 DB → 不受影響；server.js diff 僅兩個 hunk（require 區 +3 行、1199 後純新增 admin block +215 行），既有路由 handler 零觸及；399/399 既有斷言未動。✅
+  - (e) API 不回 token/password_hash/provider_user_id、email 遮蔽：`toSafeCaregiver` 白名單只回 id/displayName/emailMasked/role/status/firebaseUid/createdAt/updatedAt（firebaseUid 為綁定識別、非 token/密碼）；`toSafeLink` 只回 id/residentId/residentName/caregiverId/caregiverName/role/status/時間，無 email 原文。`users` 無 password 欄（全程 Firebase）。✅
+  - (f) audit 無 PII/token、actorId=null 合理：`auditProvisioning` 固定 `actorType='super_admin'`、`actorId=null`、metadata 僅結構化非敏感欄（bound/status/fields/role/reason）—無 email/token/PII。actorId=null 為共享 token 無 per-actor 身分之誠實標註（§3 #3），合理可接受。✅
+  - (g) /notify / Realtime / Memory / Care Alert 契約未破壞：server.js diff 未觸及這些 handler（僅 require 區 + 新增 admin block）；`/api/care-alerts/notify` 維持無 authN（如 §8(c) 預期，仍列 FU-CR）。✅
+  - (h) migration 014 additive+冪等、無 hardcode/fake token：`ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'`，純加欄、可重跑；新檔 grep 無 sk-/token=/password= 等硬編祕鑰。✅
+- **競態窗口裁決（B2 email app-level 唯一檢查，無 DB unique index）：可接受結案。** 理由：(1) 觸發面僅 super_admin-only 管理路由，單一管理者循序操作，實務並發極低；(2) 競態需兩個同 email 的 `POST /api/admin/caregivers` 落在 SELECT→INSERT 間隙，最壞結果 = 多一筆重複 caregiver row，**不跨任何安全邊界**（無權限升級、無跨住民記憶/alert 洩漏，scope 仍由顯式 link 控制）；(3) 不加 DB unique index 是為避免衝撞既有 elder email（`users.email` 無 UNIQUE，歷史資料可能重複），屬保守正確取捨。→ **裁定 CR-0043 不因此阻擋結案**，DB 層 unique index 收斂為下列 FU-CR-0043b。
+- **完成狀態：✅ 完成（CR-0043 後端 B1–B5 落地，399/399 綠，architecture-agent B3/B4 落地 checkpoint PASS）。** 後續 commit 由使用者執行（architecture-agent 不自行 commit）。
+- **明確標註殘留（不宣稱已做）**：
+  - **CR-0044**（frontend-ux-agent）：caregiver_web caregiver 管理 + 授權指派 UI（super_admin-only），未做。
+  - **FU-CR-0043a**：caregiver 首次登入以 Firebase-verified email 自動認領 pending caregiver（重開登入解析路徑，需嚴格防劫持），未做。
+  - **FU-CR-0043b**：caregiver email 全域唯一之 DB 層 unique index（本案以 app-level SELECT 檢查、誠實標註競態窗口），未做。
+  - **FU**：`requireSuperAdmin`（resolveAdminAuthContext + assert role==='super_admin'）讓 DB-backed super_admin 也能用管理路由（目前僅共享 token），未做。
+  - **FU-CR**：`/api/care-alerts/notify` caller 驗證（長者 session，正式版 blocker），未做。
+  - **未驗證**：全程 mock pg（`setPgForTest`）+ stub firebaseAdmin；**未對真 Postgres / 真 Firebase 金鑰驗證**；migration 014 **未對真 DB 跑**（僅靜態冪等覆核）。真 DB/Firebase 端到端驗證列為部署前 checklist，非本案 code-level blocker。

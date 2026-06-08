@@ -114,6 +114,9 @@ const {
   resolveAdminAuthContext,
 } = require("./services/admin/adminAuthContext");
 const { listSafeUsers } = require("./services/admin/adminUsersService");
+// CR-0043：caregiver 帳號 + resident-caregiver link provisioning（super_admin-only，掛 requireAdmin）。
+const caregiverProvisioning = require("./services/admin/caregiverProvisioningService");
+const residentLinkProvisioning = require("./services/admin/residentLinkProvisioningService");
 const marketplaceStore = require("./services/marketplace/marketplaceStore");
 
 const app = express();
@@ -1197,6 +1200,215 @@ app.get("/api/admin/users", requireAdmin, async (_req, res) => {
     logError("admin users list failed", { error: error?.message || error });
     return res.status(500).json({ ok: false, error: "failed_to_load_users" });
   }
+});
+
+// ---- CR-0043：Caregiver 帳號 + Resident-Caregiver Link Provisioning（super_admin-only）----
+//
+// 全部掛 requireAdmin（共享 super_admin token only，fail-closed）：caregiver 持有效 idToken 也進不來
+// （requireAdmin 只認字面 ADMIN_API_TOKEN）。契約見 docs/CHANGE_REVIEW.md CR-0043 與
+// docs/CAREGIVER_PROVISIONING.md。每筆建立/修改/停用皆寫 logAudit（actorType=super_admin、
+// actorId=null〔共享 token 無 per-actor 身分〕、metadata 無 PII / 無 token / 無 email 原文）。
+//
+// 安全：service 對外只回安全欄位（emailMasked / firebaseUid / status…），絕不回 password_hash /
+// provider_user_id / token。失敗只回 { ok:false, error }，不外洩工程細節 / stack。
+
+// 建立/修改/停用各類錯誤 → HTTP 狀態碼對映（client error vs server error）。
+const CAREGIVER_CLIENT_ERRORS = {
+  email_required: 400,
+  invalid_payload: 400,
+  invalid_status: 400,
+  email_exists: 409,
+  not_found: 404,
+};
+const LINK_CLIENT_ERRORS = {
+  invalid_payload: 400,
+  invalid_role: 400,
+  invalid_status: 400,
+  resident_not_found: 404,
+  caregiver_not_found: 404,
+  link_exists: 409,
+  not_found: 404,
+};
+
+function provisioningStatusCode(error, map) {
+  return map[error] || 500;
+}
+
+// 寫 provisioning 稽核（best-effort，metadata 只放結構化非敏感欄位）。
+function auditProvisioning(action, targetType, targetId, outcome, metadata = {}) {
+  // 不 await：稽核失敗絕不拖垮主流程（auditLogService 本身 best-effort、絕不丟例外）。
+  logAudit({
+    actorType: "super_admin",
+    actorId: null, // 共享 token 無 per-actor 身分（CR-0043 §3 #3 誠實標註）。
+    action,
+    targetType,
+    targetId: targetId == null ? null : String(targetId),
+    outcome,
+    metadata,
+  }).catch(() => {});
+}
+
+// --- Caregiver 帳號 ---
+
+app.get("/api/admin/caregivers", requireAdmin, async (_req, res) => {
+  try {
+    const caregivers = await caregiverProvisioning.listCaregivers();
+    return res.json({ ok: true, caregivers });
+  } catch (error) {
+    logError("admin caregivers list failed", { error: error?.message || error });
+    return res.status(500).json({ ok: false, error: "failed_to_load_caregivers" });
+  }
+});
+
+app.post("/api/admin/caregivers", requireAdmin, async (req, res) => {
+  const body = req.body || {};
+  let result;
+  try {
+    result = await caregiverProvisioning.createCaregiver({
+      email: body.email,
+      displayName: body.displayName,
+      firebaseUid: body.firebaseUid,
+    });
+  } catch (error) {
+    logError("admin caregiver create failed", { error: error?.message || error });
+    return res.status(500).json({ ok: false, error: "failed_to_create_caregiver" });
+  }
+  if (result.ok) {
+    auditProvisioning("caregiver_create", "caregiver", result.caregiver.id, "success", {
+      bound: result.caregiver.firebaseUid != null,
+      status: result.caregiver.status,
+    });
+    return res.status(201).json(result);
+  }
+  auditProvisioning("caregiver_create", "caregiver", null, "failed", { reason: result.error });
+  return res.status(provisioningStatusCode(result.error, CAREGIVER_CLIENT_ERRORS)).json(result);
+});
+
+app.patch("/api/admin/caregivers/:id", requireAdmin, async (req, res) => {
+  const body = req.body || {};
+  const input = {};
+  if (body.displayName !== undefined) input.displayName = body.displayName;
+  if (body.email !== undefined) input.email = body.email;
+  if (body.firebaseUid !== undefined) input.firebaseUid = body.firebaseUid;
+  let result;
+  try {
+    result = await caregiverProvisioning.updateCaregiver(req.params.id, input);
+  } catch (error) {
+    logError("admin caregiver update failed", { error: error?.message || error });
+    return res.status(500).json({ ok: false, error: "failed_to_update_caregiver" });
+  }
+  if (result.ok) {
+    auditProvisioning("caregiver_update", "caregiver", req.params.id, "success", {
+      fields: Object.keys(input),
+      bound: result.caregiver.firebaseUid != null,
+    });
+    return res.json(result);
+  }
+  auditProvisioning("caregiver_update", "caregiver", req.params.id, "failed", {
+    reason: result.error,
+  });
+  return res.status(provisioningStatusCode(result.error, CAREGIVER_CLIENT_ERRORS)).json(result);
+});
+
+app.patch("/api/admin/caregivers/:id/status", requireAdmin, async (req, res) => {
+  const status = req.body && typeof req.body.status === "string" ? req.body.status : "";
+  let result;
+  try {
+    result = await caregiverProvisioning.setCaregiverStatus(req.params.id, status);
+  } catch (error) {
+    logError("admin caregiver status failed", { error: error?.message || error });
+    return res.status(500).json({ ok: false, error: "failed_to_update_caregiver" });
+  }
+  if (result.ok) {
+    auditProvisioning("caregiver_status_change", "caregiver", req.params.id, "success", {
+      status: result.caregiver.status,
+    });
+    return res.json(result);
+  }
+  auditProvisioning("caregiver_status_change", "caregiver", req.params.id, "failed", {
+    reason: result.error,
+  });
+  return res.status(provisioningStatusCode(result.error, CAREGIVER_CLIENT_ERRORS)).json(result);
+});
+
+// --- Resident-Caregiver Link ---
+
+app.get("/api/admin/resident-caregiver-links", requireAdmin, async (_req, res) => {
+  try {
+    const links = await residentLinkProvisioning.listLinks();
+    return res.json({ ok: true, links });
+  } catch (error) {
+    logError("admin links list failed", { error: error?.message || error });
+    return res.status(500).json({ ok: false, error: "failed_to_load_links" });
+  }
+});
+
+app.post("/api/admin/resident-caregiver-links", requireAdmin, async (req, res) => {
+  const body = req.body || {};
+  let result;
+  try {
+    result = await residentLinkProvisioning.createLink({
+      residentId: body.residentId,
+      caregiverId: body.caregiverId,
+      role: body.role,
+    });
+  } catch (error) {
+    logError("admin link create failed", { error: error?.message || error });
+    return res.status(500).json({ ok: false, error: "failed_to_create_link" });
+  }
+  if (result.ok) {
+    auditProvisioning("link_create", "resident_caregiver_link", result.link.id, "success", {
+      role: result.link.role,
+      status: result.link.status,
+    });
+    return res.status(201).json(result);
+  }
+  auditProvisioning("link_create", "resident_caregiver_link", null, "failed", {
+    reason: result.error,
+  });
+  return res.status(provisioningStatusCode(result.error, LINK_CLIENT_ERRORS)).json(result);
+});
+
+app.patch("/api/admin/resident-caregiver-links/:id", requireAdmin, async (req, res) => {
+  const role = req.body && typeof req.body.role === "string" ? req.body.role : "";
+  let result;
+  try {
+    result = await residentLinkProvisioning.updateLinkRole(req.params.id, role);
+  } catch (error) {
+    logError("admin link update failed", { error: error?.message || error });
+    return res.status(500).json({ ok: false, error: "failed_to_update_link" });
+  }
+  if (result.ok) {
+    auditProvisioning("link_update", "resident_caregiver_link", req.params.id, "success", {
+      role: result.link.role,
+    });
+    return res.json(result);
+  }
+  auditProvisioning("link_update", "resident_caregiver_link", req.params.id, "failed", {
+    reason: result.error,
+  });
+  return res.status(provisioningStatusCode(result.error, LINK_CLIENT_ERRORS)).json(result);
+});
+
+// 停用授權關聯（soft-disable = status revoked）。DELETE 語意 = 停用，不實刪資料（保留稽核軌跡）。
+app.delete("/api/admin/resident-caregiver-links/:id", requireAdmin, async (req, res) => {
+  let result;
+  try {
+    result = await residentLinkProvisioning.setLinkStatus(req.params.id, "inactive");
+  } catch (error) {
+    logError("admin link disable failed", { error: error?.message || error });
+    return res.status(500).json({ ok: false, error: "failed_to_update_link" });
+  }
+  if (result.ok) {
+    auditProvisioning("link_status_change", "resident_caregiver_link", req.params.id, "success", {
+      status: result.link.status,
+    });
+    return res.json(result);
+  }
+  auditProvisioning("link_status_change", "resident_caregiver_link", req.params.id, "failed", {
+    reason: result.error,
+  });
+  return res.status(provisioningStatusCode(result.error, LINK_CLIENT_ERRORS)).json(result);
 });
 
 // ---- CR-0032 長照商品商城（Marketplace）----

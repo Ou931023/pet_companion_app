@@ -65,7 +65,8 @@ function setFirebaseAdminForTest(stub) {
   activeFirebaseAdmin = stub || defaultFirebaseAdmin;
 }
 
-// 以 firebase_uid 查 users row（id, role）。pg 不可用 / 查無 → null（fail-closed 由上層轉 403）。
+// 以 firebase_uid 查 users row（id, role, status）。pg 不可用 / 查無 → null（fail-closed 由上層轉 403）。
+// CR-0043 B3：SELECT 補 status（caregiver 啟用/停用閘，migration 014）。
 async function findUserByFirebaseUid(pg, firebaseUid) {
   if (!firebaseUid) return null;
   if (pg && typeof pg.isPostgresAvailable === "function") {
@@ -78,7 +79,7 @@ async function findUserByFirebaseUid(pg, firebaseUid) {
     if (!available) return null;
   }
   const { rows } = await pg.query(
-    "SELECT id, role FROM users WHERE firebase_uid = $1 LIMIT 1",
+    "SELECT id, role, status FROM users WHERE firebase_uid = $1 LIMIT 1",
     [firebaseUid],
   );
   return (rows && rows[0]) || null;
@@ -133,6 +134,14 @@ async function buildAuthContext(req, deps = {}) {
   const user = await findUserByFirebaseUid(pg, firebaseUid);
   if (!user) {
     // 已驗證身分但非授權角色（或查無 / DB 不可用）→ 403（fail-closed，非 super_admin）。
+    return { ok: false, status: 403, error: "admin_permission_required" };
+  }
+  // CR-0043 B3：停用閘（fail-closed）。在 role 分派之前檢查 users.status。
+  //   - status==='inactive' → 403（即時失效；對 caregiver 與 DB-admin 皆適用，更安全）。
+  //   - NULL / 缺值（舊 row、未跑 migration 014） → 視為 active（向後相容，不破壞既有判定）。
+  //   共享 super_admin token 路徑不查 DB → 不受此閘影響。
+  const status = user.status == null ? "active" : String(user.status);
+  if (status === "inactive") {
     return { ok: false, status: 403, error: "admin_permission_required" };
   }
   const role = (user.role || "").toString();
