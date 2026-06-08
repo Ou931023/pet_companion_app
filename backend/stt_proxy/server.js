@@ -105,6 +105,10 @@ const {
 } = require("./services/dailyCareTask/dailyCareTaskVisionService");
 const adminAnalysis = require("./services/admin/adminAnalysisService");
 const requireAdmin = require("./services/admin/requireAdmin");
+// CR-0040 Batch C：resident-caregiver 授權範圍過濾。requireAdmin 仍在路由最前面擋門；
+// 本服務在其後依 authContext 角色套 scope。production 只解析得到 super_admin（行為零變更），
+// caregiver scoped 路徑由測試 seam 驅動（見 services/admin/authorizationService.js）。
+const authz = require("./services/admin/authorizationService");
 const { listSafeUsers } = require("./services/admin/adminUsersService");
 const marketplaceStore = require("./services/marketplace/marketplaceStore");
 
@@ -500,6 +504,7 @@ app.post("/api/care-alerts/notify", async (req, res) => {
 
 app.get("/api/care-alerts", requireAdmin, async (req, res) => {
   try {
+    const authContext = authz.resolveAuthContext(req);
     const alerts = await listCareAlerts({
       limit: req.query.limit,
       riskLevel: req.query.riskLevel,
@@ -507,7 +512,12 @@ app.get("/api/care-alerts", requireAdmin, async (req, res) => {
       // CR-0008：明確帶入 elderId 才過濾，未帶回全部（含舊資料 elderId=null）。
       elderId: req.query.elderId,
     });
-    return res.json({ success: true, alerts });
+    // CR-0040：super_admin 原樣回傳（行為零變更）；caregiver 只見授權住民。
+    const scoped = await authz.filterAlertsByAuthorizedResidents(
+      authContext,
+      alerts,
+    );
+    return res.json({ success: true, alerts: scoped });
   } catch (error) {
     logError("care alerts list failed", { error: error?.message || error });
     return res.status(500).json({ success: false, error: "care_alerts_list_failed" });
@@ -516,9 +526,18 @@ app.get("/api/care-alerts", requireAdmin, async (req, res) => {
 
 app.get("/api/care-alerts/:id", requireAdmin, async (req, res) => {
   try {
+    const authContext = authz.resolveAuthContext(req);
     const alert = await getCareAlertById(req.params.id);
     if (!alert) {
       return res.status(404).json({ success: false, error: "not_found" });
+    }
+    // CR-0040：super_admin 一律可存取（行為零變更）；caregiver 跨住民 → 403。
+    const canAccess = await authz.assertCanAccessResident(
+      authContext,
+      alert.elderId,
+    );
+    if (!canAccess) {
+      return res.status(403).json({ success: false, error: "forbidden" });
     }
     return res.json({ success: true, alert });
   } catch (error) {
@@ -531,6 +550,22 @@ app.patch("/api/care-alerts/:id/status", requireAdmin, async (req, res) => {
   const status =
     req.body && typeof req.body.status === "string" ? req.body.status : "";
   try {
+    // CR-0040：caregiver 須先通過授權檢查（跨住民 → 403）。super_admin 跳過此前置讀取，
+    // 保持原流程與 response 完全不變（行為零變更）。
+    const authContext = authz.resolveAuthContext(req);
+    if (!authz.isSuperAdmin(authContext)) {
+      const existing = await getCareAlertById(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ success: false, error: "not_found" });
+      }
+      const canAccess = await authz.assertCanAccessResident(
+        authContext,
+        existing.elderId,
+      );
+      if (!canAccess) {
+        return res.status(403).json({ success: false, error: "forbidden" });
+      }
+    }
     const result = await updateCareAlertStatus(req.params.id, status);
     if (result.success) {
       // CR-P2B：Care Alert 狀態變更為敏感操作 → best-effort 稽核。metadata 僅
@@ -1016,10 +1051,18 @@ app.get("/api/admin/overview", requireAdmin, async (_req, res) => {
   }
 });
 
-app.get("/api/admin/elders", requireAdmin, async (_req, res) => {
+app.get("/api/admin/elders", requireAdmin, async (req, res) => {
   try {
+    const authContext = authz.resolveAuthContext(req);
     const elders = await adminAnalysis.listElderSummaries();
-    return res.json(elders);
+    // CR-0040：super_admin 不變；caregiver 只回授權住民。
+    if (authz.isSuperAdmin(authContext)) {
+      return res.json(elders);
+    }
+    const ids = await authz.getAuthorizedResidentIdsForCaregiver(
+      authContext.caregiverId,
+    );
+    return res.json(elders.filter((row) => row && ids.has(row.elderId)));
   } catch (error) {
     logError("admin elders list failed", { error: error?.message || error });
     return res.status(500).json({ success: false, error: "admin_elders_failed" });
@@ -1028,6 +1071,14 @@ app.get("/api/admin/elders", requireAdmin, async (_req, res) => {
 
 app.get("/api/admin/elders/:elderId", requireAdmin, async (req, res) => {
   try {
+    // CR-0040：caregiver 跨住民 → 403；super_admin 不變。
+    const authContext = authz.resolveAuthContext(req);
+    if (!authz.isSuperAdmin(authContext)) {
+      const ok = await authz.assertCanAccessResident(authContext, req.params.elderId);
+      if (!ok) {
+        return res.status(403).json({ success: false, error: "forbidden" });
+      }
+    }
     const analysis = await adminAnalysis.getElderAnalysis(req.params.elderId);
     if (!analysis) {
       return res.status(404).json({ success: false, error: "elder_not_found" });
@@ -1041,6 +1092,14 @@ app.get("/api/admin/elders/:elderId", requireAdmin, async (req, res) => {
 
 app.get("/api/admin/elders/:elderId/physio", requireAdmin, async (req, res) => {
   try {
+    // CR-0040：caregiver 跨住民 → 403；super_admin 不變。
+    const authContext = authz.resolveAuthContext(req);
+    if (!authz.isSuperAdmin(authContext)) {
+      const ok = await authz.assertCanAccessResident(authContext, req.params.elderId);
+      if (!ok) {
+        return res.status(403).json({ success: false, error: "forbidden" });
+      }
+    }
     const physio = await adminAnalysis.getElderPhysio(req.params.elderId);
     if (!physio) {
       return res.status(404).json({ success: false, error: "elder_not_found" });
@@ -1054,6 +1113,14 @@ app.get("/api/admin/elders/:elderId/physio", requireAdmin, async (req, res) => {
 
 app.get("/api/admin/elders/:elderId/emotion", requireAdmin, async (req, res) => {
   try {
+    // CR-0040：caregiver 跨住民 → 403；super_admin 不變。
+    const authContext = authz.resolveAuthContext(req);
+    if (!authz.isSuperAdmin(authContext)) {
+      const ok = await authz.assertCanAccessResident(authContext, req.params.elderId);
+      if (!ok) {
+        return res.status(403).json({ success: false, error: "forbidden" });
+      }
+    }
     const emotion = await adminAnalysis.getElderEmotion(req.params.elderId);
     if (!emotion) {
       return res.status(404).json({ success: false, error: "elder_not_found" });
@@ -1067,6 +1134,14 @@ app.get("/api/admin/elders/:elderId/emotion", requireAdmin, async (req, res) => 
 
 app.get("/api/admin/elders/:elderId/game-metrics", requireAdmin, async (req, res) => {
   try {
+    // CR-0040：caregiver 跨住民 → 403；super_admin 不變。
+    const authContext = authz.resolveAuthContext(req);
+    if (!authz.isSuperAdmin(authContext)) {
+      const ok = await authz.assertCanAccessResident(authContext, req.params.elderId);
+      if (!ok) {
+        return res.status(403).json({ success: false, error: "forbidden" });
+      }
+    }
     const game = await adminAnalysis.getElderGameMetrics(req.params.elderId);
     if (!game) {
       return res.status(404).json({ success: false, error: "elder_not_found" });

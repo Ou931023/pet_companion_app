@@ -1473,3 +1473,144 @@ caregiver_web API base URL 改為可配置、移除 localhost production 預設�
 
 #### 13. architecture-agent 裁決（checkpoint）
 - ✅ **核准並驗收（PASS）**。三批均符合 §8 範圍與 §10 紅線：只加擋門、不改成功契約、/notify 不擋、未碰 .env/token、未做住民 scope。CR-0039 標記為完成。
+
+---
+
+### CR-0040 — Resident-Caregiver Authorization Model（Audit CR0033 §12 #3；修 P0-2 scope 層 + P1-2 部分）
+- 提出 / 裁決 agent：architecture-agent（依使用者指派 + Audit CR0033 §12 第 3 項，CR-0039 後續）
+- 日期：2026-06-08
+- 完成狀態：📋 已規劃 / 已裁決，待派工（Batch A/B/C 進本案；Batch D 拆後續 CR）
+
+#### 0. 編號治理 / 對照
+- 帳本正規 ID = **CR-0040**（沿用 CR-0039 §0 的「下一個空號」治理）。對應 Audit §12 #3「resident_caregiver_links + 授權範圍過濾」、P0-2 的「scope 層」子集、P1-2「無 RBAC / 已驗證端點無住民 scope」的**部分**修補。
+- 後續依賴：caregiver 個別登入 = Audit §12 #5 → 之後開 **CR-00xx（caregiver web 正式登入）**；本案 Batch D 與「真 per-caregiver 強制」依賴它。
+
+#### 1. 動機 / 問題
+- CR-0039 已完成「擋門」（admin 讀取 + Care Alert 讀取/管理路由掛 `requireAdmin`），但**所有持 `ADMIN_API_TOKEN` 者仍可見全部住民**（CR-0039 §11 明列為已知殘留風險，轉本案）。
+- 本案目標：建立正式版 **resident-caregiver authorization model**（schema + Authorization Service + 角色分界 + 路由 scope plumbing），讓「依授權住民過濾資料」成為**已存在且可測**的機制，並把共享 `ADMIN_API_TOKEN` 由「token 即全看」的意外行為，改為**明確的 `super_admin` 角色**（full scope）。
+
+#### 2. 現況盤點（architecture-agent 已獨立覆核，與使用者盤點一致）
+1. **無** residents / caregivers / resident_caregiver_links 任何表；migrations 只到 `012`，實體只有 `006_create_users_elders.sql` 的 **users + elders**。專案語彙為 **user / elder**，非 resident / caregiver。
+2. 程式碼**無 caregiver 身分**：`grep caregiver_id|caregiverId|getAuthorizedResident|resident_caregiver` 在 backend 業務碼**無命中**（僅 `actorType:"caregiver"` 標籤與註解、稽核 log 字面值）。
+3. CR-0039 後，admin + care-alert 讀取/管理路由全掛**單一共享 `ADMIN_API_TOKEN`**（`requireAdmin`，fail-closed Bearer，401 `missing_admin_token` / 403 `admin_permission_required`）。caregiver_web 僅在設定頁手動輸入此共享 token，**無每位 caregiver 個別身分/登入**（= §12 #5，排在本案之後）。
+4. `services/admin/adminAnalysisService.js` 以 `elderId` 為 key（`getOverview` / `getElderAnalysis` / `getElderPhysio` / `getElderEmotion` / `getElderGameMetrics` / `listElderSummaries`），有 `SEED_ELDER_IDS` 參考資料；`care_alerts`（migration 011）已有 **nullable `elder_id UUID REFERENCES elders(id)`**（CR-0008），`careAlertStoreService.listAlerts` 已支援 `elderId` 過濾。
+5. care alert store = DB-first + JSON fallback（dev/staging）；本機無 Postgres，**migration 無法對真 DB 跑**；`careAlertStoreService` 已有 `setPgForTest(pg)` 注入 seam，測試走 mock pg。
+
+#### 3. 核心張力與裁決 — caregiver 身分如何建立？採 **路線 B（精修版）**
+- **張力**：任務 §4.2/§4.3/§4.4 要「caregiver 只能看授權住民」「不可『持 token 即全看』作為正式行為」，但**目前請求無法識別是哪位 caregiver**（只有共享 admin token）。沒有 caregiver 身分就無法真正依 caregiver 過濾。
+- **路線 A（駁回）**：本案就導入 caregiver 登入 + 個別身分 + JWT/role。→ **駁回**：與 §12 #5 重疊，等同一次重寫整個 auth，違反任務 §5.8 與 CLAUDE.md「不一次重寫整個 auth」。
+- **路線 B（採用，精修）**：本案建立 **schema（resident_caregiver_links，resident=elder）+ Authorization Service（純函式 + pg seam）+ super_admin 角色定義 + 路由 scope plumbing（經單一 authContext resolver）**。caregiver 身分**不在本案偽造**：production 唯一可解析身分 = `ADMIN_API_TOKEN` → **`super_admin`（full scope）**；caregiver-scoped 程式路徑為**真實碼**，由**注入式 authContext（測試 seam）**驅動單元/端點測試。per-caregiver 真實登入留待 §12 #5。
+- **裁決**：採**路線 B（精修）**。理由：
+  1. 在不重寫 auth 的前提下，讓「依授權住民過濾」成為**已存在、已測、可獨立回滾**的機制（修 P0-2 scope 層）。
+  2. 把共享 token 明確命名為 `super_admin` 角色 → P1-2 的「token 即全看是意外行為」轉為「明確角色」（部分修 P1-2）。
+  3. super_admin 路徑**完全保留 CR-0039 契約與 200 形狀**（行為零變更），caregiver 路徑由測試 seam 驗證 → 風險可控、checkpoint 可驗。
+  4. **嚴禁**：不得引入 production 可用的假 caregiver token / 不得 hardcode caregiver / 不得用 demo seed 假裝授權完成（任務 §5.6/§5.7、CLAUDE.md §2.1）。caregiver 身分解析 seam 在 production 只認得 super_admin，直到 §12 #5。
+
+#### 4. 最小切片邊界裁決 — 哪些進 CR-0040、哪些拆後續
+- **進 CR-0040（Batch A/B/C）**：
+  - schema（migration 013 resident_caregiver_links）。
+  - Authorization Service（`getAuthorizedResidentIdsForCaregiver` / `assertCanAccessResident` / `filterAlertsByAuthorizedResidents`）+ `super_admin` 角色常數。
+  - 路由 scope plumbing：care-alert 三條 + admin analytics 涉住民讀取路由，經單一 `resolveAuthContext(req)` 取得角色；super_admin→full scope（行為不變），caregiver→scoped（測試 seam 驅動）。
+- **拆後續 CR-00xx（Batch D，依賴 §12 #5）**：
+  - caregiver_web 整合（空狀態、403 友善處理、不壞版）。
+  - 真實 per-caregiver 登入 resolver（讓 `resolveAuthContext` 回傳真 caregiverId）。
+- **理由**：route enforcement 在「請求尚無 caregiver 身分」前對 production 是 no-op（一律 super_admin）；caregiver_web 串接與真強制需要 §12 #5 提供的真實身分。但 plumbing + service + schema + 注入式測試**現在就能落地且可獨立驗證**，正是 P0-2 scope 層所需，且不重寫 auth。Batch C 嚴格 behavior-preserving（super_admin），blast radius 受控。
+
+#### 5. resident_caregiver_links 最小 schema（migration 013，提案規格；由 backend-agent 實作，本提案不寫 migration 檔）
+- **命名橋接裁決**：表名保留 **`resident_caregiver_links`**（對齊 CLAUDE.md §3.3 核心表清單與稽核字面，避免 §3.3 檢查清單缺項）；欄位用 **`elder_id`**（對齊真實 `elders` 表與既有 `care_alerts.elder_id` FK 慣例）。「resident」概念即本專案 **elder**。
+- **caregiver_id FK 錨點裁決**：FK 至 `users(id)`（caregiver 將是 `users.role='caregiver'`，§12 #5 建立 caregiver 帳號時自然落位）；沿用既有身分表，前向相容，不另造孤立 UUID。
+- 提案 SQL（idempotent、`IF NOT EXISTS`、沿用 006/011 的 pgcrypto + gen_random_uuid 慣例）：
+  - `id UUID PK DEFAULT gen_random_uuid()`
+  - `elder_id UUID NOT NULL REFERENCES elders(id)`（resident = elder）
+  - `caregiver_id UUID NOT NULL REFERENCES users(id)`（caregiver 身分錨於 users）
+  - `role TEXT NOT NULL DEFAULT 'primary'`（primary | secondary | viewer）
+  - `status TEXT NOT NULL DEFAULT 'active'`（active | revoked）
+  - `created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()` / `updated_at TIMESTAMPTZ` / `revoked_at TIMESTAMPTZ`
+  - 索引：`idx_rcl_caregiver_active`(caregiver_id) WHERE status='active'；`idx_rcl_elder`(elder_id)；UNIQUE `idx_rcl_unique_active`(elder_id, caregiver_id) WHERE status='active'
+  - 冪等補欄位：`ALTER TABLE ... ADD COLUMN IF NOT EXISTS ...`（同 006/011 寫法）
+- **不變**：不改 elders / users / care_alerts 既有欄位（純新增表 → 對既有資料零破壞）。
+
+#### 6. 影響範圍（檔案 + 行號，已覆核）
+- 新增：`backend/stt_proxy/db/migrations/013_create_resident_caregiver_links.sql`（Batch A）。
+- 新增：`backend/stt_proxy/services/admin/authorizationService.js` + 測試（Batch B）。
+- 改：`backend/stt_proxy/server.js`
+  - care-alert：`GET /api/care-alerts`(501)、`GET /api/care-alerts/:id`(517)、`PATCH /api/care-alerts/:id/status`(530) → 於 `requireAdmin` 後加 `resolveAuthContext` + scope（super_admin 不變；caregiver 過濾/403）。
+  - admin analytics：`/api/admin/overview`(1009)、`/api/admin/elders`(1019)、`/api/admin/elders/:elderId`(1029)、`/elders/:elderId/physio|emotion|game-metrics`(1042/1055/1068)、`/api/admin/daily-care-tasks`(954) 涉住民讀取部分套 scope。
+  - **不動**：`POST /api/care-alerts/notify`(387)（長者端建立路徑，紅線）。
+- 後續（Batch D，拆出）：`caregiver_web/app.js` + 真 per-caregiver 登入 resolver。
+
+#### 7. 觸及 🔒？
+- **是（兩處）**：
+  - DB schema（migration 013）→ 🔒。屬**純新增表**、additive、idempotent → low（不改既有表/欄位/契約）。
+  - `server.js` 路由（Batch C）→ 🔒（路由/response 契約）。但 super_admin 路徑**行為零變更**，僅新增「caregiver 角色時的過濾 / 403」分支；不改任何 200 成功形狀、不改 Care Alert 三方共用資料結構欄位 → medium。
+- **不觸及**：Realtime / SDP / DataChannel、Memory 成功契約、`.env` / token 值、`requireAdmin.js` 行為（CR-0039 擋門保留）、Care Alert 既有 200 形狀。
+- architecture-agent 對 🔒 改動之核准：**Batch A/B 核准**；**Batch C 條件式核准**（須落地 checkpoint 覆核 CR-0039 門 + 200 形狀 + /notify + 無 production 假 caregiver；見 §11）。
+
+#### 8. 牽涉 agent
+- backend-agent：migration 013（A）、Authorization Service（B）、server.js scope plumbing + 測試（C）。**主要 owner。**
+- frontend-ux-agent：caregiver_web 整合（**Batch D，拆後續 CR**；本案不動 caregiver_web）。
+- 不牽涉 realtime-voice-agent、companion-memory-agent（Care Alert 建立邏輯 / /notify / 分級不動）。
+
+#### 9. 風險等級：medium
+- schema additive（low）+ 新 service（low）+ server.js scope plumbing（🔒，medium，behavior-preserving for super_admin）。
+- 殘留（誠實記錄）：production 尚無真 caregiver 身分 → 真 per-caregiver 強制與 caregiver_web 串接未閉合（依 §12 #5，轉 Batch D / 後續 CR）。本案**不宣稱 P0-2 / P1-2 全修**，只修「scope 機制存在且可測 + super_admin 明確角色」子集。
+
+#### 10. 批次切分（順序：A→B→C；D 另開 CR）
+- **Batch A — backend-agent（schema）**
+  - 範圍：新增 migration 013（§5 規格）。idempotent / `IF NOT EXISTS`。不改既有表。
+  - 驗證：SQL 靜態審查（所有 CREATE/ALTER 皆 IF NOT EXISTS，可重跑）。**migration 不可對真 DB 跑**（本機無 PG）→ 見 §11 測試策略。
+- **Batch B — backend-agent（Authorization Service，純函式 + pg seam）**
+  - 範圍：`authorizationService.js`：`getAuthorizedResidentIdsForCaregiver(caregiverId, {pg})`、`assertCanAccessResident(caregiverId, elderId, {pg})`、`filterAlertsByAuthorizedResidents(authContext, alerts, {pg})` + `ROLE_SUPER_ADMIN` 常數。super_admin → full scope（直接放行）；caregiver → 查 `resident_caregiver_links` WHERE status='active'。**不 hardcode** elder/caregiver id；**不把所有 caregiver 當 super admin**；區分「已驗證」與「有權限」。
+  - 驗證：單元測試以注入 mock pg（回傳 canned links rows）覆蓋：super_admin full scope、caregiver 僅授權 elder、無授權→空集合、跨住民→assert 拋錯/false。不需真 DB。
+- **Batch C — backend-agent（路由 scope plumbing，🔒，behavior-preserving）**
+  - 範圍：加 `resolveAuthContext(req)`（production：valid ADMIN_API_TOKEN → `{role:super_admin}`；**不引入 production 可用 caregiver token**）。care-alert 三條 + admin analytics 涉住民讀取路由：super_admin→原行為；caregiver→list 過濾、detail/update 跨住民 403。`/notify` 不動。
+  - 驗證：端點測試 — (1) super_admin（valid token）→ 原 200 形狀、list 全量、/notify 無 auth 仍 200（CR-0039 回歸）；(2) 注入 caregiver authContext（測試 seam，stub `resolveAuthContext`）→ list 僅授權 elder / detail 跨住民 403 / update 跨住民 403 / 無授權 list 空集合。對齊任務 §6.1–6.3。
+- **Batch D — 拆後續 CR-00xx（依賴 §12 #5，本案不做）**
+  - frontend-ux-agent：caregiver_web 空狀態 / 403 友善處理 / 不壞版 / 不假資料。
+  - backend-agent：真 per-caregiver 登入 resolver（`resolveAuthContext` 回傳真 caregiverId）。
+- 相依：A→B→C 依序；D 待 §12 #5。三批（A/B/C）合併後視為 CR-0040 完成。
+
+#### 11. 測試計畫 + migration 不可對真 DB 跑 之策略
+- **Authorization Service（B）**：以注入 mock pg（`{ query: async () => ({ rows:[...] }) }`）驅動，斷言授權集合 / 跨住民拒絕；零真 DB。
+- **路由 scope（C）**：沿用既有測試模式（注入 `setPgForTest` / stub store + stub `resolveAuthContext`）。super_admin 路徑用字面 `test-admin-token`（同 CR-0039）；caregiver 路徑用注入 authContext。
+- **migration 013（A）— 不可對真 DB 跑**：本機無 Postgres，**不執行實際 migrate**。策略：
+  1. SQL 靜態審查（idempotency：全 IF NOT EXISTS；重跑安全；FK 指向既有 elders/users）。
+  2. 若 `db/migrate.js` 支援 mock pg client，加「migration 檔被載入並依序送出」之 runner 測試；否則以檔案存在 + 含 IF NOT EXISTS guard 的解析測試替代。
+  3. 回報需誠實標註「migration 未對真 DB 驗證，僅靜態 + mock」。
+- **回歸**：`cd backend/stt_proxy && npm run check && npm test`（CR-0039 後 backend 296 應維持綠 + 新增案例）。Flutter 不受影響（本案 0 行 `lib/` 改動，/notify caller 不動）→ 可選跑確認 0 回歸。
+- **測試所需環境變數**：`ADMIN_API_TOKEN`（測試值，請手動設定，勿貼真實值）。不需真 `DATABASE_URL` / 真金鑰。
+
+#### 12. 紅線（落地必守）
+- 不破壞 CR-0039 `requireAdmin` 擋門（401/403 行為保留）。
+- 不破壞 `POST /api/care-alerts/notify` 長者端建立流程（不掛驗證、不加 scope）。
+- 不改 Realtime / Memory 成功契約；不改 Care Alert 既有 200 回傳形狀與三方共用資料結構欄位。
+- super_admin 路徑行為零變更。
+- **不 hardcode resident/caregiver 作為正式授權；不引入 production 可用假 caregiver token；不用 demo seed 假裝授權完成。**
+- 不一次重寫整個 auth（caregiver 登入 = §12 #5，本案外）。
+- 不碰 `.env` / token 值；不改 `requireAdmin.js` 行為。
+
+#### 13. architecture-agent 裁決
+- ✅ **核准規劃**（按 §10 批次 A→B→C 執行；Batch D 拆後續 CR-00xx，依賴 §12 #5）。
+- 路線裁決：**路線 B（精修）** — schema + Authorization Service + super_admin 明確角色 + 路由 scope plumbing（經 resolver seam）；caregiver 身分 production 只認 super_admin，scoped 路徑由測試 seam 驗證；真 per-caregiver 登入 + caregiver_web 留 §12 #5 後續。
+- 最小切片裁決：A/B/C 進本案；caregiver_web 整合 + 真 per-caregiver resolver 拆 Batch D。
+- 🔒 裁決：Batch A/B 核准；**Batch C 條件式核准**，落地後須 architecture-agent checkpoint 覆核（CR-0039 門完整 / 200 形狀不變 / /notify 不受影響 / 無 production 假 caregiver / 無 hardcode 授權）方可結案。
+- 完成定義：A/B/C 合併 + 測試綠 + checkpoint PASS。本案**僅**修 P0-2 的 scope 層（機制存在且可測）與 P1-2 的「super_admin 明確角色」子集；**不宣稱 P0-2 / P1-2 全修**（真 per-caregiver 強制依 §12 #5）。
+
+#### 14. 落地 checkpoint 覆核（architecture-agent，2026-06-08）— PASS
+- **結論：PASS（Batch C 條件式核准之 checkpoint 通過，CR-0040 結案）。** read-only 覆核（git diff / grep），未改業務碼。
+- **執行進度**：Batch A ✅（migration 013）／Batch B ✅（authorizationService + 15 案）／Batch C ✅（server.js scope + 12 案）。
+- **驗收結果**：backend `npm run check` OK；`npm test` → 331/331 pass、0 fail（296 基線 + 35 新）。獨立覆驗一致。
+- **§11 checkpoint 逐項（全數通過）**：
+  - (a) super_admin 行為零變更：`resolveAuthContext` production 恆回 `{role:super_admin}`；care-alert list 走 `filterAlertsByAuthorizedResidents`（super_admin 原樣同參考回傳）、`:id` 與 PATCH 對 super_admin 跳過前置讀取 → 200 形狀/排序/欄位不變；測試含 list 全量、:id 200、PATCH 200、PATCH 不存在→404 回歸。✅
+  - (b) requireAdmin 擋門完整：scope 路由 `requireAdmin` 皆仍在最前；測試「caregiver 無 token → 401 先於 scope」通過，未被繞過。✅
+  - (c) `/notify`（server.js:391）未受影響：CR-0040 diff 未觸及該行，維持無 auth、無 scope；測試「notify 無 auth → 200」回歸通過。✅
+  - (d) caregiver scope override 無法經 HTTP 觸發：`setAuthContextResolverForTest` / `authContextResolverOverride` 僅出現於兩支測試檔與 service 自身；production resolver 恆回 super_admin。無 production 可用假 caregiver token、無 hardcode elder/caregiver id（`!caregiverId → 空集合` fail-closed）。✅
+  - (e) migration 013 additive + 冪等：全 CREATE/ALTER/INDEX 皆 IF NOT EXISTS；純新增表，未 ALTER elders/users/care_alerts；FK 指向既有表；partial UNIQUE(elder_id,caregiver_id) WHERE active。靜態解析測試 8 案把關。✅
+- **兩處刻意缺口裁決**：
+  - **`GET /api/admin/overview`（server.js:1044）— 接受結案，列已知殘留（低嚴重度）**。僅回 `getOverview()` 聚合計數、無 per-resident 識別資訊；scope 需動 adminAnalysisService，超出 Batch C「只改 server.js」邊界。轉後續 CR。
+  - **`GET /api/admin/daily-care-tasks`（server.js:989）— 接受結案，但列「Batch D BLOCKER」（中嚴重度）**。此端點回 per-resident 資料（`elderId` 可篩、tasks 綁 elder），與已 scope 的 elder analytics 同類。今日零實際暴露（production 無 caregiver 身分，resolver 恆 super_admin），故可結 CR-0040；但**啟用真 per-caregiver 登入（§12 #5 / Batch D）前必須先補 scope**，否則真 caregiver 可跨住民讀任務 → 違反 CLAUDE.md §6#8（不可跨住民洩漏）、§9#11（照護人員只能查看授權住民）。Batch D 開案時須將此端點納入 scope 範圍並列為前置條件。
+- **裁決依據**：CR-0040 scope 層在 production 對所有路由皆為 no-op（恆 super_admin），故兩缺口今日實際暴露皆為零；差異只在 Batch D 啟用 caregiver 身分後浮現。據此接受 A/B/C 結案，缺口轉後續 CR，其中 daily-care-tasks 標為 Batch D 硬前置。
+- **完成狀態：CR-0040（Batch A/B/C）COMPLETE。** 殘留明確標註：
+  - **P0-2 scope 機制已具備且可測，但 production 強制仍待 §12 #5 per-caregiver 登入（Batch D 後續 CR）**；本案不宣稱 P0-2 / P1-2 全修。
+  - **migration 013 未對真 DB 驗證**（本機無 Postgres），僅靜態 + mock 解析測試把關；首次對真 DB migrate 時需人工確認冪等與 FK。
+  - 後續 CR（Batch D）待辦：真 per-caregiver 登入 resolver、caregiver_web 整合（空狀態 / 403 友善）、補 scope `daily-care-tasks`（BLOCKER）+ `overview`（低）。
