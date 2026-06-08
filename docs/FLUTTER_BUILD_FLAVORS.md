@@ -93,17 +93,22 @@ flutter build apk --release \
 | `MockShopService` | `app.dart`（`if (mockServicesEnabled)`） | 無正式路徑依賴 | ✅ 已隔離（CR-0034） |
 | `MockTaigiAsrStrategy` | `app.dart` `AsrStrategyService.strategies`（`if (mockServicesEnabled)`） | 不被 `context.read`；缺席時 `AsrStrategyService` / `LanguageRoutingService` graceful fallback 回 OpenAI Realtime | ✅ 已隔離（CR-0048） |
 | `MockAiService` | `app.dart`（無條件 `Provider`） | `AiToolRouter._chat()` 於按住說話與 Realtime 本地指令路由 **always** 取用 | ⛔ **尚未隔離**，production 仍用到，延後 **CR-0049** |
-| `MockSpeechToTextService` | `app.dart`（無條件 `Provider`） | `ConversationController` 於 `sttMode != openAiProxy`（預設 `mock`）取用 | ⛔ **尚未隔離**，production 仍用到，延後 **CR-0049** |
+| `MockSpeechToTextService` | `app.dart`（無條件 `Provider`） | production 已**不再選用**：`ConversationController` 改吃 `SpeechToTextService` 介面，正式版注入 `OpenAiSpeechToTextService`（後端 `/api/stt/transcribe` 代理，金鑰留在後端），`sttMode` production 預設 `openAiProxy`；dev / test（`mockServicesEnabled`）才注入 mock | 🟡 **consumer 已切正式 STT（CR-0049-A）**；Provider 無條件注入的 gating 收尾待 **CR-0049-C** |
 
 重點：
 
-- **目前 production build 仍然會建立並選用 `MockAiService` 與 `MockSpeechToTextService`。**
-  本系統 mock 隔離**尚未完成**，不可對外聲稱「正式版已完全移除 mock」。
-- 這兩個是「被 production runtime 選用」的 live 依賴，純從 provider 樹移除會造成
+- **目前 production build 仍然會建立 `MockAiService` 與 `MockSpeechToTextService`（無條件 `Provider`）。**
+  其中 `MockSpeechToTextService` 已**不再被 production runtime 選用**（CR-0049-A：
+  `ConversationController` 改吃 `SpeechToTextService` 介面、正式版注入正式 STT、
+  `sttMode` production 預設 `openAiProxy`），但無條件 `Provider` 本身的 gating 收尾
+  屬 **CR-0049-C**；`MockAiService` 仍被 `_chat` 選用，待 **CR-0049-B**。
+  在 B、C 完成前，本系統 mock 隔離**尚未完成**，不可對外聲稱「正式版已完全移除 mock」。
+- 這些是「曾被 production runtime 選用」的 live 依賴，純從 provider 樹移除會造成
   `ProviderNotFoundException` 崩潰，或讓按住說話 / Realtime 本地指令失去回覆與 STT。
   安全隔離必須先讓 consumer 在 production 改用正式回覆引擎 / 正式 STT proxy
-  （`_chat` 接正式來源、`sttMode` production 預設改 `openAiProxy`），再 gating 注入。
-  此屬陪伴回覆策略與對話 / Realtime owner 的權責，已切出 **CR-0049** 另批處理。
+  （`_chat` 接正式來源 → CR-0049-B、`sttMode` production 預設改 `openAiProxy` →
+  **已於 CR-0049-A 完成**），再 gating 注入（CR-0049-C）。此屬陪伴回覆策略與
+  對話 / Realtime owner 的權責，已切出 **CR-0049（A/B/C）** 分批處理。
 
 ### CR-0048 已完成的 `MockTaigiAsrStrategy` 隔離
 

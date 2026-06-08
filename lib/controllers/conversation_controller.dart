@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../config/app_config.dart';
 import '../models/conversation_session_summary.dart';
 import '../models/conversation_turn.dart';
 import '../models/companion_reply.dart';
@@ -19,7 +20,6 @@ import '../services/emotion_services.dart';
 import '../services/local_storage_service.dart';
 import '../services/language_routing_service.dart';
 import '../services/mock_speech_to_text_service.dart';
-import '../services/openai_speech_to_text_service.dart';
 import '../services/search_service.dart';
 import '../services/speech_to_text_service.dart';
 import '../services/taigi_asr_service.dart';
@@ -38,7 +38,7 @@ class ConversationController extends ChangeNotifier {
     required this.petController,
     required this.toolRouter,
     required this.ttsService,
-    required this.mockSttService,
+    required this.sttService,
     required this.storageService,
     required this.searchService,
     required this.petStatsController,
@@ -59,7 +59,10 @@ class ConversationController extends ChangeNotifier {
   final PetController petController;
   final AiToolRouter toolRouter;
   final TextToSpeechService ttsService;
-  final MockSpeechToTextService mockSttService;
+
+  /// 語音辨識服務（介面注入）。正式版注入 [OpenAiSpeechToTextService]（金鑰留在
+  /// 後端代理，Flutter 不持有 key）；dev / test 可注入 [MockSpeechToTextService]。
+  final SpeechToTextService sttService;
   final LocalStorageService storageService;
   final SearchService searchService;
   final PetStatsController petStatsController;
@@ -368,12 +371,9 @@ class ConversationController extends ChangeNotifier {
     _latestCompanionDebugInfo = null;
   }
 
-  SpeechToTextService _currentSttService() {
-    if (profileController.sttMode == SttMode.openAiProxy) {
-      return OpenAiSpeechToTextService(proxyUrl: profileController.sttProxyUrl);
-    }
-    return mockSttService;
-  }
+  /// 目前使用的語音辨識服務。型別統一為 [SpeechToTextService] 介面，正式版直接
+  /// 使用注入的正式服務（[OpenAiSpeechToTextService]），不在前端持有任何金鑰。
+  SpeechToTextService _currentSttService() => sttService;
 
   Future<void> playWelcomeGreeting() async {
     final petName = profileController.petName;
@@ -414,16 +414,17 @@ class ConversationController extends ChangeNotifier {
     _isRecording = false;
     notifyListeners();
     if (_isBusy) return;
-    if (profileController.sttMode == SttMode.mock) {
-      mockSttService.setNextTranscript(mockText ?? '幫我簽到');
-      await _processSttResult(
-        await mockSttService.transcribeAudio(File('mock.wav')),
-      );
+    final stt = _currentSttService();
+    // dev / test 的本機 mock 辨識路徑：僅當實際注入的是 mock 服務時才走。
+    // 正式版注入 OpenAiSpeechToTextService，不會進這裡，也不會用假 transcript。
+    if (profileController.sttMode == SttMode.mock &&
+        stt is MockSpeechToTextService) {
+      stt.setNextTranscript(mockText ?? '幫我簽到');
+      await _processSttResult(await stt.transcribeAudio(File('mock.wav')));
       return;
     }
     try {
-      final sttService = _currentSttService();
-      final audioFile = await sttService.stopRecording();
+      final audioFile = await stt.stopRecording();
       if (audioFile == null) {
         await _deliverPetReply(
           '我剛剛沒有聽到聲音，可以再說一次嗎？',
@@ -432,15 +433,25 @@ class ConversationController extends ChangeNotifier {
         );
         return;
       }
-      final result = await sttService.retryTranscription(audioFile);
+      final result = await stt.retryTranscription(audioFile);
       await _processSttResult(result);
     } catch (_) {
+      // 正式版：辨識出狀況不切回 mock、不假裝成功，用長者聽得懂的話請他再說一次。
+      // dev / test（mockServicesEnabled）才保留切回本機 mock 的離線備援。
+      if (AppConfig.mockServicesEnabled) {
+        await profileController.setSttMode(SttMode.mock);
+        await _deliverPetReply(
+          '連線剛剛不太穩，我先用手機裡的辨識，麻煩你再說一次。',
+          petMode: PetMode.listening,
+          toolName: 'sttFallback',
+        );
+        return;
+      }
       await _deliverPetReply(
-        '語音辨識目前發生問題，我先切回 Mock STT，請再說一次。',
+        '我這次好像沒有聽清楚，等一下再說一次好嗎？',
         petMode: PetMode.listening,
         toolName: 'sttError',
       );
-      await profileController.setSttMode(SttMode.mock);
     }
   }
 
@@ -766,17 +777,27 @@ class ConversationController extends ChangeNotifier {
 
   Future<void> _processSttResult(SttResult result) async {
     if (!result.success) {
-      final message = result.message ?? '我剛剛沒有聽清楚，可以再說一次嗎？';
       if (result.errorType == SttErrorType.networkError &&
           profileController.sttMode == SttMode.openAiProxy) {
-        await profileController.setSttMode(SttMode.mock);
+        // dev / test：保留切回本機 mock 的離線備援，方便沒有後端時繼續開發。
+        if (AppConfig.mockServicesEnabled) {
+          await profileController.setSttMode(SttMode.mock);
+          await _deliverPetReply(
+            '連線剛剛不太穩，我先用手機裡的辨識，讓你可以繼續說。',
+            petMode: PetMode.listening,
+            toolName: 'sttFallback',
+          );
+          return;
+        }
+        // 正式版：網路不穩不切 mock、不假成功，用白話請長者稍後再說一次。
         await _deliverPetReply(
-          '$message 已為你切換到 Mock STT，先確保你可以繼續使用。',
+          '網路好像不太穩，我這次沒聽清楚，等一下再說一次好嗎？',
           petMode: PetMode.listening,
-          toolName: 'sttFallback',
+          toolName: 'sttError',
         );
         return;
       }
+      final message = result.message ?? '我剛剛沒有聽清楚，可以再說一次嗎？';
       await _deliverPetReply(message,
           petMode: PetMode.listening, toolName: 'sttError');
       return;

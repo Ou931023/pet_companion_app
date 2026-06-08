@@ -33,8 +33,13 @@ class ProfileController extends ChangeNotifier {
   List<String> get contentPreferences =>
       List.unmodifiable(_profile.contentPreferences);
   String get sttProxyUrl => _profile.sttProxyUrl;
-  SttMode get sttMode =>
-      _profile.sttMode == 'openAiProxy' ? SttMode.openAiProxy : SttMode.mock;
+  SttMode get sttMode {
+    // 正式版一律使用正式語音辨識，永不回 mock（即使儲存值為舊的 'mock'）。
+    if (AppConfig.isProduction) return SttMode.openAiProxy;
+    return _profile.sttMode == 'openAiProxy'
+        ? SttMode.openAiProxy
+        : SttMode.mock;
+  }
   List<Map<String, String>> get familyContacts => List.unmodifiable(
         _profile.familyContacts.map((e) => Map<String, String>.from(e)),
       );

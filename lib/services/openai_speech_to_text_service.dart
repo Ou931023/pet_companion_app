@@ -61,7 +61,7 @@ class OpenAiSpeechToTextService implements SpeechToTextService {
           success: false,
           transcript: '',
           errorType: SttErrorType.networkError,
-          message: 'STT 服務目前無法連線，先改用 Mock 模式。',
+          message: '連線好像不太穩，我這次沒辦法聽清楚你說的話。',
         );
       }
       final decoded = jsonDecode(responseText) as Map<String, dynamic>;
@@ -75,7 +75,7 @@ class OpenAiSpeechToTextService implements SpeechToTextService {
         success: false,
         transcript: '',
         errorType: SttErrorType.networkError,
-        message: 'STT 服務異常，先改用 Mock 模式。',
+        message: '語音辨識暫時不太順，我們等一下再試一次。',
       );
     }
   }

@@ -265,7 +265,7 @@ class _Harness {
       petController: petController,
       toolRouter: toolRouter,
       ttsService: TextToSpeechService(),
-      mockSttService: MockSpeechToTextService(),
+      sttService: MockSpeechToTextService(),
       storageService: localStorage,
       searchService: SearchService(),
       petStatsController: petStats,

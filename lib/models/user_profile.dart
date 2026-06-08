@@ -44,7 +44,7 @@ class UserProfile {
   final List<Map<String, String>> familyContacts;
 
   factory UserProfile.initial() {
-    return const UserProfile(
+    return UserProfile(
       hasCompletedOnboarding: false,
       petName: '',
       userCoins: 100,
@@ -52,14 +52,16 @@ class UserProfile {
       petFullness: 50,
       petMood: 60,
       checkInDate: null,
-      taskCompletionState: {
+      taskCompletionState: const {
         'drinkWater': false,
         'eatMeal': false,
         'moodReport': false,
         'restReminder': false,
         'dailyCheckIn': false,
       },
-      sttMode: 'mock',
+      // 正式版預設走正式語音辨識（後端 /api/stt/transcribe 代理，金鑰留在後端）；
+      // dev / test 預設仍可用 mock，方便沒有後端時離線開發。
+      sttMode: AppConfig.isProduction ? 'openAiProxy' : 'mock',
       sttProxyUrl: AppConfig.defaultSttProxyUrl,
       ttsEnabled: true,
       fontScale: 1.0,

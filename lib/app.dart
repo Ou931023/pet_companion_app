@@ -69,6 +69,7 @@ import 'services/mock_shop_service.dart';
 import 'services/mock_speech_to_text_service.dart';
 import 'services/native_tool_executor_service.dart';
 import 'services/notification_service.dart';
+import 'services/openai_speech_to_text_service.dart';
 import 'services/pet_stats_storage_service.dart';
 import 'services/realtime_voice_service.dart';
 import 'services/reminder_service.dart';
@@ -289,7 +290,13 @@ class PetCompanionApp extends StatelessWidget {
             petController: context.read<PetController>(),
             toolRouter: context.read<AiToolRouter>(),
             ttsService: context.read<TextToSpeechService>(),
-            mockSttService: context.read<MockSpeechToTextService>(),
+            // 正式版注入正式語音辨識（OpenAI proxy，金鑰留在後端，Flutter 不放 key）；
+            // dev / test（mockServicesEnabled）才注入 mock。
+            sttService: AppConfig.mockServicesEnabled
+                ? context.read<MockSpeechToTextService>()
+                : OpenAiSpeechToTextService(
+                    proxyUrl: context.read<ProfileController>().sttProxyUrl,
+                  ),
             storageService: context.read<LocalStorageService>(),
             searchService: context.read<SearchService>(),
             petStatsController: context.read<PetStatsController>(),
@@ -312,7 +319,11 @@ class PetCompanionApp extends StatelessWidget {
                 petController: pet,
                 toolRouter: router,
                 ttsService: tts,
-                mockSttService: mockStt,
+                sttService: AppConfig.mockServicesEnabled
+                    ? mockStt
+                    : OpenAiSpeechToTextService(
+                        proxyUrl: profile.sttProxyUrl,
+                      ),
                 storageService: context.read<LocalStorageService>(),
                 searchService: search,
                 petStatsController: context.read<PetStatsController>(),
