@@ -1,11 +1,14 @@
+import '../config/app_config.dart';
 import '../controllers/check_in_controller.dart';
 import '../controllers/inventory_controller.dart';
 import '../controllers/pet_stats_controller.dart';
 import '../controllers/profile_controller.dart';
+import '../controllers/reminder_controller.dart';
 import '../controllers/task_controller.dart';
 import '../controllers/wallet_controller.dart';
 import '../models/ai_tool_result.dart';
 import '../models/pet_status.dart';
+import 'companion_chat_service.dart';
 import 'companion_content_service.dart';
 import 'mock_ai_service.dart';
 import 'shop_service.dart';
@@ -23,7 +26,10 @@ class AiToolRouter {
     required this.webSearchService,
     required this.mockAiService,
     required this.companionContentService,
-  });
+    required this.companionChatService,
+    required this.reminderController,
+    bool? useMockChat,
+  }) : useMockChat = useMockChat ?? AppConfig.mockServicesEnabled;
 
   final ProfileController profileController;
   final TaskController taskController;
@@ -36,11 +42,31 @@ class AiToolRouter {
   final MockAiService mockAiService;
   final CompanionContentService companionContentService;
 
+  /// 正式聊天回覆引擎（呼叫後端 `POST /api/companion/chat`）。
+  final CompanionChatService companionChatService;
+
+  /// 提醒建立 / 查詢來源（B4：route() 提醒分支用）。
+  final ReminderController reminderController;
+
+  /// 聊天回覆是否走 mock：dev/test 走 [mockAiService]，production 走
+  /// [companionChatService]。預設取 [AppConfig.mockServicesEnabled]，
+  /// 可由建構子覆寫（app.dart 注入）。
+  final bool useMockChat;
+
   Future<AiToolResult> route(
     String userText, {
     String memoryContextSummary = '',
   }) async {
     final normalized = _toTraditional(userText.trim());
+    // B4：提醒指令在 router 層接住並實際建立提醒。回 shouldSpeak:false → Realtime
+    // 不念罐頭、交由寵物語音自然回應；typed 路徑在 conversation_controller 先 return，
+    // 不會走到此分支，故零重複建立。
+    if (reminderController.isCreateReminderCommand(normalized)) {
+      return _createReminder(normalized);
+    }
+    if (reminderController.isListReminderCommand(normalized)) {
+      return _listReminders();
+    }
     if (_isDailyCheckIn(normalized)) {
       return _dailyCheckIn();
     }
@@ -473,32 +499,102 @@ class AiToolRouter {
     );
   }
 
-  AiToolResult _chat(String text, {String memoryContextSummary = ''}) {
-    var mode = PetMode.listening;
+  // B4：建立提醒。沿用 conversation_controller (~850) 的白話文案；shouldSpeak:false
+  // 讓 Realtime 不念罐頭、交給寵物語音自然回應。
+  Future<AiToolResult> _createReminder(String text) async {
+    final reminder = await reminderController.createFromVoice(text);
+    if (reminder == null) {
+      return const AiToolResult(
+        toolName: 'createReminder',
+        success: false,
+        message: '我還沒聽清楚提醒時間，可以說「提醒我晚上八點吃藥」。',
+        petMode: PetMode.listening,
+        shouldSpeak: false,
+      );
+    }
+    return AiToolResult(
+      toolName: 'createReminder',
+      success: true,
+      message:
+          '好，我會在${reminder.repeatLabel}${reminder.timeLabel}提醒你${reminder.title}。',
+      petMode: PetMode.happy,
+      shouldSpeak: false,
+    );
+  }
+
+  // B4：唸出提醒清單摘要。同樣 shouldSpeak:false，交由 Realtime 自然回應。
+  AiToolResult _listReminders() {
+    return AiToolResult(
+      toolName: 'listReminders',
+      success: true,
+      message: reminderController.listSummary(),
+      petMode: PetMode.listening,
+      shouldSpeak: false,
+    );
+  }
+
+  PetMode _chatPetMode(String text) {
     if (text.contains('難過') ||
         text.contains('孤單') ||
         text.contains('不舒服') ||
         text.contains('累') ||
         text.contains('沒人陪')) {
-      mode = PetMode.caring;
-    } else if (text.contains('開心') ||
-        text.contains('很好') ||
-        text.contains('謝謝')) {
-      mode = PetMode.happy;
-    } else if (text.contains('想睡') || text.contains('好累')) {
-      mode = PetMode.sleepy;
+      return PetMode.caring;
     }
-    return AiToolResult(
-      toolName: 'chat',
-      success: true,
-      message: mockAiService.replyForChat(
-        text,
-        profileController.petName,
+    if (text.contains('開心') || text.contains('很好') || text.contains('謝謝')) {
+      return PetMode.happy;
+    }
+    if (text.contains('想睡') || text.contains('好累')) {
+      return PetMode.sleepy;
+    }
+    return PetMode.listening;
+  }
+
+  Future<AiToolResult> _chat(
+    String text, {
+    String memoryContextSummary = '',
+  }) async {
+    final mode = _chatPetMode(text);
+
+    // dev/test：維持既有 mock 行為。
+    if (useMockChat) {
+      return AiToolResult(
+        toolName: 'chat',
+        success: true,
+        message: mockAiService.replyForChat(
+          text,
+          profileController.petName,
+          memoryContextSummary: memoryContextSummary,
+        ),
+        petMode: mode,
+        shouldSpeak: true,
+      );
+    }
+
+    // production：走正式後端聊天引擎。失敗時給陪伴式白話錯誤，
+    // 絕不 fallback mock、絕不假裝聽懂或假成功。
+    try {
+      final reply = await companionChatService.reply(
+        userText: text,
+        petName: profileController.petName,
         memoryContextSummary: memoryContextSummary,
-      ),
-      petMode: mode,
-      shouldSpeak: true,
-    );
+      );
+      return AiToolResult(
+        toolName: 'chat',
+        success: true,
+        message: reply,
+        petMode: mode,
+        shouldSpeak: true,
+      );
+    } on CompanionChatException {
+      return AiToolResult(
+        toolName: 'chat',
+        success: false,
+        message: '我這邊有點不穩，先抱抱你，等我一下再好好陪你聊好嗎？',
+        petMode: mode,
+        shouldSpeak: true,
+      );
+    }
   }
 
   bool _requestsTtsOff(String text) {

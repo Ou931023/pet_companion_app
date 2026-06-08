@@ -53,6 +53,7 @@ import 'services/asr_strategy_service.dart';
 import 'services/care_alert_notification_service.dart';
 import 'services/care_alert_storage_service.dart';
 import 'services/check_in_storage_service.dart';
+import 'services/companion_chat_service.dart';
 import 'services/companion_content_service.dart';
 import 'services/companion_engine_service.dart';
 import 'services/contact_lookup_service.dart';
@@ -183,6 +184,9 @@ class PetCompanionApp extends StatelessWidget {
         ProxyProvider<WebSearchService, CompanionContentService>(
           update: (_, webSearch, __) => CompanionContentService(webSearch),
         ),
+        // CR-0049 B2/B3：陪伴聊天服務（按住說話的文字降級路徑），由 AiToolRouter
+        // 視 useMockChat（預設 AppConfig.mockServicesEnabled）決定是否啟用。
+        Provider(create: (_) => CompanionChatService()),
         // CR-0034：以下兩個 mock 是 AiToolRouter / ConversationController 建構子
         // 的結構性後援依賴（按住說話的降級路徑），故維持注入；正式版主要互動走
         // Realtime 語音與正式 STT proxy，不以 mock 作為正式資料來源。後援文案中的
@@ -222,6 +226,8 @@ class PetCompanionApp extends StatelessWidget {
             webSearchService: context.read<WebSearchService>(),
             mockAiService: context.read<MockAiService>(),
             companionContentService: context.read<CompanionContentService>(),
+            companionChatService: context.read<CompanionChatService>(),
+            reminderController: context.read<ReminderController>(),
           ),
         ),
         // Native Tool 執行層：放在所需控制器之後建立，讓高影響工具能沿用既有真實流程

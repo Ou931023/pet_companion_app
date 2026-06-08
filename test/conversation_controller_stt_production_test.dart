@@ -18,6 +18,7 @@ import 'package:pet_companion_app/services/ai_navigation_service.dart';
 import 'package:pet_companion_app/services/ai_tool_router.dart';
 import 'package:pet_companion_app/services/asr_strategy_service.dart';
 import 'package:pet_companion_app/services/check_in_storage_service.dart';
+import 'package:pet_companion_app/services/companion_chat_service.dart';
 import 'package:pet_companion_app/services/companion_content_service.dart';
 import 'package:pet_companion_app/services/companion_reply_strategy_service.dart';
 import 'package:pet_companion_app/services/emotion_services.dart';
@@ -107,6 +108,12 @@ ConversationController _build({required SpeechToTextService sttService}) {
     webSearchService: webSearchService,
     mockAiService: MockAiService(),
     companionContentService: companionContentService,
+    companionChatService: CompanionChatService(),
+    reminderController: ReminderController(
+      reminderService: ReminderService(),
+      notificationService: NotificationService(),
+    ),
+    useMockChat: true,
   );
 
   return ConversationController(

@@ -2717,3 +2717,122 @@ CR-0048 收斂時明確標註兩個未解送審 blocker（本檔 2580-2582、`FL
 - **CR-0049-B4**（conversation/Realtime owner，checkpoint）：Realtime 本地指令只念確定性工具結果、不念 `_chat` 罐頭；不碰 `realtime_voice_service.dart` 與狀態機。
 - **CR-0049-C**（frontend-ux，checkpoint）：`app.dart` 190-191 兩 mock Provider 以 `if (AppConfig.mockServicesEnabled)` 包覆 + 測試斷言 production provider 樹不含 mock；前置 = A、B 全綠 + checkpoint PASS。
 - **persona follow-up**（companion-memory）：`buildRealtimeInstructions` persona 偏即時語音/工具化，打字閒聊建議後續細修 chat 變體，使打字回覆語氣更貼近陪伴而非工具化。
+
+---
+
+### CR-0049 B2 / B3 / B4 — 執行 micro-plan（architecture-agent 定案，可直接派工）
+
+**前提**：CR-0049-A（commit c4fe416）+ B1（commit 3d20c7b, `POST /api/companion/chat`）已 PASS。後端契約已覆驗：無 auth；body `userText`(必填)/`petName`/`memoryContextSummary`/`languageHint?`/`replyLanguage?`；200 `{success:true,reply}`；400 `{success:false,error:'invalid_input'}`；503 `{success:false,error:'openai_unavailable'}`（`server.js:1680-1725`）。
+
+**關鍵架構決定（B4）**：root cause 已覆驗 = `ai_tool_router.route()`（`ai_tool_router.dart:39-69`）無提醒分支；提醒建立邏輯只在 `conversation_controller._handleUserText`（`850-882`，typed 路徑、在 `route()` 之前 return）。Realtime 走 `voice_agent_controller._handleLocalRealtimeCommand`（`674-685`）直接呼 `toolRouter.route()` → 提醒命令穿透落 `_chat` → `speakToolOutcome` 念罐頭，且**提醒從未被建立**。
+**裁決：B4 在 router 層解決，不碰任何 Realtime 檔**。把提醒分支加進 `route()`、`reminderController` 注入 `AiToolRouter`，回 `shouldSpeak:false`（Realtime 由寵物語音自然回應、不念罐頭；typed 路徑因 `850` 先 return 永不走到此分支 → 零重複建立）。`_handleLocalRealtimeCommand:681` 既有守衛 `result.shouldSpeak && message.isNotEmpty` 會自動因 `shouldSpeak:false` 不念。**無需 realtime-voice-agent，無需改 `voice_agent_controller`/`realtime_voice_service`。**
+
+#### 批次 B2 — `CompanionChatService`（Flutter HTTP client）
+- **owner**：frontend-ux-agent
+- **允許檔**：新增 `lib/services/companion_chat_service.dart`；新增 `test/services/companion_chat_service_test.dart`
+- **做法**（比照 `care_alert_notification_service.dart` 慣例，但**不吞失敗**）：
+  - `CompanionChatService({http.Client? client})`，無 authTokenProvider（B1 路由無 auth）。
+  - URL 組裝沿用 `AppConfig.apiBaseUrlForSttProxy(sttProxyUrl)` + path `'/companion/chat'`（同 care_alert 的 basePath 去尾斜線寫法）。
+  - 方法簽名：
+    `Future<String> reply({required String sttProxyUrl, required String userText, required String petName, String memoryContextSummary = '', String? languageHint, String? replyLanguage}) async`
+  - 成功（200 + `success:true`）→ 回 `reply` 字串。
+  - 失敗（非 200 / `success:false` / timeout / 網路錯誤 / `reply` 空）→ **throw `CompanionChatException`**（自訂，帶 `code`：`'invalid_input'|'openai_unavailable'|'network'`）。**不得回 mock、不得回假文案**——交由 B3 `_chat` 決定友善錯誤。
+  - `.timeout(Duration(seconds: 8))`；body `jsonEncode`；header 僅 `Content-Type: application/json`；**不放任何 key**。
+- **紅線**：不碰後端；不碰 Realtime；不吞成靜默成功；不放 key。
+- **測試**：MockClient → (a) 200 success 回 reply；(b) 400 `invalid_input` → throw code=`invalid_input`；(c) 503 → throw code=`openai_unavailable`；(d) 網路 throw → code=`network`；(e) request body 不含任何 key 字樣。
+
+#### 批次 B3 — `AiToolRouter._chat` production 化 + B4 提醒分支（**router 與 app.dart 須同一 checkpoint 落地**）
+**B3a — router 邏輯**
+- **owner**：companion-memory-agent
+- **允許檔**：`lib/services/ai_tool_router.dart`
+- **做法**：
+  1. import `companion_chat_service.dart`、`../controllers/reminder_controller.dart`、`../config/app_config.dart`。
+  2. 建構子（`14-37`）新增 `required this.companionChatService`、`required this.reminderController`，並加 `bool? useMockChat`，欄位 `late final bool useMockChat`（init list：`useMockChat ?? AppConfig.mockServicesEnabled`）。**保留 `mockAiService`**（dev/test 仍用，紅線：不可硬刪）。
+  3. `route()`（`43-44` normalize 之後、`_isDailyCheckIn` 之前）插入提醒分支（B4）：
+     `if (reminderController.isCreateReminderCommand(normalized)) return _createReminder(normalized);`
+     `if (reminderController.isListReminderCommand(normalized)) return _listReminders();`
+  4. 新增 `_createReminder`／`_listReminders`：呼 `reminderController.createFromVoice` / `listSummary()`；回 `toolName:'createReminder'|'listReminders'`、`shouldSpeak:false`、message 用既有 `850-882` 同款白話文案（建立失敗時友善提示時間沒聽清楚）。**`shouldSpeak:false` 是 B4 關鍵**。
+  5. `_chat`（`476-502`）改 `Future<AiToolResult> _chat(...) async`；petMode 判斷邏輯原樣保留（可抽 `_chatPetMode(text)`）。分支：
+     - `useMockChat == true` → `mockAiService.replyForChat(...)`（原行為，dev/test）。
+     - 否則 → `await companionChatService.reply(sttProxyUrl: profileController.sttProxyUrl, userText: text, petName: profileController.petName, memoryContextSummary: memoryContextSummary)`；成功回 `success:true`。
+     - `on CompanionChatException` → message = 陪伴式白話錯誤（**companion-memory 撰寫**，例如「我這邊有點不穩，等我一下再陪你聊好嗎？」），`success:false`、`shouldSpeak:true`。**不得 fallback mockAiService、不得假裝聽懂**。
+  6. `route()` 已是 `Future<AiToolResult>`，`return _chat(...)`（async 回 Future）→ **route() caller 零 async ripple**（已覆驗：`home_screen:535`→quickAction、`task_screen:34`→quickAction、`conversation_controller:926`、`voice_agent_controller:677/744` 全部已 `await route()`）。
+- **紅線**：不碰 Realtime/狀態機；不刪 `mockAiService`；production 不 fallback mock/不假回覆；提醒分支 `shouldSpeak:false`。
+
+**B3b — DI 接線（與 B3a 同 PR / 同 checkpoint，否則 build 紅）**
+- **owner**：frontend-ux-agent
+- **允許檔**：`lib/app.dart`
+- **做法**：(1) 新增 `Provider<CompanionChatService>(create: (_) => CompanionChatService())`（置於 `AiToolRouter` provider 之前）。(2) `AiToolRouter` create（`213-225`）新增 `companionChatService: context.read<CompanionChatService>()`、`reminderController: context.read<ReminderController>()`（`ReminderController` 已於 provider 樹存在，`274` 已 read，lazy create 順序安全）。**本批不動 `190-191`、不動 `223` mockAiService 接線（C 範圍）**。
+- **紅線**：不改後端/Realtime；不改 STT 注入；不動 190-191/223。
+
+#### owner 指派總表
+| 批次 | owner | 檔案 |
+|---|---|---|
+| B2 | frontend-ux | `lib/services/companion_chat_service.dart`(+test) |
+| B3a | companion-memory | `lib/services/ai_tool_router.dart` |
+| B3b | frontend-ux | `lib/app.dart`（與 B3a 同 checkpoint） |
+| B4 | （併入 B3a，companion-memory）| 同 `ai_tool_router.dart` |
+- **realtime-voice-agent：不需出動**（B4 在 router 層解，Realtime 檔 untouched）。
+
+#### 執行順序
+1. B2（獨立、無依賴）→ commit。
+2. B3a + B3b（建構子耦合，**同一 commit/checkpoint**，避免中途 build 紅）→ B4 提醒分支含於 B3a。
+3. checkpoint 覆驗 → C。
+
+#### 測試計畫（checkpoint 須全綠）
+- B2：見上（`companion_chat_service_test.dart`）。
+- B3/B4 `test/services/ai_tool_router_*`（新增或擴充）：
+  - `useMockChat:false` + `CompanionChatService`(MockClient 200) → `_chat` 回後端 reply、`success:true`、`shouldSpeak:true`。
+  - `useMockChat:false` + 後端失敗（throw）→ `_chat` 回友善錯誤、`success:false`、訊息**不等於** mock reply、**未呼叫** `mockAiService`（用會 throw 的 spy 斷言）。
+  - `useMockChat:true` → 走 `mockAiService.replyForChat`（既有行為保留）。
+  - `route('提醒我晚上八點吃藥')` → `toolName:'createReminder'`、`shouldSpeak:false`、`reminderController` 確有建立。
+  - `route('我的提醒')` → `listReminders`、`shouldSpeak:false`。
+- B4 回歸（既有 `voice_agent_controller_realtime_lifecycle_test` 或 `integration/agent_voice_turn_integration_test`，**不改 Realtime 檔**）：Realtime 提醒命令 → fake `realtimeVoiceService.speakToolOutcome` **未被呼叫**。
+- 既有 `ai_tool_router` / `conversation_controller_*` / `voice_agent_controller_*` 全綠（route() 仍 async、caller 不變）。
+- 指令：`flutter analyze`（觸及檔）+ `flutter test`（上列 + 既有相關）。**不需 .env / 不需 key**（MockClient）。
+
+#### CR-0049-C 前置（B2/B3/B4 全綠 + checkpoint PASS 後才動）
+- **owner**：frontend-ux，checkpoint。
+- 收尾步驟：
+  1. `ai_tool_router.dart`：`mockAiService` 改 nullable（僅 `useMockChat` 時使用），production 不再結構性依賴。
+  2. `app.dart:190` `MockAiService` Provider 以 `if (AppConfig.mockServicesEnabled)` 包覆；`223` `mockAiService:` 改條件/可空注入。
+  3. `app.dart:191` `MockSpeechToTextService` + `ConversationController` 的 `ChangeNotifierProxyProvider6`（`280-287` 第 5 泛型 `MockSpeechToTextService`、`296` 讀取）需改寫泛型/注入，使 production provider 樹**零 mock 實例化**（STT 已於 `295-297` 條件注入，僅剩 proxy 泛型結構待解）。
+  4. 測試斷言：production build flag 下 provider 樹不含 `MockAiService`/`MockSpeechToTextService`。
+- **紅線**：dev/test mock 不可硬刪，只可 gating。
+
+
+---
+
+### CR-0049 B2 / B3a / B3b / B4 — Checkpoint Review（architecture-agent，read-only 覆驗）
+
+**範圍**：CR-0049-B 的 B2（`CompanionChatService`）+ B3a（`ai_tool_router` rewire）+ B4（router 提醒分支）+ B3b（`app.dart` 接線）已落地。B3a/B3b 依定案同一 checkpoint。本筆為實作後 read-only 覆驗與裁決。**CR-0049-C（gating）尚未做。**
+
+#### 執行進度
+- **B2** ✅ 新增 `lib/services/companion_chat_service.dart`：`reply({required userText, petName, memoryContextSummary, languageHint?, replyLanguage?})`，成功回非空 reply；失敗（非 200 / `success!=true` / `reply` 空 / JSON 壞 / 網路 / timeout 10s）一律 throw `CompanionChatException(code,message)`。不放 key（header 僅 `Content-Type`，body 僅脈絡欄位）、不吞錯、不回 fake/空。+ `test/services/companion_chat_service_test.dart`（13）。
+- **B3a** ✅ `lib/services/ai_tool_router.dart`：建構子加 `companionChatService`/`reminderController`/`bool? useMockChat`（省略=`AppConfig.mockServicesEnabled`）；`_chat` 改 async——`useMockChat==true`→`mockAiService.replyForChat`（dev/test 既有行為）、否則 `await companionChatService.reply(...)`，`on CompanionChatException`→回陪伴式白話（`success:false`、`shouldSpeak:true`），**不 fallback mock、不假成功**。保留 `mockAiService`。
+- **B4** ✅（併入 B3a）`route()` 於 normalize 後、`_isDailyCheckIn` 前加提醒分支：`_createReminder`（呼 `reminderController.createFromVoice`，`shouldSpeak:false`）/`_listReminders`（`listSummary()`，`shouldSpeak:false`）。Realtime 不念罐頭、交寵物語音自然回應。
+- **B3b** ✅ `lib/app.dart`：新增 `Provider<CompanionChatService>`（line 189，置於 `AiToolRouter` provider 前）；`AiToolRouter` create 補 `companionChatService`/`reminderController`（`useMockChat` 省略）。**未動 194-195 mock Provider 宣告與 `mockAiService:` 接線（C 範圍）**。
+- 測試：新增 `test/services/ai_tool_router_chat_test.dart`（5）；6 既有測試補新建構子參數（`useMockChat:true` 維持既有行為）：`care_alert_hook_test`、`conversation_controller_stt_production_test`、`conversation_controller_ui_state_test`、`home_screen_layout_test`、`integration/agent_voice_turn_integration_test`、`voice_agent_controller_realtime_lifecycle_test`。
+
+#### architecture 獨立覆驗（read-only，全部親跑）
+- (a) ✅ production `_chat`（`ai_tool_router.dart:574-597`）走 `companionChatService.reply`，`on CompanionChatException`→友善白話 `success:false`/`shouldSpeak:true`，**無 mockAiService fallback、無假成功**。
+- (b) ✅ dev/test（`useMockChat==true`，`560-572`）走 `mockAiService.replyForChat`，既有行為不變。
+- (c) ✅ B4 提醒分支 `_createReminder`/`_listReminders` 皆 `shouldSpeak:false`（`521`、`532`）。conversation_controller typed 路徑於 `850-870` 先建立提醒並 `return`，永不落到 `route()` → **零重複建立**確認。
+- (d) ✅ `git diff --quiet HEAD -- lib/services/realtime_voice_service.dart lib/controllers/voice_agent_controller.dart` → UNTOUCHED。`conversation_controller.dart` 亦未碰。B4 純於 router 層解。
+- (e) ✅ `CompanionChatService` 不放 key、失敗 throw `CompanionChatException`（不吞、不回 fake）。
+- (f) ✅ `app.dart` 194-195 `MockAiService`/`MockSpeechToTextService` Provider 仍無條件、`mockAiService:` 接線未動（C 範圍）。
+- (g) ✅ 既有 tool calling / route / Realtime / conversation 測試無回歸。
+
+#### 驗收（architecture 親跑，非轉述）
+- `flutter analyze`（觸及 3 檔 `companion_chat_service.dart` + `ai_tool_router.dart` + `app.dart`）→ **No issues found**。
+- `flutter test`（companion_chat + ai_tool_router_chat + voice_agent realtime lifecycle）→ **41 passed**。
+- `flutter test`（全量）→ **521 passed, All tests passed!**。
+- 未碰 `.env`、未讀 key、MockClient 驅動，無外部相依。
+
+#### follow-up（不阻擋本批）
+- **base URL 解析一致性（low）**：B2 以 compile-time `AppConfig.apiBaseUrl` + `/api/companion/chat` 組 URL；sibling `care_alert_notification_service` 用 runtime 可覆寫的 `AppConfig.apiBaseUrlForSttProxy(profileController.sttProxyUrl)`。因 `apiBaseUrl`、`defaultSttProxyUrl` 同源 `backendBaseUrl` 且 `/api/companion/chat` 與 `/api/stt`、`/api/realtime` 同在 server.js，**production 預設兩者同 host、可正確命中**；唯一分歧情境＝使用者 runtime 把 `sttProxyUrl` 覆寫到與 `backendBaseUrl` 不同的 host。若該覆寫為支援情境，建議於 C 或後續對齊成 `sttProxyUrl` 解析。非 blocker。
+- **persona follow-up（companion-memory，仍開）**：`buildRealtimeInstructions` persona 偏即時語音/工具化，打字閒聊回覆語氣建議後續細修 chat 變體。
+
+#### 裁決
+- **PASS** — B2 / B3a / B3b / B4 通過 checkpoint，併入主線。Realtime 主流程紅線未越（`realtime_voice_service.dart` / `voice_agent_controller` / `conversation_controller` 全 untouched），production 不 fallback mock、不假成功，前端不放 key。
+- **CR-0049-C（最後一批，待做）**：`app.dart` 194-195 兩 mock Provider 以 `if (AppConfig.mockServicesEnabled)` 包覆 + `mockAiService:` 條件/可空注入 + `ai_tool_router` 把 `mockAiService` 改 nullable + 測試斷言 production provider 樹零 mock 實例。前置＝B 全綠 + 本 checkpoint PASS（已達成），可派工 frontend-ux-agent。

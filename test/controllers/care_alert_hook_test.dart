@@ -21,6 +21,7 @@ import 'package:pet_companion_app/services/ai_tool_router.dart';
 import 'package:pet_companion_app/services/asr_strategy_service.dart';
 import 'package:pet_companion_app/services/care_alert_storage_service.dart';
 import 'package:pet_companion_app/services/check_in_storage_service.dart';
+import 'package:pet_companion_app/services/companion_chat_service.dart';
 import 'package:pet_companion_app/services/companion_content_service.dart';
 import 'package:pet_companion_app/services/companion_engine_service.dart';
 import 'package:pet_companion_app/services/companion_reply_strategy_service.dart';
@@ -288,6 +289,12 @@ class _CareAlertHookHarness {
       webSearchService: webSearchService,
       mockAiService: MockAiService(),
       companionContentService: companionContentService,
+      companionChatService: CompanionChatService(),
+      reminderController: ReminderController(
+        reminderService: ReminderService(),
+        notificationService: NotificationService(),
+      ),
+      useMockChat: true,
     );
     final conversationController = ConversationController(
       profileController: profile,
