@@ -2836,3 +2836,53 @@ CR-0048 收斂時明確標註兩個未解送審 blocker（本檔 2580-2582、`FL
 #### 裁決
 - **PASS** — B2 / B3a / B3b / B4 通過 checkpoint，併入主線。Realtime 主流程紅線未越（`realtime_voice_service.dart` / `voice_agent_controller` / `conversation_controller` 全 untouched），production 不 fallback mock、不假成功，前端不放 key。
 - **CR-0049-C（最後一批，待做）**：`app.dart` 194-195 兩 mock Provider 以 `if (AppConfig.mockServicesEnabled)` 包覆 + `mockAiService:` 條件/可空注入 + `ai_tool_router` 把 `mockAiService` 改 nullable + 測試斷言 production provider 樹零 mock 實例。前置＝B 全綠 + 本 checkpoint PASS（已達成），可派工 frontend-ux-agent。
+
+---
+
+### CR-0049-C — Checkpoint Review + CR-0049 整體收尾（architecture-agent，read-only 覆驗）
+
+**範圍**：CR-0049 最後一批 C（`app.dart` mock Provider gating + `ai_tool_router` `mockAiService` nullable）已落地。本筆為 read-only 覆驗、裁決，並收尾整個 CR-0049（A / B1 / B(B2/B3a/B3b/B4) / C 全部完成，audit **P2-5 mock 隔離完成**）。
+
+#### 執行進度（C）
+- ✅ `lib/services/ai_tool_router.dart`：`mockAiService` 改 `MockAiService?`（建構子去 `required`，`27`）；`_chat`（`565-578`）mock 分支 `final mock = mockAiService; if (useMockChat && mock != null)` 以區域非空變數呼叫；production 分支（`companionChatService` + B4 提醒分支）一字未動。
+- ✅ `lib/app.dart`：`195-198` 兩個 mock Provider（`MockAiService`/`MockSpeechToTextService`）改 `if (AppConfig.mockServicesEnabled)`；`AiToolRouter` create（`232-234`）`mockAiService: AppConfig.mockServicesEnabled ? context.read<MockAiService>() : null`；`ConversationController` 由 `ChangeNotifierProxyProvider6<…MockSpeechToTextService…>` 改 `ProxyProvider5`（`296-355`，移除對 STT mock 的 proxy 型別依賴，避免 gating 後 production `ProviderNotFoundException`），STT 兩處 create/update 維持 `mockServicesEnabled ? mock : OpenAiSpeechToTextService(...)`（CR-0049-A 條件化）。
+- ✅ 新增 `test/config/mock_service_provider_gating_test.dart`：鏡像 app wiring，production 斷言 `mockAiService==null` / `useMockChat==false` / STT 為 `OpenAiSpeechToTextService` / 後端失敗走白話錯誤不崩（null mock 不 NPE、不假成功）；dev/test 仍注入 mock。
+- ✅ 文件：`docs/FLUTTER_BUILD_FLAVORS.md` §3 + `docs/STORE_RELEASE_CHECKLIST.md` 兩列翻 ✅ 已隔離（CR-0049）。
+
+#### architecture 獨立覆驗（read-only，全部親跑）
+- (a) ✅ production（`mockServicesEnabled==false`）provider 樹**零 mock 實例**：`app.dart` `MockShopService`(`181`)/`MockAiService`(`195`)/`MockSpeechToTextService`(`197`)/`MockTaigiAsrStrategy`(`213`) 皆 `if (AppConfig.mockServicesEnabled)` 才建構；唯二 runtime consumer——`AiToolRouter.mockAiService=null`（`232-234`）、`ConversationController` STT=`OpenAiSpeechToTextService`（`310-314`、`336-340`）——已條件化。
+- (b) ✅ `ProxyProvider6→5`：移除第 5 泛型 `MockSpeechToTextService`，`ConversationController` create/update 依賴的 `ProfileController/PetController/AiToolRouter/TextToSpeechService/SearchService` 五者皆仍在泛型清單，STT 改由 `context.read` 條件選用而非 proxy 注入；既有依賴/行為不破壞。
+- (c) ✅ dev/test mock 仍注入、既有降級行為不變；`MockAiService`/`MockSpeechToTextService` 檔案**未硬刪**（只 gating）。
+- (d) ✅ production 不 fallback mock、不假回覆：`_chat` production 分支 `on CompanionChatException`→陪伴式白話 `success:false`/`shouldSpeak:true`，無 mock fallback；null mock 在 `useMockChat==false` 永不被解參考。
+- (e) ✅ `git diff --stat HEAD -- realtime_voice_service.dart voice_agent_controller.dart conversation_controller.dart` → **三檔皆 UNTOUCHED**（C 的 proxy 改動全在 `app.dart`）。
+- (f) ✅ 文件誠實翻 ✅：production 確實不注入（已由 production-flavor 測試實證，非僅文字宣稱）。
+- (g) ✅ 全量無回歸（見下方驗收）。
+
+#### 驗收（architecture 親跑，非轉述）
+- `flutter analyze lib/app.dart lib/services/ai_tool_router.dart test/config/mock_service_provider_gating_test.dart` → **No issues found**。
+- `flutter test test/config/mock_service_provider_gating_test.dart`（dev flavor）→ **4 passed**。
+- `flutter test … --dart-define=APP_ENV=production --dart-define=API_BASE_URL=https://api.example.com`（production flavor）→ **4 passed**，實證 production 下 `mockAiService==null`、`useMockChat==false`、STT=`OpenAiSpeechToTextService`。
+- 全量測試（frontend-ux 回報）：**flutter 525 passed** + production-flavor 隔離測試 + dev-flavor mock 測試皆綠。架構端親跑 analyze + 上述 dev/production 隔離測試覆驗無誤；全量 525 為 frontend 回報、與既有基線（B 時 521 + 本批新增測試）一致，未獨立重跑全量。
+
+#### CR-0049 整體收尾
+| 批次 | owner | 狀態 |
+|---|---|---|
+| A — STT consumer 切正式 `OpenAiSpeechToTextService`、`sttMode` production 預設 `openAiProxy` | frontend-ux | ✅ |
+| B1 — 後端 `POST /api/companion/chat`（無 auth；200 `{success,reply}` / 400 `invalid_input` / 503 `openai_unavailable`） | backend | ✅ |
+| B2 — `CompanionChatService`（失敗 throw `CompanionChatException`，不吞、不放 key） | frontend-ux | ✅ |
+| B3a — `ai_tool_router._chat` production 化（後端引擎，不 fallback mock） | companion-memory | ✅ |
+| B3b — `app.dart` DI 接線 | frontend-ux | ✅ |
+| B4 — router 層提醒分支（`shouldSpeak:false`，零重複建立；Realtime 檔 untouched） | companion-memory | ✅ |
+| C — mock Provider gating + `mockAiService` nullable + ProxyProvider6→5 | frontend-ux | ✅ |
+
+- **audit P2-5（mock service build-flavor 隔離）完成**：`MockShopService`(CR-0034)/`MockTaigiAsrStrategy`(CR-0048)/`MockAiService`/`MockSpeechToTextService`(CR-0049) 四者 production provider 樹全部零實例。
+- **紅線全程未越**：Realtime 主流程（`realtime_voice_service.dart` / `voice_agent_controller.dart` / `conversation_controller.dart`）整個 CR-0049 未碰；production 不 fallback mock、不假回覆、不假 transcript；前端不放 key；dev/test mock 只 gating 不硬刪。
+
+#### 裁決
+- **PASS** — CR-0049-C 通過 checkpoint，併入主線。**CR-0049（A/B1/B/C）整體完成**，audit P2-5 mock 隔離結案。
+
+#### 殘留 / follow-up（不阻擋 CR-0049 結案）
+- **persona follow-up（companion-memory，仍開）**：`buildRealtimeInstructions` persona 偏即時語音/工具化，打字閒聊回覆語氣建議後續細修 chat 變體，使打字降級回覆更貼近陪伴而非工具化。
+- **P1-7「Mock STT」工程字樣移除**：屬 **CR-0039** 範圍（settings 手動 ASR 下拉等對使用者可見字樣），不在本案。
+- **base URL 對齊（low FU）**：`CompanionChatService` 以 compile-time `AppConfig.apiBaseUrl` 組 URL，sibling `care_alert_notification_service` 用 runtime 可覆寫的 `sttProxyUrl`。production 預設同 host、可正確命中；唯一分歧＝使用者 runtime 覆寫 `sttProxyUrl` 至不同 host。若該覆寫為支援情境，建議後續對齊成 `sttProxyUrl` 解析。非 blocker。
+- **release 裝置驗證**：production flavor 於 iOS/Android release build 的實機冒煙（聊天走後端、STT 走 proxy、無 mock）建議於送審前 device 驗證；單元/flavor 測試已綠但非裝置實測。

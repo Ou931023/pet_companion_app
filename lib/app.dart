@@ -187,12 +187,15 @@ class PetCompanionApp extends StatelessWidget {
         // CR-0049 B2/B3：陪伴聊天服務（按住說話的文字降級路徑），由 AiToolRouter
         // 視 useMockChat（預設 AppConfig.mockServicesEnabled）決定是否啟用。
         Provider(create: (_) => CompanionChatService()),
-        // CR-0034：以下兩個 mock 是 AiToolRouter / ConversationController 建構子
-        // 的結構性後援依賴（按住說話的降級路徑），故維持注入；正式版主要互動走
-        // Realtime 語音與正式 STT proxy，不以 mock 作為正式資料來源。後援文案中的
-        // 「Mock」工程字樣移除屬 CR-0039 範圍，本批不動。
-        Provider(create: (_) => MockAiService()),
-        Provider(create: (_) => MockSpeechToTextService()),
+        // CR-0049-C：以下兩個 mock 僅 dev/test（mockServicesEnabled）注入；
+        // production 一律不建構。聊天 mock（MockAiService）只在 useMockChat==true
+        // 時被 AiToolRouter 使用，STT mock 只在 mockServicesEnabled 時被
+        // ConversationController 使用，正式版分別走後端 companionChatService 與
+        // 正式 OpenAiSpeechToTextService，不以 mock 作為正式資料來源。
+        if (AppConfig.mockServicesEnabled)
+          Provider(create: (_) => MockAiService()),
+        if (AppConfig.mockServicesEnabled)
+          Provider(create: (_) => MockSpeechToTextService()),
         Provider(create: (_) => SearchService()),
         Provider(create: (_) => TextToSpeechService()),
         Provider(create: (_) => TaigiAsrService()),
@@ -224,7 +227,11 @@ class PetCompanionApp extends StatelessWidget {
             inventoryController: context.read<InventoryController>(),
             shopService: context.read<ShopService>(),
             webSearchService: context.read<WebSearchService>(),
-            mockAiService: context.read<MockAiService>(),
+            // CR-0049-C：production（mockServicesEnabled==false）不注入 mock，
+            // AiToolRouter.useMockChat 同步為 false，聊天走後端正式引擎。
+            mockAiService: AppConfig.mockServicesEnabled
+                ? context.read<MockAiService>()
+                : null,
             companionContentService: context.read<CompanionContentService>(),
             companionChatService: context.read<CompanionChatService>(),
             reminderController: context.read<ReminderController>(),
@@ -283,12 +290,14 @@ class PetCompanionApp extends StatelessWidget {
             memoryController: context.read<MemoryController>(),
           ),
         ),
-        ChangeNotifierProxyProvider6<
+        // CR-0049-C：移除對 MockSpeechToTextService 的 proxy 依賴（改 5 元），
+        // 因該 mock 在 production 已不注入；STT 仍依 mockServicesEnabled 條件選用
+        // 正式 OpenAiSpeechToTextService（production）或 mock（dev/test）。
+        ChangeNotifierProxyProvider5<
             ProfileController,
             PetController,
             AiToolRouter,
             TextToSpeechService,
-            MockSpeechToTextService,
             SearchService,
             ConversationController>(
           create: (context) => ConversationController(
@@ -317,8 +326,7 @@ class PetCompanionApp extends StatelessWidget {
             languageRoutingService: context.read<LanguageRoutingService>(),
             taigiAsrService: context.read<TaigiAsrService>(),
           ),
-          update: (context, profile, pet, router, tts, mockStt, search,
-                  controller) =>
+          update: (context, profile, pet, router, tts, search, controller) =>
               controller ??
               ConversationController(
                 profileController: profile,
@@ -326,7 +334,7 @@ class PetCompanionApp extends StatelessWidget {
                 toolRouter: router,
                 ttsService: tts,
                 sttService: AppConfig.mockServicesEnabled
-                    ? mockStt
+                    ? context.read<MockSpeechToTextService>()
                     : OpenAiSpeechToTextService(
                         proxyUrl: profile.sttProxyUrl,
                       ),

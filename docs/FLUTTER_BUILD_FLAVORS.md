@@ -92,23 +92,26 @@ flutter build apk --release \
 | --- | --- | --- | --- |
 | `MockShopService` | `app.dart`（`if (mockServicesEnabled)`） | 無正式路徑依賴 | ✅ 已隔離（CR-0034） |
 | `MockTaigiAsrStrategy` | `app.dart` `AsrStrategyService.strategies`（`if (mockServicesEnabled)`） | 不被 `context.read`；缺席時 `AsrStrategyService` / `LanguageRoutingService` graceful fallback 回 OpenAI Realtime | ✅ 已隔離（CR-0048） |
-| `MockAiService` | `app.dart`（無條件 `Provider`） | `AiToolRouter._chat()` 於按住說話與 Realtime 本地指令路由 **always** 取用 | ⛔ **尚未隔離**，production 仍用到，延後 **CR-0049** |
-| `MockSpeechToTextService` | `app.dart`（無條件 `Provider`） | production 已**不再選用**：`ConversationController` 改吃 `SpeechToTextService` 介面，正式版注入 `OpenAiSpeechToTextService`（後端 `/api/stt/transcribe` 代理，金鑰留在後端），`sttMode` production 預設 `openAiProxy`；dev / test（`mockServicesEnabled`）才注入 mock | 🟡 **consumer 已切正式 STT（CR-0049-A）**；Provider 無條件注入的 gating 收尾待 **CR-0049-C** |
+| `MockAiService` | `app.dart`（`if (mockServicesEnabled)`） | dev/test 才被 `AiToolRouter._chat()`（`useMockChat==true`）取用；production `useMockChat==false`，聊天走後端 `companionChatService`，`AiToolRouter.mockAiService` 為 `null` | ✅ 已隔離（CR-0049） |
+| `MockSpeechToTextService` | `app.dart`（`if (mockServicesEnabled)`） | dev/test 才注入；production `ConversationController` 注入正式 `OpenAiSpeechToTextService`（後端 `/api/stt/transcribe` 代理，金鑰留在後端），`sttMode` production 預設 `openAiProxy`，`ConversationController` proxy 不再依賴此 mock（CR-0049-C 改 5 元 ProxyProvider） | ✅ 已隔離（CR-0049） |
 
 重點：
 
-- **目前 production build 仍然會建立 `MockAiService` 與 `MockSpeechToTextService`（無條件 `Provider`）。**
-  其中 `MockSpeechToTextService` 已**不再被 production runtime 選用**（CR-0049-A：
-  `ConversationController` 改吃 `SpeechToTextService` 介面、正式版注入正式 STT、
-  `sttMode` production 預設 `openAiProxy`），但無條件 `Provider` 本身的 gating 收尾
-  屬 **CR-0049-C**；`MockAiService` 仍被 `_chat` 選用，待 **CR-0049-B**。
-  在 B、C 完成前，本系統 mock 隔離**尚未完成**，不可對外聲稱「正式版已完全移除 mock」。
-- 這些是「曾被 production runtime 選用」的 live 依賴，純從 provider 樹移除會造成
-  `ProviderNotFoundException` 崩潰，或讓按住說話 / Realtime 本地指令失去回覆與 STT。
-  安全隔離必須先讓 consumer 在 production 改用正式回覆引擎 / 正式 STT proxy
-  （`_chat` 接正式來源 → CR-0049-B、`sttMode` production 預設改 `openAiProxy` →
-  **已於 CR-0049-A 完成**），再 gating 注入（CR-0049-C）。此屬陪伴回覆策略與
-  對話 / Realtime owner 的權責，已切出 **CR-0049（A/B/C）** 分批處理。
+- **CR-0049 完成後，production build 已不再建立 `MockAiService` 與 `MockSpeechToTextService`。**
+  兩個 `Provider` 都改為 `if (AppConfig.mockServicesEnabled)` 才注入，production
+  （`mockServicesEnabled==false`）provider 樹零 mock 實例。
+- 隔離分三批安全收尾，consumer 先改走正式來源、再 gating 注入：
+  - **CR-0049-A**：STT consumer 切正式 `OpenAiSpeechToTextService`、`sttMode`
+    production 預設 `openAiProxy`。
+  - **CR-0049-B**：聊天 consumer `AiToolRouter._chat()` production 走後端
+    `companionChatService`（`useMockChat==false`），不再呼叫 `mockAiService`。
+  - **CR-0049-C**：`MockAiService` / `MockSpeechToTextService` 兩個 `Provider`
+    gating；`AiToolRouter.mockAiService` 改 nullable，production 注入 `null`；
+    `ConversationController` 由 6 元改 5 元 `ProxyProvider`，移除對 STT mock 的
+    proxy 依賴，避免 gating 後 `ProviderNotFoundException`。
+- 驗證：`test/config/mock_service_provider_gating_test.dart` 鏡像 app wiring，
+  production flavor 下斷言 `mockAiService==null`、`useMockChat==false`、STT 為
+  `OpenAiSpeechToTextService`；dev/test flavor 下仍注入 mock、既有降級行為不變。
 
 ### CR-0048 已完成的 `MockTaigiAsrStrategy` 隔離
 
@@ -136,9 +139,12 @@ flutter build apk --release \
 4. App 內無 demo / test / mock / debug 對長者可見字樣，無 Debug banner。
 5. **不可在正式 build 使用 demo login 或 mock service 作為正式資料來源。**
 6. 跑回歸：`flutter analyze`、`flutter test`（含
-   `test/config/asr_strategy_mock_gating_test.dart`、`test/config/app_config_test.dart`）。
+   `test/config/asr_strategy_mock_gating_test.dart`、
+   `test/config/mock_service_provider_gating_test.dart`、
+   `test/config/app_config_test.dart`）。
    驗 production 模式：
-   `flutter test test/config/asr_strategy_mock_gating_test.dart --dart-define=APP_ENV=production --dart-define=API_BASE_URL=https://api.example.com`
-   應確認不含台語 mock strategy 且 Realtime ASR fallback 正常。
-7. ⛔ 送審前的最終 blocker：完成 **CR-0049**，隔離 `MockAiService` /
-   `MockSpeechToTextService`。在那之前，本 App **尚未達成完整 mock 隔離**。
+   `flutter test test/config/asr_strategy_mock_gating_test.dart test/config/mock_service_provider_gating_test.dart --dart-define=APP_ENV=production --dart-define=API_BASE_URL=https://api.example.com`
+   應確認不含台語 mock strategy、`AiToolRouter.mockAiService==null`、STT 為正式
+   `OpenAiSpeechToTextService`，且 Realtime ASR fallback 正常。
+7. ✅ `MockAiService` / `MockSpeechToTextService` 已於 **CR-0049** 隔離，production
+   provider 樹零 mock 實例，audit P2-5 mock 隔離完成。

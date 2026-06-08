@@ -24,7 +24,7 @@ class AiToolRouter {
     required this.inventoryController,
     required this.shopService,
     required this.webSearchService,
-    required this.mockAiService,
+    this.mockAiService,
     required this.companionContentService,
     required this.companionChatService,
     required this.reminderController,
@@ -39,7 +39,11 @@ class AiToolRouter {
   final InventoryController inventoryController;
   final ShopService shopService;
   final WebSearchService webSearchService;
-  final MockAiService mockAiService;
+
+  /// 聊天 mock 引擎，僅 dev/test（[useMockChat] == true）使用；production
+  /// （useMockChat == false）為 null，由 app.dart 條件注入，正式 provider 樹
+  /// 不建構 [MockAiService] 實例（CR-0049-C mock 隔離）。
+  final MockAiService? mockAiService;
   final CompanionContentService companionContentService;
 
   /// 正式聊天回覆引擎（呼叫後端 `POST /api/companion/chat`）。
@@ -556,12 +560,14 @@ class AiToolRouter {
   }) async {
     final mode = _chatPetMode(text);
 
-    // dev/test：維持既有 mock 行為。
-    if (useMockChat) {
+    // dev/test：維持既有 mock 行為。useMockChat == true 時 app.dart 一定有注入
+    // mockAiService（production useMockChat == false 不會進此分支）。
+    final mock = mockAiService;
+    if (useMockChat && mock != null) {
       return AiToolResult(
         toolName: 'chat',
         success: true,
-        message: mockAiService.replyForChat(
+        message: mock.replyForChat(
           text,
           profileController.petName,
           memoryContextSummary: memoryContextSummary,

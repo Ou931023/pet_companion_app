@@ -146,7 +146,7 @@ android:networkSecurityConfig="@xml/network_security_config"
 - 🔁 mock service build-flavor 隔離（CR-0048，詳見 `docs/FLUTTER_BUILD_FLAVORS.md`）：
   - ✅ `MockShopService` 已隔離（production 不注入）。
   - ✅ `MockTaigiAsrStrategy` 已隔離（production 不注入；settings 手動 ASR 下拉的台語 mock 選項在正式版隱藏；語音路由 fallback 回 OpenAI Realtime）。
-  - ⛔ `MockAiService` / `MockSpeechToTextService` **尚未隔離**，目前 production 仍會用到（按住說話與 Realtime 本地指令回覆/STT 的 live 依賴），隔離延後 **CR-0049**（送審前須完成）。
+  - ✅ `MockAiService` / `MockSpeechToTextService` 已隔離（**CR-0049**）：兩個 `Provider` 改 `if (mockServicesEnabled)`，production provider 樹零 mock 實例；聊天走後端 `companionChatService`（`AiToolRouter.mockAiService==null`、`useMockChat==false`），STT 走正式 `OpenAiSpeechToTextService`。audit P2-5 mock 隔離完成。
 - ⛔ **BLOCKER** Google Play Data Safety 表單填寫（依 `docs/GOOGLE_PLAY_DATA_SAFETY.md`）
 - ⛔ **BLOCKER** App Store 隱私問卷 / metadata（依 `docs/APP_STORE_METADATA.md`）
 - ⛔ **BLOCKER** 對外可存取的隱私政策 URL（Apple/Google 皆要求）
