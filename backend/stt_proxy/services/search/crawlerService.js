@@ -1,6 +1,7 @@
 const axios = require("axios");
 const cheerio = require("cheerio");
 const { upsertDocument } = require("./documentStore");
+const { safeErrorMessage } = require("../privacy/redaction");
 
 const defaultAllowedDomains = [
   "www.hpa.gov.tw",
@@ -64,7 +65,7 @@ async function robotsAllowed(urlText) {
     } catch (error) {
       console.warn("[crawler] robots.txt unavailable, skipping crawl for safety", {
         robotsUrl,
-        error: error?.message || error,
+        error: safeErrorMessage(error),
       });
       robotsCache.set(url.origin, null);
     }
@@ -147,7 +148,7 @@ async function crawlOne(url) {
     const saved = await upsertDocument(document);
     return { url, ok: true, document: saved };
   } catch (error) {
-    console.error("[crawler] crawl failed", { url, error: error?.message || error });
+    console.error("[crawler] crawl failed", { url, error: safeErrorMessage(error) });
     return { url, ok: false, error: error?.message || "crawl failed" };
   }
 }

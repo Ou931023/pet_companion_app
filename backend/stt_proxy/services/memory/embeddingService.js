@@ -1,4 +1,5 @@
 const OpenAI = require("openai");
+const { safeErrorMessage } = require("../privacy/redaction");
 
 let client;
 
@@ -53,7 +54,7 @@ async function createEmbedding(text) {
       provider: "openai",
     };
   } catch (error) {
-    console.warn("[memory-embedding] embedding failed", error?.message || error);
+    console.warn("[memory-embedding] embedding failed", safeErrorMessage(error));
     return {
       embedding: mockEmbedding(input),
       provider: "mock",

@@ -26,6 +26,7 @@
 - ✅ caregiver 帳號 + resident-caregiver link provisioning（super_admin-only）
 - ✅ `/api/care-alerts/notify` caller 驗證（resident idToken，server 權威 elderId）
 - 🔁 ⛔ **部署前對「真 Postgres + 真 Firebase」做端到端驗證**：idToken → users.elder_id → care alert → Telegram；caregiver scope；inactive 即時失效。（目前所有授權測試皆為 mock pg + stub firebaseAdmin）
+- ✅ **Production log 去識別化（CR-0047）**：後端高風險 log 點（`server.js logInfo/logError`、`memoryExtractor`、`memory/*`、`search/*`、`embeddingService`）改用 `services/privacy/redaction.js`；production log 不輸出完整對話 / Care Alert summary·reason / email / phone / token / secret / DATABASE_URL / stack。原則與除錯方式見 `docs/LOGGING_AND_REDACTION.md`。
 
 ---
 

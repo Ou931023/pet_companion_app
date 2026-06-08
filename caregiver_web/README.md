@@ -121,6 +121,14 @@ API base URL 為可配置，解析順序（擇先非空者）：
 - `acknowledged`：已查看 / 已知悉
 - `resolved`：已處理 / 已關懷
 
+## Logging 原則（CR-0047）
+
+- 前端程式碼**不使用 `console.*`**：不得 `console.log` token、`Authorization` / `Bearer`
+  標頭或任何機敏 payload（住民個資、完整對話原文等）到瀏覽器 console。
+- 401 / 403 等錯誤只顯示白話提示（如「目前帳號沒有權限查看此資料」），
+  不把 raw token 或後端錯誤細節印出。
+- 由 `logging_safety.test.js` 以靜態來源檢查守護此原則（`node --test caregiver_web/logging_safety.test.js`）。
+
 ## 目前限制（MVP）
 
 - 尚未內嵌 Firebase popup 登入；caregiver 需手動貼上自己的 ID Token / session 權杖（後續 CR 補）。

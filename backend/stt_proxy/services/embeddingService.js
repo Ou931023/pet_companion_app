@@ -1,4 +1,5 @@
 const OpenAI = require('openai');
+const { safeErrorMessage } = require('./privacy/redaction');
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -14,7 +15,7 @@ async function createEmbedding(text, opts = {}) {
     }
     return Array.isArray(embedding) ? embedding.map((n) => Number(n)) : [];
   } catch (err) {
-    console.error('[embeddingService] embedding creation failed', { message: err?.message || err });
+    console.error('[embeddingService] embedding creation failed', safeErrorMessage(err));
     return [];
   }
 }

@@ -1,9 +1,9 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../../config/app_config.dart';
+import '../../utils/app_log.dart';
 
 /// 把一次「知情同意」事件 best-effort 補送後端稽核表的 HTTP 服務。
 ///
@@ -68,13 +68,13 @@ class ConsentApiService {
           .timeout(_timeout);
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        debugPrint('[CONSENT_SYNC] 後端回非 2xx：${response.statusCode}（已忽略，本機同意不受影響）');
+        AppLog.debug('[CONSENT_SYNC] 後端回非 2xx：${response.statusCode}（已忽略，本機同意不受影響）');
         return false;
       }
       final decoded = jsonDecode(response.body);
       return decoded is Map<String, dynamic> && decoded['success'] == true;
     } catch (error) {
-      debugPrint('[CONSENT_SYNC] 補送後端失敗（已忽略，本機同意不受影響）：$error');
+      AppLog.error('[CONSENT_SYNC] 補送後端失敗（已忽略，本機同意不受影響）', error);
       return false;
     }
   }

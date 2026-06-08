@@ -5,6 +5,7 @@ import '../models/auth_session.dart';
 import '../services/auth/auth_service.dart';
 import '../services/auth/firebase_auth_service.dart';
 import '../services/auth/session_api_service.dart';
+import '../utils/app_log.dart';
 
 /// 登入流程的狀態機。
 enum AuthStatus {
@@ -85,7 +86,7 @@ class AuthController extends ChangeNotifier {
       if (AppConfig.isProduction) return null;
       return 'mock-id-token-$currentUserId';
     } catch (_) {
-      debugPrint('[CARE_ALERT_NOTIFY] 取得身分權杖失敗（已忽略）。');
+      AppLog.debug('[CARE_ALERT_NOTIFY] 取得身分權杖失敗（已忽略）。');
       return null;
     }
   }
@@ -110,7 +111,7 @@ class AuthController extends ChangeNotifier {
         _setStatus(AuthStatus.unauthenticated);
       }
     } catch (error) {
-      debugPrint('[AUTH] restore 失敗：$error');
+      AppLog.error('[AUTH] restore 失敗', error);
       _session = null;
       _setStatus(AuthStatus.error);
     }
@@ -128,7 +129,7 @@ class AuthController extends ChangeNotifier {
       _session = session;
       _setStatus(AuthStatus.authenticated);
     } catch (error) {
-      debugPrint('[AUTH] loginAsDemoUser 失敗：$error');
+      AppLog.error('[AUTH] loginAsDemoUser 失敗', error);
       _errorMessage = '現在連線不太順，待會再試一次好嗎？';
       _setStatus(AuthStatus.error);
     }
@@ -182,7 +183,7 @@ class AuthController extends ChangeNotifier {
       _errorMessage = _friendlySessionError(error.code);
       _setStatus(AuthStatus.error);
     } catch (error) {
-      debugPrint('[AUTH] google 登入失敗：$error');
+      AppLog.error('[AUTH] google 登入失敗', error);
       _errorMessage = _friendlyGoogleError('unknown');
       _setStatus(AuthStatus.error);
     }
@@ -215,7 +216,7 @@ class AuthController extends ChangeNotifier {
     } on EmailAuthException catch (error) {
       return _friendlyEmailError(error.code);
     } catch (error) {
-      debugPrint('[AUTH] registerAccount 失敗：$error');
+      AppLog.error('[AUTH] registerAccount 失敗', error);
       return _friendlyEmailError('unknown');
     }
   }
@@ -237,7 +238,7 @@ class AuthController extends ChangeNotifier {
       _errorMessage = _friendlySessionError(error.code);
       _setStatus(AuthStatus.error);
     } catch (error) {
-      debugPrint('[AUTH] email auth 失敗：$error');
+      AppLog.error('[AUTH] email auth 失敗', error);
       _errorMessage = _friendlyEmailError('unknown');
       _setStatus(AuthStatus.error);
     }
@@ -285,7 +286,7 @@ class AuthController extends ChangeNotifier {
     try {
       await _authService.logout();
     } catch (error) {
-      debugPrint('[AUTH] logout 清除失敗（已忽略）：$error');
+      AppLog.error('[AUTH] logout 清除失敗（已忽略）', error);
     }
     _session = null;
     _errorMessage = null;
@@ -314,7 +315,7 @@ class AuthController extends ChangeNotifier {
       if (error.code == 'canceled') return null;
       return _friendlyDeleteError(error.code);
     } catch (error) {
-      debugPrint('[AUTH] deleteAccount 失敗：$error');
+      AppLog.error('[AUTH] deleteAccount 失敗', error);
       return _friendlyDeleteError('unknown');
     }
     _session = null;

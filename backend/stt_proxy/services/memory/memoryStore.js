@@ -2,6 +2,7 @@ const fs = require("fs/promises");
 const path = require("path");
 
 const postgres = require("../../db/postgres");
+const { safeErrorMessage } = require("../privacy/redaction");
 
 const PROVIDER_POSTGRES = "postgres_pgvector";
 const PROVIDER_JSON = "json_fallback";
@@ -336,7 +337,7 @@ async function createMemory(memory) {
     try {
       return await createMemoryPostgres(normalized);
     } catch (error) {
-      console.error("[memory-store] postgres create failed, falling back to json", error?.message || error);
+      console.error("[memory-store] postgres create failed, falling back to json", safeErrorMessage(error));
     }
   }
   return createMemoryJson(normalized);
@@ -361,7 +362,7 @@ async function listMemories(userId = "default_user") {
         provider: PROVIDER_POSTGRES,
       };
     } catch (error) {
-      console.error("[memory-store] postgres list failed, falling back to json", error?.message || error);
+      console.error("[memory-store] postgres list failed, falling back to json", safeErrorMessage(error));
     }
   }
 
@@ -428,7 +429,7 @@ async function findDuplicateMemory(userId = "default_user", memorySummary, embed
       }
       return { memory: null, provider: PROVIDER_POSTGRES };
     } catch (error) {
-      console.error("[memory-store] postgres dedup failed, falling back to json", error?.message || error);
+      console.error("[memory-store] postgres dedup failed, falling back to json", safeErrorMessage(error));
     }
   }
 
@@ -508,7 +509,7 @@ async function searchMemoriesByEmbedding(userId = "default_user", embedding, lim
         provider: PROVIDER_POSTGRES,
       };
     } catch (error) {
-      console.error("[memory-store] postgres vector search failed, falling back to json", error?.message || error);
+      console.error("[memory-store] postgres vector search failed, falling back to json", safeErrorMessage(error));
     }
   }
 
@@ -563,7 +564,7 @@ async function archiveMemory(memoryId, userId = "default_user") {
         provider: PROVIDER_POSTGRES,
       };
     } catch (error) {
-      console.error("[memory-store] postgres archive failed, falling back to json", error?.message || error);
+      console.error("[memory-store] postgres archive failed, falling back to json", safeErrorMessage(error));
     }
   }
 
@@ -612,7 +613,7 @@ async function markMemoriesUsed(memoryIds = []) {
         updated: result.rowCount,
       };
     } catch (error) {
-      console.error("[memory-store] postgres mark used failed, falling back to json", error?.message || error);
+      console.error("[memory-store] postgres mark used failed, falling back to json", safeErrorMessage(error));
     }
   }
 
@@ -651,7 +652,7 @@ async function recordMemoryEvent(memoryId, eventType, detail = null) {
         );
         return { success: true, provider: PROVIDER_POSTGRES };
       } catch (error) {
-        console.error("[memory-store] postgres event failed, falling back to json", error?.message || error);
+        console.error("[memory-store] postgres event failed, falling back to json", safeErrorMessage(error));
       }
     }
 
@@ -667,7 +668,7 @@ async function recordMemoryEvent(memoryId, eventType, detail = null) {
     await saveJsonEvents(events);
     return { success: true, provider: PROVIDER_JSON };
   } catch (error) {
-    console.error("[memory-store] event record failed", error?.message || error);
+    console.error("[memory-store] event record failed", safeErrorMessage(error));
     return { success: false };
   }
 }
@@ -688,7 +689,7 @@ async function deleteMemoriesByUserId(userId = "default_user") {
     } catch (error) {
       console.error(
         "[memory-store] postgres delete-by-user failed, falling back to json",
-        error?.message || error,
+        safeErrorMessage(error),
       );
     }
   }

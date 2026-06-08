@@ -123,6 +123,7 @@ const { listSafeUsers } = require("./services/admin/adminUsersService");
 const caregiverProvisioning = require("./services/admin/caregiverProvisioningService");
 const residentLinkProvisioning = require("./services/admin/residentLinkProvisioningService");
 const marketplaceStore = require("./services/marketplace/marketplaceStore");
+const { safeLogPayload, safeErrorMessage } = require("./services/privacy/redaction");
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -196,12 +197,15 @@ const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// CR-0047 B2：log 附帶物件 extra 一律經 safeLogPayload 遮蔽，避免呼叫端塞入
+// token / email / 完整對話 / Care Alert summary·reason 等敏感內容落 log。
+// 純輸出遮蔽，不改任何呼叫端控制流 / return / throw。
 function logInfo(message, extra = {}) {
-  console.log(`[realtime-broker] ${message}`, extra);
+  console.log(`[realtime-broker] ${message}`, safeLogPayload(extra));
 }
 
 function logError(message, extra = {}) {
-  console.error(`[realtime-broker] ${message}`, extra);
+  console.error(`[realtime-broker] ${message}`, safeLogPayload(extra));
 }
 
 // CR-P2B：通知 / 稽核 log 寫入採 **fire-and-forget best-effort**。

@@ -4,6 +4,7 @@ const {
   searchMemoriesByEmbedding,
   markMemoriesUsed,
 } = require("./memoryStore");
+const { safeErrorMessage } = require("../privacy/redaction");
 
 const CHATTER = new Set(["你好", "哈", "哈哈", "嗯", "嗯嗯", "好", "好的", "謝謝", "謝謝你"]);
 
@@ -142,7 +143,7 @@ async function buildMemoryContext({
       embeddingProvider,
     };
   } catch (error) {
-    console.warn("[memory-context] build failed", error?.message || error);
+    console.warn("[memory-context] build failed", safeErrorMessage(error));
     return emptyContext("memory context failed");
   }
 }
@@ -301,7 +302,7 @@ async function buildMemoryGreeting({ userId = "default_user" } = {}) {
       provider: result.provider,
     };
   } catch (error) {
-    console.warn("[memory-context] greeting failed", error?.message || error);
+    console.warn("[memory-context] greeting failed", safeErrorMessage(error));
     return {
       greeting: "",
       memoryUsed: false,

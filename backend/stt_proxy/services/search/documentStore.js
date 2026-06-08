@@ -2,6 +2,7 @@ const fs = require("fs/promises");
 const path = require("path");
 const { randomUUID } = require("crypto");
 const pool = require("../../db/pool");
+const { safeErrorMessage } = require("../privacy/redaction");
 
 const dataDir = path.join(__dirname, "../../data");
 const mockPath = path.join(dataDir, "mockCrawledDocuments.json");
@@ -66,7 +67,7 @@ async function listDocuments() {
       );
       return result.rows.map(normalizeDocument);
     } catch (error) {
-      console.error("[search-store] postgres list failed, falling back to json", error?.message || error);
+      console.error("[search-store] postgres list failed, falling back to json", safeErrorMessage(error));
     }
   }
   return seedJsonStoreIfNeeded();
@@ -111,7 +112,7 @@ async function upsertDocument(document) {
       );
       return normalizeDocument(result.rows[0]);
     } catch (error) {
-      console.error("[search-store] postgres upsert failed, falling back to json", error?.message || error);
+      console.error("[search-store] postgres upsert failed, falling back to json", safeErrorMessage(error));
     }
   }
 
@@ -153,7 +154,7 @@ async function logSearchQuery({ userQuery, queryMode, usedProvider, results = []
       }
       return queryResult.rows[0].id;
     } catch (error) {
-      console.error("[search-store] postgres query log failed, falling back to json", error?.message || error);
+      console.error("[search-store] postgres query log failed, falling back to json", safeErrorMessage(error));
     }
   }
 

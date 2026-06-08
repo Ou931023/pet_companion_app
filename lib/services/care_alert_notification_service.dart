@@ -1,10 +1,10 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/app_config.dart';
 import '../models/care_alert.dart';
+import '../utils/app_log.dart';
 
 /// 取得呼叫後端所需的身分權杖（Bearer token）。
 ///
@@ -48,7 +48,7 @@ class CareAlertNotificationService {
         token = null;
       }
       if (token == null || token.isEmpty) {
-        debugPrint('[CARE_ALERT_NOTIFY] 沒有可用的身分權杖，略過通知。');
+        AppLog.debug('[CARE_ALERT_NOTIFY] 沒有可用的身分權杖，略過通知。');
         return;
       }
 
@@ -81,16 +81,16 @@ class CareAlertNotificationService {
           )
           .timeout(const Duration(seconds: 5));
       if (response.statusCode != 200) {
-        debugPrint('[CARE_ALERT_NOTIFY] non-200 response: ${response.statusCode}');
+        AppLog.debug('[CARE_ALERT_NOTIFY] non-200 response: ${response.statusCode}');
         return;
       }
       final decoded = jsonDecode(response.body);
       if (decoded is Map && decoded['success'] != true) {
-        debugPrint('[CARE_ALERT_NOTIFY] backend reported failure: ${decoded['error']}');
+        AppLog.debug('[CARE_ALERT_NOTIFY] backend reported failure.');
       }
     } catch (error) {
       // 含 timeout 與網路錯誤：吞掉，不影響語音陪伴與本機 CareAlert。
-      debugPrint('[CARE_ALERT_NOTIFY] notify failed: $error');
+      AppLog.error('[CARE_ALERT_NOTIFY] notify failed', error);
     }
   }
 }

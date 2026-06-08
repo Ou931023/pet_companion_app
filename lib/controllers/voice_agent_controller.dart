@@ -18,6 +18,7 @@ import '../services/language_routing_service.dart';
 import '../services/realtime_timeout_registry.dart';
 import '../services/realtime_turn_coordinator.dart';
 import '../services/realtime_voice_service.dart';
+import '../utils/app_log.dart';
 import '../utils/zh_convert.dart';
 import 'app_navigation_controller.dart';
 import 'agent_tool_controller.dart';
@@ -617,7 +618,10 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     _routeToolsForTranscript(transcript, turnId);
     final renameResult = _tryHandleRenameIntent(transcript);
     _emotion = detectEmotion(transcript);
-    debugPrint('[EMOTION] text=$transcript emotion=${_emotion.name}');
+    AppLog.debug(
+      '[EMOTION] text=${AppLog.previewTranscript(transcript)} '
+      'emotion=${_emotion.name}',
+    );
     _pendingRealtimeUserText = transcript;
     _pendingRealtimeEmotion = _emotion.name;
     _applyEmotionToPet();

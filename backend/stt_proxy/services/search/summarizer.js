@@ -1,4 +1,5 @@
 const OpenAI = require("openai");
+const { safeErrorMessage } = require("../privacy/redaction");
 
 let client;
 
@@ -99,7 +100,7 @@ async function summarizeWithAi({ query, mode, results, webAnswer = "" }) {
       sources,
     };
   } catch (error) {
-    console.error("[search-summary] AI summary failed", error?.message || error);
+    console.error("[search-summary] AI summary failed", safeErrorMessage(error));
     return fallbackSummary({ query, results, mode });
   }
 }

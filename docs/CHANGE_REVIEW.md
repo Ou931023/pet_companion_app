@@ -2309,3 +2309,168 @@ Read-only 核對結果：
 - ✅ **B4（文件）** APP_STORE_METADATA.md + GOOGLE_PLAY_DATA_SAFETY.md 完成。
 - ⛔ **B3（medium config）** 轉 blocker — 區網語音 smoke PASS 後才套用 §6 片段；FAIL 則回退維持現狀。
 - **殘留 blocker：** (1) B3 真環境區網語音 smoke 後套用；(2) §5 六項 owner blocker（品牌名 / app 識別碼 / hosted 法務·支援 URL / 視覺素材 / signing / production 環境 + secret）；(3) §1·§7 真 Postgres+真 Firebase 端到端授權鏈驗證 + 真環境 release build / 三大 smoke。
+
+### CR-0047 — Production Logging Redaction and PII De-identification（接 CR-0046；修 Audit P2-4 / P3-3 / P3-6；正式上架隱私治理項，不碰授權鏈/Realtime 主流程/Memory·CareAlert 成功契約）
+- 提出 / 裁決 agent：architecture-agent（依使用者指派；任務書 `tasks/CR-0047-production-logging-redaction-and-pii-deidentification.md`）
+- 日期：2026-06-08
+- 狀態：**提案 + 裁決完成，待派工落地**（本筆為規劃 / 裁決紀錄，未改任何程式碼）
+- 帳本正規 ID = **CR-0047**（沿用「下一個空號」；CR-0046 文件批 B1/B2/B4 已結案、B3 轉 blocker）
+
+#### 1. 動機（為何現在做）
+- 授權鏈（CR-0039–0045）已在 code 層閉合，CR-0046 收斂平台/商店設定。剩餘正式上架隱私治理風險：**production log 可能輸出 email / phone / token / 完整對話 / Care Alert reason·summary / Firebase·OpenAI·Telegram 原始錯誤 payload / DATABASE_URL**（CLAUDE.md §9.14「正式環境 log 不可輸出完整個資與 API key」）。
+- 對應 Audit 殘留：**P2-4**（`memoryExtractor.js` console.error 印完整 stack；extractAndStoreMemory 另印 input 片段）、**P3-3**（Flutter debugPrint 散布、release 仍輸出）、**P3-6**（realtime `_log` 內部技術 log）。
+- 既有資產：`config/env.js` 已有 `maskSecret / maskEmail / maskPhone / maskDatabaseUrl / describeMaskedConfig`（CR-0034）；`server.js` 已有 `logInfo / logError`（行 199/203）。本案不是從零造輪，是「在既有 mask primitive 上補 object/error 層 + 套用到高風險點 + Flutter 補集中 helper」。
+
+#### 2. 盤點覆核（architecture-agent 已驗證，覆核使用者盤點）
+- **Backend console.\*（非測試）= 54 處**，高風險點實測：
+  - `services/memoryExtractor.js:171, 249` → `err.stack` 完整輸出（**P2-4，high**）；`:251-254` 另印 userText 前 200 字（對話片段 PII，**high**）。
+  - `services/memory/memoryStore.js`（339/364/431/511/566/615/654/670）、`search/documentStore.js`（69/114/156）、`embeddingService.js`、`search/*`、`memory/memoryContextService.js` → 多為 `error?.message || error`（**已相對安全**，但 `|| error` 在 message 缺時會落回完整 error 物件，**medium**：需確保只取 safe message、不落回完整 error/stack）。
+  - `server.js:200/204`（`logInfo/logError`）→ 直接 `console.log/error(msg, extra)`，`extra` 未經遮蔽（呼叫端若塞 token/email/body 即外洩，**medium**：屬「管道」風險，須讓 extra 過 redaction）。
+  - **授權鏈 auth-context log 已合規（覆核確認）**：`adminAuthContext.js:172`、`residentCallerContext.js:177` 皆只印 `{ error: (error && error.message) || error }`，**不印 token**（CR-0041/0045 紅線已落實）。→ **本案不需改動此二檔**（避免授權鏈 churn，見 §裁決 5）。
+  - 對外 response 覆核：admin 路徑回 `{ok:false,error:<code>}`、resident/notify 回 `{success:false,error:<code>}`，**不回 stack**（Audit §4.2 已確認）。✅
+- **Flutter debugPrint = 70 處（~17 檔）**，高風險實測：
+  - `lib/controllers/voice_agent_controller.dart:620` → `[EMOTION] text=$transcript ...`（**完整 transcript 外洩，high**）；`:1406` recovering reason（technical，low）。
+  - `lib/services/care_alert_notification_service.dart:84/89/93` → 印 statusCode / `decoded['error']`（後端錯誤碼）/ error（**non-token，CR-0045 已不印 token；medium**：reason/summary 不應外洩，statusCode/錯誤碼可保留）。
+  - `lib/controllers/auth_controller.dart:88`、`care_alert_notification_service.dart:51` → 僅白話訊息**無 token**（low，CR-0045 已收斂）。
+  - `lib/services/realtime_voice_service.dart`（🔒）`_log`（定義行 1107：`debugPrint('[RealtimeVoiceService] $message')`）→ 內容為 connectionState / iceConnectionState / DataChannel state / status code / 技術字串，**不含 transcript / summary / token**（逐點覆核 254–509）。屬 Audit P3-6「僅內部 debug、release 抑制即可」。
+  - **重要事實**：Flutter `debugPrint` 在 **release build 仍會輸出**（未受 `kReleaseMode/kDebugMode` 包者不會被 strip）。`lib/` 目前幾乎無集中 log gate（無 `lib/utils/app_log.dart`）。
+- **caregiver_web console.\* = 0**（CR-0042/0044 已確認 `app.js` 不印 token）→ 本案僅「加守護測試 + 文件」，**非改碼**。
+
+#### 3. 影響範圍（檔案）
+- **新建**：
+  - `backend/stt_proxy/services/privacy/redaction.js`（object/error 遮蔽層，delegate env.js primitive）。
+  - `backend/stt_proxy/test/redaction.test.js`（node --test）。
+  - `lib/utils/app_log.dart`（Flutter 集中 redacted log helper）。
+  - `test/utils/app_log_test.dart`（或併入既有測試目錄）。
+  - `docs/LOGGING_AND_REDACTION.md`（logging 原則文件）。
+- **改寫（高風險 log 套用 redaction，行為不變）**：
+  - `backend/stt_proxy/server.js`（`logInfo/logError` 讓 `extra` 過 `safeLogPayload`）。
+  - `backend/stt_proxy/services/memoryExtractor.js`（移除 stack 全文 + input 片段，改 `safeErrorMessage`）。
+  - `backend/stt_proxy/services/memory/memoryStore.js`、`memory/memoryContextService.js`、`memory/embeddingService.js`、`embeddingService.js`、`search/documentStore.js`、`search/searchService.js`、`search/summarizer.js`、`search/crawlerService.js`、`memory/memoryExtractor.js`（確保只取 safe message，不落回完整 error/stack）。
+  - `lib/controllers/voice_agent_controller.dart`（transcript log 改 redacted / kDebugMode）、`lib/services/care_alert_notification_service.dart`（reason/summary 不外洩）、`lib/controllers/auth_controller.dart`、`lib/controllers/conversation_controller.dart`、`lib/services/auth/session_api_service.dart`（高風險點改用 app_log）。
+- **新增守護測試 + 文件（不改業務碼）**：`caregiver_web/*.test.js`（斷言不 console.log token）。
+- **更新文件**：`docs/CHANGE_REVIEW.md`（本筆）、`docs/GOOGLE_PLAY_DATA_SAFETY.md`、`docs/STORE_RELEASE_CHECKLIST.md`。
+- **不改（紅線保護）**：`adminAuthContext.js` / `residentCallerContext.js` / `sessionService.js` / `firebaseAdmin.js`（授權鏈，已合規，避免 churn）、`realtime_voice_service.dart`（🔒，見 §裁決 4）、任何 Realtime SDP/DataChannel 流程、Memory/Care Alert 成功 response 契約、`config/env.js` 既有 primitive（只新增 delegate，不改其行為與既有測試基線）。
+
+#### 4. 觸及 🔒 與牽涉 agent
+- **🔒 判定**：
+  - `realtime_voice_service.dart`（realtime-voice-agent 專屬 🔒）→ **本案不動**（裁決 4）。若日後納入，須 realtime-voice-agent owner + architecture checkpoint，列為獨立 🔒 批。
+  - 授權鏈檔（adminAuthContext / residentCallerContext / sessionService / firebaseAdmin）→ **準 🔒**；本案**不改**（已合規），避免動到 CR-0039–0045 守門測試基線。
+  - `config/env.js` mask primitive → **準 🔒**（CR-0034 既有測試守護）；本案**只在新檔 require 它、不改其輸出/簽章**。
+  - `server.js logInfo/logError`、各 service log、Flutter 非-realtime log → **非 🔒**（log 管道改寫，不動契約/schema/主線）。
+- 牽涉 agent：
+  - **backend-agent（主力）**：redaction.js + backend 高風險 log 改寫 + backend 測試 + LOGGING 文件。
+  - **frontend-ux-agent**：`app_log.dart` + Flutter 非-realtime 高風險 log 改寫 + Flutter 測試 + caregiver_web 守護測試。
+  - **companion-memory-agent**：**不需派工**（見裁決 5：memory log 為「管道遮蔽」非「記憶/分級邏輯」，歸 backend-agent；companion-memory-agent 僅知會、可覆核 memory log 不誤刪必要診斷資訊）。
+  - **realtime-voice-agent**：**本案不需**（不動 🔒）；僅在使用者要求把 `_log` 納入 release 抑制時才開獨立批。
+  - **architecture-agent**：本提案 + 裁決 + 文件審查 + 批次 checkpoint。
+
+#### 5. 風險等級
+- 整案：**low–medium**。redaction.js + 文件 + caregiver_web 守護測試 = low；backend/Flutter log 改寫 = medium（觸及多檔但機械式、不改邏輯）。
+- **最大風險 = 「為安靜 log 而吞錯」**（任務 §11 #6）：改寫須維持原本 try/catch 控制流與 fallback 行為，**只遮蔽輸出內容，不刪除/縮減錯誤處理、不改 return 值、不改 throw 時機**。
+- 紅線守護：不破壞 CR-0039–0045 授權鏈、不改 Realtime WebRTC 主流程、不改 Memory API / Care Alert 成功 response 契約、不移除必要錯誤處理、測試不硬編真 secret、不大量重寫無關 code。
+
+#### 6. 五項核心裁決
+
+##### 裁決 1 — `redaction.js` 與 `config/env.js` 既有 mask 的分工（✅ delegate，不重造）
+- **核准**：新 `services/privacy/redaction.js` **delegate** `config/env.js` 既有 primitive，**不得重新實作** masking 規則（避免兩套遮蔽邏輯分歧）。
+- 分工：
+  - `config/env.js`（既有，**單一 masking primitive 來源**）：`maskSecret / maskEmail / maskPhone / maskDatabaseUrl`、`describeMaskedConfig`（啟動設定摘要）。**本案不改。**
+  - `services/privacy/redaction.js`（新，**組合/物件/錯誤層**）：
+    - `redactToken(v)` → 直接 delegate `maskSecret`（語意別名，供呼叫端語意清楚）。
+    - `redactEmail(v)` / `redactPhone(v)` / `redactDatabaseUrl(v)` → delegate 對應 env.js mask。
+    - `redactObject(value)` → **遞迴**遮蔽常見敏感 key（任務 §5 清單：token/accessToken/idToken/authorization/apiKey/key/secret/password/chatId/telegramToken/openaiApiKey/databaseUrl/email/phone/transcript/message/conversation/memory/reason/summary）；key 命中 → 套對應 mask 或 `[REDACTED]`；自由文字長欄位（transcript/message/conversation/memory/reason/summary）→ **截斷 + 標記**（如前 N 字 + `…[truncated]`，避免完整對話/摘要落 log）；**不可 mutate 原物件**（回新物件/深拷貝）；需防循環參照與過深遞迴（設深度上限）。
+    - `safeErrorMessage(error)` → 只回 `error.code` / `error.message` 之**安全摘要**，**不含 stack、不含 request body、不回完整 error 物件**；message 本身再過 token/email/phone 遮蔽（防第三方 SDK 把 key 塞進 message）。
+    - `safeLogPayload(payload)` → 對 log 附帶物件套 `redactObject`，production 走完整遮蔽 + 截斷。
+- `server.js logInfo/logError`、各 service log 改用之；`describeMaskedConfig` 維持由 env.js 提供（啟動摘要既有路徑不動）。
+
+##### 裁決 2 — production vs dev log 策略（用 env.js `isProduction` 控制；secret 兩環境恆遮蔽）
+- **核准分層**：
+  - **production**（`isProduction(env)===true`）：一律 safe/redacted。log 只保留 error code / request id（如有）/ route / status code / safe message / redacted id / timestamp（任務 §6）。**不印** request body 全文、headers、完整 error 物件、stack、完整對話/summary/reason。
+  - **development / staging**：可較詳細（保留較長截斷上限、可保留 stack 供除錯），**但 secret/token/key/DATABASE_URL/email/phone 仍恆走 mask**（不因 dev 就印明文金鑰）。
+  - 差異**只在自由文字截斷長度與是否附 stack**，**不在「是否遮蔽 secret」**（secret 兩環境都遮）。
+- 由 `redaction.js` 內部讀 `require('../../config/env').isProduction` 決定截斷/stack 行為（保持 env 單一判定來源）。
+- **對外 response 覆核（維持）**：admin `{ok:false,error}`、resident/notify `{success:false,error}`，**不回 stack / 不回完整 error**（現況已符合，本案僅覆核不改契約）。
+
+##### 裁決 3 — Flutter log 策略（新建 `lib/utils/app_log.dart`，release 抑制 + redact）
+- **核准**：因 `debugPrint` release 仍輸出，建集中 helper `lib/utils/app_log.dart`：
+  - 提供 `AppLog.debug/info/warn/error(...)`；**release（`kReleaseMode`）抑制非必要 log**，或僅輸出已遮蔽的 safe message。
+  - 提供 redact 工具（遮蔽 token、截斷 transcript/summary/reason）；**敏感參數一律經遮蔽再輸出**。
+  - **不破壞 Realtime 狀態追蹤**：狀態機/連線診斷訊息可保留，但走 helper 在 release 抑制（dev 仍可見），不得改 controller 狀態流。
+- 套用對象（高風險先行）：`voice_agent_controller.dart:620`（transcript → redact/kDebugMode）、`care_alert_notification_service.dart`（reason/summary 不外洩、保留 statusCode/錯誤碼）、`auth_controller.dart`、`conversation_controller.dart`、`session_api_service.dart` 之 token/error 點。其餘低風險 technical debugPrint 可批次改 helper 或 `kDebugMode` 包覆（非阻斷，可漸進）。
+
+##### 裁決 4 — `realtime_voice_service.dart`（🔒）→ 本案不動，列 FU
+- **裁決：本案不修改 `realtime_voice_service.dart`。** 理由：
+  - 逐點覆核其 `_log`（行 1107）僅輸出**技術字串**（connectionState / iceConnectionState / DataChannel state / status code），**不含 transcript / summary / token / PII**；Audit P3-6 評**低風險「release 抑制即可」**。
+  - 它是 realtime-voice-agent 專屬 🔒；為「release 噪音」這種低風險項動 🔒 檔不划算，且會牽動 Realtime 主線守門。
+- **FU（後續，非本案）**：若要把 `_log` 也納入 release 抑制，開**獨立 🔒 批**，owner = realtime-voice-agent（把 `_log` 改 delegate `AppLog`，僅 release gate，不改任何訊息語意/狀態追蹤），落地後 architecture-agent checkpoint（確認 Realtime 狀態機/連線診斷不受影響）。本 CR 僅在 §10 列此 FU，不執行。
+
+##### 裁決 5 — 批次切分 + owner + 順序 + 子 CR + 🔒 checkpoint
+- **不拆子 CR**（同一主題「logging 去識別化」，批次足夠；無獨立子系統）。
+- **memory log 歸屬**：`memoryExtractor.js` / `memory/*` 的 log 改寫屬「輸出管道遮蔽」（非陪伴回覆策略 / 記憶邏輯 / Care Alert 分級邏輯）→ 歸 **backend-agent**，**不派 companion-memory-agent**（僅知會 + 可覆核「未誤刪必要診斷資訊、未改記憶判定流程」）。
+- 批次：
+  - **B1（backend-agent）**：新建 `services/privacy/redaction.js`（delegate env.js）+ `test/redaction.test.js`。**純新增、零行為變更、零 🔒**。先行。
+  - **B2（backend-agent，相依 B1）**：套用 redaction 到 backend 高風險 log —— `server.js logInfo/logError`（extra 過 safeLogPayload）、`memoryExtractor.js`（P2-4：移除 stack 全文 + input 片段）、`memory/*`、`search/*`、`embeddingService`（確保只取 safe message、不落回完整 error/stack）。**不改授權鏈四檔**（已合規）。**不吞錯**（只改輸出）。medium。
+  - **B3（frontend-ux-agent，可與 B1/B2 並行）**：新建 `lib/utils/app_log.dart` + 套用到 Flutter 非-realtime 高風險 log（voice_agent_controller transcript、care_alert_notification_service、auth_controller、conversation_controller、session_api_service）+ Flutter 測試。**不碰 `realtime_voice_service.dart`（🔒）**。medium。
+  - **B4（frontend-ux-agent，low）**：caregiver_web 加守護測試（斷言不 console.log token / 401·403 不輸出 raw sensitive payload）+ 文件註記。**不改 app.js 業務碼**（console.\*=0 已合規）。
+  - **B5（backend-agent / architecture，low）**：文件 —— 新建 `docs/LOGGING_AND_REDACTION.md` + 更新 `GOOGLE_PLAY_DATA_SAFETY.md` / `STORE_RELEASE_CHECKLIST.md` + 本 CR 帳本。
+- **順序**：B1 →（B2 backend）∥（B3 frontend）並行 → B4 → B5 文件收尾。
+- **🔒 checkpoint**：本 CR **無 🔒 落地批**（`realtime_voice_service.dart` 不動、授權鏈四檔不動）。B2 雖鄰近授權鏈，但**明令不改 adminAuthContext/residentCallerContext/sessionService/firebaseAdmin**；architecture-agent 於 B2 落地後做 read-only checkpoint，確認：(a) 授權鏈四檔 git diff = 空；(b) 無吞錯（控制流/return/throw 不變）；(c) 既有 backend/Flutter 測試全綠。FU（realtime `_log`）若啟動 → 屆時為獨立 🔒 批 + checkpoint。
+
+#### 7. 測試計畫
+- **Backend（node --test，不需真 DB/真金鑰）**：`redaction.test.js` 涵蓋任務 §9.1 全項 —— token / email / phone / DATABASE_URL 遮蔽、nested object 遞迴遮蔽、**原物件不被 mutate**、敏感 key 命中遮蔽、`safeErrorMessage` 不含 token/stack、Care Alert summary/reason 不在 safe log 完整出現、`describeMaskedConfig` 不洩 secret（覆核既有）。**測試不得硬編真 secret**（用假值如 `sk-test-xxxx`）。跑 `npm run check` + `npm test`。
+- **Flutter**：`app_log` 單元測試（release gate 行為以可注入 flag 模擬；token/transcript 遮蔽斷言）；更新/新增 care_alert_notify 不 log token、transcript log 受 guard 控制之測試。跑 `flutter analyze` + `flutter test`。
+- **caregiver_web**：新增守護測試（auth token 不被 console.log、401/403 不顯示 raw token、provisioning error 不輸出完整敏感 response）。跑 `node --test *.test.js`。
+- **誠實原則**：未實際執行的測試/build 一律標「未執行 / 原因」，不偽造綠燈（CLAUDE.md 回報規範）。
+
+#### 8. 紅線自檢（提案層）
+- production log 仍可能印 token / secret？**目標：否**（safeLogPayload + safeErrorMessage + env.js mask；兩環境恆遮 secret）。
+- 仍可能印完整 email / phone？**否**（redactEmail/redactPhone delegate）。
+- 仍可能印完整 transcript / Care Alert summary·reason？**否**（自由文字截斷 + 敏感 key 遮蔽；Flutter transcript log redact/kDebugMode）。
+- 為安靜 log 而吞錯？**否**（只改輸出，不動 try/catch 控制流 / return / throw；architecture checkpoint 驗證）。
+- 破壞授權鏈 CR-0039–0045？**否**（授權鏈四檔不改，已合規）。
+- 改 Realtime 主流程 / Memory·CareAlert 成功契約？**否**（不動 🔒 realtime、不動成功 response 形狀）。
+- 測試硬編真 secret？**否**（一律假值）。
+
+#### 9. architecture-agent 裁決
+- **✅ 核准本案（CR-0047）** 依 §6 五項裁決 + §6 裁決 5 批次（B1 → B2∥B3 → B4 → B5）落地。
+- redaction.js **delegate** env.js primitive、**不重造**；production/dev 由 `isProduction` 控制截斷/stack，secret 兩環境恆遮。
+- Flutter 建 `lib/utils/app_log.dart`（release 抑制 + redact），**不碰 `realtime_voice_service.dart`（🔒）**。
+- realtime `_log` **本案不動，列 FU**（獨立 🔒 批，owner=realtime-voice-agent，需 checkpoint）。
+- 授權鏈四檔已合規、**本案不改**；B2 落地後 architecture read-only checkpoint（驗 diff 空 + 不吞錯 + 測試綠）。
+- 不需 companion-memory-agent / realtime-voice-agent 派工（前者知會、後者僅 FU 才啟動）。
+
+#### 10. 執行進度 / 驗收 / checkpoint 裁決（2026-06-08 architecture-agent read-only checkpoint）
+
+執行進度（依 §6 裁決 5 批次）：
+- B1 ✅ backend-agent：`services/privacy/redaction.js`（delegate env.js mask primitive；redactToken/Email/Phone/DatabaseUrl + redactObject 遞迴不 mutate + 防循環/深度 + safeErrorMessage 無 stack + safeLogPayload）+ `redaction.test.js`（14 案）。
+- B2 ✅ backend-agent：server.js logInfo/logError 套 safeLogPayload；memoryExtractor.js 移除 err.stack 全文 + 對話原文（userText）片段（修 P2-4）改 safeErrorMessage；memory/* · search/* · embeddingService 把 `error?.message||error` 改 safeErrorMessage。**授權鏈四檔未改**。
+- B3 ✅ frontend-ux-agent：`lib/utils/app_log.dart`（kReleaseMode no-op + previewTranscript/redactToken/redactSummary）；voice_agent_controller.dart 僅第 ~621 行 EMOTION transcript log 改 previewTranscript；auth_controller/conversation_controller/session_api_service/consent_api_service/care_alert_notification_service 高風險 debugPrint 改 AppLog。**realtime_voice_service.dart 未碰**。
+- B4 ✅ frontend-ux-agent：`caregiver_web/logging_safety.test.js` + README logging 段。
+- B5 ✅ backend-agent：`docs/LOGGING_AND_REDACTION.md` + 更新 GOOGLE_PLAY_DATA_SAFETY.md / STORE_RELEASE_CHECKLIST.md。
+
+驗收結果（architecture-agent 獨立覆驗，全綠）：
+- backend `npm test` → tests 438 / pass 438 / fail 0（424 基線 + 14 新 redaction）。
+- backend `node --test services/privacy/redaction.test.js` → 14/14。
+- caregiver_web `node --test *.test.js` → 88/88（85 + 3 新 logging_safety）。
+- flutter analyze（8 個改動檔）→ No issues found。
+- flutter test `test/utils/app_log_test.dart` → 5/5。
+
+checkpoint 裁決（read-only git diff / grep 覆核）：
+- (a) 🔒 邊界：adminAuthContext / residentCallerContext / sessionService / firebaseAdmin / realtime_voice_service.dart **`git diff --quiet` 全空（UNCHANGED）**——覆核通過。
+- (b) 不吞錯：backend 改動全是 `error?.message||error` → `safeErrorMessage(error)` 或 logInfo/logError 套 safeLogPayload，**try/catch 控制流 / return / throw / json fallback 均未動**；memoryExtractor P2-4 僅移除 stack 全文 + userText 片段 log，return 形狀不變；Flutter 全為 debugPrint → AppLog.debug/error 之純 log 置換，狀態機 / fallback / 例外語意保留——通過。
+- (c) 對外 response 不回 stack：backend services 無 `console.*(...stack)` 殘留（grep 0 命中）——通過。
+- (d) memoryExtractor 不再印 stack / 對話原文——通過。
+- (e) production log 不輸出 token/secret/email/phone/完整對話/Care Alert summary·reason/DATABASE_URL：由 redaction TOKEN/EMAIL/PHONE/DBURL/FREETEXT_KEYS + production freetext limit=0 保證，redaction.test.js 含對應斷言——通過。
+- (f) voice_agent_controller 僅 EMOTION log 行改動（previewTranscript 截斷），狀態機未動——通過。
+- (g) 測試不含真 secret：全用 `sk-test-*` / `example.com` / `123456:fake-bot-token-*` 等假值——通過。
+- (h) 既有 CR-0039–0046 測試全綠（438/438 含授權鏈與 telegram 測試）——通過。
+- **裁決：✅ PASS。** 未發現吞錯、未觸 🔒、未破壞既有契約與測試。
+
+#### 11. 完成狀態 / FU
+- ✅ 已完成（B1–B5 全部落地並通過 architecture checkpoint；待 main 提交，commit 範圍見本筆殘留說明）。
+- **FU-1**：realtime `_log` release 抑制（獨立 🔒 批，realtime-voice-agent + checkpoint）。
+- **FU-2**：低風險 technical debugPrint 全面收斂為 `AppLog` / `kDebugMode`（漸進，非阻斷）。
+- **FU-3**：考慮在 server.js 全域 error handler 統一套 safeLogPayload（若後續發現散點仍有未遮蔽 extra）。
+- **FU-4**：CI lint 守護——新增 `debugPrint` 高風險用法須走 `AppLog`/`kDebugMode`（lint rule / pre-commit grep），避免回潮。
+- **FU-5**：裝置端驗證——以 release build 在 iOS 實機實測，確認 `kReleaseMode` 路徑下 AppLog 確為 no-op、log 不外洩 token/逐字稿（本案僅靜態 + 單元/分析層驗證，未跑 release 裝置驗證）。

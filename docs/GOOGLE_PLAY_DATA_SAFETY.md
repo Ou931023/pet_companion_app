@@ -15,6 +15,7 @@
 - **第三方資料流向**：語音 / 對話文字會傳送至 **OpenAI**（Realtime / 文字 / embedding）以產生回應與記憶；high/urgent Care Alert 摘要會經 **Telegram** 通知授權照護人員。⛔ 此資料流向須於隱私政策與同意內文明確揭露（核對 `legal_content.dart`）。
 - **資料是否販售**：否。
 - **是否用於廣告 / 追蹤**：否。
+- **伺服器日誌去識別化**：✅ 後端 production log 不保存完整對話 / Care Alert summary·reason / email / phone / token / secret / DATABASE_URL（CR-0047）。所有 log 附帶物件經 `services/privacy/redaction.js` 遮蔽，錯誤只記安全摘要（不含 stack）。詳見 `docs/LOGGING_AND_REDACTION.md`。
 
 ---
 

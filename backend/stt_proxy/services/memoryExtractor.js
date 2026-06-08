@@ -5,6 +5,7 @@ const {
   insertMemory,
   softDeleteRecentMemory,
 } = require("../repositories/memoryRepository");
+const { safeErrorMessage } = require("./privacy/redaction");
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -167,8 +168,8 @@ async function summarizeMemoryWithLLM({ userText, aiReply, emotion }) {
       tags: Array.isArray(parsed.tags) ? parsed.tags.map((x) => String(x)).filter(Boolean).slice(0,5) : [],
     };
   } catch (err) {
-    // Log full stack for diagnostics (sanitized)
-    console.error('[memoryExtractor] summarizeMemoryWithLLM error', err && err.stack ? err.stack : err);
+    // CR-0047 B2：只記安全摘要（code/遮蔽 message），不印 stack 全文。
+    console.error('[memoryExtractor] summarizeMemoryWithLLM error', safeErrorMessage(err));
     return {
       shouldRemember: false,
       memoryType: 'episodic',
@@ -245,14 +246,8 @@ async function extractAndStoreMemory(input) {
       tags: row.tags,
     };
   } catch (err) {
-    // Log full error stack and sanitized input for debugging
-    console.error('[memoryExtractor] extractAndStoreMemory error', err && err.stack ? err.stack : err);
-    try {
-      console.error('[memoryExtractor] input sample', {
-        userId: userId ? '[REDACTED]' : userId,
-        userText: userText && userText.length > 200 ? `${userText.slice(0,200)}...` : userText,
-      });
-    } catch (_) {}
+    // CR-0047 B2：只記安全摘要，不印 stack 全文、不印對話原文（userText）片段。
+    console.error('[memoryExtractor] extractAndStoreMemory error', safeErrorMessage(err));
     return {
       shouldRemember: false,
       error: err?.message || 'extract failed',

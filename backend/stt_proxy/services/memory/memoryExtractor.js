@@ -1,4 +1,5 @@
 const OpenAI = require("openai");
+const { safeErrorMessage } = require("../privacy/redaction");
 
 const MEMORY_TYPES = new Set([
   "preference",
@@ -275,7 +276,7 @@ async function extractMemoryFromTurn(input) {
       return sanitized;
     }
   } catch (error) {
-    console.warn("[memory-extractor] AI extract failed, using fallback", error?.message || error);
+    console.warn("[memory-extractor] AI extract failed, using fallback", safeErrorMessage(error));
   }
 
   return precheck;

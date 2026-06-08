@@ -1,10 +1,10 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../../config/app_config.dart';
 import '../../models/auth_session.dart';
+import '../../utils/app_log.dart';
 
 /// 後端建立 session 失敗時、針對**正式帳號（email/google/apple）**丟出的
 /// typed 例外。
@@ -82,14 +82,14 @@ class SessionApiService {
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
         if (isDemo) {
-          debugPrint(
+          AppLog.debug(
             '[AUTH_SESSION] non-2xx response: ${response.statusCode}, '
             '改用 demo fallback session。',
           );
           return AuthSession.mockFallback();
         }
         // 正式帳號：401 視為登入憑證失效（需重新登入），其餘非 2xx 視為 server。
-        debugPrint('[AUTH_SESSION] non-2xx response: ${response.statusCode}（正式帳號，丟例外）。');
+        AppLog.debug('[AUTH_SESSION] non-2xx response: ${response.statusCode}（正式帳號，丟例外）。');
         throw SessionApiException(
           response.statusCode == 401 ? 'invalid_token' : 'server',
         );
@@ -98,10 +98,10 @@ class SessionApiService {
       final decoded = jsonDecode(response.body);
       if (decoded is! Map<String, dynamic> || decoded['success'] != true) {
         if (isDemo) {
-          debugPrint('[AUTH_SESSION] backend 回應非成功格式，改用 demo fallback session。');
+          AppLog.debug('[AUTH_SESSION] backend 回應非成功格式，改用 demo fallback session。');
           return AuthSession.mockFallback();
         }
-        debugPrint('[AUTH_SESSION] backend 回應非成功格式（正式帳號，丟例外）。');
+        AppLog.debug('[AUTH_SESSION] backend 回應非成功格式（正式帳號，丟例外）。');
         throw const SessionApiException('server');
       }
       return AuthSession.fromJson(decoded);
@@ -110,14 +110,14 @@ class SessionApiService {
     } on FormatException {
       // JSON 解析失敗：後端回了非預期內容。
       if (isDemo) {
-        debugPrint('[AUTH_SESSION] 解析失敗，改用 demo fallback session。');
+        AppLog.debug('[AUTH_SESSION] 解析失敗，改用 demo fallback session。');
         return AuthSession.mockFallback();
       }
       throw const SessionApiException('server');
     } catch (error) {
       // timeout / 連線錯誤等。
       if (isDemo) {
-        debugPrint('[AUTH_SESSION] createSession 失敗，改用 demo fallback session：$error');
+        AppLog.error('[AUTH_SESSION] createSession 失敗，改用 demo fallback session', error);
         return AuthSession.mockFallback();
       }
       throw const SessionApiException('network');
@@ -147,13 +147,13 @@ class SessionApiService {
           .timeout(_timeout);
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        debugPrint('[AUTH_DELETE] 後端刪除回非 2xx：${response.statusCode}（已忽略）');
+        AppLog.debug('[AUTH_DELETE] 後端刪除回非 2xx：${response.statusCode}（已忽略）');
         return false;
       }
       final decoded = jsonDecode(response.body);
       return decoded is Map<String, dynamic> && decoded['success'] == true;
     } catch (error) {
-      debugPrint('[AUTH_DELETE] 後端刪除失敗（已忽略，仍會清本機與 Firebase）：$error');
+      AppLog.error('[AUTH_DELETE] 後端刪除失敗（已忽略，仍會清本機與 Firebase）', error);
       return false;
     }
   }

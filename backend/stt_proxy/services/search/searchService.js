@@ -5,6 +5,7 @@ const mock = require("./mockSearchProvider");
 const { summarizeWithAi, toSources } = require("./summarizer");
 const { logSearchQuery } = require("./documentStore");
 const { filterTrustedSources } = require("../../../search/trusted_source_filter");
+const { safeErrorMessage } = require("../privacy/redaction");
 
 function responseShape({
   answer,
@@ -32,7 +33,7 @@ async function runWebSearch(query) {
   try {
     return await searchWeb({ query });
   } catch (error) {
-    console.error("[search] web provider failed", error?.message || error);
+    console.error("[search] web provider failed", safeErrorMessage(error));
     return null;
   }
 }

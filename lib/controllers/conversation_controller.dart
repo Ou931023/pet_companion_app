@@ -24,6 +24,7 @@ import '../services/search_service.dart';
 import '../services/speech_to_text_service.dart';
 import '../services/taigi_asr_service.dart';
 import '../services/text_to_speech_service.dart';
+import '../utils/app_log.dart';
 import 'app_navigation_controller.dart';
 import 'memory_controller.dart';
 import 'pet_controller.dart';
@@ -1192,7 +1193,7 @@ class ConversationController extends ChangeNotifier {
   ) {
     _cancelTtsTimeout();
     _ttsTimeoutTimer = Timer(duration, () {
-      debugPrint(
+      AppLog.debug(
         '[TTS_TIMEOUT] fired duration=${duration.inSeconds}s',
       );
       unawaited(onTimeout());
