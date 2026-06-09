@@ -163,19 +163,30 @@ const taigiAsrUpload = multer({
   },
 });
 const host = process.env.HOST || "127.0.0.1";
+// Configure CORS for production caregiver web.
+const allowedOrigins = (
+  process.env.CORS_ALLOWED_ORIGINS ||
+  process.env.ALLOWED_ORIGINS ||
+  ""
+)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
-// Configure CORS: allow origins from ALLOWED_ORIGINS env (comma separated), default allow none
-const allowedOriginsEnv = (resolveCorsOrigins(process.env) || '').trim();
-const allowedOrigins = allowedOriginsEnv ? allowedOriginsEnv.split(',').map(s => s.trim()) : [];
 app.use(cors({
   origin: function(origin, callback) {
-    if (!origin && allowedOrigins.length === 0) return callback(null, true); // allow non-browser (curl, server)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.length === 0 || allowedOrigins.indexOf(origin) !== -1) {
+    if (!origin) {
       return callback(null, true);
     }
-    return callback(new Error('CORS not allowed'));
-  }
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, origin);
+    }
+
+    return callback(new Error(`CORS not allowed: ${origin}`));
+  },
+  credentials: true,
+  methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE"],
 }));
 app.use(express.json());
 
