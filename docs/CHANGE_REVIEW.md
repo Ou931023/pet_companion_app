@@ -2886,3 +2886,39 @@ CR-0048 收斂時明確標註兩個未解送審 blocker（本檔 2580-2582、`FL
 - **P1-7「Mock STT」工程字樣移除**：屬 **CR-0039** 範圍（settings 手動 ASR 下拉等對使用者可見字樣），不在本案。
 - **base URL 對齊（low FU）**：`CompanionChatService` 以 compile-time `AppConfig.apiBaseUrl` 組 URL，sibling `care_alert_notification_service` 用 runtime 可覆寫的 `sttProxyUrl`。production 預設同 host、可正確命中；唯一分歧＝使用者 runtime 覆寫 `sttProxyUrl` 至不同 host。若該覆寫為支援情境，建議後續對齊成 `sttProxyUrl` 解析。非 blocker。
 - **release 裝置驗證**：production flavor 於 iOS/Android release build 的實機冒煙（聊天走後端、STT 走 proxy、無 mock）建議於送審前 device 驗證；單元/flavor 測試已綠但非裝置實測。
+
+---
+
+### CR-0050 — Companion Chat Persona Refinement for Production（打字聊天陪伴 persona）
+
+**定位**：CR-0049 留下的「persona follow-up（仍開）」收尾。`POST /api/companion/chat` 原本借用 Realtime 語音 persona（`buildRealtimeInstructions` / `REALTIME_INSTRUCTIONS`），其內含大量「意義對照表」工具清單 + 「肯定回『好的，幫你打給X』」指示——那是語音路徑因為真的會 fire tool 才需要。打字聊天不觸發任何工具（Flutter `AiToolRouter.route()` 在 `_chat()` 之前已攔截所有工具意圖），沿用後讓文字聊天工具化、不像陪伴。
+
+**owner**：companion-memory（persona 主體）+ backend co-touch（`server.js` rewire）；architecture-agent 規劃/核准 + checkpoint。
+
+**改動（contract-preserving，🔒 server.js 加法式）**：
+- ➕ 新增 `COMPANION_CHAT_PERSONA` 常數（接在 `REALTIME_INSTRUCTIONS` 之後）：陪伴型、先情緒後內容、簡短自然、無工具清單、不假裝執行 App 動作、記憶界線、健康/高風險求助界線。
+- ➕ 新增 `buildCompanionChatInstructions(petName, memoryBlock, languageOptions)`（純組裝、不查記憶）：共用 `你的名字是 X。` header 與 `outputLanguageInstruction(...)`，persona 換成 `COMPANION_CHAT_PERSONA`。
+- 🔁 `/api/companion/chat` 唯一 call-site 由 `buildRealtimeInstructions` 換成 `buildCompanionChatInstructions`；`{success,reply}` / `{success:false,error}` 契約**不變**、`generateCompanionReply` 呼叫不變、inline `memoryBlock` 建構不變。
+- ➕ `module.exports.buildCompanionChatInstructions = ...`（供單元測試驗 persona，不打 OpenAI）。
+- 🔒 `REALTIME_INSTRUCTIONS`（232–280）與 `buildRealtimeInstructions`（310–347）**byte-identical**（語音流程未碰，git diff 證明只有加法 + 單一 call-site swap + export）。
+
+**architecture-agent 四道 guardrail（各有測試斷言）**：
+- **G1 不假裝執行工具**：persona 無「意義對照表」/工具罐頭、不指示假裝已完成動作；對順口工具語句溫暖接住但不假執行、也不冷拒「我做不到」。
+- **G2 高風險不淡化**：照護提醒非醫療診斷（不診斷/處方/劑量），但胸痛/呼吸困難/跌倒/嚴重不適/自傷意念仍明確建議立即聯絡照護人員或就醫。
+- **G3 記憶界線**：無記憶不捏造家人/喜好/病史、不假裝「我記得」；有記憶可自然提及但不說「根據紀錄」。
+- **G4 語音 byte-identical**：以 git diff 證明，非肉眼。
+
+**Flutter（verify-only，CR-0049 已 production-correct）**：`AiToolRouter._chat` 成功顯示後端回覆、失敗走陪伴式白話（`CompanionChatException`→「我這邊有點不穩，先抱抱你…」）、不 fallback mock、不顯示工程訊息；`route()` 工具意圖全在 `_chat` 前攔截，chat 端點只收純閒聊文字。
+
+**測試（親跑）**：
+- ➕ `backend/stt_proxy/services/companionChatPersona.test.js`（10 斷言：petName/預設陪伴寶、G1 工具罐頭缺席 + 不假執行、G2 高風險求助語、G3 記憶界線兩態、emotion-first、台語語言指示、Mandarin 預設不強制台語）。
+- 後端目標檔 `node --test companionChatPersona + companionChatEndpoint` → 10/10。
+- 後端全量 `npm test` → **454 / 454**；`npm run check` → exit 0。
+- Flutter `flutter analyze` → No issues；`flutter test` → **525 / 525**。
+
+**文件**：➕ `docs/COMPANION_PERSONA.md`（兩路徑 persona 為何分開 + 陪伴原則）、➕ `docs/SAFETY_BOUNDARIES.md`（健康/記憶/高風險紅線）；🔁 `docs/STORE_RELEASE_CHECKLIST.md` §8 加列；🔁 `PROJECT_ARCHITECTURE.md` 註記 chat persona seam。
+
+**裁決**：待 architecture-agent checkpoint。
+
+**殘留 / follow-up**：
+- **打字高風險未建 Care Alert（CR-0050 範圍外）**：`/api/companion/chat` 目前只用安全語氣回覆高風險文字，**不寫入 `care_alerts` / 不觸發通知**。建議後續 CR-0051 將打字文字接上情緒/風險分級 + Care Alert 建立（需先由 architecture-agent 確認權威 risk level 代碼，調和 runtime urgent/attention 與 low/medium/high/urgent 的差異）。語音 / Care Alert pipeline 不受本案影響。

@@ -279,6 +279,31 @@ const REALTIME_INSTRUCTIONS = `你是長者陪伴寵物，不是一般助理。
 
 回應原則：簡短肯定、語氣溫暖、不要照本宣科解釋細節（不要說「我會打開撥號畫面但不會自動撥出」這類技術細節），讓使用者覺得你真的會做。實際執行由 App 處理。`;
 
+// CR-0050：打字閒聊（/api/companion/chat）專用陪伴型 persona。
+// 與 Realtime 語音流程不同：文字 chat 不會觸發任何 App 工具，所以這裡
+// 刻意不放「意義對照表」/工具清單，也不指示模型肯定地回「幫你打給X」這類
+// 假裝已執行的承諾（那是語音路徑因為真的會 fire tool 才需要）。
+const COMPANION_CHAT_PERSONA = `你是長者的陪伴 AI 寵物，現在是用文字訊息陪長者聊天，不是客服、不是工具助理、也不是醫師。
+先接住長者當下的情緒，再回應他說的內容；像一隻熟悉他、會關心他的溫暖寵物。
+回覆要簡短、自然、長者讀得懂；不要長篇大論、不要條列、不要工程術語，也不要說「我是 AI 模型」或「我只是程式」這類生硬的話。
+每次回覆最多問一個問題。不要一直給建議，也不要每次都用一樣的罐頭開場白。
+語氣溫暖但不誇張、不幼稚；可以稍微可愛一點點就好。
+
+【關於 App 動作】
+你只是陪長者聊天，沒有辦法真的在 App 裡幫他打電話、寄信、簽到、買東西、播音樂或設提醒。
+如果長者順口提到這些事，就用溫暖的方式接住他的心意，關心他想做什麼、為什麼想做，
+但不要假裝你已經幫他完成了，也不要冷冰冰地拒絕說「我做不到」「我只是 AI」。自然地陪他聊就好。
+
+【記憶界線】
+沒有相關記憶時，不要捏造長者的家人、喜好或病史，也不要說「我記得」假裝知道不存在的事。
+有自然記得的近況時，可以溫柔地提到，但不要說「根據紀錄」或「資料庫顯示」。
+
+【健康與安全】
+你提供的是陪伴與照護提醒，不是醫療診斷；不要給診斷、不要開處方、不要講藥物劑量。
+遇到睡不好、吃不下、身體不舒服時，先關心他的感受，再溫和建議可以記錄狀況或告訴照護人員。
+但遇到胸痛、呼吸困難、跌倒、嚴重不適或自傷意念等高風險情況時，語氣要穩定但明確，
+請清楚建議長者立即聯絡照護人員或尋求醫療協助，不可因為語氣溫柔就淡化緊急程度。`;
+
 function fallbackGreeting({ petName, localHour }) {
   if (localHour >= 5 && localHour <= 10) {
     return `早安，我是${petName}，今天也陪你聊聊天。`;
@@ -344,6 +369,19 @@ ${memoryBlock}
 
 請自然地關心使用者，不要說「根據紀錄」或「資料庫顯示」。
 如果使用者不想聊這件事，請溫柔轉換話題。${companionBlock}`;
+}
+
+// CR-0050：打字閒聊 chat 專用 prompt 組裝器。純組裝、不查記憶（memoryBlock 由呼叫端傳入）。
+// 與 buildRealtimeInstructions 共用同樣的「你的名字是 X。」header 與 outputLanguageInstruction
+// 語言控制，但 persona 換成 COMPANION_CHAT_PERSONA（無工具清單、不假裝執行 App 動作）。
+function buildCompanionChatInstructions(petName, memoryBlock, languageOptions = {}) {
+  const normalizedPetName = (petName || "").toString().trim() || "陪伴寶";
+  const header = `你的名字是 ${normalizedPetName}。
+${COMPANION_CHAT_PERSONA}
+${outputLanguageInstruction(languageOptions)}`;
+  return memoryBlock ? `${header}
+
+${memoryBlock}` : header;
 }
 
 async function loadRelevantMemorySummaries(userId, query, topK) {
@@ -1693,16 +1731,10 @@ ${memoryContextSummary}
 請自然地關心使用者，不要說「根據紀錄」或「資料庫顯示」。如果使用者不想聊這件事，請溫柔轉換話題。`
     : "";
 
-  const systemPrompt = buildRealtimeInstructions(
-    petName,
-    [],
-    memoryBlock,
-    "",
-    {
-      languageHint: req.body?.languageHint,
-      replyLanguage: req.body?.replyLanguage,
-    },
-  );
+  const systemPrompt = buildCompanionChatInstructions(petName, memoryBlock, {
+    languageHint: req.body?.languageHint,
+    replyLanguage: req.body?.replyLanguage,
+  });
 
   const result = await generateCompanionReply(
     { userText, systemPrompt },
@@ -2626,3 +2658,5 @@ if (require.main === module) {
 }
 
 module.exports = app;
+// CR-0050：匯出供單元測試驗證打字 chat persona 組裝（不需打 OpenAI）。
+module.exports.buildCompanionChatInstructions = buildCompanionChatInstructions;

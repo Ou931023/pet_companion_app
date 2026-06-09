@@ -90,7 +90,7 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
 | GET | `/api/care-alerts/:id` | 單筆 Care Alert | backend |
 | PATCH | `/api/care-alerts/:id/status` | 更新狀態 new/acknowledged/resolved | backend |
 | POST | `/api/companion/analyze` | 陪伴分析（情緒 / 風險 / 策略） | companion-memory（邏輯）+ backend（端點） |
-| POST | `/api/companion/chat` | 正式陪伴聊天回覆（打字 / 非即時文字；取代 MockAiService 罐頭） | companion-memory（persona）+ backend（端點） |
+| POST | `/api/companion/chat` | 正式陪伴聊天回覆（打字 / 非即時文字；取代 MockAiService 罐頭）。CR-0050 起用獨立 `buildCompanionChatInstructions` / `COMPANION_CHAT_PERSONA` seam（與語音 persona 分離、無工具罐頭、不假裝執行；見 `docs/COMPANION_PERSONA.md`） | companion-memory（persona）+ backend（端點） |
 | POST | `/api/stt/transcribe` | 語音轉文字 | backend + realtime |
 | GET | `/api/asr/taigi/status` | 台語 ASR 狀態 | backend |
 | POST | `/api/asr/taigi/warmup` | 台語 ASR 預熱 | backend |
