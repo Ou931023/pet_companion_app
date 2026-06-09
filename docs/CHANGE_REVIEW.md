@@ -3042,3 +3042,31 @@ care_alert_hook_test.dart 需參數化 fake engine 的 riskLevel：
 4. source 維持 'companion_analysis'（後端 cooldown key = source::riskLevel）。
 5. fire-and-forget 不變：notify 失敗（401/403/網路）不得阻斷 Realtime、不回滾本機 addAlert。
 6. _lastAlertedTurnId 去重邏輯（872-873）保留。
+
+---
+
+## CR-0053 — Production End-to-End Smoke Test and Deployment Readiness
+
+### 模式
+**Plan-only**（docs-only，無程式碼變更、不觸 🔒 檔案）。
+
+### 為何 Plan-only
+執行環境（背景工程代理）不具備真 Firebase / 真 PostgreSQL / 真 OpenAI key / 真 Telegram Bot / 真 iOS·Android 實體裝置，且受紅線約束（不讀 `.env`、不貼 secret、不假裝通過，CR-0053 §5.1/§12）。故依任務 §5.1 走 Plan-only：建立可執行 smoke 計畫 + 誠實未執行報告 + 缺口/owner blocker。
+
+### 產出
+- 新增 `docs/E2E_SMOKE_TEST_PLAN.md`：可執行 checklist（模式判定、前置憑證/env 名稱、Backend B1–B13、caregiver_web W1–W12、Flutter F1–F15、ATS A1–A5、測試資料清理、最小通過集）。所有 env 只列**名稱**，紅線寫在文件頂。
+- 新增 `docs/E2E_SMOKE_TEST_REPORT.md`：Run #0 = NOT EXECUTED，逐項 PENDING，列出靜態盤點已確認的程式基礎（fail-fast / health / migration 001–014 / Telegram 門檻 / AppConfig 守門）與 release blockers（未跑真 smoke、ATS 未收斂、HTTPS 網域未確認、Data Safety 表單）。
+- 更新 `docs/STORE_RELEASE_CHECKLIST.md`（加 CR-0053 BLOCKER 行）、`docs/ENVIRONMENT_SETUP.md`（§5 相關文件指標）。
+
+### 靜態盤點關鍵發現（非 smoke 通過）
+- 後端 production fail-fast 已實作（`config/env.js`：缺 DATABASE_URL/OPENAI_API_KEY/CORS/Firebase/ADMIN_API_TOKEN 即 exit(1)；拒絕 ALLOW_JSON_FALLBACK/ALLOW_MOCK_SERVICES/REQUIRE_AUTH=false；啟動摘要全遮蔽）。
+- `GET /health` 存在；`npm run db:migrate`（001–014 齊，含 013/014 + 單元測試）。
+- Telegram `TELEGRAM_NOTIFY_LEVELS={high,urgent}`；語音+打字 persist 皆 medium+（CR-0051/0052）。
+- Flutter `AppConfig` production 強制關 mock/demo/devpanel + `isApiBaseUrlProductionSafe` 守門。
+- ⛔ iOS `NSAllowsArbitraryLoads=true`、Android `usesCleartextTraffic="true"` 仍未收斂 → ATS BLOCKER（CR-0046 B3）。
+
+### 限制遵守
+未連任何真服務、未污染資料、未產生需清理的測試資料、未提交任何 secret / service account / keystore。不改 CR-0039～CR-0052 任何主流程。
+
+### 裁決
+docs-only Plan-only，無 🔒 變更、無 API/schema/Realtime 改動，未跑測試（無程式碼可測）；併入主線。實際 Execute 一輪 smoke 為後續工作（需 owner 備齊真環境）。

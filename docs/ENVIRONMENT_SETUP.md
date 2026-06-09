@@ -200,3 +200,5 @@ flutter build ios --release --no-codesign \
 - `backend/stt_proxy/.env.example` — 後端環境變數分區範本。
 - `lib/config/app_config.dart` — Flutter dart-define 與 production 守門邏輯。
 - `caregiver_web/config.example.js` — caregiver_web API base URL 設定範本。
+- `docs/E2E_SMOKE_TEST_PLAN.md` — production-like 端到端 smoke 測試計畫（怎麼跑）。
+- `docs/E2E_SMOKE_TEST_REPORT.md` — smoke 執行紀錄（每輪 pass/fail 與 release blocker）。
