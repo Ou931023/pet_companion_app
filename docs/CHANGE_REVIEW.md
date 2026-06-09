@@ -3293,3 +3293,30 @@ android:label 為 Android native-only 變更，不影響 Dart → flutter analyz
 
 ### 裁決
 docs-only + 一處可逆 label 修正，無 🔒（未動 server.js/Realtime/DB/Care Alert/deps），未跑破壞性變更；併入主線。實際填值 / 素材 / 簽章為 owner action。
+
+---
+
+## CR-0059 — Owner-Gated Release Blocker Handoff and Final Readiness Map
+
+### 模式
+**docs-only**，未改任何 runtime code / config（無 🔒）。
+
+### 產出
+- 新增 `docs/RELEASE_HANDOFF.md`：單一交接地圖。含 §2 已完成 hardening 表（CR-0033→CR-0058 + commit + 解決 blocker + 是否需真環境再驗證）；§3 剩餘 blocker 五分類（Owner Decision / Infrastructure / Device Smoke / Store Console / Post-release）；§4 20-area Final Readiness Matrix（status / owner needed / claude next / blocker? / evidence）；§5 Restart Map（環境齊後重啟 CR-0053 Execute / CR-0055 Execute / CR-0058 completion / CR-0059 refresh / CR-0060 RC regression）；§6 Owner Action Checklist；§7 不可假完成清單（12 條紅線）；§8 交接結論。
+- 更新 `STORE_RELEASE_CHECKLIST`（指向 RELEASE_HANDOFF 為單一交接來源）+ 本檔。
+
+### 盤點結論
+- code-level P0/P1/P2 release blocker：**無剩餘**（agent 可做的程式硬化大致用盡）。
+- 剩餘 blocker 全為 owner-gated：infra（HTTPS 後端/TLS/Firebase/PG/OpenAI/Telegram/CORS/hosting）、不可逆 identity（Bundle ID/applicationId 個人名）、法律 URL（legal_config TODO_*，有 isPlaceholder 防護）、簽章（release 仍 debug key）、素材（icon/adaptive/screenshots）、實機 smoke（CR-0053/0055）、商店後台。
+- production hidden：marketplace / daily-care（CR-0056/57）；商店文案不得宣稱。
+- patch-ready 未落地：transport（CR-0054/55）。
+- 未執行：真環境 E2E smoke（CR-0053）、device smoke、release build。
+
+### 限制遵守
+未改 runtime、未偽造 owner 完成事項 / smoke 通過 / URL / 不可逆 ID、未宣稱 hidden 功能啟用 / 醫療診斷、未提交 secret、未擴大新功能 scope、未把 post-release 拉進 release blocker。
+
+### 測試
+docs-only → 不需跑單元測試（runtime 未改）。既有 baseline 維持（backend 495 / flutter 541 / caregiver_web 90）。
+
+### 裁決
+docs-only 交接地圖，無 🔒 / runtime 變更；併入主線。專案目前狀態可交接給組員 / 指導老師 / 後續開發者；下一步 owner action 與重啟 CR 已明確。
