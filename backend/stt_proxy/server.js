@@ -1,5 +1,4 @@
 const express = require("express");
-const cors = require("cors");
 const multer = require("multer");
 const dotenv = require("dotenv");
 const fs = require("fs");
@@ -163,51 +162,32 @@ const taigiAsrUpload = multer({
   },
 });
 const host = process.env.HOST || "127.0.0.1";
-// Force production CORS headers before any other middleware.
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  const allowedOrigin = "https://ai-companion-caregiver-web.onrender.com";
 
-  if (origin === allowedOrigin) {
-    res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
-    res.setHeader("Vary", "Origin");
-  }
-
-  res.setHeader("Access-Control-Allow-Credentials", "true");
-  res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Token, X-Requested-With");
-
-  if (req.method === "OPTIONS") {
-    return res.status(204).end();
-  }
-
-  return next();
-});
-// Configure CORS for production caregiver web.
-// Manual middleware is used here to avoid stale localhost fallback behavior.
-const allowedOrigins = (
-  process.env.CORS_ALLOWED_ORIGINS ||
-  process.env.ALLOWED_ORIGINS ||
-  ""
-)
+// CR-0064：單一 CORS middleware（取代先前重複 + hardcoded 的兩段）。
+// 白名單來源：CORS_ALLOWED_ORIGINS 優先，相容別名 ALLOWED_ORIGINS（見 config/env.js）。
+// 規則：
+//   - 帶 Origin 且在白名單 → 回對應 Access-Control-Allow-Origin（逐一比對，fail-closed，不 allow-all、不反射任意 origin）。
+//   - 不帶 Origin（curl / server-to-server / health check / 原生 App）→ 放行，不回 CORS 表頭。
+//   - 未授權 Origin → 不回 Access-Control-Allow-Origin，瀏覽器自然擋下。
+//   - OPTIONS preflight → 一律 204。
+const corsAllowedOrigins = (resolveCorsOrigins(process.env) || "")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+const corsAllowMethods = "GET, HEAD, PUT, PATCH, POST, DELETE, OPTIONS";
+const corsAllowHeaders =
+  "Content-Type, Authorization, X-Admin-Token, X-Requested-With";
 
 app.use((req, res, next) => {
   const origin = req.headers.origin;
 
-  if (origin && allowedOrigins.includes(origin)) {
+  if (origin && corsAllowedOrigins.includes(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Methods", corsAllowMethods);
+    res.setHeader("Access-Control-Allow-Headers", corsAllowHeaders);
   }
-
-  res.setHeader("Access-Control-Allow-Credentials", "true");
-  res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE");
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, X-Admin-Token, X-Requested-With"
-  );
 
   if (req.method === "OPTIONS") {
     return res.sendStatus(204);
