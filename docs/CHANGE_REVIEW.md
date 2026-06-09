@@ -2922,3 +2922,58 @@ CR-0048 收斂時明確標註兩個未解送審 blocker（本檔 2580-2582、`FL
 
 **殘留 / follow-up**：
 - **打字高風險未建 Care Alert（CR-0050 範圍外）**：`/api/companion/chat` 目前只用安全語氣回覆高風險文字，**不寫入 `care_alerts` / 不觸發通知**。建議後續 CR-0051 將打字文字接上情緒/風險分級 + Care Alert 建立（需先由 architecture-agent 確認權威 risk level 代碼，調和 runtime urgent/attention 與 low/medium/high/urgent 的差異）。語音 / Care Alert pipeline 不受本案影響。
+
+---
+
+### CR-0051 — Typed Companion Chat Risk Analysis & Care Alert Integration（架構前置裁決，coding 前記錄）
+
+**定位**：收尾 CR-0050 殘留——讓打字聊天文字進入與語音相同的情緒/風險分析 → Care Alert → 通知流程，使語音/文字面對同一高風險訊號行為一致。task §4 要求 coding 前先由 architecture-agent 裁決並寫入本檔。
+
+**盤點（已驗證）**：
+- 風險腦可重用且已四級：`backend/companion/safety_guard.js` `classifySafety()` 直接輸出 `low/medium/high/urgent`（urgent=自傷/急性醫療/跌倒；high=強烈絕望/明顯無助；medium=低落/睡不好/食慾/孤單；low=catch-all）；`analyzeCompanionTurn()` 包進 emotion + `careAlertSummary`（`buildCareAlertSummary` 已截斷/去識別）。`normalizeRiskLevel`（companion_engine.js + careAlertStoreService.js）映射 legacy `normal→low`、`attention→medium`；`careAlertStoreService` 寫入時正規化 → 新資料永不含 `attention`。
+- Care Alert pipeline 在 `/api/care-alerts/notify` handler（server.js ~412-575）：`saveCareAlert`（**persist-always，與通知解耦**）→ `shouldTelegramNotify`（`TELEGRAM_NOTIFY_LEVELS={high,urgent}`，low/medium 只進 store/caregiver_web）→ cooldown(`${source}::${riskLevel}`) → `recordNotificationLog` → `sendCareAlertNotification`。
+- `/notify` 已由 `requireResidentCaller`（CR-0045）把關，server 由 idToken 權威推導 elderId、不信任 client。`/api/companion/chat` 目前**無 auth**，Flutter `companion_chat_service.dart`**不送 token**。語音 alert source=`companion_analysis`。
+
+**裁決（APPROVE WITH ADJUSTMENTS，risk HIGH，逐項）**：
+1. **Auth**：`/api/companion/chat` 加 **hard `requireResidentCaller`**（重用 CR-0045，不 fork residentCallerContext/adminAuthContext）。**身分/授權失敗 fail-CLOSED**（無/無效 token→401，跨住民/未綁定/inactive→403，無 reply 無 alert）；**alert 端失敗 fail-OPEN**（persist/Telegram 失敗仍回 200 reply，`careAlert.created=false`）。Guardrail：後端 hard-auth 與 Flutter 送 token **必須同一 release**；`resolveNotifyAuthToken` 在 prod demo 回 null→該情境 401（demo 無 token 失去 chat，視為可接受的 demo-fallback 移除）。
+2. 重用 `requireResidentCaller`：是。
+3. caregiver/super_admin 代送：**否**，resident-only。
+4. risk 代碼僅 `low/medium/high/urgent`：是（已強制）。
+5. legacy mapping：`attention→medium`、`normal→low` 走既有 `normalizeRiskLevel`；**另須在 seam 正規化引擎失敗 fallback 的 `"normal"`（server.js:1676）** 才能進 pipeline / 回應欄位；補回歸測試（attention→medium、normal→low、新寫入不含 attention/normal）。
+6. alert 建立失敗 → chat 行為：reply 仍 200，alert best-effort，`careAlert.created=false`，所有 alert 端例外捕捉（§9.8 無 unhandled rejection）。
+7. 向長者 UI 顯示 alert：**否**，無監控感文案；Flutter 可解析 optional `careAlert` 但不渲染新東西。
+8. **【追加裁決 — trigger gate，本 CR crux】**：衝突釐清——語音前端 `voice_agent_controller.dart:871` `if (!needsHumanSupport) return` 把**整個 HTTP call** 擋在 high/urgent（needsHumanSupport 僅 high/urgent=true），但**後端 `/notify` 本來就 persist-always + notify-high/urgent**（兩個門檻已分離）。decision 8「與語音一致」綁的是**風險分類腦**，不是 send/persist 門檻。**Option A 裁定**：
+   - 分類：打字聊天**原樣重用** `analyzeCompanionTurn`/`classifySafety`（§8.3：不另寫分類器/關鍵字/risk taxonomy）。
+   - **打字 send predicate**：當 `normalizeRiskLevel(riskLevel) ∈ {medium, high, urgent}` 才送 Care Alert pipeline。**`low` 不送、不持久化**（low 是非匹配 catch-all，逐句寫入會洗版、違反「不存無意義語句」；§7.5「low 只記錄」指的是 low alert 若存在的通知政策，非要求為每個中性句造一列）。§12.1 #1 孤單→`safety_guard` 落在 **medium**，#1 文字本身是「low 或 medium」，故 `{medium,high,urgent}` 滿足 #1/#2/#3。
+   - persist/notify 門檻：沿用既有（persist=收到就存、notify=high/urgent），**不新增 persist gate、不改 `/notify`、不改 schema**。
+   - 接受 voice/typed 不一致（voice 僅 high/urgent 持久化、typed medium+），**記 follow-up CR-0052** 對齊語音（拆 `voice_agent_controller.dart:871` 的 send gate，notify 仍 high/urgent）——屬 realtime-voice/frontend，**out of CR-0051**。
+   - 授權層級：屬架構守門人權限，**無需 user/product sign-off**（不新增資料類別/同意範圍，store/schema/caregiver_web 本就支援 medium/low）；惟錄製頻率上升，於隱私/資料治理文件加一行揭露。
+
+**Seam 裁決**：**APPROVE 抽出共用 helper `processCareAlert(...)`**（拒絕在 /chat 複製 ~100 行旁路 §9）。條件（全 blocking）：helper 只含 orchestration（persist-decouple + cooldown + notif-log + Telegram），**不含 auth、不重推/不信任 client elderId**，收到的是已 server-authoritative 欄位；**Batch A 獨立 commit 純 refactor**，`/notify` 委派、**零行為變更**（既有 CR-0045/CR-0034 B2/notify 測試全綠、不改 /notify 行為測試），gatekeeper 先 re-review 該 diff 才接 typed-chat 邏輯；typed 用 **distinct cooldown source `companion_chat`**，與語音 `companion_analysis` 互不抑制。
+
+**Response 契約**：`{success, reply, careAlert?:{created, riskLevel, id}}`；中性句**省略** `careAlert`；warranted 但 persist 失敗→`{created:false, riskLevel, id:null}`；`created` 反映**持久化**非通知（low 不會到此路徑）。禁洩：internal risk debug / system prompt / token / raw model payload / 完整敏感原文；`riskLevel` 是唯一暴露的風險欄位、回應不含 summary 原文。Flutter 既有 `reply` 解析不受影響、`careAlert` 嚴格 optional。
+
+**Guardrails**：server-authoritative resident（若 body 帶 elderId 比照 /notify reconcile-或-403）；summary 走 `buildCareAlertSummary`、通知不含原文、log 不印 token/完整 chat/完整 summary；seam 正規化 legacy normal/attention；CR-0050 persona + 回覆生成路徑 byte-identical（風險分析側通道、不改 reply 文字）；`companionChatEndpoint.test.js` 無 token 改期望 401（同 CR-0045 對 /notify 的收緊，屬預期契約變更）。
+
+**Scope 邊界**：Realtime WebRTC 未碰；`/notify` auth byte-identical（只委派）；CR-0050 persona 未碰；無 schema migration。
+
+**批次**：A 後端純 refactor 抽 `processCareAlert`（先過 review）→ B 後端 typed-chat auth+風險分析+send predicate+careAlert 欄位+測試 → C Flutter token + 解析 optional careAlert（不渲染）+測試 → D 文件（+ `docs/TYPED_CHAT_CARE_ALERT_FLOW.md`）。
+
+**裁決狀態**：架構前置裁決完成，依此實作；各 batch 後 architecture checkpoint。
+
+#### 實作結果（CR-0051 完成）
+
+- **Batch A（backend 純 refactor，gatekeeper re-review PASS）**：抽出 module-scope `async processCareAlert(body)`（persist-decouple + 通知稽核欄位 + cooldown + Telegram 編排），`/notify` 改委派 `const {response}=await processCareAlert(body)`、auth/reconciliation 與 500 catch 一字不動。helper 額外回 `{careAlert:{created,id,riskLevel}}`（`/notify` 忽略，供 B 用）。唯一結構位移：persist 區塊由原 try 之外移入 helper（在 handler 外層 try/catch 內）——因 `saveCareAlert` 自帶 inner try/catch、`recordNotificationLog` best-effort 不 throw，行為等價。notify 全測試未改全綠。
+- **Batch B（backend，typed-chat 接線）**：`/api/companion/chat` 掛 `requireResidentCaller`（breaking：原無 auth）；reply 成功後純函式 `analyzeCompanionTurn({transcript:userText,petName,languageHint,retrievedMemories:[]})`（**不重查記憶/不查知識/不寫記憶**），seam `normalizeRiskLevel`，`riskLevel∈{medium,high,urgent}` 才組 server-authoritative body（`source:"companion_chat"`、`triggerSummary`=careAlertSummary 有 fallback、`transcriptSnippet` 截 200、`riskLevelLabel` 由 `RISK_LEVEL_LABELS`）呼叫共用 `processCareAlert`。fail-open（風險/alert 例外不阻擋 200 reply）。回應加 optional `careAlert`（low/中性省略，只暴露 riskLevel）。reply 生成路徑 + invalid_input(400)/openai_unavailable(503) byte-identical。`companionChatEndpoint.test.js` 無 token 改期望 401；新 `companionChatCareAlert.test.js`（孤單/睡不好/食慾→medium+skip、胸口痛/不想活→urgent+Telegram、中性→無 careAlert、no/forged token→401、跨住民→403、legacy 映射、不外洩）。
+- **Batch C（Flutter）**：`companion_chat_service.dart` 注入 `AuthTokenProvider`（重用 `care_alert_notification_service` typedef），送 `Authorization: Bearer <idToken>`；無 token（production demo null / provider 例外）→ 白話 `CompanionChatException`（不送註定 401 的請求、不假成功）；401/403/非 200 → 白話例外；`reply()` 只取 `reply`、忽略 `careAlert` 等未知欄位（長者端零監控感文案）。`app.dart` 以 `AuthController.resolveNotifyAuthToken` closure 注入（與 CareAlertNotificationService 同源，置於 AuthController 後）。`_chat` 仍 `on CompanionChatException`→白話、**無 mock fallback**。
+
+**驗證（orchestrator 親跑）**：backend `npm test` **468/468**、`npm run check` exit 0；`flutter analyze` clean、`flutter test` **533/533**。CR-0050 persona 測試 + CR-0045 notify auth 測試仍綠；Realtime（realtime_voice_service/voice_agent_controller）+ `/notify` + tool routing 未碰。
+
+**正式版風險檢查**：未驗證 typed chat 不建 alert（401/403）✅；跨住民被擋（403）✅；high/urgent 通知（Telegram spy）✅；新資料無 `attention`（predicate 僅 medium+，seam 先映射）✅；persona 未破壞 ✅；Realtime/tool flow 未破壞 ✅；無監控感 UI（careAlert 不渲染）✅。
+
+**殘留 / follow-up**：
+- **CR-0052（voice persist-gate 對齊）**：語音 `voice_agent_controller.dart:871` `if(!needsHumanSupport)return` 只在 high/urgent 送 `/notify`，故語音僅持久化 high/urgent；打字已 medium+。拆語音 send gate 使其也持久化 medium+（notify 仍 high/urgent）——屬 realtime-voice/frontend，另案 review。
+- **base URL（low FU，沿用 CR-0049）**：`CompanionChatService` 用 compile-time `AppConfig.apiBaseUrl`，`care_alert_notification_service` 用 runtime `sttProxyUrl`；production 同 host 可命中，唯使用者 runtime 覆寫 host 時分歧。
+- 送審前：真 Postgres+Firebase 端到端（resident idToken→/chat→risk→care_alerts→Telegram）+ release 裝置實測。
+
+**裁決**：CR-0051 各 batch architecture checkpoint PASS（A 已 re-review；B/C 依裁決實作、orchestrator 全量驗證綠）。併入主線。

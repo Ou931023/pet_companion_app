@@ -1,10 +1,13 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { test } = require("node:test");
+const { test, beforeEach, afterEach } = require("node:test");
 
 process.env.NODE_ENV = "test";
 const app = require("../server");
+const {
+  installResidentCallerStub,
+} = require("./auth/residentCallerContext.testsupport");
 
 // require server 會載入 .env（含真實金鑰 / token）。這裡清掉 OpenAI 金鑰，
 // 確保此端點測試「絕不」真的打 OpenAI；client 已於 require 時建立，
@@ -14,19 +17,53 @@ delete process.env.OPENAI_API_KEY;
 delete process.env.TELEGRAM_BOT_TOKEN;
 delete process.env.TELEGRAM_CARE_CHAT_ID;
 
+// CR-0051 Batch B：/api/companion/chat 現掛 requireResidentCaller。
+// 需帶有效 resident token 才能觸發 invalid_input(400) / openai_unavailable(503)。
+const ELDER_A = "11111111-1111-1111-1111-111111111111";
+const RES_A = { Authorization: "Bearer res-a-token" };
+let restoreResident = null;
+
+beforeEach(() => {
+  restoreResident = installResidentCallerStub({
+    "res-a-token": { uid: "fb-res-a", userId: "user-a", elderId: ELDER_A },
+  });
+});
+
+afterEach(() => {
+  if (restoreResident) restoreResident();
+  restoreResident = null;
+});
+
 function startServer() {
   return new Promise((resolve) => {
     const server = app.listen(0, "127.0.0.1", () => resolve(server));
   });
 }
 
-function postChat(baseUrl, body) {
+function postChat(baseUrl, body, headers = RES_A) {
   return fetch(`${baseUrl}/api/companion/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
 }
+
+test("無 token → 401（requireResidentCaller，不進入 reply / 風險分析）", async () => {
+  const server = await startServer();
+  try {
+    const { port } = server.address();
+    const base = `http://127.0.0.1:${port}`;
+
+    const res = await postChat(base, { userText: "今天有點無聊" }, {});
+    assert.equal(res.status, 401);
+    const body = await res.json();
+    assert.equal(body.success, false);
+    assert.equal("reply" in body, false);
+    assert.equal("careAlert" in body, false);
+  } finally {
+    server.close();
+  }
+});
 
 test("缺 userText → 400 + { success:false, error:'invalid_input' }", async () => {
   const server = await startServer();

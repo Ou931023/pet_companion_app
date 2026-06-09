@@ -39,9 +39,11 @@ Care Alert 與健康回覆的定位是**照護提醒，不是醫療診斷**。
 
 > Care Alert 四級：`low` / `medium` / `high` / `urgent`。前台寵物保持陪伴語氣，後台才做風險分析與通知（見 CLAUDE.md §7）。
 
-### 已知殘留（CR-0050 範圍外）
+### 打字聊天的 Care Alert（CR-0051 已接上）
 
-`POST /api/companion/chat` 目前**只**讓 persona 用安全語氣回覆高風險文字，**不會建立 Care Alert 紀錄**（沒有寫入 `care_alerts`、不觸發通知）。語音 / Care Alert pipeline 不受影響。將打字高風險文字接上風險分級 + Care Alert 建立，列為後續 CR（需先由 architecture-agent 確認權威 risk level 代碼）。
+`POST /api/companion/chat` 現在於回覆成功後做純函式風險側錄（`analyzeCompanionTurn`，與語音共用分類腦），當 `riskLevel ∈ {medium, high, urgent}` 即經共用 `processCareAlert` 建立 Care Alert（`source="companion_chat"`），high/urgent 依既有規則推 Telegram。`low`/中性句不建立。需住民 idToken（`requireResidentCaller`，fail-closed 身分 / fail-open alert）。完整流程見 `docs/TYPED_CHAT_CARE_ALERT_FLOW.md`。
+
+> 殘留（CR-0052 follow-up，範圍外）：語音前端 `voice_agent_controller.dart:871` 仍以 `needsHumanSupport` 只在 high/urgent 才送 `/notify`，故語音目前只持久化 high/urgent；打字已持久化 medium+。對齊語音為後續 CR。
 
 ---
 

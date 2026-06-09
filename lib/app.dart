@@ -186,7 +186,15 @@ class PetCompanionApp extends StatelessWidget {
         ),
         // CR-0049 B2/B3：陪伴聊天服務（按住說話的文字降級路徑），由 AiToolRouter
         // 視 useMockChat（預設 AppConfig.mockServicesEnabled）決定是否啟用。
-        Provider(create: (_) => CompanionChatService()),
+        // CR-0051 C：後端已 HARD-require 住民 idToken，與 CareAlertNotificationService
+        // 同源由 AuthController 提供 token（firebase→新 idToken / mock→mock-id-token-<uid>
+        // / production demo→null）。置於 AuthController 之後，closure 於 reply() 時才讀取。
+        Provider(
+          create: (context) => CompanionChatService(
+            authTokenProvider: () =>
+                context.read<AuthController>().resolveNotifyAuthToken(),
+          ),
+        ),
         // CR-0049-C：以下兩個 mock 僅 dev/test（mockServicesEnabled）注入；
         // production 一律不建構。聊天 mock（MockAiService）只在 useMockChat==true
         // 時被 AiToolRouter 使用，STT mock 只在 mockServicesEnabled 時被

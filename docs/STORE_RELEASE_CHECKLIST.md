@@ -148,6 +148,7 @@ android:networkSecurityConfig="@xml/network_security_config"
   - ✅ `MockTaigiAsrStrategy` 已隔離（production 不注入；settings 手動 ASR 下拉的台語 mock 選項在正式版隱藏；語音路由 fallback 回 OpenAI Realtime）。
   - ✅ `MockAiService` / `MockSpeechToTextService` 已隔離（**CR-0049**）：兩個 `Provider` 改 `if (mockServicesEnabled)`，production provider 樹零 mock 實例；聊天走後端 `companionChatService`（`AiToolRouter.mockAiService==null`、`useMockChat==false`），STT 走正式 `OpenAiSpeechToTextService`。audit P2-5 mock 隔離完成。
 - ✅ 打字聊天陪伴 persona（**CR-0050**）：`POST /api/companion/chat` 改用 `COMPANION_CHAT_PERSONA`（陪伴型、無工具罐頭、不假裝執行 App 動作、記憶/健康界線），不再借用工具化的語音 persona；語音 persona byte-identical。原則見 `docs/COMPANION_PERSONA.md` / `docs/SAFETY_BOUNDARIES.md`。
+- ✅ 打字聊天風險分析 + Care Alert（**CR-0051**）：`POST /api/companion/chat` 掛 `requireResidentCaller`（須住民 idToken，與語音/notify 一致；後端 hard-auth + Flutter 送 token 同一 release），回覆後純函式風險側錄，`riskLevel∈{medium,high,urgent}` 經共用 `processCareAlert` 建 Care Alert（`source="companion_chat"`、high/urgent 推 Telegram），回應加 optional `careAlert`（長者端不顯示監控感文案）。流程見 `docs/TYPED_CHAT_CARE_ALERT_FLOW.md`。
 - ⛔ **BLOCKER** Google Play Data Safety 表單填寫（依 `docs/GOOGLE_PLAY_DATA_SAFETY.md`）
 - ⛔ **BLOCKER** App Store 隱私問卷 / metadata（依 `docs/APP_STORE_METADATA.md`）
 - ⛔ **BLOCKER** 對外可存取的隱私政策 URL（Apple/Google 皆要求）

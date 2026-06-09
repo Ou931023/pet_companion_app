@@ -74,6 +74,7 @@ const {
   updateAlertStatus: updateCareAlertStatus,
   deleteAlertsByElderId,
   normalizeRiskLevel,
+  RISK_LEVEL_LABELS,
 } = require("./services/careAlertStoreService");
 const {
   canSendTelegram,
@@ -410,6 +411,129 @@ function withTimeout(promise, timeoutMs, fallbackValue) {
   });
 }
 
+// CR-0051 Batch A：純重構（行為零變更）。將 /api/care-alerts/notify handler 內的
+// Care Alert 編排邏輯（持久化 + 通知稽核欄位推導 + Telegram 推播）抽成可重用的內部 helper，
+// 讓後續批次（typed chat）能重用而不必複製約 100 行。此 helper：
+//   - 只做編排，不碰 req/res、不含 auth、不重新推導或採信 client elderId；
+//     呼叫端必須先把 server-authoritative 的 body.elderId 蓋寫好再傳入。
+//   - 回傳 { response, careAlert }：
+//       response = 與原 handler 在 200 路徑傳給 res.json(...) 完全相同的物件
+//                  （skipped_low_risk / skipped_cooldown / sendCareAlertNotification 的 result）。
+//       careAlert = { created, id, riskLevel }（供 Batch B 讀取持久化結果；/notify 忽略不用）。
+// throw-vs-sentinel 選擇：採「helper 在非預期例外時 throw、由 handler 外層 try/catch 產生 500」。
+//   原本 Telegram 區塊的 catch（logError("care alert notify exception", ...) + 500 notify_failed）
+//   移到 handler 外層 try/catch；helper 內 Telegram 編排不再自帶該 catch，例外原樣往上拋，
+//   handler 以相同 log 訊息 / 相同狀態碼 / 相同 response 形狀回應 → /notify 行為一字不動。
+//   註：原本「持久化失敗稽核」的 recordNotificationLog 位於 Telegram try 之前（未被包覆），
+//   重構後它隨 helper 一起落在 handler 外層 try/catch 內。該呼叫設計上不會 throw（DB 不可用會自動略過），
+//   且測試未觸發此邊界，故行為等價成立。
+async function processCareAlert(body) {
+  // 持久化：供長照管理者網頁查詢。
+  // CR-0034 B2：**解耦通知與持久化**——持久化失敗（含 production DB-required 失敗）
+  // 絕不阻擋 high/urgent 通知、絕不假成功；失敗時於 notification_logs 明確記一列
+  // （channel='care_alert_store'、outcome='persist_failed'、error_code=持久化錯誤碼），
+  // 避免靜默漏記。此為旁路 side-bus 寫入，不改 /notify 的 request/response 形狀。
+  let storedAlert = null;
+  let persistErrorCode = null;
+  try {
+    const stored = await saveCareAlert(body);
+    if (!stored.success) {
+      persistErrorCode = stored.error || "care_alert_persist_failed";
+      logError("care alert persist failed", { error: persistErrorCode });
+    } else {
+      storedAlert = stored.alert;
+    }
+  } catch (error) {
+    persistErrorCode = "care_alert_persist_exception";
+    logError("care alert persist exception", { error: error?.message || error });
+  }
+  if (persistErrorCode) {
+    // 持久化失敗：明確記一列稽核（alertId 無法取得 → null；用 body.elderId 盡力標識）。
+    recordNotificationLog({
+      alertId: null,
+      elderId: typeof body.elderId === "string" ? body.elderId : (body.elderId ?? null),
+      channel: "care_alert_store",
+      riskLevel: normalizeRiskLevel(body.riskLevel),
+      outcome: "persist_failed",
+      errorCode: persistErrorCode,
+    });
+  }
+  // CR-P2B：通知稽核 log 共用結構化欄位（白名單；絕不含對話原文 / snippet /
+  // chat_id / token / URL）。alertId / elderId 取自持久化後的 alert（DB 化後 FK 指向
+  // care_alerts.id）；DB 不可用時 service 會自動略過寫入。
+  const notifRiskLevel = normalizeRiskLevel(body.riskLevel);
+  const notifAlertId = storedAlert?.id ?? null;
+  const notifElderId = storedAlert?.elderId ?? null;
+  // careAlert 編排結果（供 Batch B 讀取；不影響 /notify response）。
+  const careAlert = {
+    created: Boolean(storedAlert),
+    id: storedAlert?.id ?? null,
+    riskLevel: notifRiskLevel,
+  };
+  // Telegram 推播規則：只有 high / urgent 推播；low / medium 只進 store / caregiver_web。
+  // 並套用 in-process cooldown 防洗版（同 source+riskLevel 在冷卻期內只成功推一次）。
+  if (!shouldTelegramNotify(body)) {
+    // 低風險：已持久化、供 caregiver_web 查看，但不推 Telegram。
+    recordNotificationLog({
+      alertId: notifAlertId,
+      elderId: notifElderId,
+      channel: "telegram",
+      riskLevel: notifRiskLevel,
+      outcome: "skipped_low_risk",
+    });
+    return { response: { success: true, telegram: "skipped_low_risk" }, careAlert };
+  }
+  const cooldownKey = `${body.source || "unknown"}::${normalizeRiskLevel(body.riskLevel)}`;
+  if (!canSendTelegram(cooldownKey)) {
+    // 冷卻期內重複的同類高風險：略過 Telegram，避免洗版（alert 仍已持久化）。
+    recordNotificationLog({
+      alertId: notifAlertId,
+      elderId: notifElderId,
+      channel: "telegram",
+      riskLevel: notifRiskLevel,
+      outcome: "skipped_cooldown",
+    });
+    return { response: { success: true, telegram: "skipped_cooldown" }, careAlert };
+  }
+  const result = await sendCareAlertNotification({
+    riskLevel: body.riskLevel,
+    riskLevelLabel: body.riskLevelLabel,
+    category: body.category,
+    categoryLabel: body.categoryLabel,
+    triggerSummary: body.triggerSummary,
+    transcriptSnippet: body.transcriptSnippet,
+    createdAt: body.createdAt,
+    source: body.source,
+  });
+  if (result.success) {
+    // 只有真的推成功才開始冷卻，避免「送失敗卻擋住後續」。
+    markTelegramSent(cooldownKey);
+    recordNotificationLog({
+      alertId: notifAlertId,
+      elderId: notifElderId,
+      channel: "telegram",
+      riskLevel: notifRiskLevel,
+      outcome: "sent",
+    });
+  } else {
+    // 僅記錄 error code / status，不含 token 或完整 Telegram URL。
+    logError("care alert notify failed", {
+      error: result.error,
+      status: result.status,
+    });
+    recordNotificationLog({
+      alertId: notifAlertId,
+      elderId: notifElderId,
+      channel: "telegram",
+      riskLevel: notifRiskLevel,
+      outcome: "failed",
+      errorCode: result.error,
+      httpStatus: result.status,
+    });
+  }
+  return { response: result, careAlert };
+}
+
 app.get("/health", (_, res) => {
   res.json({
     status: "ok",
@@ -472,105 +596,11 @@ app.post("/api/care-alerts/notify", requireResidentCaller, async (req, res) => {
     return res.status(403).json({ success: false, error: "forbidden_resident" });
   }
   body.elderId = callerElderId ?? bodyElderId ?? null;
-  // 持久化：供長照管理者網頁查詢。
-  // CR-0034 B2：**解耦通知與持久化**——持久化失敗（含 production DB-required 失敗）
-  // 絕不阻擋 high/urgent 通知、絕不假成功；失敗時於 notification_logs 明確記一列
-  // （channel='care_alert_store'、outcome='persist_failed'、error_code=持久化錯誤碼），
-  // 避免靜默漏記。此為旁路 side-bus 寫入，不改 /notify 的 request/response 形狀。
-  let storedAlert = null;
-  let persistErrorCode = null;
+  // CR-0051 Batch A：編排邏輯抽到 processCareAlert(body)（body.elderId 此時已為 server-authoritative）。
+  // helper 在非預期例外時 throw，由此外層 try/catch 產生 500，行為與重構前一字不動。
   try {
-    const stored = await saveCareAlert(body);
-    if (!stored.success) {
-      persistErrorCode = stored.error || "care_alert_persist_failed";
-      logError("care alert persist failed", { error: persistErrorCode });
-    } else {
-      storedAlert = stored.alert;
-    }
-  } catch (error) {
-    persistErrorCode = "care_alert_persist_exception";
-    logError("care alert persist exception", { error: error?.message || error });
-  }
-  if (persistErrorCode) {
-    // 持久化失敗：明確記一列稽核（alertId 無法取得 → null；用 body.elderId 盡力標識）。
-    recordNotificationLog({
-      alertId: null,
-      elderId: typeof body.elderId === "string" ? body.elderId : (body.elderId ?? null),
-      channel: "care_alert_store",
-      riskLevel: normalizeRiskLevel(body.riskLevel),
-      outcome: "persist_failed",
-      errorCode: persistErrorCode,
-    });
-  }
-  // CR-P2B：通知稽核 log 共用結構化欄位（白名單；絕不含對話原文 / snippet /
-  // chat_id / token / URL）。alertId / elderId 取自持久化後的 alert（DB 化後 FK 指向
-  // care_alerts.id）；DB 不可用時 service 會自動略過寫入。
-  const notifRiskLevel = normalizeRiskLevel(body.riskLevel);
-  const notifAlertId = storedAlert?.id ?? null;
-  const notifElderId = storedAlert?.elderId ?? null;
-  // Telegram 推播規則：只有 high / urgent 推播；low / medium 只進 store / caregiver_web。
-  // 並套用 in-process cooldown 防洗版（同 source+riskLevel 在冷卻期內只成功推一次）。
-  try {
-    if (!shouldTelegramNotify(body)) {
-      // 低風險：已持久化、供 caregiver_web 查看，但不推 Telegram。
-      recordNotificationLog({
-        alertId: notifAlertId,
-        elderId: notifElderId,
-        channel: "telegram",
-        riskLevel: notifRiskLevel,
-        outcome: "skipped_low_risk",
-      });
-      return res.json({ success: true, telegram: "skipped_low_risk" });
-    }
-    const cooldownKey = `${body.source || "unknown"}::${normalizeRiskLevel(body.riskLevel)}`;
-    if (!canSendTelegram(cooldownKey)) {
-      // 冷卻期內重複的同類高風險：略過 Telegram，避免洗版（alert 仍已持久化）。
-      recordNotificationLog({
-        alertId: notifAlertId,
-        elderId: notifElderId,
-        channel: "telegram",
-        riskLevel: notifRiskLevel,
-        outcome: "skipped_cooldown",
-      });
-      return res.json({ success: true, telegram: "skipped_cooldown" });
-    }
-    const result = await sendCareAlertNotification({
-      riskLevel: body.riskLevel,
-      riskLevelLabel: body.riskLevelLabel,
-      category: body.category,
-      categoryLabel: body.categoryLabel,
-      triggerSummary: body.triggerSummary,
-      transcriptSnippet: body.transcriptSnippet,
-      createdAt: body.createdAt,
-      source: body.source,
-    });
-    if (result.success) {
-      // 只有真的推成功才開始冷卻，避免「送失敗卻擋住後續」。
-      markTelegramSent(cooldownKey);
-      recordNotificationLog({
-        alertId: notifAlertId,
-        elderId: notifElderId,
-        channel: "telegram",
-        riskLevel: notifRiskLevel,
-        outcome: "sent",
-      });
-    } else {
-      // 僅記錄 error code / status，不含 token 或完整 Telegram URL。
-      logError("care alert notify failed", {
-        error: result.error,
-        status: result.status,
-      });
-      recordNotificationLog({
-        alertId: notifAlertId,
-        elderId: notifElderId,
-        channel: "telegram",
-        riskLevel: notifRiskLevel,
-        outcome: "failed",
-        errorCode: result.error,
-        httpStatus: result.status,
-      });
-    }
-    return res.json(result);
+    const { response } = await processCareAlert(body);
+    return res.json(response);
   } catch (error) {
     logError("care alert notify exception", { error: error?.message || error });
     return res.status(500).json({ success: false, error: "notify_failed" });
@@ -1715,10 +1745,31 @@ app.post("/api/companion/analyze", async (req, res) => {
 // 不自創 persona、不硬寫罐頭；memoryContextSummary 由前端傳入既有摘要，
 // 本端點**不在此重查跨住民記憶**（避免跨住民記憶洩漏）。
 // 失敗一律回明確 error code，不回 fake reply、不回 stack；log 經 redaction。
-app.post("/api/companion/chat", async (req, res) => {
+//
+// CR-0045 / CR-0051 Batch B：
+//   - 掛 requireResidentCaller（與 /notify 同一中介層），server 權威 elderId 取自
+//     req.residentCaller.elderId；無 / 無效 token → 401，跨住民 / 未綁定 / 停用 → 403。
+//     body.elderId 若帶且與 caller 不符 → 403 forbidden_resident（永不採信 client elderId）。
+//   - 回覆生成成功後，以 analyzeCompanionTurn 做**純函式**風險側錄（不重查記憶 / 不查知識 /
+//     不寫記憶），僅當 riskLevel ∈ {medium,high,urgent} 才經共用 processCareAlert 建立 Care Alert
+//     （source='companion_chat' 為獨立 cooldown 來源）。風險分析 fail-open，永不阻擋回覆。
+//     回應新增向後相容欄位 careAlert（low / neutral 一律省略）；只暴露 riskLevel，不外洩摘要 / debug。
+app.post("/api/companion/chat", requireResidentCaller, async (req, res) => {
   const userText = (req.body?.userText || "").toString();
   if (!userText.trim()) {
     return res.status(400).json({ success: false, error: "invalid_input" });
+  }
+
+  // server 權威 elderId（與 /notify 同一 reconcile-or-403 規則；永不採信 client elderId）。
+  const callerElderId = (req.residentCaller && req.residentCaller.elderId) || null;
+  const bodyElderId =
+    typeof req.body?.elderId === "string" && req.body.elderId.trim()
+      ? req.body.elderId.trim()
+      : req.body?.elderId != null
+        ? String(req.body.elderId)
+        : null;
+  if (bodyElderId != null && callerElderId != null && bodyElderId !== callerElderId) {
+    return res.status(403).json({ success: false, error: "forbidden_resident" });
   }
 
   const petName = (req.body?.petName || "").toString();
@@ -1753,7 +1804,63 @@ ${memoryContextSummary}
     const status = result.error === "invalid_input" ? 400 : 503;
     return res.status(status).json({ success: false, error: result.error });
   }
-  return res.json({ success: true, reply: result.reply });
+
+  // 風險側錄（fail-open）：以 analyzeCompanionTurn 做純函式風險判斷，不重查記憶 /
+  // 不查知識 / 不寫記憶（避免跨住民 I/O），不改動回覆文字。任何例外都不阻擋 200 回覆。
+  let careAlert;
+  try {
+    const analysis = analyzeCompanionTurn({
+      transcript: userText,
+      petName,
+      languageHint: req.body?.languageHint,
+      retrievedMemories: [],
+    });
+    // 在 seam 正規化 legacy（engine fallback 會吐 "normal"；attention→medium）。
+    const riskLevel = normalizeRiskLevel(analysis.safety?.riskLevel);
+    if (riskLevel === "medium" || riskLevel === "high" || riskLevel === "urgent") {
+      const triggerSummary =
+        (analysis.careAlertSummary || "").toString().trim() ||
+        "對話中偵測到需要關心的狀況";
+      const alertBody = {
+        elderId: callerElderId, // server-authoritative
+        riskLevel, // already normalized
+        riskLevelLabel: RISK_LEVEL_LABELS[riskLevel] || "",
+        category: "other",
+        categoryLabel: "其他",
+        triggerSummary,
+        // §9.2 不存過長原文：截斷至前 ~200 字。
+        transcriptSnippet: userText.slice(0, 200),
+        createdAt: new Date().toISOString(),
+        source: "companion_chat", // 獨立 cooldown 來源（語音用 companion_analysis）。
+      };
+      try {
+        const { careAlert: stored } = await processCareAlert(alertBody);
+        careAlert = {
+          created: Boolean(stored && stored.created),
+          riskLevel,
+          id: (stored && stored.id) || null,
+        };
+      } catch (alertError) {
+        // 持久化 / 通知側例外：回覆不受影響，僅標示 alert 未建立。
+        logError("companion chat care alert failed", {
+          error: alertError?.message || alertError,
+        });
+        careAlert = { created: false, riskLevel, id: null };
+      }
+    }
+    // low / neutral：省略 careAlert 欄位（不建立、不推播）。
+  } catch (analysisError) {
+    // 風險分析本身失敗：fail-open，省略 careAlert（不外洩風險 debug）。
+    logError("companion chat risk analysis failed", {
+      error: analysisError?.message || analysisError,
+    });
+  }
+
+  return res.json({
+    success: true,
+    reply: result.reply,
+    ...(careAlert ? { careAlert } : {}),
+  });
 });
 
 app.post("/api/stt/transcribe", upload.single("audio"), async (req, res) => {

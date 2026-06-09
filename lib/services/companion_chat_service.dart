@@ -4,19 +4,30 @@ import 'package:http/http.dart' as http;
 
 import '../config/app_config.dart';
 import '../utils/app_log.dart';
+import 'care_alert_notification_service.dart' show AuthTokenProvider;
 
 /// 呼叫後端 `POST /api/companion/chat` 取得 AI 寵物的文字回覆。
 ///
-/// 設計原則（CR-0049 B2）：
+/// 設計原則（CR-0049 B2 / CR-0051 C）：
 /// - 金鑰留在後端：Flutter 不持有、也不傳 OpenAI key。本服務只呼叫自家後端。
+/// - 身分驗證：CR-0051 B 後端已 HARD-require 住民 Firebase idToken。token 由
+///   建構期注入的 [authTokenProvider] 取得（與 CareAlertNotificationService 同源：
+///   firebase→新 idToken / mock→mock-id-token-<uid> / production demo→null）。
+///   有 token 才帶 `Authorization: Bearer <token>`；provider 取不到 token（如
+///   production demo）會必然 401，故直接 throw [CompanionChatException] 白話提示，
+///   **不送出註定失敗的請求、不偽造成功**。
 /// - 失敗一律 throw [CompanionChatException]，**絕不吞錯、絕不回 fake / 罐頭、
-///   絕不回空字串**。呼叫端（B3a 接線）負責把例外轉成長者友善的白話提示。
-/// - log 只走 [AppLog]（release 為 no-op），且不輸出完整 reply 內容。
+///   絕不回空字串**。呼叫端（_chat）負責把例外轉成長者友善的白話提示，且不 fallback mock。
+/// - log 只走 [AppLog]（release 為 no-op），且不輸出完整 reply 內容、不印出 token。
 class CompanionChatService {
-  CompanionChatService({http.Client? client})
-      : _client = client ?? http.Client();
+  CompanionChatService({
+    http.Client? client,
+    AuthTokenProvider? authTokenProvider,
+  })  : _client = client ?? http.Client(),
+        _authTokenProvider = authTokenProvider;
 
   final http.Client _client;
+  final AuthTokenProvider? _authTokenProvider;
 
   /// 後端等待逾時。超過即視為失敗並 throw [CompanionChatException]。
   static const Duration _timeout = Duration(seconds: 10);
@@ -53,12 +64,36 @@ class CompanionChatService {
       payload['replyLanguage'] = replyLanguage;
     }
 
+    final headers = <String, String>{'Content-Type': 'application/json'};
+
+    // CR-0051 C：後端已 HARD-require 住民 idToken。若有注入 provider 卻取不到
+    // token（如 production demo），請求必然 401 → 直接 throw 白話例外，不送出
+    // 註定失敗的請求、也不偽造成功。未注入 provider（部分測試情境）則維持原行為，
+    // 不帶 Authorization header。
+    final provider = _authTokenProvider;
+    if (provider != null) {
+      String? token;
+      try {
+        token = await provider();
+      } catch (_) {
+        token = null;
+      }
+      if (token == null || token.isEmpty) {
+        AppLog.debug('[COMPANION_CHAT] 沒有可用的身分權杖，無法陪聊。');
+        throw const CompanionChatException(
+          code: 'no_auth',
+          message: '寵物現在有點累，等一下再陪你聊好嗎？',
+        );
+      }
+      headers['Authorization'] = 'Bearer $token';
+    }
+
     http.Response response;
     try {
       response = await _client
           .post(
             uri,
-            headers: const {'Content-Type': 'application/json'},
+            headers: headers,
             body: jsonEncode(payload),
           )
           .timeout(_timeout);
@@ -100,6 +135,9 @@ class CompanionChatService {
       );
     }
 
+    // CR-0051 C：成功 body 現為 {success:true, reply, careAlert?:{...}}。我們只取
+    // reply；careAlert 及任何未知欄位一律忽略（多餘的 key 不影響解析），且**不**在
+    // 長者畫面呈現任何「已建立風險警示 / 已通知照護人員」等監控感字樣（架構裁示 7）。
     final reply = decoded['reply'];
     if (reply is! String || reply.trim().isEmpty) {
       AppLog.debug('[COMPANION_CHAT] empty reply in successful response');

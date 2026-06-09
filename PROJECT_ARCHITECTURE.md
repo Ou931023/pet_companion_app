@@ -90,7 +90,7 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
 | GET | `/api/care-alerts/:id` | 單筆 Care Alert | backend |
 | PATCH | `/api/care-alerts/:id/status` | 更新狀態 new/acknowledged/resolved | backend |
 | POST | `/api/companion/analyze` | 陪伴分析（情緒 / 風險 / 策略） | companion-memory（邏輯）+ backend（端點） |
-| POST | `/api/companion/chat` | 正式陪伴聊天回覆（打字 / 非即時文字；取代 MockAiService 罐頭）。CR-0050 起用獨立 `buildCompanionChatInstructions` / `COMPANION_CHAT_PERSONA` seam（與語音 persona 分離、無工具罐頭、不假裝執行；見 `docs/COMPANION_PERSONA.md`） | companion-memory（persona）+ backend（端點） |
+| POST | `/api/companion/chat` | 正式陪伴聊天回覆（打字 / 非即時文字；取代 MockAiService 罐頭）。CR-0050 用獨立 `buildCompanionChatInstructions` / `COMPANION_CHAT_PERSONA` seam（見 `docs/COMPANION_PERSONA.md`）。**CR-0051**：掛 `requireResidentCaller`（須住民 idToken；無/無效→401、跨住民→403）；回覆後做純函式風險側錄，`riskLevel∈{medium,high,urgent}` 經共用 `processCareAlert` 建 Care Alert（`source="companion_chat"`）；回應加 optional `careAlert:{created,riskLevel,id}`（low/中性省略）。見 `docs/TYPED_CHAT_CARE_ALERT_FLOW.md` | companion-memory（persona/分級）+ backend（端點/管線） |
 | POST | `/api/stt/transcribe` | 語音轉文字 | backend + realtime |
 | GET | `/api/asr/taigi/status` | 台語 ASR 狀態 | backend |
 | POST | `/api/asr/taigi/warmup` | 台語 ASR 預熱 | backend |

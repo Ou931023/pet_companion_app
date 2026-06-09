@@ -209,6 +209,166 @@ void main() {
     );
   });
 
+  test('成功 body 含 careAlert 欄位 → reply 解析不受影響（不崩潰）', () async {
+    final service = CompanionChatService(
+      client: MockClient((request) async {
+        return http.Response(
+          jsonEncode({
+            'success': true,
+            'reply': '我都在這裡，慢慢說沒關係。',
+            'careAlert': {
+              'created': true,
+              'riskLevel': 'medium',
+              'id': 'alert-123',
+            },
+          }),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      }),
+    );
+
+    final reply = await service.reply(userText: '我最近都睡不好');
+    expect(reply, '我都在這裡，慢慢說沒關係。');
+  });
+
+  test('成功 body 含未知/多餘欄位 → 仍正確取出 reply', () async {
+    final service = CompanionChatService(
+      client: MockClient((request) async {
+        return http.Response(
+          jsonEncode({
+            'success': true,
+            'reply': '好呀，我陪你。',
+            'careAlert': null,
+            'someFutureField': {'a': 1},
+            'anotherUnknown': [1, 2, 3],
+          }),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      }),
+    );
+
+    final reply = await service.reply(userText: '你好');
+    expect(reply, '好呀，我陪你。');
+  });
+
+  test('有注入 provider 且取得 token → 送出 Authorization: Bearer header', () async {
+    http.Request? captured;
+    var providerCalls = 0;
+    final service = CompanionChatService(
+      authTokenProvider: () async {
+        providerCalls++;
+        return 'mock-id-token-elder-1';
+      },
+      client: MockClient((request) async {
+        captured = request;
+        return http.Response(
+          jsonEncode({'success': true, 'reply': '嗨，我在。'}),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      }),
+    );
+
+    final reply = await service.reply(userText: '你好');
+
+    expect(reply, '嗨，我在。');
+    expect(providerCalls, 1);
+    expect(captured, isNotNull);
+    expect(captured!.headers['Authorization'], 'Bearer mock-id-token-elder-1');
+  });
+
+  test('provider 回傳 null（如 production demo）→ throw 白話例外，且不發出請求', () async {
+    var requestSent = false;
+    final service = CompanionChatService(
+      authTokenProvider: () async => null,
+      client: MockClient((request) async {
+        requestSent = true;
+        return http.Response(
+          jsonEncode({'success': true, 'reply': '不該出現'}),
+          200,
+        );
+      }),
+    );
+
+    await expectLater(
+      service.reply(userText: '你好'),
+      throwsA(isA<CompanionChatException>()),
+    );
+    expect(requestSent, isFalse, reason: '取不到 token 不應送出註定 401 的請求');
+  });
+
+  test('provider 回傳空字串 → throw 白話例外，且不發出請求', () async {
+    var requestSent = false;
+    final service = CompanionChatService(
+      authTokenProvider: () async => '',
+      client: MockClient((request) async {
+        requestSent = true;
+        return http.Response('', 200);
+      }),
+    );
+
+    await expectLater(
+      service.reply(userText: '你好'),
+      throwsA(isA<CompanionChatException>()),
+    );
+    expect(requestSent, isFalse);
+  });
+
+  test('provider 拋例外 → 視為取不到 token，throw 白話例外、不送請求', () async {
+    var requestSent = false;
+    final service = CompanionChatService(
+      authTokenProvider: () async => throw Exception('firebase down'),
+      client: MockClient((request) async {
+        requestSent = true;
+        return http.Response('', 200);
+      }),
+    );
+
+    await expectLater(
+      service.reply(userText: '你好'),
+      throwsA(isA<CompanionChatException>()),
+    );
+    expect(requestSent, isFalse);
+  });
+
+  test('401（後端拒絕）→ 映射為 CompanionChatException（白話、非原始 HTTP 文字）',
+      () async {
+    final service = CompanionChatService(
+      authTokenProvider: () async => 'expired-token',
+      client: MockClient((request) async {
+        return http.Response('Unauthorized', 401);
+      }),
+    );
+
+    await expectLater(
+      service.reply(userText: '你好'),
+      throwsA(isA<CompanionChatException>().having(
+        (e) => e.message,
+        'message',
+        isNot(contains('Unauthorized')),
+      )),
+    );
+  });
+
+  test('403 → 映射為 CompanionChatException', () async {
+    final service = CompanionChatService(
+      authTokenProvider: () async => 'wrong-token',
+      client: MockClient((request) async {
+        return http.Response(
+          jsonEncode({'success': false, 'error': 'forbidden'}),
+          403,
+        );
+      }),
+    );
+
+    await expectLater(
+      service.reply(userText: '你好'),
+      throwsA(isA<CompanionChatException>()),
+    );
+  });
+
   test('CompanionChatException.toString 含 code/message、不含敏感字樣', () {
     const ex = CompanionChatException(
       code: 'network_error',
