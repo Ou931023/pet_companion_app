@@ -1,6 +1,8 @@
 # Google Play Data Safety / App Store Privacy — AI Pet Companion（草稿）
 
-> 狀態：CR-0046 第一輪草稿。最終填寫前需與**實際資料蒐集行為**逐項核對，並由負責人/法務確認。
+> 狀態：CR-0046 第一輪草稿；CR-0056/0057 確認 marketplace 停用→**不蒐集財務/購買資料**；CR-0058 確認與 production 功能一致。最終填寫前需與**實際資料蒐集行為**逐項核對，並由負責人/法務確認。
+>
+> CR-0058 核對結論：帳號/語音/對話/健康相關推論/App 活動 = 蒐集（用途 = App 功能/照護輔助，傳輸加密，可刪除，第三方 = OpenAI/Telegram 已揭露）；財務/購買 = **否**（marketplace 停用）；位置/聯絡人 = 否。仍待 owner/送審前以實際程式核對的 ⛔ 項：notification token、裝置識別碼、crash/diagnostics（若採用第三方崩潰回報需申報；目前未確認啟用）。
 > 原則：**據實申報**。表單內容必須與 App 實際行為、隱私政策、知情同意流程一致。
 
 相關文件：`docs/STORE_RELEASE_CHECKLIST.md`、`docs/APP_STORE_METADATA.md`、`docs/AUTHORIZATION_MODEL.md`、`lib/config/legal_content.dart`（同意內文）。

@@ -3250,3 +3250,46 @@ client 在 production 已無入口（CR-0056），本 CR 修後端 wire 契約�
 - **Batch 4（docs）**：PROJECT_ARCHITECTURE marketplace/dailyCareTask 契約段加註 CR-0057 wire 契約（501 not_enabled，保留 discriminator，authz 優先序）；MARKETPLACE/DAILY_CARE_TASK_PRODUCTION_DECISION 加 production direct API §；STORE_RELEASE_CHECKLIST + 本檔。
 - **驗證（orchestrator 親跑）**：backend `npm test` **495/495**（+22）、`npm run check` exit 0。store 服務未改（git diff 確認）、reminders/Realtime/Care Alert/Memory/Auth/DB 未動、未啟用 mock、未讀 .env。
 - **裁決**：符合 7 條規格 + 驗收門檻；store 語意不改、dev/test 位元不變、authz 優先序保留。併入主線。post-release：CR-0042 PG 化解除 501 停用。
+
+---
+
+## CR-0058 — Store Metadata / Legal / App Identity / Icon / Screenshots / Signing Readiness
+
+### 模式
+Readiness 整理：docs 為主 + **一處可離線安全 config 修正**（android:label）。owner 決策項一律列 blocker，不偽造、不擅改不可逆 ID。
+
+### 盤點（18 點摘要）
+- iOS Bundle ID `com.Andrew.petCompanionApp`、Android applicationId 同 → **個人名、非註冊網域、不可逆 → owner blocker**（不改）。
+- Android namespace `com.example.pet_companion_app` → 內部 R/BuildConfig 套件名、非發布 ID、不影響送審；清理需移動 MainActivity，低優先不動。
+- iOS CFBundleDisplayName `Pet Companion App`（interim）；**android:label 由 `pet_companion_app` 對齊為 `Pet Companion App`**（可逆、修跨平台不一致、非發明品牌）。最終品牌名 owner blocker。
+- pubspec name `pet_companion_app`（套件名，改會破壞 import，維持）；description 良好；version 1.0.0+1。
+- LegalConfig 4×`TODO_*`（privacy/terms/support URL + contactEmail）→ owner 真值 blocker；**已有 `isPlaceholder()` 防護**，UI 不會顯示壞連結，無需改 code。
+- icon：iOS appiconset 齊（含 1024）需 owner 確認非預設；Android **缺 adaptive icon**（只有 legacy ic_launcher.png）→ asset blocker。
+- screenshots 無 → asset blocker。
+- release signing：Android release 仍用 **debug key**（build.gradle.kts），上架前須換正式 keystore → owner blocker。
+- 無 user-facing demo/test/mock 字樣；store 草稿描述未宣稱停用之 marketplace/daily-care。
+
+### 修改檔案
+- `android/app/src/main/AndroidManifest.xml`（android:label 對齊 interim）
+- `docs/APP_STORE_METADATA.md`（+§6 停用功能不得宣稱、+§7 app identity 現況/blocker）
+- 新增 `docs/RELEASE_SIGNING.md`、`docs/STORE_ASSET_CHECKLIST.md`
+- `docs/GOOGLE_PLAY_DATA_SAFETY.md`（CR-0058 對齊確認、財務=否）、`docs/STORE_RELEASE_CHECKLIST.md`、本檔
+
+### 限制遵守
+未偽造 URL、未擅改 Bundle ID/applicationId、未提交 keystore/credentials/.env、未用真個資、未宣稱醫療診斷、未宣稱停用功能可用、未重啟 production 隱藏功能、未碰 Realtime/Care Alert/Auth。
+
+### 測試
+android:label 為 Android native-only 變更，不影響 Dart → flutter analyze clean、flutter test 541/541（親跑確認無回歸）。未跑 release build（iOS/Android build 需 owner 環境/簽章；且 label 變更不需重 build 驗證契約）。
+
+### Owner blockers（彙總）
+1. Bundle ID / applicationId 正式化（不可逆，建議機構反向網域）。
+2. 最終品牌名（中英）→ 同步 iOS display name / android:label / metadata。
+3. Privacy/Terms/Support URL + 客服 email（填入 legal_config.dart + metadata）。
+4. 正式 App icon（iOS 1024 + Android adaptive 前景/背景 + Play 512）+ 補 Android adaptive icon。
+5. 5 組去識別化 screenshots + Android feature graphic。
+6. Apple Developer 帳號 + iOS 憑證；Google Play Console + 正式 keystore + App Signing；release signingConfig 換正式 key。
+7. 第三方登入 / Sign in with Apple 決策。
+8. 內容分級問卷、開發者名稱。
+
+### 裁決
+docs-only + 一處可逆 label 修正，無 🔒（未動 server.js/Realtime/DB/Care Alert/deps），未跑破壞性變更；併入主線。實際填值 / 素材 / 簽章為 owner action。

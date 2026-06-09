@@ -76,3 +76,30 @@
 
 App 名稱、描述、截圖、審查備註**不得宣稱**：已診斷 / 確診 / 醫療判斷 / 疾病推論 / 取代醫師或照護人員。
 建議用語：建議關心 / 可能需要留意 / 系統偵測到需照護人員確認的訊號。
+
+---
+
+## 6. 本版停用功能（送審文案不得宣稱）— CR-0056/0057
+
+下列功能本版 **production 隱藏 / 停用**（見 `docs/MARKETPLACE_PRODUCTION_DECISION.md`、`docs/DAILY_CARE_TASK_PRODUCTION_DECISION.md`）。store 文案、截圖、審查備註**不得**出現、不得宣稱已可用：
+
+- **內建商城（marketplace）交易 / 下單 / 購買 / 長照用品**：production 入口隱藏、後端回 501 `not_enabled`。→ 不申報 IAP / 財務資料（見 `docs/GOOGLE_PLAY_DATA_SAFETY.md`）。
+- **每日照護任務（daily-care）拍照完成 / AI 任務審核**：production 隱藏、後端 501。→ 文案不得提「拍照完成任務 / 任務審核」。
+
+> 現行草稿描述（§2/§3）僅涵蓋語音陪伴 / 記憶 / 關懷提醒，未提及上述停用功能 → 一致、無需改文案。新增文案時務必維持此界線。
+
+---
+
+## 7. App Identity 現況（CR-0058 盤點）
+
+| 項目 | 現況 | 狀態 |
+|---|---|---|
+| iOS Bundle ID | `com.Andrew.petCompanionApp` | ⛔ **owner blocker**：個人名、非註冊反向網域；上架後**不可改**（綁 Apple 憑證 / Firebase iOS App / Sign in with Apple），需 owner 拍板正式 ID 後才動。 |
+| Android applicationId | `com.Andrew.petCompanionApp`（對齊 iOS） | ⛔ **owner blocker**：同上，上架後不可改。 |
+| Android namespace | `com.example.pet_companion_app` | 🔵 內部 R/BuildConfig 套件名（**非**發布 ID、不影響送審）；Flutter 模板殘留。清理需同步移動 `MainActivity` 套件，低優先、需驗證，本 CR 不動。 |
+| iOS CFBundleDisplayName | `Pet Companion App` | 🟡 interim；最終品牌名待 owner（§1 App 正式名稱 blocker）。 |
+| Android android:label | `Pet Companion App`（**CR-0058 由 `pet_companion_app` 對齊 iOS interim**） | 🟡 interim；最終品牌名待 owner。 |
+| pubspec name | `pet_companion_app` | 🔵 套件名（非 store 名稱、改動會破壞 import），維持。 |
+| version | `1.0.0+1` | ✅ 首版可用。 |
+
+> 最終品牌名（中英）一旦 owner 拍板，需同步更新：iOS CFBundleDisplayName、Android android:label、本檔 §1/§2/§3 App 名稱。Bundle ID / applicationId 為**不可逆**，務必 owner 確認後再動（建議用機構註冊網域反轉，如 `com.<org>.petcompanion`）。
