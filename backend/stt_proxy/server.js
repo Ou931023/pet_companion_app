@@ -163,6 +163,26 @@ const taigiAsrUpload = multer({
   },
 });
 const host = process.env.HOST || "127.0.0.1";
+// Force production CORS headers before any other middleware.
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  const allowedOrigin = "https://ai-companion-caregiver-web.onrender.com";
+
+  if (origin === allowedOrigin) {
+    res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+    res.setHeader("Vary", "Origin");
+  }
+
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Token, X-Requested-With");
+
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+
+  return next();
+});
 // Configure CORS for production caregiver web.
 // Manual middleware is used here to avoid stale localhost fallback behavior.
 const allowedOrigins = (
