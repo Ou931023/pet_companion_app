@@ -10,6 +10,7 @@ const {
   describeMaskedConfig,
   FEATURE_UNAVAILABLE_IN_PRODUCTION,
   FeatureUnavailableInProductionError,
+  isFeatureUnavailableError,
   maskSecret,
   maskEmail,
   maskPhone,
@@ -214,6 +215,36 @@ test("FeatureUnavailableInProductionError：帶具名 code，預設訊息為錯�
   assert.equal(err.code, FEATURE_UNAVAILABLE_IN_PRODUCTION);
   assert.equal(err.message, FEATURE_UNAVAILABLE_IN_PRODUCTION);
   assert.equal(FEATURE_UNAVAILABLE_IN_PRODUCTION, "feature_unavailable_in_production");
+});
+
+// ---- CR-0057：isFeatureUnavailableError（HTTP 邊界用來把內部碼映為 501 not_enabled）----
+
+test("isFeatureUnavailableError：throw 型（FeatureUnavailableInProductionError，帶 code）", () => {
+  const err = new FeatureUnavailableInProductionError();
+  assert.equal(isFeatureUnavailableError(err), true);
+  // 任意帶相同 code 的物件也視為命中。
+  assert.equal(isFeatureUnavailableError({ code: FEATURE_UNAVAILABLE_IN_PRODUCTION }), true);
+});
+
+test("isFeatureUnavailableError：return 型（{ ok/success:false, error })", () => {
+  assert.equal(
+    isFeatureUnavailableError({ ok: false, error: FEATURE_UNAVAILABLE_IN_PRODUCTION }),
+    true,
+  );
+  assert.equal(
+    isFeatureUnavailableError({ success: false, error: FEATURE_UNAVAILABLE_IN_PRODUCTION }),
+    true,
+  );
+});
+
+test("isFeatureUnavailableError：一般 error / 其他結果不誤判", () => {
+  assert.equal(isFeatureUnavailableError(new Error("boom")), false);
+  assert.equal(isFeatureUnavailableError({ ok: false, error: "invalid_payload" }), false);
+  assert.equal(isFeatureUnavailableError({ success: false, error: "not_found" }), false);
+  assert.equal(isFeatureUnavailableError({ ok: true }), false);
+  assert.equal(isFeatureUnavailableError(null), false);
+  assert.equal(isFeatureUnavailableError(undefined), false);
+  assert.equal(isFeatureUnavailableError("feature_unavailable_in_production"), false);
 });
 
 // ---- CR-0034 B2：describeMaskedConfig（啟動摘要絕不外洩完整值）----

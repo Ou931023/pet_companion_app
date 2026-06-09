@@ -83,6 +83,20 @@ class FeatureUnavailableInProductionError extends Error {
   }
 }
 
+// CR-0057：判斷某個「錯誤物件（throw 型）」或「結果物件（return 型）」是否代表
+// 「功能在 production 停用」訊號。涵蓋兩種既有 store 訊號：
+//   - throw 型：FeatureUnavailableInProductionError（帶 .code）。
+//   - return 型：{ ok/success:false, error:"feature_unavailable_in_production" }（帶 .error）。
+// 僅在 HTTP 邊界用來把內部碼映為對外 501 not_enabled；不改 store 內部碼/語意。
+// 一般 error / 其他結果一律回 false（不可誤判）。
+function isFeatureUnavailableError(errOrResult) {
+  if (!errOrResult || typeof errOrResult !== "object") return false;
+  return (
+    errOrResult.code === FEATURE_UNAVAILABLE_IN_PRODUCTION ||
+    errOrResult.error === FEATURE_UNAVAILABLE_IN_PRODUCTION
+  );
+}
+
 // 取 CORS 白名單來源（新命名 CORS_ALLOWED_ORIGINS 優先，相容既有別名 ALLOWED_ORIGINS）。
 function resolveCorsOrigins(env = process.env) {
   const source = env || {};
@@ -246,6 +260,7 @@ module.exports = {
   resolveCorsOrigins,
   hasFirebaseServiceAccount,
   isJsonFallbackAllowed,
+  isFeatureUnavailableError,
   validateProductionEnv,
   assertProductionEnvOrExit,
   maskSecret,

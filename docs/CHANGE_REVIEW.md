@@ -3199,3 +3199,54 @@ flutter analyze clean；flutter test **541/541**（+4 新 case：marketplaceVisi
 
 ### 裁決狀態
 frontend-ux-agent 實作符合裁決（只隱藏不刪、未動後端、dev 不變），orchestrator 全量驗證綠。併入主線。
+
+---
+
+## CR-0057 — Marketplace & DailyCareTask 後端加固（production 停用路徑回應收斂）
+
+### 裁決（architecture gatekeeper）
+接 CR-0056 follow-up #1/#2。對 marketplace + daily-care 在 production 已 fail-closed 的
+路徑，將「停用訊號」由現行誤映 500 收斂為語意正確的乾淨回應。defense-in-depth，
+client 在 production 已無入口（CR-0056），本 CR 修後端 wire 契約一致性。
+
+- Status code = 501 Not Implemented（統一）。
+  - 退回 403：與 admin daily-care 既有 authz-forbidden(403) 同路由碰撞；403 是請求者
+    權限語意，非「此部署未啟用功能」。
+  - 退回 503：本 repo 503 已固定為上游暫時不可用 + 可重試（taigiAsr/health）；停用為
+    永久決策、不可重試。
+  - 501 未被使用、非 retryable、語意最貼切；本 CR 確立為「production 功能停用」新慣例。
+- Response 形狀：保留各路由族 discriminator（marketplace `ok:false` / daily-care
+  `success:false`）+ wire error 統一 `not_enabled` + 友善 `message`（無工程字眼/path/stack）。
+  內部碼 `feature_unavailable_in_production` 不改，只在 HTTP 邊界映射。
+- 不新增 auth：production 在資料讀取前已 fail-closed（store guard），501 不查資料、不洩漏，
+  §7 最小限制滿足；既有 requireAdmin / resolveAdminAuthContext scope 保留不動。
+- 不在 route 層加 isProduction：fail-closed 已在 store 資料邊界滿足（§7.4），route 只修
+  500→501 映射，不搬守門位置、不雙重守門。停用路徑不 logError（非錯誤、避免假警報）。
+- helper 放置：純判斷式 isFeatureUnavailableError() 放 config/env.js（與常數/錯誤類同檔、
+  可單測）；Express 回應器 respondFeatureDisabled(res,{key}) 留 server.js（最小 🔒 侵入）。
+
+### 批次（owner = backend-agent）
+1. env.js 加 isFeatureUnavailableError + 單測（no route change）。
+2. server.js marketplace 路由接 helper + route 測試（prod→501 not_enabled；dev/test 不變）。
+3. server.js daily-care 路由接 helper（保留 authz 403 優先序）+ 測試（含 reminders 零變更斷言）。
+4. PROJECT_ARCHITECTURE 契約段（須先/同 PR 更新）+ 本檔。
+
+### 🔒 / 邊界
+觸 🔒：server.js（route 映射）、config/env.js（additive export）。不改 store throw/return
+語意、不動 reminders、Realtime、Care Alert、Memory、Auth scope、DB/migration；
+不啟用 mock；不提交 .env / runtime data/*.json。
+
+### 驗收門檻（backend-agent 須親跑、誠實標示）
+- dev/test 既有 marketplace/dailyCareTask 路由測試保持綠且行為位元不變。
+- production：各路由 → 501 + {discriminator:false, error:"not_enabled", message}，非 500、
+  非 stack、非 demo/JSON、不讀檔。
+- production+caregiver 跨住民 → 仍 403（authz 優先序未被 501 取代）。
+- reminders 路由不受影響。
+
+### 實作結果（CR-0057）
+- **Batch 1（env.js additive）**：新增 `isFeatureUnavailableError(errOrResult)`（`x?.code === FEATURE_UNAVAILABLE_IN_PRODUCTION || x?.error === ...`，涵蓋 throw 型與 return 型、一般 error 不誤判）+ export；env.test.js 補 3 單測。
+- **Batch 2（server.js marketplace）**：新增 `respondFeatureDisabled(res,{key})`（501 + `{[key]:false, error:"not_enabled", message}`）；接入 9 路由（read catch 內先判停用再 logError/500；mutation 在 false 分支先判）；停用路徑不 logError。新增 `marketplaceProductionEndpoint.test.js`（11）。
+- **Batch 3（server.js daily-care）**：接入 6 路由（key="success"）；authz-403 優先序保留（caregiver 跨住民仍 403、super_admin 才 501、無 token 401）。新增 `dailyCareTaskProductionEndpoint.test.js`（8，含 reminders/health smoke）。
+- **Batch 4（docs）**：PROJECT_ARCHITECTURE marketplace/dailyCareTask 契約段加註 CR-0057 wire 契約（501 not_enabled，保留 discriminator，authz 優先序）；MARKETPLACE/DAILY_CARE_TASK_PRODUCTION_DECISION 加 production direct API §；STORE_RELEASE_CHECKLIST + 本檔。
+- **驗證（orchestrator 親跑）**：backend `npm test` **495/495**（+22）、`npm run check` exit 0。store 服務未改（git diff 確認）、reminders/Realtime/Care Alert/Memory/Auth/DB 未動、未啟用 mock、未讀 .env。
+- **裁決**：符合 7 條規格 + 驗收門檻；store 語意不改、dev/test 位元不變、authz 優先序保留。併入主線。post-release：CR-0042 PG 化解除 501 停用。

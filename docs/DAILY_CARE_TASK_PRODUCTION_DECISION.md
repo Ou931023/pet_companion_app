@@ -28,6 +28,15 @@ store-facing 不得出現「拍照完成照護任務/任務審核」等字樣。
 
 PG 化需新建 migration（`daily_care_tasks` / `daily_care_task_submissions` / 視需要 reviews）、AI Vision proof 儲存與權限（resident 看自己、caregiver 看授權住民、super_admin 全域）、解除 production gating（另開 CR + 架構裁決）。提醒功能（reminders）與本決策無關、不受影響、照常運作。
 
-## 6. 與 Care Alert 的關係
+## 6. Production direct API 行為（CR-0057 已收斂）
+
+CR-0057：production 直接打 daily-care API 一律回**乾淨 501 `not_enabled`**（`{ success:false, error:"not_enabled", message:"..." }`），不誤映 500、不回 stack/path、不讀 JSON、不回 demo task：
+
+- 涵蓋：GET tasks、POST tasks、POST /:id/submit、PATCH /:id/status、admin GET tasks、GET proof/:id。
+- **authz 403 優先序保留**：admin daily-care 的 caregiver 跨住民在 store 呼叫前仍回 403（`resolveAdminAuthContext`）；501 只在 authz 通過後由 store 訊號觸發。無 token 仍 401。
+- 停用路徑不 logError；dev/test 行為位元不變。
+- **reminders 不受影響**（後端無 reminders 專屬路由，reminders 為 client 端本地功能）。
+
+## 7. 與 Care Alert 的關係
 
 DailyCareTask 與 Care Alert 為**獨立功能**；本 CR 隱藏 DailyCareTask 入口**不影響** Care Alert（語音/打字風險分析→persist→Telegram）、Realtime、Memory、Auth scope。

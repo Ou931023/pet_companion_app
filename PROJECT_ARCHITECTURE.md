@@ -242,6 +242,12 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
   - 此兩 service **目前沒有 DB 路徑**，在 production 等同無持久化保證（PROD_AUDIT P1-4）。
   - **裁決（依 CR-0034 §3.4.5）**：production 下以**清楚 guard 阻擋**，對使用者回長者友善訊息（例：「這個功能整備中，晚點再回來看看」），**不得**以 JSON-only 充當正式資料庫。列為 **CR-0042（PG 化）blocker**。
   - 此為「production 暫時不提供 marketplace / daily care task」的**已知且已文件化限制**，需產品確認接受；dev/staging 不受影響。
+  - **CR-0057 wire 契約（production 停用回應收斂）**：production 直接打這些 API 時，所有會出現停用訊號（store throw `FeatureUnavailableInProductionError` 或回 `{error:"feature_unavailable_in_production"}`）的路由，HTTP 邊界**統一回 `501`**（不是 500/403/503），形狀保留各族 discriminator + 統一 error：
+    - marketplace：`{ ok:false, error:"not_enabled", message:<長者友善白話> }`
+    - daily-care：`{ success:false, error:"not_enabled", message:<長者友善白話> }`
+    - 內部碼 `feature_unavailable_in_production` 只在 HTTP 邊界映為 `not_enabled`（store 內部碼 / 語意不變）。回應**不含 stack / 檔案路徑 / 工程字眼**；停用屬「功能未開放」非錯誤，故不寫 `logError`（避免假警報）。
+    - **authz 優先序**：admin daily-care（`resolveAdminAuthContext`）的 authN（401）/ 跨住民 authz（403）仍**先於** store 停用訊號；501 只在 authN + authz 通過後由 store 觸發（caregiver 跨住民 → 仍 403；super_admin → 501）。
+    - helper：`config/env.js#isFeatureUnavailableError(errOrResult)`（同時涵蓋 throw 型 `.code` 與 return 型 `.error`）+ `server.js#respondFeatureDisabled(res,{key})`（`key='ok'|'success'`）。dev/test 行為位元不變（讀 JSON/seed、200/400/404）。
 
 
 ---

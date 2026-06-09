@@ -18,6 +18,7 @@ const {
   assertProductionEnvOrExit,
   describeMaskedConfig,
   resolveCorsOrigins,
+  isFeatureUnavailableError,
 } = require("./config/env");
 assertProductionEnvOrExit(process.env, console);
 
@@ -209,6 +210,21 @@ function logInfo(message, extra = {}) {
 
 function logError(message, extra = {}) {
   console.error(`[realtime-broker] ${message}`, safeLogPayload(extra));
+}
+
+// CR-0057：production 停用功能（marketplace / dailyCareTask JSON-only）的統一 HTTP 回應。
+// 規格（architecture-agent 裁決）：
+//   - status code 一律 501（所有 production 停用路徑統一，不用 403/503）。
+//   - 保留各族 discriminator：marketplace 用 key='ok'、daily-care 用 key='success'。
+//   - wire error 統一映為 "not_enabled"（內部 feature_unavailable_in_production 只在此邊界映射）。
+//   - message 為長者 / 管理端友善白話，絕不含工程字眼 / path / stack。
+// 停用是「功能未開放」而非錯誤，呼叫端不應 logError（避免假警報）。
+function respondFeatureDisabled(res, { key = "ok" } = {}) {
+  return res.status(501).json({
+    [key]: false,
+    error: "not_enabled",
+    message: "這項服務目前尚未開放，請稍後再試或改用其他方式。",
+  });
 }
 
 // CR-P2B：通知 / 稽核 log 寫入採 **fire-and-forget best-effort**。
@@ -988,6 +1004,7 @@ app.get("/api/daily-care-tasks", async (req, res) => {
     const tasks = await listDailyCareTasks({ elderId, status });
     return res.json({ success: true, tasks });
   } catch (error) {
+    if (isFeatureUnavailableError(error)) return respondFeatureDisabled(res, { key: "success" });
     logError("daily care tasks list exception", {
       error: error?.message || error,
     });
@@ -1008,6 +1025,7 @@ app.post("/api/daily-care-tasks", async (req, res) => {
     const task = await createDailyCareTask(body);
     return res.json({ success: true, task });
   } catch (error) {
+    if (isFeatureUnavailableError(error)) return respondFeatureDisabled(res, { key: "success" });
     logError("daily care task create exception", {
       error: error?.message || error,
     });
@@ -1062,6 +1080,7 @@ app.post(
       });
     } catch (error) {
       cleanup();
+      if (isFeatureUnavailableError(error)) return respondFeatureDisabled(res, { key: "success" });
       logError("daily care task submit exception", {
         error: error?.message || error,
       });
@@ -1079,6 +1098,7 @@ app.patch("/api/daily-care-tasks/:id/status", async (req, res) => {
   try {
     const result = await updateDailyCareTaskStatus(req.params.id, status);
     if (!result.success) {
+      if (isFeatureUnavailableError(result)) return respondFeatureDisabled(res, { key: "success" });
       const code = result.error === "not_found" ? 404 : 400;
       return res.status(code).json({ success: false, error: result.error });
     }
@@ -1134,6 +1154,7 @@ app.get("/api/admin/daily-care-tasks", resolveAdminAuthContext, async (req, res)
     );
     return res.json({ success: true, tasks });
   } catch (error) {
+    if (isFeatureUnavailableError(error)) return respondFeatureDisabled(res, { key: "success" });
     logError("admin daily care tasks exception", {
       error: error?.message || error,
     });
@@ -1163,6 +1184,7 @@ app.get("/api/daily-care-tasks/proof/:submissionId", async (req, res) => {
     }
     return res.sendFile(resolved);
   } catch (error) {
+    if (isFeatureUnavailableError(error)) return respondFeatureDisabled(res, { key: "success" });
     logError("daily care task proof exception", {
       error: error?.message || error,
     });
@@ -1526,6 +1548,7 @@ app.get("/api/marketplace/products", async (req, res) => {
     });
     return res.json({ ok: true, products });
   } catch (error) {
+    if (isFeatureUnavailableError(error)) return respondFeatureDisabled(res, { key: "ok" });
     logError("marketplace list products failed", { error: error?.message || error });
     return res.status(500).json({ ok: false, error: "failed_to_load_products" });
   }
@@ -1537,6 +1560,7 @@ app.get("/api/marketplace/products/:id", async (req, res) => {
     if (!product) return res.status(404).json({ ok: false, error: "not_found" });
     return res.json({ ok: true, product });
   } catch (error) {
+    if (isFeatureUnavailableError(error)) return respondFeatureDisabled(res, { key: "ok" });
     logError("marketplace get product failed", { error: error?.message || error });
     return res.status(500).json({ ok: false, error: "failed_to_load_product" });
   }
@@ -1546,6 +1570,7 @@ app.get("/api/marketplace/products/:id", async (req, res) => {
 app.post("/api/admin/marketplace/products", requireAdmin, async (req, res) => {
   const result = await marketplaceStore.createProduct(req.body || {});
   if (result.ok) return res.json(result);
+  if (isFeatureUnavailableError(result)) return respondFeatureDisabled(res, { key: "ok" });
   const code = result.error === "invalid_payload" ? 400 : 500;
   return res.status(code).json(result);
 });
@@ -1554,6 +1579,7 @@ app.post("/api/admin/marketplace/products", requireAdmin, async (req, res) => {
 app.put("/api/admin/marketplace/products/:id", requireAdmin, async (req, res) => {
   const result = await marketplaceStore.updateProduct(req.params.id, req.body || {});
   if (result.ok) return res.json(result);
+  if (isFeatureUnavailableError(result)) return respondFeatureDisabled(res, { key: "ok" });
   const code = result.error === "not_found" ? 404 : 500;
   return res.status(code).json(result);
 });
@@ -1566,6 +1592,7 @@ app.patch(
     const status = req.body && typeof req.body.status === "string" ? req.body.status : "";
     const result = await marketplaceStore.setProductStatus(req.params.id, status);
     if (result.ok) return res.json(result);
+    if (isFeatureUnavailableError(result)) return respondFeatureDisabled(res, { key: "ok" });
     const code =
       result.error === "not_found"
         ? 404
@@ -1586,6 +1613,7 @@ app.post("/api/marketplace/orders", async (req, res) => {
     items: Array.isArray(body.items) ? body.items : [],
   });
   if (result.ok) return res.json(result);
+  if (isFeatureUnavailableError(result)) return respondFeatureDisabled(res, { key: "ok" });
   const clientErrors = new Set([
     "empty_cart",
     "invalid_item",
@@ -1606,6 +1634,7 @@ app.get("/api/admin/marketplace/orders", requireAdmin, async (req, res) => {
     });
     return res.json({ ok: true, orders });
   } catch (error) {
+    if (isFeatureUnavailableError(error)) return respondFeatureDisabled(res, { key: "ok" });
     logError("marketplace list orders failed", { error: error?.message || error });
     return res.status(500).json({ ok: false, error: "failed_to_load_orders" });
   }
@@ -1618,6 +1647,7 @@ app.get("/api/admin/marketplace/orders/:id", requireAdmin, async (req, res) => {
     if (!order) return res.status(404).json({ ok: false, error: "not_found" });
     return res.json({ ok: true, order });
   } catch (error) {
+    if (isFeatureUnavailableError(error)) return respondFeatureDisabled(res, { key: "ok" });
     logError("marketplace get order failed", { error: error?.message || error });
     return res.status(500).json({ ok: false, error: "failed_to_load_order" });
   }
@@ -1636,6 +1666,7 @@ app.patch(
       { deliveryNote: body.deliveryNote },
     );
     if (result.ok) return res.json(result);
+    if (isFeatureUnavailableError(result)) return respondFeatureDisabled(res, { key: "ok" });
     const code =
       result.error === "not_found"
         ? 404

@@ -28,7 +28,19 @@ store-facing（App Store / Play 描述、副標、keywords、screenshots）**不
 
 若未來要正式開放交易：PG 化 store（接 009 兩表）、金流/IAP 合規、auth/scope（resident/caregiver/super_admin）、重走 Data Safety 評估、解除 production gating（需另開 CR + 架構裁決）。
 
-## 6. 後續獨立加固 CR（backend-agent，非本 CR 阻擋）
+## 6. Production direct API 行為（CR-0057 已收斂）
 
-1. 無 auth 的 `GET /api/marketplace/products` 補存取限制（defense-in-depth）。
-2. `POST /api/marketplace/orders` 在 production 由 `createOrder` throw 映射為乾淨 `not_enabled`（目前落 500；因入口已隱藏無 client 命中）。
+CR-0057：production 直接打 marketplace API（即使 CR-0056 隱藏入口後）一律回**乾淨 501 `not_enabled`**，不再誤映 500、不回 stack/file path、不讀 JSON、不回 demo seed：
+
+```json
+{ "ok": false, "error": "not_enabled", "message": "..." }
+```
+
+- 涵蓋：GET products、GET products/:id、POST orders、admin GET orders(×2)、admin POST/PUT/PATCH products、admin PATCH orders/:id/status。
+- status=501（「此部署未啟用」語意；不與 authz-403 / 上游-503 碰撞）。停用路徑不寫 logError（非錯誤）。
+- helper：`config/env.js isFeatureUnavailableError()` + `server.js respondFeatureDisabled()`；store 內部碼 `feature_unavailable_in_production` 不改，只在 HTTP 邊界映為 `not_enabled`。
+- dev/test 行為位元不變（既有 200/400/404 路徑保留）。
+
+## 7. 仍待 post-release（CR-0042）
+
+PG 化正式開放交易（接 migration 009、金流/IAP 合規、authz、Data Safety 重評、解除 501 停用）需另開 CR + 架構裁決。
