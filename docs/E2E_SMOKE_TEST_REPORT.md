@@ -5,6 +5,44 @@
 
 ---
 
+## Run #2 — CR-0066 正式 URL 對齊 + 四主流程 smoke（PENDING / 待實機執行）
+
+| 欄位 | 內容 |
+|---|---|
+| 日期 | （填寫執行日期） |
+| 模式 | **部分 Execute**：URL 對齊與殘留檢查已由代理靜態驗證；S1–S9 實機 smoke 待人工執行 |
+| 後端 URL | `https://ai-companion-app-7mb8.onrender.com`（CR-0064/0065 後現役 Render Web Service） |
+| caregiver_web | `https://ai-companion-caregiver-web.onrender.com`（index.html 已對齊 `-7mb8`） |
+| Flutter build 指令 | 見 `tasks/CR-0066-*.md §1`（`--dart-define=API_BASE_URL=https://ai-companion-app-7mb8.onrender.com`，URL 不含 `/api`） |
+| app commit | （填寫 `git rev-parse --short HEAD`） |
+| iOS 裝置 / 版本 | （填寫） |
+| Android 裝置 / 版本 | （填寫） |
+
+### 已由代理完成（靜態）
+
+- Flutter 端無寫死 / 無殘留舊 Render URL；正式 URL 由 dart-define 注入，`isApiBaseUrlProductionSafe` 守門擋 localhost（`lib/config/app_config.dart`）。
+- 舊 URL（不含 `-7mb8`）僅存在 `tasks/CR-0064-*.md` 歷史紀錄，非執行碼。
+- `flutter test test/config/app_config_test.dart` → 9 passed。
+- 正式後端 `GET /health` → `200 {status:"ok", hasOpenAiKey:true, realtimeModel:"gpt-realtime"}`（已確認 `-7mb8` 後端在線）。
+
+### 待實機逐項（對應 `tasks/CR-0066-*.md §3`；填 pass/fail + 去敏佐證）
+
+| # | 流程 | 結果 | 備註（去敏） |
+|---|---|---|---|
+| S1 | App 啟動指向正式後端 / 無 debug·demo·dev panel | ⏳ | |
+| S2 | 長者登入 | ⏳ | |
+| S3 | 語音對話狀態流轉正常 | ⏳ | |
+| S4 | 打字對話自然回覆 | ⏳ | |
+| S5 | 語音 → Care Alert（medium 不推 / high 推） | ⏳ | |
+| S6 | 打字 → Care Alert | ⏳ | |
+| S7 | 管理者端刷新（含 alert 狀態更新、scoped、無 marketplace 501） | ⏳ | |
+| S8 | 後端不可用時白話錯誤、不 fallback mock | ⏳ | |
+| S9 | log 去敏 | ⏳ | |
+
+> 為何未代跑：S3/S5/S6 等需真機麥克風 + WebRTC，背景代理無實體裝置可執行；不假裝通過（PLAN §0 / §7 紅線）。
+
+---
+
 ## Run #1 — CR-0055 套用 transport patch 嘗試（NOT EXECUTED / BLOCKED）
 
 | 欄位 | 內容 |
