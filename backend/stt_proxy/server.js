@@ -180,7 +180,7 @@ app.use(cors({
     }
 
     if (allowedOrigins.includes(origin)) {
-      return callback(null, origin);
+      return callback(null, true);
     }
 
     return callback(new Error(`CORS not allowed: ${origin}`));
