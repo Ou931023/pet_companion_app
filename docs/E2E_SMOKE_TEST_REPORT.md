@@ -5,6 +5,75 @@
 
 ---
 
+## Run #1 — CR-0055 套用 transport patch 嘗試（NOT EXECUTED / BLOCKED）
+
+| 欄位 | 內容 |
+|---|---|
+| 日期 | 2026-06-09 |
+| 模式 | **Blocked（§12.2）— 未套用 patch、未執行裝置 smoke** |
+| 執行者 | 工程代理（背景，無實體裝置 / 無正式 HTTPS 後端） |
+| backend URL 是否 HTTPS | ✗ 未提供正式 HTTPS 後端（AppConfig 預設仍 `http://127.0.0.1:3001`，正式網域未確認） |
+| iOS 裝置與版本 | 無 |
+| Android 裝置與版本 | 無 |
+| commit | 見本次 CR-0055 commit |
+
+### 為何未套用 patch（§2 前置未齊 → §12.2 Blocked）
+
+CR-0055 的核心交付是「套用 iOS/Android transport patch **並**跑 T1–T9 實機 smoke」。任務 §2 列 8 項前置，末行明訂「若未齊，請不要套用 patch，改成更新 blocker 報告」；§11.1 禁止「沒 HTTPS 後端就硬關 HTTP 並假裝成功」。本執行環境缺以下前置，故**未動 `Info.plist` / `AndroidManifest.xml`**：
+
+| §2 前置 | 狀態 |
+|---|---|
+| 1. 正式 HTTPS backend URL | ✗ 未提供 |
+| 2. 有效 TLS 憑證 | ✗ 未提供 |
+| 3. production env 連 PostgreSQL/Firebase/OpenAI/Telegram | ✗ 無連線 |
+| 4. iOS 實體裝置 | ✗ 無 |
+| 5. Android 實體裝置 | ✗ 無 |
+| 6. Flutter production API base URL 指向 HTTPS | ✗ 未設定（dev 預設 localhost） |
+| 7. caregiver_web production origin / CORS allowlist | ✗ 無 prod `config.js`（僅 example） |
+| 8. 可 rollback 的 git 狀態 | ✓ 乾淨（但因 1–7 不套用） |
+
+> 關鍵：T3（Realtime 語音）/ T5 / T6（語音 Care Alert）本質上需**真機麥克風 + WebRTC**，背景代理無法執行；即使有 HTTPS 後端也無法達成 §12.1 的裝置 smoke 通過。故只能 §12.2。
+
+### 當前 transport 狀態（未收斂，與 CR-0054 相同）
+
+- iOS `ios/Runner/Info.plist`：`NSAllowsArbitraryLoads=true`（未動）。
+- Android `android/app/src/main/AndroidManifest.xml`：`usesCleartextTraffic="true"`（未動）。
+- `res/xml/network_security_config.xml`：未建立（patch 未套用）。
+- ✅ 後端 CORS 修正（CR-0054 Batch 1）保留，未受影響。
+
+### T1–T9 結果
+
+全部 **NOT EXECUTED（BLOCKED）**——無實體裝置 + 無正式 HTTPS 後端，無法啟動任一項。就緒 patch 與 smoke 步驟見 `docs/TRANSPORT_SECURITY.md §3/§5`。
+
+### Rollback
+
+未啟用（未套用任何 patch，無需 rollback）。
+
+### Release Blockers（本輪維持）
+
+1. iOS ATS 全域明文 + Android cleartext 仍開（patch 就緒於 `TRANSPORT_SECURITY.md`，未套用）。
+2. 正式 HTTPS 後端網域未提供 / 未確認就緒（§2#1–2）。
+3. 無實體 iOS/Android 裝置可跑 T1–T9（§2#4–5）。
+4. caregiver_web 正式 origin / CORS allowlist 未設（§2#7）。
+
+### Owner Action Items（解除本 CR blocker）
+
+- [ ] 部署正式 / staging 後端至 HTTPS 網域 + 有效 TLS 憑證。
+- [ ] 設後端 `CORS_ALLOWED_ORIGINS` 含 caregiver_web 正式 origin；備 caregiver_web `config.js`。
+- [ ] 備妥真 iOS + Android 實體裝置。
+- [ ] production env 連 PostgreSQL/Firebase/OpenAI/Telegram。
+
+### 下一次執行步驟（前置齊備後）
+
+1. 套用 `TRANSPORT_SECURITY.md §3.1`（Android）+ §3.2（iOS），建議一平台一 commit（便於 §8 rollback）。
+2. 以正式 HTTPS 網域 `flutter build ios/apk --release --dart-define=API_BASE_URL=https://...`。
+3. 真機跑 T1–T9；任一 T1–T7 transport 相關失敗 → 依 §8 rollback、記錄去敏失敗摘要。
+4. 結果寫入本檔「Run #2」並更新 `STORE_RELEASE_CHECKLIST` 對應 BLOCKER 行。
+
+> 本輪未套用任何 patch、未連任何真服務、未產生需清理資料、未假裝通過。
+
+---
+
 ## Run #0 — 計畫建立（NOT EXECUTED / Plan-only）
 
 | 欄位 | 內容 |

@@ -3134,3 +3134,34 @@ backend-agent（server.js 為其 ownership 且屬 LOCKED 檔），依 B 四條�
 - 文件更新：CHANGE_REVIEW（本段）、STORE_RELEASE_CHECKLIST（ATS/cleartext 行指向 TRANSPORT_SECURITY + CORS 已修 + CR-0054 BLOCKER 行）、E2E_SMOKE_TEST_REPORT（CORS 已修 + transport patch ready）、ENVIRONMENT_SETUP（§5 指標）、PROJECT_ARCHITECTURE（CORS 行）。
 - **正式版風險**：production 仍允許 arbitrary loads？是（Batch 2 未落地，patch 就緒）。仍允許 cleartext？是（同上）。production 仍指向 localhost？否（AppConfig 守門）。CORS allow-all？否（已修）。破壞 Realtime？否（未碰 realtime_voice_service.dart / WebRTC）。破壞 Care Alert？否。假裝通過？否（ATS/cleartext 誠實標 PATCH-READY 未套用）。
 - **裁決**：Batch 1 gatekeeper diff 審核 + 測試綠通過，併入主線；Batch 2 為 patch-ready 文件，transport 收斂落地另開 CR（依賴 CR-0053 HTTPS 後端 + 裝置 blocker）。
+
+---
+
+## CR-0055 — Apply Transport Security Patch and Run Device Smoke
+
+### 模式
+**BLOCKED（task §12.2）**——docs-only，無 runtime / 程式碼變更，不觸 🔒 檔案。
+
+### 為何 Blocked（前置未齊，未盲套）
+CR-0055 核心交付 = 套用 iOS/Android transport patch **並**跑 T1–T9 實機 smoke。task §2 列 8 項前置，末行明訂未齊則不套用、改更新 blocker 報告；§11.1 禁「沒 HTTPS 後端就硬關 HTTP 並假裝成功」。執行環境缺：正式 HTTPS 後端 + TLS 憑證（§2#1-2）、實體 iOS/Android 裝置（§2#4-5）、production 連線（§2#3）、Flutter prod HTTPS base URL（§2#6）、caregiver_web prod origin（§2#7）。且 T3/T5/T6（Realtime 語音 / 語音 Care Alert）本質需真機麥克風 + WebRTC，背景代理無法執行 → 無法達成 §12.1 裝置 smoke 通過。故 §12.2。
+
+### 盤點（落地嘗試前確認，皆未動）
+- iOS `Info.plist`：`NSAllowsArbitraryLoads=true`（未動）。
+- Android `AndroidManifest.xml`：`usesCleartextTraffic="true"`（未動）。
+- `res/xml/network_security_config.xml`：未建立。
+- AppConfig 預設 base URL 仍 `http://127.0.0.1:3001`（dev；prod 由 build dart-define 指定，未提供正式網域）。
+- caregiver_web 僅 `config.example.js`，無 prod `config.js`。
+- ✅ CR-0054 Batch 1 CORS 修正保留，未受影響。
+
+### 產出
+- `docs/E2E_SMOKE_TEST_REPORT.md`：新增 Run #1（CR-0055 attempt = NOT EXECUTED/BLOCKED，§2 前置逐項狀態、T1–T9 全 BLOCKED、rollback 未啟用、owner action、下一次步驟）。
+- 更新 `docs/TRANSPORT_SECURITY.md §7`（CR-0055 落地嘗試 = BLOCKED 註記）、`docs/STORE_RELEASE_CHECKLIST.md`（ATS/cleartext 行加 CR-0055 BLOCKED 狀態）、本檔。
+
+### 限制遵守
+未套用任何 transport patch、未動 Info.plist/AndroidManifest、未連任何真服務、未啟用 mock、未關 auth、未污染資料、未提交 secret/service account/keystore、未在文件貼 token/chat id/完整對話。未破壞 CR-0039～CR-0054 主流程。**未假裝通過**。
+
+### 測試
+無程式碼變更 → 無需重跑（baseline 維持：flutter 537/537、backend 473/473，CR-0054 時親跑）。release build / 裝置 smoke 因無裝置無法執行，誠實標示。
+
+### 裁決
+docs-only Blocked 報告，無 🔒 / API / schema / Realtime / runtime 變更；併入主線。transport 收斂落地仍待 owner 備齊 HTTPS 後端 + 實機後重跑（沿用 TRANSPORT_SECURITY §3 套用 + §5 smoke）。

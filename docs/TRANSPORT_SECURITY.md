@@ -145,3 +145,5 @@
 | 正式 HTTPS 後端網域 | ⛔ **未確認就緒**（前置 blocker，owner action） |
 
 > 本文件**不**等於 transport 已硬化。iOS/Android 收斂為 runtime 變更，依架構裁決須另開 CR、備齊前置、跑 §5 smoke 後落地。
+>
+> **CR-0055（2026-06-09）落地嘗試 = BLOCKED**：執行環境無正式 HTTPS 後端、無實體 iOS/Android 裝置，§4 前置未齊 → 依 task §2/§12.2 **未套用 patch、未跑 smoke**，`Info.plist` / `AndroidManifest.xml` 維持原樣。詳見 `docs/E2E_SMOKE_TEST_REPORT.md` Run #1。前置齊備後重跑本文件 §3 套用 + §5 smoke。
