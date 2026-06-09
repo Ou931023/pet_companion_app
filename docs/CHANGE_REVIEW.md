@@ -2977,3 +2977,68 @@ CR-0048 收斂時明確標註兩個未解送審 blocker（本檔 2580-2582、`FL
 - 送審前：真 Postgres+Firebase 端到端（resident idToken→/chat→risk→care_alerts→Telegram）+ release 裝置實測。
 
 **裁決**：CR-0051 各 batch architecture checkpoint PASS（A 已 re-review；B/C 依裁決實作、orchestrator 全量驗證綠）。併入主線。
+
+---
+
+## CR-0052 — Voice Care Alert Persist Gate Alignment for Medium Risk
+
+### 審查者
+架構守門人 agent
+
+### 結論
+核准（APPROVED）。Flutter-only 單批；不改後端；不觸及 🔒 檔案。
+
+### 觸及 🔒 檔案
+無。realtime_voice_service.dart / server.js 路由與 response 形狀 / DB schema /
+CareAlertRiskLevel 欄位定義皆不變。僅變更 voice_agent_controller 建構 alert 時
+傳入的 riskLevel 值（改為 canonical）與 persist gate 判斷依據。
+
+### Ruling（對應 task §5）
+1. 語音 medium 是否建立 Care Alert 紀錄：是。medium/high/urgent 皆 persist，
+   與 typed chat /api/companion/chat（server.js:1754 gate {medium,high,urgent}）一致。
+2. 語音 medium 是否通知 Telegram：否。由後端 TELEGRAM_NOTIFY_LEVELS={high,urgent}
+   決定（telegramNotifyService.js:31）。Flutter 不得自行決定推播。
+3. 語音 low 是否送 /notify：否。canonical ∈ {low}（含 legacy normal）在 gate 直接 return，
+   不 addAlert、不 notify。
+4. needsHumanSupport：語意維持「僅 high/urgent」，不得混入 medium。它不再作為 persist gate，
+   僅保留為「是否需人為關懷」的語意旗標。
+5. 新增獨立 predicate：核准新增 shouldPersistCareAlert（canonical-riskLevel-based）。
+   不在 Flutter 端新增 shouldNotifyCaregiver；Telegram 推播權威唯一在後端，
+   Flutter 端不得複製此決策，避免雙重真相來源。
+6. risk level 權威值：維持 low / medium / high / urgent。
+
+### 強制要求（非選用）
+7. persist gate 與新 alert 建構必須以 canonical 為準（CareAlertRiskLevel.fromJson(...).canonical）。
+   理由：safety_guard 仍可能輸出 legacy 'attention'（canonical=medium）。若以 raw
+   字串 == 'medium' 比對，legacy 'attention' 會被漏判而丟失一筆 medium-equivalent alert。
+   gate 必須先 canonical 再比 {medium,high,urgent}。
+   新 alert 一律以 canonical 建構，避免新資料帶 legacy normal/attention（與 CR-0051 同向）。
+
+### 後端
+不改動。已驗證 processCareAlert persist-always（server.js:430-460）、
+normalizeRiskLevel 已映射 attention→medium / normal→low（careAlertStoreService.js:74,85）、
+Telegram 僅 high/urgent。task §7 四個「需改後端」條件皆不成立。
+
+### UI / 監控感
+無新風險。長者端 care_alert_screen.dart（route careAlerts）不顯示 riskLevel/label/JSON，
+採「今日關心紀錄」柔和框架；high/urgent 既有就會本機 addAlert，medium 僅多一筆同類柔和紀錄，
+不暴露分級、不產生監控感。frontend-ux-agent 須確保此畫面持續不顯示 raw risk level。
+
+### 批次
+單批可行（voice_agent_controller.dart gate + 建構 + care_alert_hook_test 參數化）。
+
+### 測試指示
+care_alert_hook_test.dart 需參數化 fake engine 的 riskLevel：
+- 原 needsHumanSupport=true/urgent case → 保留（urgent 仍建 alert）。
+- 原「needsHumanSupport=false 不建 alert」case → 改用 riskLevel='low'（或 'normal'）
+  驗證不建 alert；不要再用 needsHumanSupport 控制 persist。
+- 新增 riskLevel='medium' → 建立 1 筆 alert（persist 對齊）的 case。
+- 確認 medium 不依賴 needsHumanSupport（needsHumanSupport=false 仍 persist）。
+
+### 邊界警告（執行 agent 須遵守）
+1. canonical 是強制（裁決 #7）：gate 與建構都要 canonical，raw 比對會漏接 legacy attention。
+2. 不要在 Flutter 端複製通知決策（不新增 shouldNotifyCaregiver）；medium 仍送 /notify，由後端擋 Telegram。
+3. needsHumanSupport 不改語意、不刪；本 CR 只是讓它不再當 persist gate。
+4. source 維持 'companion_analysis'（後端 cooldown key = source::riskLevel）。
+5. fire-and-forget 不變：notify 失敗（401/403/網路）不得阻斷 Realtime、不回滾本機 addAlert。
+6. _lastAlertedTurnId 去重邏輯（872-873）保留。

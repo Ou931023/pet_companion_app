@@ -45,8 +45,10 @@ import 'package:pet_companion_app/services/web_search_service.dart';
 
 // Care Alert companion-analysis hook 測試。
 //
-// 驗證 VoiceAgentController 在 companion 分析回傳 needsHumanSupport 時，
-// 以旁路方式建立 CareAlert，且同一輪（同一 turnId）不重複建立。
+// 驗證 VoiceAgentController 以旁路方式建立 CareAlert，且同一輪（同一 turnId）不重複建立。
+// CR-0052：persist gate 改以 canonical riskLevel 判定（medium/high/urgent 都建立紀錄），
+// 與打字聊天對齊；low/normal 不建立。needsHumanSupport 不再作為 persist gate，
+// 僅代表 high/urgent 的人為關懷語意，故 medium（needsHumanSupport=false）仍會持久化。
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -83,13 +85,39 @@ void main() {
     harness.dispose();
   });
 
-  test('companion analysis without needsHumanSupport creates no care alert',
+  test('high risk persists（CR-0052：high 仍建立紀錄）', () async {
+    final careAlertController = CareAlertController(CareAlertStorageService());
+    await careAlertController.loadAlerts();
+    final harness = await _CareAlertHookHarness.create(
+      companionEngineService: _FakeCompanionEngineService(
+        needsHumanSupport: true,
+        riskLevel: 'high',
+      ),
+      careAlertController: careAlertController,
+    );
+
+    await harness.controller.startRealtimeConversation();
+    harness.realtimeService.handleDataChannelEventForTest('''
+{"type":"conversation.item.input_audio_transcription.completed","transcript":"我這幾天都很不舒服"}
+''');
+    await pumpEventQueue();
+    await pumpEventQueue();
+
+    expect(careAlertController.alerts.length, 1);
+    expect(careAlertController.alerts.first.riskLevel, CareAlertRiskLevel.high);
+
+    harness.dispose();
+  });
+
+  test('low risk creates no care alert（CR-0052：persist gate 以 riskLevel 判定）',
       () async {
     final careAlertController = CareAlertController(CareAlertStorageService());
     await careAlertController.loadAlerts();
     final harness = await _CareAlertHookHarness.create(
-      companionEngineService:
-          _FakeCompanionEngineService(needsHumanSupport: false),
+      companionEngineService: _FakeCompanionEngineService(
+        needsHumanSupport: false,
+        riskLevel: 'low',
+      ),
       careAlertController: careAlertController,
     );
 
@@ -101,6 +129,86 @@ void main() {
     await pumpEventQueue();
 
     expect(careAlertController.alerts, isEmpty);
+
+    harness.dispose();
+  });
+
+  test(
+      'legacy normal risk creates no care alert（canonical: normal→low，gate 擋下）',
+      () async {
+    final careAlertController = CareAlertController(CareAlertStorageService());
+    await careAlertController.loadAlerts();
+    final harness = await _CareAlertHookHarness.create(
+      companionEngineService: _FakeCompanionEngineService(
+        needsHumanSupport: false,
+        riskLevel: 'normal',
+      ),
+      careAlertController: careAlertController,
+    );
+
+    await harness.controller.startRealtimeConversation();
+    harness.realtimeService.handleDataChannelEventForTest('''
+{"type":"conversation.item.input_audio_transcription.completed","transcript":"還可以啦"}
+''');
+    await pumpEventQueue();
+    await pumpEventQueue();
+
+    expect(careAlertController.alerts, isEmpty);
+
+    harness.dispose();
+  });
+
+  test(
+      'medium risk persists even when needsHumanSupport is false（CR-0052 對齊打字聊天）',
+      () async {
+    final careAlertController = CareAlertController(CareAlertStorageService());
+    await careAlertController.loadAlerts();
+    final harness = await _CareAlertHookHarness.create(
+      companionEngineService: _FakeCompanionEngineService(
+        needsHumanSupport: false,
+        riskLevel: 'medium',
+      ),
+      careAlertController: careAlertController,
+    );
+
+    await harness.controller.startRealtimeConversation();
+    harness.realtimeService.handleDataChannelEventForTest('''
+{"type":"conversation.item.input_audio_transcription.completed","transcript":"最近都睡不太好，有點孤單"}
+''');
+    await pumpEventQueue();
+    await pumpEventQueue();
+
+    expect(careAlertController.alerts.length, 1);
+    final alert = careAlertController.alerts.first;
+    expect(alert.riskLevel, CareAlertRiskLevel.medium);
+    expect(alert.source, 'companion_analysis');
+
+    harness.dispose();
+  });
+
+  test(
+      'legacy attention risk persists as medium（canonical: attention→medium）',
+      () async {
+    final careAlertController = CareAlertController(CareAlertStorageService());
+    await careAlertController.loadAlerts();
+    final harness = await _CareAlertHookHarness.create(
+      companionEngineService: _FakeCompanionEngineService(
+        needsHumanSupport: false,
+        riskLevel: 'attention',
+      ),
+      careAlertController: careAlertController,
+    );
+
+    await harness.controller.startRealtimeConversation();
+    harness.realtimeService.handleDataChannelEventForTest('''
+{"type":"conversation.item.input_audio_transcription.completed","transcript":"今仔日心情無好"}
+''');
+    await pumpEventQueue();
+    await pumpEventQueue();
+
+    expect(careAlertController.alerts.length, 1);
+    // canonical 把 legacy attention 映射為 medium，新 alert 不帶 legacy 值。
+    expect(careAlertController.alerts.first.riskLevel, CareAlertRiskLevel.medium);
 
     harness.dispose();
   });
@@ -201,11 +309,13 @@ RealtimeHealthStatus _healthyBackend() {
 class _FakeCompanionEngineService extends CompanionEngineService {
   _FakeCompanionEngineService({
     required this.needsHumanSupport,
+    this.riskLevel = 'urgent',
     this.careAlertSummary = '',
     this.implicitMeaning = '',
   }) : super();
 
   final bool needsHumanSupport;
+  final String riskLevel;
   final String careAlertSummary;
   final String implicitMeaning;
 
@@ -231,7 +341,7 @@ class _FakeCompanionEngineService extends CompanionEngineService {
       'implicitMeaning': implicitMeaning,
       'careAlertSummary': careAlertSummary,
       'safety': {
-        'riskLevel': 'urgent',
+        'riskLevel': riskLevel,
         'needsHumanSupport': needsHumanSupport,
       },
     });

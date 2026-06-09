@@ -2,7 +2,7 @@
 
 本文件說明 `POST /api/companion/chat`（長者打字聊天）如何進入情緒/風險分析、何時建立 Care Alert、通知規則，以及與語音路徑的一致性與差異。
 
-最後更新：CR-0051。
+最後更新：CR-0052（語音 persist gate 已對齊；語音細節見 `docs/VOICE_CARE_ALERT_FLOW.md`）。
 
 ---
 
@@ -70,7 +70,8 @@
 ## 6. 與語音路徑的差異與一致性
 
 - **一致**：分類腦（`analyzeCompanionTurn`/`safety_guard`）、四級代碼、persist+notify 管線、cooldown 機制完全共用。
-- **差異（已知，CR-0051 接受）**：語音前端 `voice_agent_controller.dart:871` 以 `needsHumanSupport`（僅 high/urgent）把整個 `/notify` 呼叫擋住，故語音目前只持久化 high/urgent；打字聊天則持久化 medium+。對齊語音（讓語音也持久化 medium+，通知仍 high/urgent）列為 **follow-up CR-0052**（屬 realtime-voice/frontend，需另案 review）。
+- **persist 門檻一致（CR-0052 已對齊）**：語音前端 `voice_agent_controller.dart` 的 persist gate 已由 `needsHumanSupport`（僅 high/urgent）改為 canonical-riskLevel-based `shouldPersistCareAlert`（`{medium, high, urgent}`），與打字聊天 send predicate 一致 → 語音與打字現在都持久化 medium+。Telegram 仍只 high/urgent（後端 `TELEGRAM_NOTIFY_LEVELS` 權威決定，前端不複製）。詳見 `docs/VOICE_CARE_ALERT_FLOW.md`。
+- **僅存差異（設計如此）**：alert `source` 不同（語音 `companion_analysis` / 打字 `companion_chat`）→ 獨立 cooldown 來源；`needsHumanSupport` 仍是語音端可讀的「是否需人為關懷」語意旗標（high/urgent），但**不再**作為 persist gate。
 
 ---
 

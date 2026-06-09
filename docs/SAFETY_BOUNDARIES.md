@@ -43,7 +43,9 @@ Care Alert 與健康回覆的定位是**照護提醒，不是醫療診斷**。
 
 `POST /api/companion/chat` 現在於回覆成功後做純函式風險側錄（`analyzeCompanionTurn`，與語音共用分類腦），當 `riskLevel ∈ {medium, high, urgent}` 即經共用 `processCareAlert` 建立 Care Alert（`source="companion_chat"`），high/urgent 依既有規則推 Telegram。`low`/中性句不建立。需住民 idToken（`requireResidentCaller`，fail-closed 身分 / fail-open alert）。完整流程見 `docs/TYPED_CHAT_CARE_ALERT_FLOW.md`。
 
-> 殘留（CR-0052 follow-up，範圍外）：語音前端 `voice_agent_controller.dart:871` 仍以 `needsHumanSupport` 只在 high/urgent 才送 `/notify`，故語音目前只持久化 high/urgent；打字已持久化 medium+。對齊語音為後續 CR。
+### 語音的 Care Alert（CR-0052 已對齊）
+
+語音前端 `voice_agent_controller.dart` 的 persist gate 已由 `needsHumanSupport`（僅 high/urgent）改為 canonical-riskLevel-based `shouldPersistCareAlert`（`{medium, high, urgent}`），與打字聊天一致 → 語音與打字現在都持久化 medium+。Telegram 仍只 high/urgent（後端 `TELEGRAM_NOTIFY_LEVELS` 權威，前端不複製）。medium 語音 persist 但不推播（不洗版）。`needsHumanSupport` 保留為「是否需人為關懷」語意旗標（high/urgent），不再作為 persist gate。完整流程見 `docs/VOICE_CARE_ALERT_FLOW.md`。
 
 ---
 

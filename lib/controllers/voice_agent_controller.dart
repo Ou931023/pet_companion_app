@@ -868,7 +868,18 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   ) {
     final controller = careAlertController;
     if (controller == null) return;
-    if (!result.safety.needsHumanSupport) return;
+    // CR-0052：persist gate 改以 canonical riskLevel 判定，與打字聊天
+    // /api/companion/chat 對齊——medium / high / urgent 都建立 Care Alert 紀錄，
+    // 讓語音與打字的照護端紀錄一致。canonical 會把 legacy normal→low、
+    // attention→medium，避免漏接 legacy 值（裁決 CR-0052 #7）。
+    // needsHumanSupport 仍只代表 high/urgent（是否需人為關懷），不再作為 persist gate；
+    // Telegram 推播門檻（high/urgent）由後端權威決定，Flutter 不複製此決策。
+    final riskLevel =
+        CareAlertRiskLevel.fromJson(result.safety.riskLevel).canonical;
+    final shouldPersistCareAlert = riskLevel == CareAlertRiskLevel.medium ||
+        riskLevel == CareAlertRiskLevel.high ||
+        riskLevel == CareAlertRiskLevel.urgent;
+    if (!shouldPersistCareAlert) return;
     if (turnId.isEmpty || turnId == _lastAlertedTurnId) return;
     _lastAlertedTurnId = turnId;
     // triggerSummary 來源：優先用後端 companion 產生的 careAlertSummary（白話、非診斷），
@@ -876,10 +887,11 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     final careSummary = result.careAlertSummary.trim();
     final summary =
         careSummary.isNotEmpty ? careSummary : result.implicitMeaning.trim();
+    // 以 canonical riskLevel 建構，新 alert 不帶 legacy normal/attention（與 CR-0051 同向）。
     final alert = CareAlert(
       id: 'care_alert_$turnId',
       createdAt: DateTime.now(),
-      riskLevel: CareAlertRiskLevel.fromJson(result.safety.riskLevel),
+      riskLevel: riskLevel,
       category: CareAlertCategory.other,
       triggerSummary:
           summary.isEmpty ? '對話中偵測到需要關心的狀況' : summary,
