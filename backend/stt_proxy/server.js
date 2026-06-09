@@ -164,6 +164,7 @@ const taigiAsrUpload = multer({
 });
 const host = process.env.HOST || "127.0.0.1";
 // Configure CORS for production caregiver web.
+// Manual middleware is used here to avoid stale localhost fallback behavior.
 const allowedOrigins = (
   process.env.CORS_ALLOWED_ORIGINS ||
   process.env.ALLOWED_ORIGINS ||
@@ -173,21 +174,27 @@ const allowedOrigins = (
   .map((origin) => origin.trim())
   .filter(Boolean);
 
-app.use(cors({
-  origin: function(origin, callback) {
-    if (!origin) {
-      return callback(null, true);
-    }
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
 
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+  }
 
-    return callback(new Error(`CORS not allowed: ${origin}`));
-  },
-  credentials: true,
-  methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE"],
-}));
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, X-Admin-Token, X-Requested-With"
+  );
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+
+  return next();
+});
 app.use(express.json());
 
 // express-rate-limit (production-ready; respects env for max requests)
