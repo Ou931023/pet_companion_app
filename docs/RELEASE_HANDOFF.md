@@ -10,7 +10,7 @@
 
 ## 1. 一句話現況
 
-核心功能（語音陪伴 / 打字陪伴 / 長期記憶 / 情緒風險分析 / Care Alert 四級 / Telegram 通知 / 授權鏈 / caregiver_web / 隱私同意 / production 安全閘門）的**程式面已 production-hardened 並有測試覆蓋**（backend 495、flutter 541 綠）。**尚未上架**，因剩餘 blocker 為 owner-gated：HTTPS 後端、真憑證、實機 smoke、商店帳號 / 簽章、Bundle ID / 品牌 / icon / 法律 URL。
+核心功能（語音陪伴 / 打字陪伴 / 長期記憶 / 情緒風險分析 / Care Alert 四級 / Telegram 通知 / 授權鏈 / caregiver_web / 隱私同意 / production 安全閘門）的**程式面已 production-hardened 並有測試覆蓋**（backend 495、flutter 541 綠）。**尚未上架**，因剩餘 blocker 為 owner-gated：HTTPS 後端、真憑證、實機 smoke、商店帳號 / 簽章、icon / 法律 URL。（**App identity 已於 CR-0061 拍板定值**：Bundle ID/applicationId `tw.edu.ncyu.im.aicompanion`、品牌 `AI Companion`/`AI陪伴`。）
 
 ---
 
@@ -52,10 +52,10 @@
 
 | 項目 | 現況 | 不可逆 | 相關 CR |
 |---|---|---|---|
-| 正式 App 名稱（中英品牌） | interim「Pet Companion App」 | 否（但需一致） | CR-0058 |
-| iOS Bundle ID | `com.Andrew.petCompanionApp`（個人名） | **是（上架後）** | CR-0058 |
-| Android applicationId | `com.Andrew.petCompanionApp` | **是（上架後）** | CR-0058 |
-| 開發者 / 發行者名稱 | ⛔ 未定 | — | CR-0058 |
+| 正式 App 名稱（中英品牌） | ✅ `AI Companion` / 中文 `AI陪伴`（CR-0061 定值，已接線 plist/label） | 否（已一致） | CR-0061 |
+| iOS Bundle ID | ✅ `tw.edu.ncyu.im.aicompanion`（CR-0061 定值，已寫入 pbxproj） | **是（上架後）** | CR-0061 |
+| Android applicationId | ✅ `tw.edu.ncyu.im.aicompanion`（CR-0061 定值，已寫入 build.gradle.kts） | **是（上架後）** | CR-0061 |
+| 開發者 / 發行者名稱 | ✅ 國立嘉義大學資訊管理學系專題第四組（CR-0061 定值） | — | CR-0061 |
 | Privacy Policy URL | `legal_config.dart` `TODO_*`（有 isPlaceholder 防護） | — | CR-0058 |
 | Terms URL / Support URL / Email | 同上 `TODO_*` | — | CR-0058 |
 | 內容分級問卷 | ⛔ 未填 | — | CR-0058 |
@@ -66,7 +66,7 @@
 
 - 正式 HTTPS 後端網域 + 有效 TLS 憑證。
 - 正式 PostgreSQL（pgvector）+ 跑 migration 001–014。
-- Firebase 正式專案（iOS/Android App + `GoogleService-Info.plist` / `google-services.json`，**不進 git**）。
+- Firebase 正式專案：✅ iOS/Android App 已以正式 Bundle ID `tw.edu.ncyu.im.aicompanion` 註冊，設定檔已落地（`GoogleService-Info.plist` BUNDLE_ID 對齊；`google-services.json` 含對應 client，**兩檔 gitignored 不進 git**，CR-0062）。🟡 待真機 Firebase Auth smoke 驗證。（提醒：Firebase 專案內仍留舊 `com.Andrew.*` Android app，功能無害，建議 owner 之後於 console 移除以清理。）
 - OpenAI production key（Realtime/STT/chat/embedding）。
 - Telegram production bot token + 授權 care chat 對應（**非**測試 chat）。
 - `CORS_ALLOWED_ORIGINS` 設為 caregiver_web 正式 origin（CR-0054 後 middleware 已正確讀此值）。
@@ -110,11 +110,11 @@
 | 7 | Marketplace | ✅ production 隱藏 + 501（CR-0056/57） | （post-release 才開放） | — | 否 | MARKETPLACE_PRODUCTION_DECISION.md |
 | 8 | DailyCareTask | ✅ production 隱藏 + 501 | （post-release） | — | 否 | DAILY_CARE_TASK_PRODUCTION_DECISION.md |
 | 9 | Transport security | 🔁 patch-ready 未落地 | HTTPS 後端 + 裝置 | 套用 patch（CR-0055 重啟） | **是** | TRANSPORT_SECURITY.md |
-| 10 | Firebase | ⛔ 待 owner 正式專案 | 正式專案 + 設定檔 | — | **是** | ENVIRONMENT_SETUP §3 |
+| 10 | Firebase | 🟡 App 已註冊正式 Bundle ID + 設定檔落地（CR-0062） | 真機 Auth smoke 驗證 | — | **是（待真機驗證）** | ENVIRONMENT_SETUP §3 |
 | 11 | PostgreSQL | ⛔ 待 owner 正式 DB | DB + migration 跑 | — | **是** | ENVIRONMENT_SETUP §3 |
 | 12 | Telegram | ⛔ 待 owner 正式 bot/chat | token + chat 對應 | — | **是**（high/urgent 通知核心） | CLAUDE.md §8 |
-| 13 | iOS app identity | 🟡 interim / Bundle ID 個人名 | 正式 Bundle ID + 品牌 | — | **是** | APP_STORE_METADATA §7 |
-| 14 | Android app identity | 🟡 label 對齊 / applicationId 個人名 | 正式 applicationId + 品牌 | namespace 清理（低優先） | **是** | APP_STORE_METADATA §7 |
+| 13 | iOS app identity | ✅ Bundle ID `tw.edu.ncyu.im.aicompanion` + 顯示名 `AI Companion`（CR-0061） | — | — | 否 | APP_STORE_METADATA §7 |
+| 14 | Android app identity | ✅ applicationId `tw.edu.ncyu.im.aicompanion` + label `AI Companion`（CR-0061，namespace 依 owner 維持） | — | — | 否 | APP_STORE_METADATA §7 |
 | 15 | Legal URLs | ⛔ TODO_*（有防護） | 真 URL + email | 填入後接線（CR-0058 completion） | **是** | legal_config.dart |
 | 16 | Store metadata | 🟡 草稿完整、待真值 | 真 URL / 名稱 / 素材 | 填入後定稿 | **是** | APP_STORE_METADATA.md |
 | 17 | Release signing | ⛔ release 仍用 debug key | keystore + 帳號 | signingConfig 接線（owner 提供 key 後） | **是** | RELEASE_SIGNING.md |
@@ -149,20 +149,23 @@
   - Why：上架必填 + 同意流程入口。
   - Put in：`legal_config.dart`（取代 4× `TODO_*`）+ metadata
   - Related：CR-0058 — Blocking：release blocker
-- [ ] **拍板正式 Bundle ID / applicationId（建議機構反向網域）**
+- [x] **拍板正式 Bundle ID / applicationId（建議機構反向網域）** — ✅ CR-0061：`tw.edu.ncyu.im.aicompanion`（嘉義大學反向網域）
   - Why：上架後**不可逆**；綁 Apple 憑證 / Firebase App / Sign in with Apple。
-  - Put in：`ios/Runner.xcodeproj`（PRODUCT_BUNDLE_IDENTIFIER）+ `android/app/build.gradle.kts`（applicationId）+ Firebase 設定檔
-  - Related：CR-0058 — Blocking：release blocker（不可逆）
-- [ ] **拍板最終品牌名（中英）**
-  - Put in：iOS CFBundleDisplayName + Android `android:label` + metadata §1/§2/§3
-  - Related：CR-0058 — Blocking：release blocker
+  - Done in：`ios/Runner.xcodeproj/project.pbxproj`（app + RunnerTests）+ `android/app/build.gradle.kts`（applicationId）。**待 owner**：Firebase 設定檔須以此 ID 建 App。
+  - Related：CR-0061
+- [x] **拍板最終品牌名（中英）** — ✅ CR-0061：`AI Companion` / `AI陪伴`；發行者「國立嘉義大學資訊管理學系專題第四組」
+  - Done in：iOS CFBundleDisplayName + Android `android:label` + metadata §1/§2/§3/§7
+  - Related：CR-0061
 - [ ] **部署正式 HTTPS 後端 + TLS + 設 `CORS_ALLOWED_ORIGINS`**
   - Why：transport 收斂 + smoke + caregiver_web 的前置。
+  - **How：見 `docs/BACKEND_DEPLOYMENT_GUIDE.md`（CR-0063，Render / Railway 步驟、env 清單、`db:migrate`、`/health`、`HOST=0.0.0.0` / `PGVECTOR_ENABLED=true` / SSL 三大雷區）。**
   - Put in：部署環境 / secret manager（**不進 git**）
-  - Related：CR-0053 / CR-0055 — Blocking：release blocker（infra）
-- [ ] **備正式 Firebase / PostgreSQL / OpenAI / Telegram 憑證**
-  - Put in：部署 env（**不進 git**），設定檔 `GoogleService-Info.plist` / `google-services.json` 不進 git
-  - Related：CR-0053 — Blocking：release blocker（infra）
+  - Related：CR-0063 / CR-0053 / CR-0055 — Blocking：release blocker（infra）
+- [~] **備正式 Firebase / PostgreSQL / OpenAI / Telegram 憑證**
+  - Firebase：✅ iOS/Android App 已以 `tw.edu.ncyu.im.aicompanion` 註冊，`GoogleService-Info.plist` / `google-services.json` 已落地（gitignored，CR-0062）；待真機 Auth smoke。
+  - ⛔ 仍待 owner：PostgreSQL（pgvector）、OpenAI production key、Telegram bot token + 授權 chat。
+  - Put in：部署 env（**不進 git**），Firebase 設定檔不進 git
+  - Related：CR-0062 / CR-0053 — Blocking：release blocker（infra，部分完成）
 - [ ] **產生 Android 正式 keystore + 啟用 Play App Signing；換掉 release 的 debug key**
   - Put in：本機 / CI secret（`key.properties` 不進 git）；`build.gradle.kts` signingConfig 接線
   - Related：CR-0058 / `RELEASE_SIGNING.md` — Blocking：release blocker

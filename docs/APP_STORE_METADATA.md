@@ -11,8 +11,8 @@
 
 | 欄位 | 草稿值 | 備註 |
 |---|---|---|
-| App 正式名稱 | ⛔ 待定（負責人拍板） | 草稿中文「陪伴寵物」、英文 "AI Pet Companion"；需與 iOS CFBundleDisplayName / Android label 一致 |
-| 開發者 / 發行者名稱 | ⛔ 待定 | 機構 / 團隊正式名稱 |
+| App 正式名稱 | ✅ 中文「AI陪伴」/ 英文 "AI Companion"（CR-0061 owner 拍板） | 與 iOS CFBundleDisplayName（`AI Companion`）/ Android label（`AI Companion`）一致 |
+| 開發者 / 發行者名稱 | ✅ 國立嘉義大學資訊管理學系專題第四組（CR-0061） | 機構 / 團隊正式名稱（商店後台 / 著作權顯示用） |
 | 主分類 | Health & Fitness 或 Medical（建議 Health & Fitness，避免醫療宣稱） | Care Alert 為「照護提醒」非醫療診斷 |
 | 次分類 | Lifestyle | |
 | 年齡分級 | 建議 4+（iOS）/ Everyone（Google）；最終依問卷 | 無暴力/成人內容；含使用者生成語音對話 |
@@ -25,7 +25,7 @@
 
 ## 2. App Store（iOS）
 
-- **App 名稱（≤30 字元）**：⛔ 待定（建議「陪伴寵物 - AI 語音陪伴」類，需符長度）
+- **App 名稱（≤30 字元）**：✅「AI陪伴」（英文顯示名 `AI Companion`，CR-0061；副標題可補充定位）
 - **副標題 Subtitle（≤30 字元）**：草稿「用說的，就有人陪你聊天」
 - **簡短描述 / Promotional text**：草稿「對著手機裡的陪伴寵物說說話，牠會聽你說、記得你，也讓家人與照護人員適時關心你。」
 - **完整描述 Full description**：草稿——
@@ -48,7 +48,7 @@
 
 ## 3. Google Play（Android）
 
-- **App 名稱（≤30 字元）**：⛔ 待定（與 iOS 一致）
+- **App 名稱（≤30 字元）**：✅「AI陪伴」（英文 `AI Companion`，與 iOS 一致，CR-0061）
 - **簡短描述（≤80 字元）**：草稿「對 AI 寵物說說話，牠陪你聊、記得你，也讓家人適時關心。」
 - **完整描述（≤4000 字元）**：同 §2 完整描述（可加長）。
 - **分類**：Health & Fitness
@@ -90,16 +90,18 @@ App 名稱、描述、截圖、審查備註**不得宣稱**：已診斷 / 確診
 
 ---
 
-## 7. App Identity 現況（CR-0058 盤點）
+## 7. App Identity 現況（CR-0058 盤點 → CR-0061 owner 拍板定值）
 
 | 項目 | 現況 | 狀態 |
 |---|---|---|
-| iOS Bundle ID | `com.Andrew.petCompanionApp` | ⛔ **owner blocker**：個人名、非註冊反向網域；上架後**不可改**（綁 Apple 憑證 / Firebase iOS App / Sign in with Apple），需 owner 拍板正式 ID 後才動。 |
-| Android applicationId | `com.Andrew.petCompanionApp`（對齊 iOS） | ⛔ **owner blocker**：同上，上架後不可改。 |
-| Android namespace | `com.example.pet_companion_app` | 🔵 內部 R/BuildConfig 套件名（**非**發布 ID、不影響送審）；Flutter 模板殘留。清理需同步移動 `MainActivity` 套件，低優先、需驗證，本 CR 不動。 |
-| iOS CFBundleDisplayName | `Pet Companion App` | 🟡 interim；最終品牌名待 owner（§1 App 正式名稱 blocker）。 |
-| Android android:label | `Pet Companion App`（**CR-0058 由 `pet_companion_app` 對齊 iOS interim**） | 🟡 interim；最終品牌名待 owner。 |
+| iOS Bundle ID | `tw.edu.ncyu.im.aicompanion` | ✅ **CR-0061 定值**（國立嘉義大學反向網域）；已寫入 `ios/Runner.xcodeproj/project.pbxproj`（app target + `<id>.RunnerTests`）。上架後**不可改**。 |
+| Android applicationId | `tw.edu.ncyu.im.aicompanion`（對齊 iOS） | ✅ **CR-0061 定值**；已寫入 `android/app/build.gradle.kts`。上架後不可改。 |
+| Android namespace | `com.example.pet_companion_app` | 🔵 內部 R/BuildConfig 套件名（**非**發布 ID、不影響送審）；Flutter 模板殘留。owner 明確要求**維持不動**（避免移動 `MainActivity` 套件），與 applicationId 互相獨立。 |
+| iOS CFBundleDisplayName | `AI Companion` | ✅ **CR-0061 定值**；已寫入 `ios/Runner/Info.plist`。 |
+| Android android:label | `AI Companion`（CR-0061 由 interim `Pet Companion App` 定值） | ✅ **CR-0061 定值**；已寫入 `AndroidManifest.xml`。 |
+| App 中文名 | `AI陪伴` | ✅ **CR-0061 定值**（store metadata §1/§2/§3 用；非寫入 build 設定）。 |
+| 開發者 / 發行者 | 國立嘉義大學資訊管理學系專題第四組 | ✅ **CR-0061 定值**（商店後台 / 著作權顯示）。 |
 | pubspec name | `pet_companion_app` | 🔵 套件名（非 store 名稱、改動會破壞 import），維持。 |
 | version | `1.0.0+1` | ✅ 首版可用。 |
 
-> 最終品牌名（中英）一旦 owner 拍板，需同步更新：iOS CFBundleDisplayName、Android android:label、本檔 §1/§2/§3 App 名稱。Bundle ID / applicationId 為**不可逆**，務必 owner 確認後再動（建議用機構註冊網域反轉，如 `com.<org>.petcompanion`）。
+> App identity（Bundle ID / applicationId / 顯示名 / 品牌 / 發行者）已於 **CR-0061 由 owner 拍板定值**。Bundle ID / applicationId 為**不可逆**，後續 Apple 憑證、Firebase iOS/Android App、Sign in with Apple 設定皆須對應 `tw.edu.ncyu.im.aicompanion`。剩餘 owner blocker 移至法律 URL（§1）、icon / screenshots、簽章與商店後台。

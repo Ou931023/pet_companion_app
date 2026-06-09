@@ -37,8 +37,8 @@
 | 麥克風權限文案 `NSMicrophoneUsageDescription` | ✅ | 長者友善、無工程字眼 |
 | 相機 / 相簿 / 語音辨識 / 區網權限文案 | ✅ | 皆清楚、無 demo/test/mock |
 | ATS（App Transport Security） | ⛔🔁 **BLOCKER** | 目前 `NSAllowsArbitraryLoads=true`（全域允許明文）。**CR-0054** 已備妥就緒 patch（`NSAllowsArbitraryLoads=false` + `NSAllowsLocalNetworking=true`）於 `docs/TRANSPORT_SECURITY.md §3.2`，**需 HTTPS 後端就緒 + 實體裝置 smoke 後另開 CR 套用**，否則回退 |
-| Display name（CFBundleDisplayName） | ⛔ **BLOCKER** | 目前 "Pet Companion App"，正式品牌名待負責人定案（見 §5 #1） |
-| Bundle ID | ⛔ **BLOCKER** | 目前 `com.Andrew.petCompanionApp`（個人名、非註冊網域）。正式化會綁定 Apple 憑證 / Firebase iOS App / Sign in with Apple，需負責人拍板（見 §5 #2） |
+| Display name（CFBundleDisplayName） | ✅ （CR-0061） | `AI Companion`（owner 拍板定值），已寫入 `Info.plist` |
+| Bundle ID | ✅ （CR-0061） | `tw.edu.ncyu.im.aicompanion`（嘉義大學反向網域，owner 拍板）。已寫入 pbxproj（app + RunnerTests）。後續 Apple 憑證 / Firebase iOS App / Sign in with Apple 須對應此 ID（上架後不可改） |
 | App icon（全尺寸） | ⛔ **BLOCKER** | 需正式 icon 素材 |
 | Launch screen | 🟡 | 需確認正式化、無 debug banner |
 | Release build（`flutter build ios --release --no-codesign`） | 🔁 | 見 §7，需在 macOS + CocoaPods 環境嘗試 |
@@ -51,8 +51,8 @@
 |---|---|---|
 | 權限（INTERNET / RECORD_AUDIO / MODIFY_AUDIO_SETTINGS / POST_NOTIFICATIONS / ACCESS_NETWORK_STATE / READ_MEDIA_IMAGES / READ_EXTERNAL_STORAGE≤32） | ✅ | 與實際功能相符；POST_NOTIFICATIONS 供 Android 13+ |
 | `usesCleartextTraffic` / network security config | ⛔🔁 **BLOCKER** | 目前 `usesCleartextTraffic="true"`。**CR-0054** 已備妥就緒 patch（release `network_security_config` 禁明文 + debug override 留 LAN）於 `docs/TRANSPORT_SECURITY.md §3.1`，需 HTTPS 後端 + 裝置 smoke 後另開 CR 套用 |
-| `applicationId` | ⛔ **BLOCKER** | 目前 `com.Andrew.petCompanionApp`（個人名）。**正式上架後不可再改**（破壞更新路徑），需負責人拍板（見 §5 #2） |
-| `android:label` | 🟡 interim（**CR-0058**） | 已由 dev 名 `pet_companion_app` 對齊 iOS interim `Pet Companion App`；最終品牌名仍待 owner（與 iOS CFBundleDisplayName 一致） |
+| `applicationId` | ✅ （CR-0061） | `tw.edu.ncyu.im.aicompanion`（對齊 iOS，owner 拍板）。已寫入 `build.gradle.kts`。**上架後不可再改**。namespace 維持 `com.example.pet_companion_app`（owner 指定不動，與 applicationId 獨立） |
+| `android:label` | ✅ （CR-0061） | `AI Companion`（owner 拍板定值，與 iOS CFBundleDisplayName 一致），已寫入 `AndroidManifest.xml` |
 | Adaptive icon / launcher icon | ⛔ **BLOCKER** | 需正式 icon 素材 |
 | Release signing config | ⛔ **BLOCKER** | 需正式 keystore（**禁止提交 keystore / signing key 進版控**） |
 | targetSdk | 🟡 | 用 flutter 預設，送審前確認符合 Play 當期最低 targetSdk |
@@ -71,12 +71,15 @@
 
 ## 5. Owner-decision blockers（必須由負責人決策 / 提供，禁止假完成）
 
-1. ⛔ **正式品牌 display name**（iOS CFBundleDisplayName + Android `android:label` + 商店 App 名稱一致）。
-2. ⛔ **App 識別碼正式化**：iOS Bundle ID + Android `applicationId`（**一旦上架不可更改**；會綁定 Apple/Google/Firebase 憑證與 Sign in with Apple 設定）。
+1. ✅ **正式品牌 display name**（CR-0061 已定值）：iOS CFBundleDisplayName = Android `android:label` = 商店 App 名稱 = `AI Companion`（中文 `AI陪伴`）。發行者：國立嘉義大學資訊管理學系專題第四組。
+2. ✅ **App 識別碼正式化**（CR-0061 已定值）：iOS Bundle ID = Android `applicationId` = `tw.edu.ncyu.im.aicompanion`（**一旦上架不可更改**；後續 Apple/Google/Firebase 憑證與 Sign in with Apple 設定須對應此 ID）。
 3. ⛔ **Hosted 法務/支援 URL + 客服信箱**：`privacyPolicyUrl` / `termsOfServiceUrl` / `supportUrl` / `contactEmail`（目前 `lib/config/legal_config.dart` 為 `TODO_*` 佔位；**禁止偽造已部署 URL**）。需法務校稿同意內文。
 4. ⛔ **視覺素材**：App icon（iOS 全尺寸 + Android adaptive/launcher）、launch screen、商店 screenshots、feature graphic。
 5. ⛔ **Release signing**：Android keystore、iOS 簽章憑證 / provisioning profile（**禁止提交進版控**）。
-6. ⛔ **Production 環境**：正式後端 HTTPS 網域、`CORS_ALLOWED_ORIGINS`、Firebase 正式專案（iOS/Android App + `GoogleService-Info.plist`/`google-services.json`，**不進版控**）、OpenAI / Telegram / PostgreSQL 正式憑證（走 env，**不寫死、不進版控**）。
+6. 🟡 **Production 環境**（部分完成）：
+   - Firebase：✅ iOS/Android App 已以正式 Bundle ID `tw.edu.ncyu.im.aicompanion` 註冊，`GoogleService-Info.plist`（BUNDLE_ID 對齊）/ `google-services.json`（含對應 client）已落地，**兩檔 gitignored 不進版控**（CR-0062）。🟡 待真機 Firebase Auth smoke。
+   - ⛔ 仍待 owner：正式後端 HTTPS 網域、`CORS_ALLOWED_ORIGINS`、OpenAI / Telegram / PostgreSQL 正式憑證（走 env，**不寫死、不進版控**）。
+   - 📘 部署步驟與 env 清單見 **`docs/BACKEND_DEPLOYMENT_GUIDE.md`**（CR-0063；Render / Railway、`npm run db:migrate`、`/health`）。
 
 ---
 

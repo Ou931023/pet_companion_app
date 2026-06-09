@@ -3320,3 +3320,125 @@ docs-only → 不需跑單元測試（runtime 未改）。既有 baseline 維持
 
 ### 裁決
 docs-only 交接地圖，無 🔒 / runtime 變更；併入主線。專案目前狀態可交接給組員 / 指導老師 / 後續開發者；下一步 owner action 與重啟 CR 已明確。
+
+---
+
+## CR-0061 — App Identity 定值接線（Bundle ID / applicationId / 品牌名 / 發行者，owner 拍板）
+
+### 模式
+Owner 拍板後的**不可逆 identity 接線**。對應 CR-0058 / RELEASE_HANDOFF §5 的「CR-0058 Owner completion」重啟點之 app identity 部分。owner 明確提供最終值，agent 僅照值接線，不發明、不擅改。
+
+### 動機 / 問題
+iOS Bundle ID / Android applicationId 先前為個人名 `com.Andrew.petCompanionApp`（CR-0058 列為不可逆 owner blocker）；品牌顯示名為 interim `Pet Companion App`；發行者未定。owner（國立嘉義大學資訊管理學系專題第四組）拍板正式值，需接線並收斂相關文件 blocker。
+
+### Owner 拍板值
+- iOS Bundle ID = Android applicationId = `tw.edu.ncyu.im.aicompanion`（嘉義大學反向網域，一致）。
+- App 顯示名（英）：`AI Companion`；App 名稱（中）：`AI陪伴`。
+- 開發者 / 發行者：國立嘉義大學資訊管理學系專題第四組。
+
+### 修改檔案（runtime / build 設定）
+- `ios/Runner.xcodeproj/project.pbxproj`：6× `PRODUCT_BUNDLE_IDENTIFIER` → app target 3× `tw.edu.ncyu.im.aicompanion`、RunnerTests 3× `tw.edu.ncyu.im.aicompanion.RunnerTests`（前綴替換，無殘留 `Andrew`）。
+- `ios/Runner/Info.plist`：`CFBundleDisplayName` → `AI Companion`（`CFBundleName=pet_companion_app` 內部名維持不動）。
+- `android/app/build.gradle.kts`：`applicationId` → `tw.edu.ncyu.im.aicompanion`，更新對齊註解。
+- `android/app/src/main/AndroidManifest.xml`：`android:label` → `AI Companion`。
+
+### owner 指定限制遵守
+- **namespace 維持 `com.example.pet_companion_app` 不動**（owner 要求；與 applicationId 互相獨立，`MainActivity.kt` 套件路徑不受影響、未動）。
+- iOS Bundle ID 與 Android applicationId 保持一致 ✅。
+- 未提交 signing key / keystore / secret / `.env`（release signingConfig 仍 debug 佔位，屬另一 owner blocker，本 CR 不碰）。
+- 未發明品牌、未捏造法律 URL（legal_config `TODO_*` 仍為待 owner 真值，屬 Step 7，未動）。
+
+### 修改檔案（docs）
+- `docs/APP_STORE_METADATA.md`：§1（App 正式名稱 / 發行者定值）、§2/§3（App 名稱 `AI陪伴`/`AI Companion`）、§7（identity 表 6 列改為 ✅ CR-0061 定值 + 註解）。
+- `docs/STORE_RELEASE_CHECKLIST.md`：iOS Display name / Bundle ID、Android applicationId / label 由 ⛔ BLOCKER → ✅（CR-0061）；§5 owner-decision blockers #1/#2 標記已定值。
+- `docs/RELEASE_HANDOFF.md`：§1 現況、§3.1 決策表 4 列、§4 matrix #13/#14（改為 ✅、blocker? = 否）、§6 checklist 兩項打勾。
+- 本檔（CR-0061 紀錄）。
+
+### 測試
+identity / 品牌為 native + build 設定變更，不影響 Dart 契約。親跑確認無回歸：
+- `flutter analyze` → **No issues found**。
+- `flutter test` → **541/541 pass**。
+- （回歸基線同步確認：backend `npm test` **495/495**、caregiver_web `node --test` **90/90**，於本批次起始時親跑為綠。）
+- 未跑 iOS/Android release build（需 owner 簽章 / 環境；Bundle ID 變更不需重 build 驗證契約，且簽章為另一 blocker）。
+
+### 殘留 / 下一步
+- Firebase 正式專案須以 `tw.edu.ncyu.im.aicompanion` 建立 iOS/Android App；Apple 憑證 / provisioning / Sign in with Apple 設定須對應此 Bundle ID（owner，infra）。
+- 剩餘 owner blocker 不變：HTTPS 後端 / 真憑證（Firebase/PG/OpenAI/Telegram）、法律 URL（legal_config）、icon / screenshots、release 簽章、實機 smoke（CR-0053/0055 Execute）、商店後台。
+
+### 裁決
+runtime 僅觸及 build identity 設定（非 🔒 server.js/Realtime/DB/Care Alert/deps 契約），owner 拍板、值由 owner 提供、限制全數遵守、測試綠無回歸；併入主線。剩餘為 owner infra / 素材 / 簽章 / 實機驗證。
+
+---
+
+## CR-0062 — Firebase 設定檔落地 + identity sanity check（owner 提供正式專案設定檔）
+
+### 模式
+Owner 提供之**正式 Firebase 設定檔落地 + 驗證**。對應 CR-0061 注意事項（Firebase 設定檔仍綁舊 Bundle ID）。owner 已於 Firebase Console 以正式 Bundle ID 新增 App 並下載設定檔；agent 僅將檔案搬入專案指定路徑並做 sanity check，**不改檔內任何值、不印 secret**。
+
+### 動機 / 問題
+CR-0061 將 Bundle ID/applicationId 改為 `tw.edu.ncyu.im.aicompanion`，但 `ios/Runner/GoogleService-Info.plist` / `android/app/google-services.json` 仍綁舊 `com.Andrew.petCompanionApp` → 真機 Firebase Auth 會不匹配。owner 於 Console 註冊新 App 後，需把新設定檔落地並驗證 identity 對齊與不進版控。
+
+### 動作
+- 將 owner 下載於 `~/Downloads/` 的兩個設定檔複製覆蓋至：
+  - `ios/Runner/GoogleService-Info.plist`
+  - `android/app/google-services.json`
+- 未編輯檔內任何欄位（未捏造、未改值）。
+
+### Sanity check 結果
+1. **identity 對齊**：
+   - iOS `GoogleService-Info.plist` → `BUNDLE_ID = tw.edu.ncyu.im.aicompanion` ✅。
+   - Android `google-services.json` → 含 `package_name = tw.edu.ncyu.im.aicompanion` 的 client ✅（Gradle google-services plugin 以 applicationId 比對選用）。
+   - 備註：`google-services.json` 另含兩個舊 `com.Andrew.petCompanionApp` client（Firebase 專案仍留舊 Android app）。功能無害（plugin 以 applicationId 比對），建議 owner 之後於 Console 移除舊 app 清理。
+2. **不進版控**：兩檔由 `.gitignore:44`（GoogleService-Info.plist）/ `.gitignore:45`（google-services.json）命中；`git ls-files` 未追蹤、`git status` 不顯示 ✅。
+3. **未印** API key / client id / project secret（僅抓 identity 行驗證）。
+4. **未修改 Firebase Console 以外的假值**（未動其它檔案值）。
+
+### 測試
+設定檔為 native runtime 資產，不影響 Dart 契約。親跑確認無回歸：
+- `flutter analyze` → **No issues found**。
+- `flutter test` → **541/541 pass**。
+- 未跑真機 Firebase Auth（需實體裝置 + 部署後端，屬 CR-0053 Execute 範圍）。
+
+### 殘留 / 下一步
+- 🟡 Firebase 真機 Auth smoke（idToken 簽發 / 驗證）待實體裝置 + 部署後端（CR-0053 Execute）。
+- owner 可於 Firebase Console 移除舊 `com.Andrew.*` Android app（清理，非阻擋）。
+- 其餘 infra blocker 不變：HTTPS 後端、PostgreSQL、OpenAI、Telegram、CORS origin。
+
+### 限制遵守
+未改設定檔內值、未印 secret、未提交設定檔（gitignored）、未碰 Realtime/Care Alert/Auth 程式契約、未發明假值。
+
+### 裁決
+僅落地 owner 提供之 gitignored runtime 設定檔 + 唯讀 sanity check，無 🔒 / 程式契約變更，測試綠無回歸；併入主線。Firebase identity 已對齊正式 Bundle ID，真機驗證待 CR-0053 Execute。
+
+---
+
+## CR-0063 — Production Backend Deployment Guide（Render / Railway，docs-only）
+
+### 模式
+**docs-only**。盤點 `backend/stt_proxy` 啟動與 env 契約後，新增一份 Render/Railway 部署指南；未改任何 runtime code / config（無 🔒）。對應 RELEASE_HANDOFF §6「部署正式 HTTPS 後端」owner action 的 How。
+
+### 動機 / 問題
+HTTPS 後端部署是 CR-0053/0055 Execute 與 caregiver_web 上線的前置 infra blocker，但先前只有 `ENVIRONMENT_SETUP §3` 的通用三環境說明，缺「具體 PaaS（Render/Railway）怎麼做 + 哪些 env + 怎麼跑 migration」的單一指南。
+
+### 盤點（程式真相，未改 code）
+- 啟動：`node server.js`（=`npm start`/`npm run dev`）；`server.js:23` 啟動即 `assertProductionEnvOrExit`。
+- `PORT = process.env.PORT || 3001`（`server.js:133`）；`HOST = process.env.HOST || "127.0.0.1"`（`server.js:165`）→ **PaaS 需 `HOST=0.0.0.0`**。
+- `GET /health`（`server.js:554`）回 `{status, hasOpenAiKey:<bool>, realtimeModel, time}`，**只回布林不回 key**。
+- production fail-fast 必檢（`config/env.js validateProductionEnv`）：`DATABASE_URL`、`OPENAI_API_KEY`、`CORS_ALLOWED_ORIGINS`（別名 `ALLOWED_ORIGINS`）、Firebase 服務帳戶（`GOOGLE_APPLICATION_CREDENTIALS` 或 `FIREBASE_PROJECT_ID`+`FIREBASE_CLIENT_EMAIL`+`FIREBASE_PRIVATE_KEY`）、`ADMIN_API_TOKEN`；條件：`TELEGRAM_CARE_CHAT_ID` 設了則 `TELEGRAM_BOT_TOKEN` 必填；禁 `ALLOW_JSON_FALLBACK/ALLOW_MOCK_SERVICES=true`、`REQUIRE_AUTH=false`。
+- **`PGVECTOR_ENABLED=true` 不在 fail-fast，但 runtime pool（`db/postgres.js:14`）沒它就回 null** → 文件標為「易漏雷區」。
+- `db/pool.js` / `db/postgres.js` 直接把 `DATABASE_URL` 給 `pg`，**無顯式 ssl** → 雲端 PG 需在連線字串加 `?sslmode=require`（自簽 `no-verify`），不需改 code。
+- `npm run db:migrate` = `node db/migrate.js`：`CREATE EXTENSION pgcrypto/vector` + 套用 `db/migrations/001…014`（14 檔）。
+- `package.json` 無 `engines` → 建議平台指定 Node 20+。
+
+### 產出
+- 新增 `docs/BACKEND_DEPLOYMENT_GUIDE.md`：TL;DR 三雷區、啟動行為盤點表、production env 清單（只列名稱、不含值）、Render 步驟、Railway 步驟、`db:migrate` 執行、`/health` 驗證、下游串接、安全紅線。
+- 更新 `docs/RELEASE_HANDOFF.md §6`（部署 item 加指南 How 指標）、`docs/STORE_RELEASE_CHECKLIST.md §5#6`（指向指南）、本檔。
+
+### 限制遵守
+未讀 `.env`、未印任何 secret / token / key 值（env 一律只列名稱）、未改 runtime code / config、未提交 secret、未碰 Realtime/Care Alert/Auth/DB schema 契約；env 名稱與 PORT/HOST/health/migration 行為皆對照實際程式確認。
+
+### 測試
+docs-only → 不需跑單元測試（runtime 未改）。既有 baseline 維持（backend 495 / flutter 541 / caregiver_web 90）。
+
+### 裁決
+docs-only 部署指南，無 🔒 / runtime 變更，內容與程式真相一致、未洩漏 secret；併入主線。實際部署 / 設值 / 跑 migration 為 owner action（infra blocker）。

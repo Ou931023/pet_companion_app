@@ -127,11 +127,11 @@
 
 ### 8.3 iOS / Android 上架身份正式化
 
-- [ ] iOS Bundle ID：現為 `com.Andrew.petCompanionApp` → 確認 / 換成正式 App ID
-- [ ] Android applicationId：現為 `com.Andrew.petCompanionApp`
-      （namespace 仍為 `com.example.pet_companion_app`）→ 正式化
-- [ ] App 顯示名稱：iOS `CFBundleDisplayName`、Android `android:label`
-      （現為 `pet_companion_app`）→ 換成正式中文 / 對外名稱
+- [x] iOS Bundle ID：✅ `tw.edu.ncyu.im.aicompanion`（CR-0061 owner 拍板）
+- [x] Android applicationId：✅ `tw.edu.ncyu.im.aicompanion`（CR-0061，對齊 iOS）
+      （namespace 維持 `com.example.pet_companion_app`，owner 指定不動）
+- [x] App 顯示名稱：✅ iOS `CFBundleDisplayName` / Android `android:label` = `AI Companion`
+      （中文名 `AI陪伴`，CR-0061）
 - [ ] App icon / launch screen / 權限文案（麥克風、通知）正式化
 - [ ] 無 debug banner、無「Demo / 測試 / 開發中」字樣
 

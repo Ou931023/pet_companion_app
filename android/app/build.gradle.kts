@@ -25,9 +25,9 @@ android {
     }
 
     defaultConfig {
-        // 對齊 iOS Bundle ID（com.Andrew.petCompanionApp）。namespace 維持
+        // 對齊 iOS Bundle ID（tw.edu.ncyu.im.aicompanion）。namespace 維持
         // com.example.pet_companion_app（內部程式套件，不需更動 MainActivity.kt）。
-        applicationId = "com.Andrew.petCompanionApp"
+        applicationId = "tw.edu.ncyu.im.aicompanion"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         // CR-0006 Batch 4c-2：Firebase Auth / Google Sign-In 需 minSdk≥23；
