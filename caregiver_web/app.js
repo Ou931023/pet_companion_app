@@ -366,7 +366,9 @@
           return;
         }
         setStatus("暫時連不上後端，請確認服務是否已啟動後再重新整理", true);
-      });
+      })
+      // 登入後預設落在照護提醒分頁；此處載入結束即清掉登入過場提示，避免卡住。
+      .finally(clearAuthLoadingMessage);
   }
 
   function openDetail(id) {
@@ -977,6 +979,14 @@
     if (!elA.message) return;
     elA.message.textContent = text || "";
     elA.message.classList.toggle("error", !!isError);
+  }
+
+  // CR-0065：登入後顯示「正在以…身分載入資料…」過場提示；資料載入流程結束後清除，
+  // 避免訊息永遠卡著（過去只在登出時清除）。不蓋掉錯誤 / session 過期等紅字提示。
+  function clearAuthLoadingMessage() {
+    if (!elA.message) return;
+    if (elA.message.classList.contains("error")) return;
+    elA.message.textContent = "";
   }
 
   // 目前 radio 選到的模式（未選時回 none）。
@@ -2128,6 +2138,12 @@
   }
 
   function loadProducts() {
+    // CR-0065：marketplace 在正式版停用（後端回 501）。功能關閉時一律不打後端，
+    // 避免管理者載入時噴 501 與卡住流程；分頁入口本就已由 applyFeatureFlags 隱藏。
+    if (!featureEnabled("marketplace")) {
+      setProductsStatus("商品商城功能尚未開放。", "");
+      return;
+    }
     var category = elP.filter ? elP.filter.value : "";
     // status=all：管理端要同時看到上架 / 下架商品。
     var url = marketplaceUrl("/products?status=all");
@@ -2371,6 +2387,14 @@
     }
     if (!getAdminToken()) {
       setOrdersStatus("請先輸入管理者權杖（Admin Token），再重新整理。", "error");
+      if (elO.list) elO.list.innerHTML = "";
+      if (elO.count) elO.count.textContent = "";
+      return;
+    }
+    // CR-0065：marketplace 在正式版停用（後端回 501）。功能關閉時不打後端，
+    // 避免管理者載入時噴 501 與卡住流程；分頁入口本就已由 applyFeatureFlags 隱藏。
+    if (!featureEnabled("marketplace")) {
+      setOrdersStatus("訂單管理功能尚未開放。", "");
       if (elO.list) elO.list.innerHTML = "";
       if (elO.count) elO.count.textContent = "";
       return;

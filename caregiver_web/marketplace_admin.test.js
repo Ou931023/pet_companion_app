@@ -115,6 +115,50 @@ test("CR-0056：marketplace 分頁能力保留但受 featureFlags 控制（預�
   // 只隱藏入口、不刪後端呼叫：loadProducts / adminUrl 仍在（上方測試已驗證）。
 });
 
+test("CR-0065：marketplace 關閉時 loadProducts / loadOrders 不打後端（避免 501 卡住）", () => {
+  // 兩個 loader 開頭都以 featureEnabled('marketplace') 早退，功能關閉時不 fetch。
+  assert.ok(
+    appJs.includes('if (!featureEnabled("marketplace")) {'),
+    "loader 應在 marketplace 關閉時早退，不打後端",
+  );
+  assert.ok(
+    appJs.includes("商品商城功能尚未開放。"),
+    "商品 loader 關閉時應顯示白話停用訊息",
+  );
+  assert.ok(
+    appJs.includes("訂單管理功能尚未開放。"),
+    "訂單 loader 關閉時應顯示白話停用訊息",
+  );
+  // 能力保留：marketplaceUrl / adminUrl 呼叫仍在（旗標開啟時可恢復）。
+  assert.ok(
+    appJs.includes('marketplaceUrl("/products?status=all")'),
+    "marketplace 後端呼叫不刪除，僅以旗標 gate",
+  );
+});
+
+test("CR-0065：正式版 index.html 明確停用 marketplace 入口", () => {
+  // 正式部署的 window.APP_CONFIG 帶 featureFlags.marketplace: false。
+  assert.ok(
+    /marketplace\s*:\s*false/.test(indexHtml),
+    "index.html 正式設定應停用 marketplace",
+  );
+  assert.ok(
+    /dailyCareTasks\s*:\s*false/.test(indexHtml),
+    "index.html 正式設定應停用今日任務",
+  );
+});
+
+test("CR-0065：登入過場提示會在資料載入後清除（不卡在『正在載入』）", () => {
+  assert.ok(
+    appJs.includes("function clearAuthLoadingMessage"),
+    "應有清除登入過場提示的函式",
+  );
+  assert.ok(
+    appJs.includes(".finally(clearAuthLoadingMessage)"),
+    "預設落地分頁（照護提醒）載入結束應清除登入過場提示",
+  );
+});
+
 test("長者端文案不外洩工程訊息（白話錯誤）", () => {
   assert.ok(
     appJs.includes("待會再重新整理看看") || appJs.includes("請稍後再試"),

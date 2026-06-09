@@ -49,12 +49,23 @@ test("index.html 提供 APP_CONFIG 注入點，且不以 localhost 為正式預�
     indexHtml.includes("window.APP_CONFIG"),
     "index.html 應有 window.APP_CONFIG 設定點"
   );
-  // 注入區塊預設 apiBaseUrl 為 null（同源相對路徑），非 localhost。
+  // CR-0064：caregiver_web 為獨立 Render Static Site，正式預設指向獨立後端 URL
+  //（非同源 /api）。CR-0065 起此區塊另帶 featureFlags，故不再要求剛好 `{ apiBaseUrl: null }`。
+  // 安全底線不變：正式預設不可寫 localhost / 127.0.0.1。
+  var injectMatch = indexHtml.match(
+    /window\.APP_CONFIG\s*=\s*window\.APP_CONFIG\s*\|\|\s*\{[\s\S]*?\}/
+  );
+  assert.ok(injectMatch, "index.html 應有 window.APP_CONFIG 預設注入區塊");
+  var baseMatch = injectMatch[0].match(/apiBaseUrl:\s*("([^"]*)"|null)/);
+  assert.ok(baseMatch, "注入區塊應含 apiBaseUrl 預設值（https 後端 URL 或 null）");
+  var baseValue = baseMatch[2] != null ? baseMatch[2] : "";
   assert.ok(
-    /window\.APP_CONFIG\s*=\s*window\.APP_CONFIG\s*\|\|\s*\{\s*apiBaseUrl:\s*null\s*\}/.test(
-      indexHtml
-    ),
-    "index.html 注入預設 apiBaseUrl 應為 null"
+    !/localhost|127\.0\.0\.1/.test(baseValue),
+    "index.html 正式預設不可使用 localhost / 127.0.0.1"
+  );
+  assert.ok(
+    baseMatch[1] === "null" || /^https:\/\//.test(baseValue),
+    "正式預設 apiBaseUrl 應為 null 或 https 後端 URL"
   );
 });
 
