@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:pet_companion_app/config/app_config.dart';
 import 'package:pet_companion_app/controllers/app_navigation_controller.dart';
 import 'package:pet_companion_app/controllers/auth_controller.dart';
 import 'package:pet_companion_app/controllers/check_in_controller.dart';
@@ -264,6 +265,37 @@ void main() {
     expect(find.text('Realtime Diagnostics'), findsNothing);
     expect(find.text('Companion Debug Panel'), findsNothing);
     expect(find.text('AI Agent 工具測試'), findsNothing);
+  });
+
+  testWidgets(
+      'SettingsScreen「今日任務」入口依環境顯示（CR-0056 B2：production 隱藏 / dev 顯示）',
+      (tester) async {
+    final harness = await _HomeHarness.create();
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(_settingsHost(harness));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    if (AppConfig.isProduction) {
+      // 正式版完全隱藏入口（能力/路由保留，避免長者撞到死路頁）。
+      expect(find.widgetWithText(FilledButton, '今日任務'), findsNothing);
+    } else {
+      // dev/test：入口照常可見（需捲動帶出）。
+      await tester.scrollUntilVisible(
+        find.widgetWithText(FilledButton, '今日任務'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.widgetWithText(FilledButton, '今日任務'), findsOneWidget);
+    }
+    // 同一區塊的「管理提醒」與環境無關，永遠存在。
+    await tester.scrollUntilVisible(
+      find.widgetWithText(OutlinedButton, '管理提醒'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.widgetWithText(OutlinedButton, '管理提醒'), findsOneWidget);
   });
 
   testWidgets('首頁「使用教學」入口存在且較淡，點擊會觸發重新觀看導覽（CR-0020）',

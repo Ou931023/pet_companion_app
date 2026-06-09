@@ -38,6 +38,22 @@ void main() {
       }
     });
 
+    test('marketplaceVisible 在 production 一律 false（CR-0056 A2）', () {
+      if (AppConfig.isProduction) {
+        expect(AppConfig.marketplaceVisible, isFalse);
+      } else {
+        expect(AppConfig.marketplaceVisible, AppConfig.showMarketplace);
+      }
+    });
+
+    test('dailyCareTasksVisible 在 production 一律 false（CR-0056 B2）', () {
+      if (AppConfig.isProduction) {
+        expect(AppConfig.dailyCareTasksVisible, isFalse);
+      } else {
+        expect(AppConfig.dailyCareTasksVisible, AppConfig.showDailyCareTasks);
+      }
+    });
+
     test('非 production 時不阻擋（API base URL 守門）', () {
       if (!AppConfig.isProduction) {
         expect(AppConfig.isApiBaseUrlProductionSafe, isTrue);

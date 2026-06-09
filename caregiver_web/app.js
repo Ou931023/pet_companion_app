@@ -95,6 +95,34 @@
     return normalizeBase(cfg.apiBaseUrl);
   }
 
+  // 功能旗標（CR-0056）：marketplace（商品 / 訂單）與 dailyCareTasks（今日任務）
+  // 分頁能力保留，但「正式版預設隱藏入口」。未提供 featureFlags 或對應旗標時，
+  // 一律視為關閉（隱藏）；只有明確設成 true 才顯示。純前端隱藏分頁，
+  // 不影響後端 admin API 行為（防禦縱深，非權限控管）。
+  function featureEnabled(name) {
+    var cfg = (typeof window !== "undefined" && window.APP_CONFIG) || {};
+    var flags = cfg.featureFlags || {};
+    return flags[name] === true;
+  }
+
+  // 隱藏一個分頁按鈕（保留 DOM / 功能，只移除入口）。
+  function hideTabButton(tabEl) {
+    if (!tabEl) return;
+    tabEl.classList.add("hidden");
+    tabEl.setAttribute("aria-hidden", "true");
+  }
+
+  // 依 featureFlags 隱藏對應分頁入口（marketplace / dailyCareTasks）。
+  function applyFeatureFlags() {
+    if (!featureEnabled("marketplace")) {
+      hideTabButton(elP && elP.tabProducts);
+      hideTabButton(elO && elO.tabOrders);
+    }
+    if (!featureEnabled("dailyCareTasks")) {
+      hideTabButton(elT && elT.tabTasks);
+    }
+  }
+
   // API base URL 解析順序（擇先非空者）：
   // 1. 使用者在「連線設定」手動覆寫（localStorage，dev / 區網用）。
   // 2. 部署注入的 window.APP_CONFIG.apiBaseUrl（正式後端位址）。
@@ -3378,6 +3406,9 @@
 
   function init() {
     el.apiBase.value = getApiBase();
+
+    // CR-0056：依 featureFlags 隱藏未正式啟用的分頁入口（marketplace / 今日任務）。
+    applyFeatureFlags();
 
     // CR-0042：先還原身分狀態，再決定要不要打受保護 API。
     loadAuthState();

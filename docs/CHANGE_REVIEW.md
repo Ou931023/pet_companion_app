@@ -3165,3 +3165,37 @@ CR-0055 核心交付 = 套用 iOS/Android transport patch **並**跑 T1–T9 實
 
 ### 裁決
 docs-only Blocked 報告，無 🔒 / API / schema / Realtime / runtime 變更；併入主線。transport 收斂落地仍待 owner 備齊 HTTPS 後端 + 實機後重跑（沿用 TRANSPORT_SECURITY §3 套用 + §5 smoke）。
+
+---
+
+## CR-0056 — Marketplace & DailyCareTask Production Data Decision
+
+### 裁決（architecture gatekeeper）
+- Marketplace = A2：本版 production 隱藏/停用，保留 development/test。內建交易 PG 化（金流 / App Store 3.1 / Play Payments / 財務合規）列 post-release。
+- DailyCareTask = B2：本版 production 隱藏/停用，保留 development/test。PG 化（無 migration + AI Vision proof 落地）列 post-release。
+
+### 現況事實
+- 後端已 fail-closed：marketplaceStore / dailyCareTaskStore 在 production 經 isJsonFallbackAllowed 擋下，回 [] 或 FeatureUnavailableInProductionError；SEED 商品僅非 production 服務。production 不讀 JSON。
+- 缺口僅在「Flutter 與 caregiver_web UI 入口在 production 仍可見」，長者點進去撞失敗/空白 → 本 CR 收斂。
+- PG：marketplace migration 009 已建表但 store 未接；dailyCareTask 無 migration。本版均不走 PG。
+
+### 本 CR 範圍（frontend-ux-agent，無 🔒）
+- Flutter：AppConfig 新增 `marketplaceVisible`/`dailyCareTasksVisible` 衍生 getter（`showX && !isProduction`，能力不刪只隱藏），production 完全隱藏 shop_screen 長照商城卡與 settings_screen「今日任務」入口；補 widget test（production 隱藏 / dev 顯示）。
+- caregiver_web：以 `config.js featureFlags`（預設關）隱藏商品/訂單管理與今日任務分頁；既有靜態結構測試語意不改，新增 flag gating 斷言。
+- 文件：本檔 + STORE_RELEASE_CHECKLIST + GOOGLE_PLAY_DATA_SAFETY（移除 marketplace 金流、不申報財務）+ 新增 MARKETPLACE_PRODUCTION_DECISION / DAILY_CARE_TASK_PRODUCTION_DECISION。APP_STORE_METADATA 經查無商城/任務字樣需清理。
+
+### 明確不做（邊界）
+- 不動 server.js（🔒）、不改後端 API 契約 / response 形狀、不建 DB migration、不走 PG。
+- 不顯示「功能準備中」死路頁（避免長者困惑 + App Store 2.1 placeholder 風險），改完全隱藏。
+- 不破壞 Realtime / Care Alert / Memory / Auth scope；不啟用 mock；不提交 .env / secret / runtime data/*.json。
+- 路由（AppRoute.marketplace / dailyCareTasks）保留註冊，不加 route guard（dev/test/deep-link 用；production 無入口即不可達）。
+
+### 後續獨立 CR（backend-agent，非本 CR 阻擋）
+1. 無 auth 的 /api/marketplace/products、/api/daily-care-tasks GET 補存取限制（defense-in-depth）。
+2. POST /api/marketplace/orders 在 production 由 createOrder throw 映射為乾淨 not_enabled（目前落 500）。
+
+### 驗證（orchestrator 親跑）
+flutter analyze clean；flutter test **541/541**（+4 新 case：marketplaceVisible/dailyCareTasksVisible production 斷言 + shop/settings 環境分流）；caregiver_web `node --test` **90/90**。後端零改動（git diff backend/ = 0）→ backend baseline 維持 473/473。
+
+### 裁決狀態
+frontend-ux-agent 實作符合裁決（只隱藏不刪、未動後端、dev 不變），orchestrator 全量驗證綠。併入主線。

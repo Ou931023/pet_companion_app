@@ -31,4 +31,17 @@ window.APP_CONFIG = {
   // 正式部署：改成後端正式 API 位址，例如 "https://api.your-domain.com/api"。
   // 留 null：使用同源相對路徑 "/api"。
   apiBaseUrl: null,
+
+  // 功能旗標（CR-0056）：控制管理端分頁是否顯示。
+  //
+  // 與長者端一致，marketplace（商品 / 訂單管理）與 dailyCareTasks（今日任務）
+  // 能力保留但「正式版預設隱藏入口」，避免照護人員看到尚未正式啟用的分頁。
+  // 後端 admin API 行為不受此影響（僅前端隱藏分頁；防禦縱深，非權限控管）。
+  //
+  // 預設關（false）= 隱藏分頁；開發 / 內部驗證需要時，於部署的 config.js
+  // 將對應旗標改成 true 即可顯示。未提供時一律視為關閉。
+  featureFlags: {
+    marketplace: false,
+    dailyCareTasks: false,
+  },
 };

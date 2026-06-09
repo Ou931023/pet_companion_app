@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../config/app_config.dart';
 import '../controllers/inventory_controller.dart';
 import '../controllers/pet_stats_controller.dart';
 import '../controllers/wallet_controller.dart';
@@ -27,10 +28,13 @@ class ShopScreen extends StatelessWidget {
       children: [
         _ShopHeader(coins: wallet.coins),
         const SizedBox(height: 16),
-        _LongTermCareShopCard(
-          onTap: () => Navigator.of(context).pushNamed(AppRoute.marketplace),
-        ),
-        const SizedBox(height: 22),
+        // CR-0056（A2）：marketplace 入口正式版完全隱藏（能力/路由保留）。
+        if (AppConfig.marketplaceVisible) ...[
+          _LongTermCareShopCard(
+            onTap: () => Navigator.of(context).pushNamed(AppRoute.marketplace),
+          ),
+          const SizedBox(height: 22),
+        ],
         Text(
           '寵物用品',
           style: Theme.of(context).textTheme.titleLarge?.copyWith(

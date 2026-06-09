@@ -286,13 +286,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // CR-0025：今日任務（吃藥 / 喝水 / 運動，拍照完成）。
-              FilledButton.icon(
-                onPressed: () =>
-                    Navigator.of(context).pushNamed(AppRoute.dailyCareTasks),
-                icon: const Icon(Icons.checklist_rtl),
-                label: const Text('今日任務'),
-              ),
-              const SizedBox(height: 10),
+              // CR-0056（B2）：今日任務入口正式版完全隱藏（能力/路由保留）。
+              if (AppConfig.dailyCareTasksVisible) ...[
+                FilledButton.icon(
+                  onPressed: () =>
+                      Navigator.of(context).pushNamed(AppRoute.dailyCareTasks),
+                  icon: const Icon(Icons.checklist_rtl),
+                  label: const Text('今日任務'),
+                ),
+                const SizedBox(height: 10),
+              ],
               OutlinedButton.icon(
                 onPressed: () =>
                     Navigator.of(context).pushNamed(AppRoute.reminders),

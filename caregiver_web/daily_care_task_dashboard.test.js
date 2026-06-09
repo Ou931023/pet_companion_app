@@ -16,6 +16,10 @@ const path = require("node:path");
 
 const appJs = fs.readFileSync(path.join(__dirname, "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const configExample = fs.readFileSync(
+  path.join(__dirname, "config.example.js"),
+  "utf8",
+);
 
 test("有『日常任務』分頁與 view 容器", () => {
   assert.ok(indexHtml.includes("日常任務"), "index 應有日常任務分頁");
@@ -90,6 +94,28 @@ test("狀態篩選選項齊全", () => {
   ]) {
     assert.ok(indexHtml.includes(value), `篩選應有 ${value}`);
   }
+});
+
+test("CR-0056：今日任務分頁能力保留但受 featureFlags 控制（預設隱藏）", () => {
+  // 能力 / 結構不刪：tab-tasks / view-tasks 仍在（上方既有測試已涵蓋）。
+  // 旗標預設關：config.example.js 的 featureFlags.dailyCareTasks 預設 false。
+  assert.ok(configExample.includes("featureFlags"), "config 範本應有 featureFlags");
+  assert.ok(
+    /dailyCareTasks\s*:\s*false/.test(configExample),
+    "dailyCareTasks 旗標預設應為 false（正式版隱藏入口）",
+  );
+  // app.js 以 featureEnabled('dailyCareTasks') 決定是否隱藏今日任務分頁入口。
+  assert.ok(appJs.includes("function featureEnabled"), "應有 featureEnabled 旗標判斷");
+  assert.ok(appJs.includes("function applyFeatureFlags"), "應有 applyFeatureFlags");
+  assert.ok(
+    appJs.includes('featureEnabled("dailyCareTasks")'),
+    "應依 dailyCareTasks 旗標隱藏分頁",
+  );
+  assert.ok(
+    appJs.includes("hideTabButton(elT && elT.tabTasks)"),
+    "dailyCareTasks 關閉時應隱藏今日任務分頁按鈕",
+  );
+  // 只隱藏入口、不刪後端呼叫：loadDailyTasks / /daily-care-tasks 仍在（上方測試已驗證）。
 });
 
 test("既有照護提醒 / 健康分析分頁未被破壞", () => {

@@ -54,6 +54,39 @@ class AppConfig {
 
   /// Demo 登入按鈕實際是否顯示：production 強制隱藏。
   static bool get demoLoginVisible => showDemoLoginButton && !isProduction;
+
+  /// 是否顯示「照護用品商城」入口（marketplace）的原始開關。
+  ///
+  /// CR-0056（裁決 A2）：marketplace 能力保留，但正式版**完全隱藏入口**，
+  /// 避免長者撞到「功能準備中」死路頁，也避免 App Store 2.1 placeholder 風險。
+  /// dev / test 預設可見；如需在開發時隱藏可用
+  /// `--dart-define=SHOW_MARKETPLACE=false`。
+  /// 能力與路由（[AppRoute.marketplace]）不刪，僅隱藏入口。
+  /// 實際是否顯示請用 [marketplaceVisible]（production 一律隱藏）。
+  static const bool showMarketplace = bool.fromEnvironment(
+    'SHOW_MARKETPLACE',
+    defaultValue: true,
+  );
+
+  /// marketplace 入口實際是否顯示：production 強制隱藏（CR-0056 A2）。
+  static bool get marketplaceVisible => showMarketplace && !isProduction;
+
+  /// 是否顯示「今日任務」入口（dailyCareTask）的原始開關。
+  ///
+  /// CR-0056（裁決 B2）：每日照護任務能力保留，但正式版**完全隱藏入口**，
+  /// 理由同 marketplace（避免死路頁與 placeholder 風險）。
+  /// dev / test 預設可見；如需在開發時隱藏可用
+  /// `--dart-define=SHOW_DAILY_CARE_TASKS=false`。
+  /// 能力與路由（[AppRoute.dailyCareTasks]）不刪，僅隱藏入口。
+  /// 實際是否顯示請用 [dailyCareTasksVisible]（production 一律隱藏）。
+  static const bool showDailyCareTasks = bool.fromEnvironment(
+    'SHOW_DAILY_CARE_TASKS',
+    defaultValue: true,
+  );
+
+  /// 今日任務入口實際是否顯示：production 強制隱藏（CR-0056 B2）。
+  static bool get dailyCareTasksVisible => showDailyCareTasks && !isProduction;
+
   static const String defaultSttProxyUrl = '$backendBaseUrl/api/stt/transcribe';
   static const String realtimeSessionUrl =
       '$backendBaseUrl/api/realtime/session';

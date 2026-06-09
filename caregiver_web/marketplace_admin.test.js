@@ -10,6 +10,10 @@ const path = require("node:path");
 const appJs = fs.readFileSync(path.join(__dirname, "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 const stylesCss = fs.readFileSync(path.join(__dirname, "styles.css"), "utf8");
+const configExample = fs.readFileSync(
+  path.join(__dirname, "config.example.js"),
+  "utf8",
+);
 
 test("index.html 有商品管理 / 訂單管理分頁與 view 區塊", () => {
   assert.ok(indexHtml.includes('id="tab-products"'), "應有商品管理分頁");
@@ -86,6 +90,29 @@ test("styles.css 有商品 / 訂單相關樣式", () => {
   for (const cls of [".order-row", ".order-money", ".form-grid", ".btn-sm"]) {
     assert.ok(stylesCss.includes(cls), `styles.css 應包含 ${cls}`);
   }
+});
+
+test("CR-0056：marketplace 分頁能力保留但受 featureFlags 控制（預設隱藏）", () => {
+  // 能力 / 結構不刪：tab 與 view 仍在（上方既有測試已涵蓋）。
+  // 旗標預設關：config.example.js 的 featureFlags.marketplace 預設 false。
+  assert.ok(configExample.includes("featureFlags"), "config 範本應有 featureFlags");
+  assert.ok(
+    /marketplace\s*:\s*false/.test(configExample),
+    "marketplace 旗標預設應為 false（正式版隱藏入口）",
+  );
+  // app.js 以 featureEnabled('marketplace') 決定是否隱藏商品 / 訂單分頁入口。
+  assert.ok(appJs.includes("function featureEnabled"), "應有 featureEnabled 旗標判斷");
+  assert.ok(appJs.includes("function applyFeatureFlags"), "應有 applyFeatureFlags");
+  assert.ok(
+    appJs.includes('featureEnabled("marketplace")'),
+    "應依 marketplace 旗標隱藏分頁",
+  );
+  assert.ok(
+    appJs.includes("hideTabButton(elP && elP.tabProducts)") &&
+      appJs.includes("hideTabButton(elO && elO.tabOrders)"),
+    "marketplace 關閉時應隱藏商品 / 訂單分頁按鈕",
+  );
+  // 只隱藏入口、不刪後端呼叫：loadProducts / adminUrl 仍在（上方測試已驗證）。
 });
 
 test("長者端文案不外洩工程訊息（白話錯誤）", () => {
