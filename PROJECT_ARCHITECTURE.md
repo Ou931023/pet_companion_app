@@ -305,7 +305,7 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
 | `ENABLE_VERBOSE_LOGS` | true | false | false | 收斂散落 `console.*` |
 | `SHOW_DEV_PANELS`（Flutter） | 可開 | false | **false** | 既有 `lib/config/app_config.dart`，維持 |
 | `SHOW_DEMO_LOGIN`（Flutter） | 可開 | false | **false** | 既有，維持 |
-| `CORS_ALLOWED_ORIGINS`（後端） | 寬鬆 | 白名單 | **必填白名單（空 → fail-fast）** | 相容別名既有 `ALLOWED_ORIGINS`（修 P1-1） |
+| `CORS_ALLOWED_ORIGINS`（後端） | 寬鬆 | 白名單 | **必填白名單（空 → fail-fast）** | 相容別名既有 `ALLOWED_ORIGINS`（修 P1-1）。**CR-0054**：CORS middleware 改經 `config/env.js resolveCorsOrigins`（新名優先、相容 legacy）取白名單，與 fail-fast 同源——修補「只設新名時 middleware 仍空→production allow-all」缺口。dev 空清單維持 allow-all、無 Origin 請求（Flutter/Realtime broker 不帶 Origin）一律放行 |
 | `PGVECTOR_ENABLED`（後端） | 可選 | 依用 | 若記憶向量啟用則必填 | 既有，維持（feature flag，與環境正交） |
 | `API_BASE_URL`（Flutter / caregiver_web） | localhost | staging URL | **正式 https 網域（localhost/空 → 阻擋進正式主流程）** | Flutter 收斂 `BACKEND_BASE_URL`；web 收斂 `DEFAULT_API_BASE` |
 

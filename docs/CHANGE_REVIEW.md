@@ -3070,3 +3070,67 @@ care_alert_hook_test.dart 需參數化 fake engine 的 riskLevel：
 
 ### 裁決
 docs-only Plan-only，無 🔒 變更、無 API/schema/Realtime 改動，未跑測試（無程式碼可測）；併入主線。實際 Execute 一輪 smoke 為後續工作（需 owner 備齊真環境）。
+
+---
+
+## CR-0054 — HTTPS deployment + ATS/cleartext transport hardening (架構裁決)
+
+決議者：architecture-gatekeeper
+日期：2026-06-09
+分支：feat/auth-admin-backend
+模式：HYBRID — Thread 1 EXECUTE / Thread 2 PATCH-READY
+整體風險：Thread 1 = medium；Thread 2(盲套) = high，(僅文件) = low
+
+### A. 執行模式
+核准 hybrid。Thread 1（CORS 收斂）EXECUTE now，可單元驗證、向後相容、不需裝置。
+Thread 2（ATS/cleartext）一律 PATCH-READY，含 Android，不在本 CR 落地 runtime 變更。
+理由：Thread 1 是純後端安全邊界修補，可離線驗證；Thread 2 同時觸及 iOS 實機可執行性
+與 App↔後端資料路徑可達性，缺 HTTPS 後端 + 缺實體裝置 smoke（CR-0053 blocker）下落地
+= 製造無法驗證的潛在破壞，違反 task §5.2「不要盲套」與 CLAUDE.md「不破壞 iOS 實機」。
+
+### B. CORS 改動是否觸及 server.js API 契約 LOCK？
+裁定：server.js 屬 LOCKED 檔，但「把 CORS middleware 來源從 ALLOWED_ORIGINS 改為
+resolveCorsOrigins(process.env)」不更動任何路由、request/response 形狀，故不算「API 契約」
+變更，而是「安全邊界修補」。核准 EXECUTE，毋須拆批。
+硬性約束（backend-agent 實作時必守）：
+1. 僅替換 server.js:166 為 resolveCorsOrigins(process.env) 並自 config/env.js 引入；
+   166 之後的 split / origin 判斷不得改（.split(',') 必須保留）。
+2. 保留 dev 空清單 → allow-all（本機開發）。production 因 fail-fast 保證非空 →
+   line 172 自然不再 allow-all，缺口即閉合。
+3. 必須保留「無 Origin header 一律放行」(line 171)——Flutter 原生 HTTP/WebRTC 不帶 Origin，
+   動到這行會打斷長者端與 Realtime broker，絕對禁區。
+4. 向後相容：resolveCorsOrigins 仍 fallback ALLOWED_ORIGINS，既有部署不回歸。
+production allow-all 缺口：確認屬實，須修（task §8.3/§11.12 實質違反）。
+
+### C. ATS/cleartext 模式
+同意「不盲套、僅產 patch-ready」。Android 不核准「現在就套 dev/release 隔離」，與 iOS 一併
+hold 到 smoke。release 禁 cleartext 的價值只在 HTTPS 後端切換時成立；現在落地 = 無 HTTPS 後端、
+無裝置 smoke 下植入潛在資料路徑斷裂，tools:replace manifest 合併無 smoke 不得放行。
+
+### D. iOS 例外策略
+採 NSAllowsArbitraryLoads=false + NSAllowsLocalNetworking=true（靜態、單一 plist）。不採 xcconfig
+驅動（避免結構性擴張）。NSAllowsLocalNetworking 已涵蓋 loopback / *.local / RFC1918 與 link-local，
+dev LAN IP 後端無需列舉動態 IP，正式後端走 HTTPS 不需任何 arbitrary load。
+
+### E. Thread 1 實作者
+backend-agent（server.js 為其 ownership 且屬 LOCKED 檔），依 B 四條硬約束 + 補測試。diff 回 gatekeeper 審核後併。
+
+### F. LOCK 邊界警告
+- server.js LOCKED：Thread 1 限安全邊界修補，禁動路由/response 形狀、禁動 no-Origin 放行。
+- Info.plist + AndroidManifest + 新增 network_security_config.xml：觸及 iOS 實機可執行性 + App↔後端
+  可達性 → 僅 patch-ready，須 HTTPS 後端就緒 + 實體裝置 smoke（沿用 E2E_SMOKE A1-A5）後另開 CR 落地。
+- realtime_voice_service.dart：本 CR 完全不得觸及。
+- 禁讀/改任何 .env；patch 文件只列變數名與設定方式，不得含實值。
+- 跨端契約：CORS 真實來源由 ALLOWED_ORIGINS 改為 CORS_ALLOWED_ORIGINS(優先)；caregiver_web 部署 origin
+  必須在清單內 → 併 Thread 1 前須同步更新 PROJECT_ARCHITECTURE.md 環境章節。
+
+### 批次切分
+- Batch 1 (Thread 1, EXECUTE)：server.js CORS 來源收斂 + 測試 + PROJECT_ARCHITECTURE.md env 章節。owner=backend-agent。gate=測試綠 + gatekeeper diff 審核。
+- Batch 2 (Thread 2, PATCH-READY)：新增 docs/TRANSPORT_SECURITY.md（Android network_security_config + manifest tools:replace、iOS NSAllowsLocalNetworking、smoke checklist、rollback）。不改 runtime。落地另開 CR 並要求裝置 smoke。
+
+### 實作結果（CR-0054）
+- **Batch 1（EXECUTE，backend-agent，gatekeeper diff 審核通過）**：`server.js` CORS middleware 來源由 `process.env.ALLOWED_ORIGINS` 改為 `resolveCorsOrigins(process.env)`（加 1 個 import），line 167 `.split(',')` 與 origin 判斷（168-177）一字未動、no-Origin 放行（171）未觸及。新增 `services/corsOrigin.test.js`（5 cases：CORS_ALLOWED_ORIGINS 優先/放行/擋、legacy 相容、兩者並存優先序、dev 空清單 allow-all、無 Origin 放行）+ package.json test/check 收錄。orchestrator 親跑 backend `npm test` **473/473**（+5）、`npm run check` exit 0。`PROJECT_ARCHITECTURE.md` env 章節 CORS 行同步更新（前置硬性要求達成）。
+- **Batch 2（PATCH-READY，docs-only）**：新增 `docs/TRANSPORT_SECURITY.md`——Android `network_security_config.xml`（release 禁明文）+ debug 同名資源覆蓋（LAN/loopback/10.0.2.2）+ 主 manifest 移除 `usesCleartextTraffic` 改指 config；iOS `NSAllowsArbitraryLoads=false` + `NSAllowsLocalNetworking=true`；smoke checklist（T1-T9，沿用 A1-A5）+ rollback（一平台一 commit）。**不改 runtime**，落地依賴 HTTPS 後端 + 裝置 smoke，另開 CR。
+- 文件更新：CHANGE_REVIEW（本段）、STORE_RELEASE_CHECKLIST（ATS/cleartext 行指向 TRANSPORT_SECURITY + CORS 已修 + CR-0054 BLOCKER 行）、E2E_SMOKE_TEST_REPORT（CORS 已修 + transport patch ready）、ENVIRONMENT_SETUP（§5 指標）、PROJECT_ARCHITECTURE（CORS 行）。
+- **正式版風險**：production 仍允許 arbitrary loads？是（Batch 2 未落地，patch 就緒）。仍允許 cleartext？是（同上）。production 仍指向 localhost？否（AppConfig 守門）。CORS allow-all？否（已修）。破壞 Realtime？否（未碰 realtime_voice_service.dart / WebRTC）。破壞 Care Alert？否。假裝通過？否（ATS/cleartext 誠實標 PATCH-READY 未套用）。
+- **裁決**：Batch 1 gatekeeper diff 審核 + 測試綠通過，併入主線；Batch 2 為 patch-ready 文件，transport 收斂落地另開 CR（依賴 CR-0053 HTTPS 後端 + 裝置 blocker）。

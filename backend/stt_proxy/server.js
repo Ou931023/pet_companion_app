@@ -17,6 +17,7 @@ dotenv.config();
 const {
   assertProductionEnvOrExit,
   describeMaskedConfig,
+  resolveCorsOrigins,
 } = require("./config/env");
 assertProductionEnvOrExit(process.env, console);
 
@@ -163,7 +164,7 @@ const taigiAsrUpload = multer({
 const host = process.env.HOST || "127.0.0.1";
 
 // Configure CORS: allow origins from ALLOWED_ORIGINS env (comma separated), default allow none
-const allowedOriginsEnv = (process.env.ALLOWED_ORIGINS || '').trim();
+const allowedOriginsEnv = (resolveCorsOrigins(process.env) || '').trim();
 const allowedOrigins = allowedOriginsEnv ? allowedOriginsEnv.split(',').map(s => s.trim()) : [];
 app.use(cors({
   origin: function(origin, callback) {

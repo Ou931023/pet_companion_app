@@ -50,6 +50,11 @@
 - ✅ Flutter `AppConfig` production 強制關閉 mock / demo / dev panel，`isApiBaseUrlProductionSafe` 守門。→ F2–F5 有程式基礎。
 - ⛔ **iOS `NSAllowsArbitraryLoads=true`、Android `usesCleartextTraffic="true"` 仍未收斂** → A1 為 release BLOCKER。
 
+### CR-0054 後續更新（傳輸安全）
+
+- ✅ 後端 CORS allow-all 缺口已修（CR-0054 Batch 1）：middleware 改經 `resolveCorsOrigins`，production fail-fast 同源；backend 473/473。→ 計畫 §2 B-CORS 相關項風險下降（仍待真環境 smoke 確認正式 origin 放行/非白名單擋）。
+- 🔁 iOS ATS / Android cleartext 收斂 patch 已就緒（CR-0054 Batch 2，`docs/TRANSPORT_SECURITY.md`），**未套用 runtime**；A1–A5 仍 PENDING，落地需 HTTPS 後端 + 裝置 smoke 後另開 CR。
+
 ### Release Blockers（本輪確認 / 維持）
 
 1. **未跑真環境端到端 smoke**（本輪 Plan-only）——上架前必須完成一輪 Execute（至少計畫 §7 最小通過集）。Owner：專案負責人 + 具備真憑證者。

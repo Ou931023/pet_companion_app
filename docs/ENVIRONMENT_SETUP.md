@@ -202,3 +202,4 @@ flutter build ios --release --no-codesign \
 - `caregiver_web/config.example.js` — caregiver_web API base URL 設定範本。
 - `docs/E2E_SMOKE_TEST_PLAN.md` — production-like 端到端 smoke 測試計畫（怎麼跑）。
 - `docs/E2E_SMOKE_TEST_REPORT.md` — smoke 執行紀錄（每輪 pass/fail 與 release blocker）。
+- `docs/TRANSPORT_SECURITY.md` — HTTPS / iOS ATS / Android cleartext 政策、收斂 patch、smoke 與 rollback（CR-0054）。CORS 白名單經 `CORS_ALLOWED_ORIGINS`（優先）/ `ALLOWED_ORIGINS`（相容），production 非 allow-all。

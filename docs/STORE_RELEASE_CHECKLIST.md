@@ -36,7 +36,7 @@
 |---|---|---|
 | 麥克風權限文案 `NSMicrophoneUsageDescription` | ✅ | 長者友善、無工程字眼 |
 | 相機 / 相簿 / 語音辨識 / 區網權限文案 | ✅ | 皆清楚、無 demo/test/mock |
-| ATS（App Transport Security） | ⛔🔁 **BLOCKER** | 目前 `NSAllowsArbitraryLoads=true`（全域允許明文）。收斂方案見 §6，**需區網語音 smoke 驗證後才可套用**，否則回退 |
+| ATS（App Transport Security） | ⛔🔁 **BLOCKER** | 目前 `NSAllowsArbitraryLoads=true`（全域允許明文）。**CR-0054** 已備妥就緒 patch（`NSAllowsArbitraryLoads=false` + `NSAllowsLocalNetworking=true`）於 `docs/TRANSPORT_SECURITY.md §3.2`，**需 HTTPS 後端就緒 + 實體裝置 smoke 後另開 CR 套用**，否則回退 |
 | Display name（CFBundleDisplayName） | ⛔ **BLOCKER** | 目前 "Pet Companion App"，正式品牌名待負責人定案（見 §5 #1） |
 | Bundle ID | ⛔ **BLOCKER** | 目前 `com.Andrew.petCompanionApp`（個人名、非註冊網域）。正式化會綁定 Apple 憑證 / Firebase iOS App / Sign in with Apple，需負責人拍板（見 §5 #2） |
 | App icon（全尺寸） | ⛔ **BLOCKER** | 需正式 icon 素材 |
@@ -50,7 +50,7 @@
 | 項目 | 狀態 | 說明 |
 |---|---|---|
 | 權限（INTERNET / RECORD_AUDIO / MODIFY_AUDIO_SETTINGS / POST_NOTIFICATIONS / ACCESS_NETWORK_STATE / READ_MEDIA_IMAGES / READ_EXTERNAL_STORAGE≤32） | ✅ | 與實際功能相符；POST_NOTIFICATIONS 供 Android 13+ |
-| `usesCleartextTraffic` / network security config | ⛔🔁 **BLOCKER** | 與 iOS ATS 同源收斂，見 §6，需區網語音 smoke 驗證 |
+| `usesCleartextTraffic` / network security config | ⛔🔁 **BLOCKER** | 目前 `usesCleartextTraffic="true"`。**CR-0054** 已備妥就緒 patch（release `network_security_config` 禁明文 + debug override 留 LAN）於 `docs/TRANSPORT_SECURITY.md §3.1`，需 HTTPS 後端 + 裝置 smoke 後另開 CR 套用 |
 | `applicationId` | ⛔ **BLOCKER** | 目前 `com.Andrew.petCompanionApp`（個人名）。**正式上架後不可再改**（破壞更新路徑），需負責人拍板（見 §5 #2） |
 | `android:label` | ⛔ **BLOCKER** | 目前 dev 名 `pet_companion_app`，待正式品牌名 |
 | Adaptive icon / launcher icon | ⛔ **BLOCKER** | 需正式 icon 素材 |
@@ -151,6 +151,8 @@ android:networkSecurityConfig="@xml/network_security_config"
 - ✅ 打字聊天風險分析 + Care Alert（**CR-0051**）：`POST /api/companion/chat` 掛 `requireResidentCaller`（須住民 idToken，與語音/notify 一致；後端 hard-auth + Flutter 送 token 同一 release），回覆後純函式風險側錄，`riskLevel∈{medium,high,urgent}` 經共用 `processCareAlert` 建 Care Alert（`source="companion_chat"`、high/urgent 推 Telegram），回應加 optional `careAlert`（長者端不顯示監控感文案）。流程見 `docs/TYPED_CHAT_CARE_ALERT_FLOW.md`。
 - ✅ 語音 Care Alert persist gate 對齊（**CR-0052**）：`voice_agent_controller.dart` persist gate 由 `needsHumanSupport`（high/urgent）改為 canonical-riskLevel-based `shouldPersistCareAlert`（`{medium,high,urgent}`），語音與打字現在都持久化 medium+。Telegram 仍只 high/urgent（後端權威，前端不複製），medium 不洗版。不改後端、不觸 🔒 檔案、不破壞 Realtime / CR-0045 notify auth / CR-0051 typed chat。流程見 `docs/VOICE_CARE_ALERT_FLOW.md`。
 - 🔁 **BLOCKER** 真環境端到端 smoke 尚未執行（**CR-0053**）：已建立 `docs/E2E_SMOKE_TEST_PLAN.md`（可執行 checklist）+ `docs/E2E_SMOKE_TEST_REPORT.md`（Run #0 = Plan-only，未連任何真 Firebase/PostgreSQL/OpenAI/Telegram、無實體裝置，誠實標示未執行原因 + owner blocker + 下一步）。上架前必須完成一輪 Execute（至少計畫 §7 最小通過集：fail-fast / migration / health / chat+notify auth / **medium 不推 Telegram** / caregiver scoped / Realtime+語音 medium·high alert / log 去敏）。
+- ✅ 後端 CORS allow-all 缺口已修（**CR-0054** Batch 1）：CORS middleware 改經 `resolveCorsOrigins`（新名 `CORS_ALLOWED_ORIGINS` 優先、相容 legacy `ALLOWED_ORIGINS`），與 production fail-fast 同源，修補「只設新名→middleware 空清單→production allow-all」缺口；保留 dev 空清單 allow-all 與無 Origin 放行。backend 473/473。
+- 🔁 **BLOCKER** iOS ATS / Android cleartext 傳輸收斂（**CR-0054** Batch 2 PATCH-READY）：就緒 patch + smoke checklist + rollback 見 `docs/TRANSPORT_SECURITY.md`；落地依賴 HTTPS 後端就緒 + 實體裝置 smoke，須另開 CR，**不可盲套**。
 - ⛔ **BLOCKER** Google Play Data Safety 表單填寫（依 `docs/GOOGLE_PLAY_DATA_SAFETY.md`）
 - ⛔ **BLOCKER** App Store 隱私問卷 / metadata（依 `docs/APP_STORE_METADATA.md`）
 - ⛔ **BLOCKER** 對外可存取的隱私政策 URL（Apple/Google 皆要求）
