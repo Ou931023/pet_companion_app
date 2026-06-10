@@ -52,8 +52,20 @@ class AppConfig {
     defaultValue: false,
   );
 
-  /// Demo 登入按鈕實際是否顯示：production 強制隱藏。
-  static bool get demoLoginVisible => showDemoLoginButton && !isProduction;
+  /// Demo 登入按鈕實際是否顯示。
+  ///
+  /// 一般以 [showDemoLoginButton]（`--dart-define=SHOW_DEMO_LOGIN`）控制；
+  /// production 預設仍隱藏，但**明確指定 `SHOW_DEMO_LOGIN=true` 時即顯示**，
+  /// 作為真登入暫時不可用時的訪客備援入口（「先進去陪伴」）。
+  static bool get demoLoginVisible =>
+      showDemoLoginButton && (!isProduction || allowDemoLoginInProduction);
+
+  /// 是否允許在 production 顯示訪客入口（需同時開 [showDemoLoginButton]）。
+  /// 由 `--dart-define=ALLOW_DEMO_LOGIN_IN_PROD=true` 控制，預設 false。
+  static const bool allowDemoLoginInProduction = bool.fromEnvironment(
+    'ALLOW_DEMO_LOGIN_IN_PROD',
+    defaultValue: false,
+  );
 
   /// 是否顯示「照護用品商城」入口（marketplace）的原始開關。
   ///
@@ -68,8 +80,19 @@ class AppConfig {
     defaultValue: true,
   );
 
-  /// marketplace 入口實際是否顯示：production 強制隱藏（CR-0056 A2）。
-  static bool get marketplaceVisible => showMarketplace && !isProduction;
+  /// marketplace 入口實際是否顯示。
+  ///
+  /// 以 [showMarketplace] 為總開關；production 預設隱藏（CR-0056 A2），
+  /// 但明確指定 `ALLOW_MARKETPLACE_IN_PROD=true` 時即顯示。
+  static bool get marketplaceVisible =>
+      showMarketplace && (!isProduction || allowMarketplaceInProduction);
+
+  /// 是否允許在 production 顯示照護商城入口（需同時開 [showMarketplace]）。
+  /// 由 `--dart-define=ALLOW_MARKETPLACE_IN_PROD=true` 控制，預設 false。
+  static const bool allowMarketplaceInProduction = bool.fromEnvironment(
+    'ALLOW_MARKETPLACE_IN_PROD',
+    defaultValue: false,
+  );
 
   /// 是否顯示「今日任務」入口（dailyCareTask）的原始開關。
   ///
@@ -84,8 +107,20 @@ class AppConfig {
     defaultValue: true,
   );
 
-  /// 今日任務入口實際是否顯示：production 強制隱藏（CR-0056 B2）。
-  static bool get dailyCareTasksVisible => showDailyCareTasks && !isProduction;
+  /// 今日任務入口實際是否顯示。
+  ///
+  /// 以 [showDailyCareTasks] 為總開關；production 預設隱藏（CR-0056 B2），
+  /// 但明確指定 `ALLOW_DAILY_CARE_TASKS_IN_PROD=true` 時即顯示。
+  static bool get dailyCareTasksVisible =>
+      showDailyCareTasks &&
+      (!isProduction || allowDailyCareTasksInProduction);
+
+  /// 是否允許在 production 顯示今日任務入口（需同時開 [showDailyCareTasks]）。
+  /// 由 `--dart-define=ALLOW_DAILY_CARE_TASKS_IN_PROD=true` 控制，預設 false。
+  static const bool allowDailyCareTasksInProduction = bool.fromEnvironment(
+    'ALLOW_DAILY_CARE_TASKS_IN_PROD',
+    defaultValue: false,
+  );
 
   static const String defaultSttProxyUrl = '$backendBaseUrl/api/stt/transcribe';
   static const String realtimeSessionUrl =
