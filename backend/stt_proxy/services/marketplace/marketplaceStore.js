@@ -19,17 +19,52 @@ const path = require("path");
 const fs = require("fs/promises");
 const { randomUUID } = require("crypto");
 
+const defaultPg = require("../../db/postgres");
 const {
   isJsonFallbackAllowed,
   FeatureUnavailableInProductionError,
   FEATURE_UNAVAILABLE_IN_PRODUCTION,
 } = require("../../config/env");
 
-// CR-0034 B2 / CR-0042 blocker：商城為 **JSON-only** store，正式版尚未平移到 PostgreSQL。
-// 因此 production（ALLOW_JSON_FALLBACK=false）一律阻擋，避免把 JSON 當成正式資料來源。
-// dev/staging 不受影響（isJsonFallbackAllowed=true），行為零變更。
-// envelope 形回傳的函式回 { ok:false, error }；回傳值（陣列 / 物件）的函式改 throw
-// 具名錯誤，由各 route 既有 try/catch 轉成既有錯誤回應（不改回應形狀、不外洩 stack）。
+// 持久化策略（CR-0066+ 商城 JSON→PostgreSQL 平移；比照 careAlertStoreService §5.3）：
+//   - **DB-優先**：isPostgresAvailable()（要求 DATABASE_URL + PGVECTOR_ENABLED=true）為 true
+//     → 走 PostgreSQL（migration 009 建表、015 放寬 id 為 TEXT 並灌種子）。
+//   - **dev/staging（isJsonFallbackAllowed=true）且無 DB** → 走既有 JSON store（行為零變更，
+//     保住所有現有測試與無 DB 的 Demo 機）。
+//   - **production（ALLOW_JSON_FALLBACK=false）且無 DB** → 防禦性停用：回 / throw
+//     feature_unavailable（不把 JSON 當正式資料來源）。實務上 production 一定設好 DB，
+//     故此分支僅為 misconfiguration 的安全網。
+//   - **DB 例外**：production 不降級 JSON（讀類 throw 一般 Error→500；envelope 類回
+//     write_failed）；dev/staging 降級 JSON。
+//
+// 對外 9+1 函式的簽名 / 回傳形狀 / error 碼一律不可變（key 用 'ok'）。
+let activePg = defaultPg;
+
+// 測試專用：注入 / 還原 pg。mock pg 需提供：
+//   - query(text, params) → { rows }
+//   - isPostgresAvailable() → boolean（決定走 DB 或 JSON）
+function setPgForTest(pg) {
+  activePg = pg || defaultPg;
+}
+
+// 是否走 DB。缺 isPostgresAvailable（或拋例外）一律視為不可用 → JSON 路徑。
+async function isDbAvailable(pg) {
+  if (!pg || typeof pg.isPostgresAvailable !== "function") return false;
+  try {
+    return await pg.isPostgresAvailable();
+  } catch (_error) {
+    return false;
+  }
+}
+
+// DB 例外只記結構化 log（不含商品 / 訂單 / 對話原文）；僅 op 與 error.message。
+function logDbError(op, error) {
+  console.error(`[marketplace-store] DB ${op} failed`, {
+    error: error?.message || String(error),
+  });
+}
+
+// production（!isJsonFallbackAllowed）→ JSON 不可作為正式資料來源。
 function jsonFeatureBlocked(options = {}) {
   return !isJsonFallbackAllowed(options.env || process.env);
 }
@@ -385,13 +420,80 @@ function normalizeProduct(payload = {}, existing = null) {
   };
 }
 
+// ---- DB 路徑共用工具 ----
+
+// timestamptz 從 pg 取回是 JS Date；對外契約用 ISO8601 字串。
+function toIso(value) {
+  if (value == null) return null;
+  if (value instanceof Date) return value.toISOString();
+  return value;
+}
+
+// 把 marketplace_products row 映射為對外 product 形狀（與 JSON 路徑逐欄一致）：
+// 文字欄位 null→""、price/stock→int、commission_rate NUMERIC→Number、時間 Date→ISO。
+function rowToProduct(row) {
+  return {
+    id: row.id,
+    center_id: row.center_id ?? "",
+    center_name: row.center_name ?? "",
+    name: row.name ?? "",
+    description: row.description ?? "",
+    category: row.category ?? "",
+    price: Math.max(0, Math.round(toFiniteNumber(row.price, 0))),
+    stock: Math.max(0, Math.round(toFiniteNumber(row.stock, 0))),
+    image_url: row.image_url ?? "",
+    status: row.status ?? "active",
+    commission_rate: normalizeCommissionRate(row.commission_rate),
+    created_at: toIso(row.created_at),
+    updated_at: toIso(row.updated_at),
+  };
+}
+
+// 把 marketplace_orders row 映射為對外 order 形狀（與 JSON 路徑逐欄一致）。
+// items 來自 items_json（pg 取回 JSONB 已是 JS 陣列）。
+function rowToOrder(row) {
+  const items = Array.isArray(row.items_json)
+    ? row.items_json
+    : Array.isArray(row.items)
+      ? row.items
+      : [];
+  return {
+    id: row.id,
+    user_id: row.user_id ?? null,
+    elder_name: row.elder_name ?? "",
+    center_id: row.center_id ?? null,
+    center_name: row.center_name ?? "",
+    items: items.map((it) => ({
+      product_id: it.product_id,
+      product_name: it.product_name,
+      quantity: it.quantity,
+      unit_price: it.unit_price,
+      subtotal: it.subtotal,
+    })),
+    total_amount: Math.round(toFiniteNumber(row.total_amount, 0)),
+    commission_rate: normalizeCommissionRate(row.commission_rate),
+    commission_amount: Math.round(toFiniteNumber(row.commission_amount, 0)),
+    center_revenue: Math.round(toFiniteNumber(row.center_revenue, 0)),
+    status: row.status ?? "pending",
+    delivery_note: row.delivery_note ?? "",
+    created_at: toIso(row.created_at),
+    updated_at: toIso(row.updated_at),
+  };
+}
+
 // ---- 商品 ----
 
 // 首次啟動或檔案不存在 / 為空時，寫入 Demo 種子商品，方便展示。
 // 已有商品時不覆蓋。回傳實際寫入的商品清單（或既有清單）。
-async function seedDefaultProducts(options = {}) {
-  // production：JSON-only 商城停用 → 不寫種子（startup best-effort，靜默 no-op）。
-  if (jsonFeatureBlocked(options)) return [];
+async function seedDefaultProductsDb(pg) {
+  // migration 015 已灌種子；DB 路徑回現有商品清單（no-op 種子，不重複寫）。
+  const result = await pg.query(
+    `SELECT * FROM marketplace_products ORDER BY created_at DESC`,
+  );
+  return (result.rows || []).map(rowToProduct);
+}
+
+async function seedDefaultProductsJson(options) {
   const filePath = resolveProductsFile(options);
   try {
     const existing = await readAll(filePath, "products");
@@ -412,8 +514,47 @@ async function seedDefaultProducts(options = {}) {
   }
 }
 
-async function listProducts(options = {}) {
-  if (jsonFeatureBlocked(options)) throw new FeatureUnavailableInProductionError();
+async function seedDefaultProducts(options = {}) {
+  const pg = options.pg || activePg;
+  if (await isDbAvailable(pg)) {
+    try {
+      return await seedDefaultProductsDb(pg);
+    } catch (error) {
+      logDbError("seedDefaultProducts", error);
+      // best-effort：DB 例外時不在 production 降級寫 JSON。
+    }
+  }
+  // production 無 DB：JSON-only 停用 → 不寫種子（startup best-effort，靜默 no-op）。
+  if (jsonFeatureBlocked(options)) return [];
+  return seedDefaultProductsJson(options);
+}
+
+async function listProductsDb(pg, options) {
+  const where = [];
+  const params = [];
+  // status：'all' 回全部；預設（未帶）只回 active（長者端安全）；其餘照值過濾。
+  const status = (options.status || "").toString().trim().toLowerCase();
+  if (status === "all") {
+    // 不過濾
+  } else if (status) {
+    params.push(status);
+    where.push(`status = $${params.length}`);
+  } else {
+    params.push("active");
+    where.push(`status = $${params.length}`);
+  }
+  if (options.category) {
+    params.push(normalizeCategory(options.category));
+    where.push(`category = $${params.length}`);
+  }
+  let sql = `SELECT * FROM marketplace_products`;
+  if (where.length > 0) sql += ` WHERE ${where.join(" AND ")}`;
+  sql += ` ORDER BY created_at DESC`;
+  const result = await pg.query(sql, params);
+  return (result.rows || []).map(rowToProduct);
+}
+
+async function listProductsJson(options) {
   const filePath = resolveProductsFile(options);
   let rows = await readAll(filePath, "products");
 
@@ -439,21 +580,83 @@ async function listProducts(options = {}) {
   return rows;
 }
 
-async function getProductById(id, options = {}) {
-  if (jsonFeatureBlocked(options)) throw new FeatureUnavailableInProductionError();
+async function listProducts(options = {}) {
+  const pg = options.pg || activePg;
+  const fallbackAllowed = isJsonFallbackAllowed(options.env || process.env);
+  if (await isDbAvailable(pg)) {
+    try {
+      return await listProductsDb(pg, options);
+    } catch (error) {
+      logDbError("listProducts", error);
+      // 讀類：production 不降級 JSON → throw 一般 Error（route → 500）；dev 降級 JSON。
+      if (!fallbackAllowed) throw error;
+    }
+  } else if (!fallbackAllowed) {
+    // production 無 DB：JSON 不可作為正式資料來源（防禦性停用）。
+    throw new FeatureUnavailableInProductionError();
+  }
+  return listProductsJson(options);
+}
+
+async function getProductByIdDb(pg, id) {
+  const result = await pg.query(
+    `SELECT * FROM marketplace_products WHERE id = $1`,
+    [id],
+  );
+  const row = (result.rows || [])[0];
+  return row ? rowToProduct(row) : null;
+}
+
+async function getProductByIdJson(id, options) {
   const filePath = resolveProductsFile(options);
   const rows = await readAll(filePath, "products");
   return rows.find((p) => p.id === id) || null;
 }
 
-async function createProduct(payload = {}, options = {}) {
-  if (jsonFeatureBlocked(options)) {
-    return { ok: false, error: FEATURE_UNAVAILABLE_IN_PRODUCTION };
+async function getProductById(id, options = {}) {
+  const pg = options.pg || activePg;
+  const fallbackAllowed = isJsonFallbackAllowed(options.env || process.env);
+  if (await isDbAvailable(pg)) {
+    try {
+      return await getProductByIdDb(pg, id);
+    } catch (error) {
+      logDbError("getProductById", error);
+      if (!fallbackAllowed) throw error;
+    }
+  } else if (!fallbackAllowed) {
+    throw new FeatureUnavailableInProductionError();
   }
+  return getProductByIdJson(id, options);
+}
+
+async function createProductDb(pg, payload) {
+  const product = normalizeProduct(payload);
+  await pg.query(
+    `INSERT INTO marketplace_products (
+       id, center_id, center_name, name, description, category, price, stock,
+       image_url, status, commission_rate, created_at, updated_at
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::timestamptz,$13::timestamptz)`,
+    [
+      product.id, // $1
+      product.center_id, // $2
+      product.center_name, // $3
+      product.name, // $4
+      product.description, // $5
+      product.category, // $6
+      product.price, // $7
+      product.stock, // $8
+      product.image_url, // $9
+      product.status, // $10
+      product.commission_rate, // $11
+      product.created_at, // $12
+      product.updated_at, // $13
+    ],
+  );
+  return { ok: true, product };
+}
+
+async function createProductJson(payload, options) {
   const filePath = resolveProductsFile(options);
-  if (!payload || !String(payload.name || "").trim()) {
-    return { ok: false, error: "invalid_payload" };
-  }
   try {
     const product = normalizeProduct(payload);
     const rows = await readAll(filePath, "products");
@@ -468,10 +671,59 @@ async function createProduct(payload = {}, options = {}) {
   }
 }
 
-async function updateProduct(id, payload = {}, options = {}) {
-  if (jsonFeatureBlocked(options)) {
+async function createProduct(payload = {}, options = {}) {
+  if (!payload || !String(payload.name || "").trim()) {
+    return { ok: false, error: "invalid_payload" };
+  }
+  const pg = options.pg || activePg;
+  const fallbackAllowed = isJsonFallbackAllowed(options.env || process.env);
+  if (await isDbAvailable(pg)) {
+    try {
+      return await createProductDb(pg, payload);
+    } catch (error) {
+      logDbError("createProduct", error);
+      if (!fallbackAllowed) return { ok: false, error: "write_failed" };
+    }
+  } else if (!fallbackAllowed) {
     return { ok: false, error: FEATURE_UNAVAILABLE_IN_PRODUCTION };
   }
+  return createProductJson(payload, options);
+}
+
+async function updateProductDb(pg, id, payload) {
+  const existRes = await pg.query(
+    `SELECT * FROM marketplace_products WHERE id = $1`,
+    [id],
+  );
+  const existRow = (existRes.rows || [])[0];
+  if (!existRow) return { ok: false, error: "not_found" };
+  const updated = normalizeProduct(payload, rowToProduct(existRow));
+  const result = await pg.query(
+    `UPDATE marketplace_products SET
+       center_id=$2, center_name=$3, name=$4, description=$5, category=$6,
+       price=$7, stock=$8, image_url=$9, status=$10, commission_rate=$11,
+       updated_at=$12::timestamptz
+     WHERE id=$1 RETURNING *`,
+    [
+      id, // $1
+      updated.center_id, // $2
+      updated.center_name, // $3
+      updated.name, // $4
+      updated.description, // $5
+      updated.category, // $6
+      updated.price, // $7
+      updated.stock, // $8
+      updated.image_url, // $9
+      updated.status, // $10
+      updated.commission_rate, // $11
+      updated.updated_at, // $12
+    ],
+  );
+  const row = (result.rows || [])[0];
+  return { ok: true, product: row ? rowToProduct(row) : updated };
+}
+
+async function updateProductJson(id, payload, options) {
   const filePath = resolveProductsFile(options);
   try {
     const rows = await readAll(filePath, "products");
@@ -489,14 +741,34 @@ async function updateProduct(id, payload = {}, options = {}) {
   }
 }
 
-async function setProductStatus(id, status, options = {}) {
-  if (jsonFeatureBlocked(options)) {
+async function updateProduct(id, payload = {}, options = {}) {
+  const pg = options.pg || activePg;
+  const fallbackAllowed = isJsonFallbackAllowed(options.env || process.env);
+  if (await isDbAvailable(pg)) {
+    try {
+      return await updateProductDb(pg, id, payload);
+    } catch (error) {
+      logDbError("updateProduct", error);
+      if (!fallbackAllowed) return { ok: false, error: "write_failed" };
+    }
+  } else if (!fallbackAllowed) {
     return { ok: false, error: FEATURE_UNAVAILABLE_IN_PRODUCTION };
   }
-  const normalized = (status || "").toString().trim().toLowerCase();
-  if (!PRODUCT_STATUSES.includes(normalized)) {
-    return { ok: false, error: "invalid_status" };
-  }
+  return updateProductJson(id, payload, options);
+}
+
+async function setProductStatusDb(pg, id, status) {
+  const result = await pg.query(
+    `UPDATE marketplace_products SET status=$2, updated_at=NOW()
+     WHERE id=$1 RETURNING *`,
+    [id, status],
+  );
+  const row = (result.rows || [])[0];
+  if (!row) return { ok: false, error: "not_found" };
+  return { ok: true, product: rowToProduct(row) };
+}
+
+async function setProductStatusJson(id, status, options) {
   const filePath = resolveProductsFile(options);
   try {
     const rows = await readAll(filePath, "products");
@@ -504,7 +776,7 @@ async function setProductStatus(id, status, options = {}) {
     if (index === -1) return { ok: false, error: "not_found" };
     const updated = {
       ...rows[index],
-      status: normalized,
+      status,
       updated_at: new Date().toISOString(),
     };
     rows[index] = updated;
@@ -518,6 +790,26 @@ async function setProductStatus(id, status, options = {}) {
   }
 }
 
+async function setProductStatus(id, status, options = {}) {
+  const normalized = (status || "").toString().trim().toLowerCase();
+  if (!PRODUCT_STATUSES.includes(normalized)) {
+    return { ok: false, error: "invalid_status" };
+  }
+  const pg = options.pg || activePg;
+  const fallbackAllowed = isJsonFallbackAllowed(options.env || process.env);
+  if (await isDbAvailable(pg)) {
+    try {
+      return await setProductStatusDb(pg, id, normalized);
+    } catch (error) {
+      logDbError("setProductStatus", error);
+      if (!fallbackAllowed) return { ok: false, error: "write_failed" };
+    }
+  } else if (!fallbackAllowed) {
+    return { ok: false, error: FEATURE_UNAVAILABLE_IN_PRODUCTION };
+  }
+  return setProductStatusJson(id, normalized, options);
+}
+
 // ---- 訂單 ----
 
 // 建立訂單。
@@ -528,32 +820,151 @@ async function setProductStatus(id, status, options = {}) {
 //   3. 計算 total / commission / center_revenue。
 //   4. 扣庫存並寫回商品檔（同一次寫入）。
 // 任何驗證失敗都回 {ok:false, error}，不丟例外。
-async function createOrder(payload = {}, options = {}) {
-  if (jsonFeatureBlocked(options)) {
-    return { ok: false, error: FEATURE_UNAVAILABLE_IN_PRODUCTION };
+// 把 rawItems 合併為 Map<productId, qty>。回 { ok:false, error } 或 { quantities }。
+function buildQuantities(payload) {
+  const rawItems = Array.isArray(payload.items) ? payload.items : [];
+  if (rawItems.length === 0) {
+    return { error: "empty_cart" };
   }
+  const quantities = new Map();
+  for (const raw of rawItems) {
+    const productId = raw && (raw.productId ?? raw.product_id);
+    const qty = Math.round(toFiniteNumber(raw && raw.quantity, 0));
+    if (!productId || qty <= 0) {
+      return { error: "invalid_item" };
+    }
+    quantities.set(productId, (quantities.get(productId) || 0) + qty);
+  }
+  return { quantities };
+}
+
+// DB 路徑：單一 transaction（BEGIN → 鎖列驗證 → 條件式扣庫存 → INSERT 訂單 → COMMIT）。
+// 任一驗證失敗或例外都 ROLLBACK；所有 error 碼與 JSON 路徑一致。
+// 真 pool（有 getPool）會以單一 client 跑交易；mock pg（僅 query）則以 query 序列驗證。
+async function createOrderDb(pg, payload) {
+  const built = buildQuantities(payload);
+  if (built.error) return { ok: false, error: built.error };
+  const quantities = built.quantities;
+
+  const pool = typeof pg.getPool === "function" ? pg.getPool() : null;
+  const client = pool ? await pool.connect() : null;
+  const run = client ? (t, p) => client.query(t, p) : (t, p) => pg.query(t, p);
+  let began = false;
+  try {
+    await run("BEGIN");
+    began = true;
+
+    const ids = [...quantities.keys()];
+    const sel = await run(
+      `SELECT * FROM marketplace_products WHERE id = ANY($1) FOR UPDATE`,
+      [ids],
+    );
+    const byId = new Map((sel.rows || []).map((r) => [r.id, r]));
+
+    const items = [];
+    let centerId = null;
+    let centerName = "";
+    let commissionRate = null;
+    let totalAmount = 0;
+
+    for (const [productId, qty] of quantities.entries()) {
+      const product = byId.get(productId);
+      if (!product) {
+        await run("ROLLBACK");
+        return { ok: false, error: "product_not_found" };
+      }
+      if (product.status !== "active") {
+        await run("ROLLBACK");
+        return { ok: false, error: "product_unavailable" };
+      }
+      if (centerId == null) {
+        centerId = product.center_id;
+        centerName = product.center_name;
+        commissionRate = normalizeCommissionRate(product.commission_rate);
+      } else if (product.center_id !== centerId) {
+        // MVP 不支援跨長照中心拆單。
+        await run("ROLLBACK");
+        return { ok: false, error: "multiple_centers" };
+      }
+      const unitPrice = Math.max(0, Math.round(toFiniteNumber(product.price, 0)));
+      const subtotal = unitPrice * qty;
+      totalAmount += subtotal;
+      items.push({
+        product_id: product.id,
+        product_name: product.name,
+        quantity: qty,
+        unit_price: unitPrice,
+        subtotal,
+      });
+    }
+
+    // 扣庫存：條件式 UPDATE（stock>=qty），affected rows 為 0 → 庫存不足 → ROLLBACK。
+    for (const [productId, qty] of quantities.entries()) {
+      const upd = await run(
+        `UPDATE marketplace_products SET stock = stock - $2, updated_at = NOW()
+         WHERE id = $1 AND stock >= $2 RETURNING id`,
+        [productId, qty],
+      );
+      if (!upd.rows || upd.rows.length === 0) {
+        await run("ROLLBACK");
+        return { ok: false, error: "insufficient_stock", productId };
+      }
+    }
+
+    const commissionAmount = Math.round(totalAmount * (commissionRate || 0));
+    const centerRevenue = totalAmount - commissionAmount;
+    const id = randomUUID();
+    const insRes = await run(
+      `INSERT INTO marketplace_orders (
+         id, user_id, elder_name, center_id, center_name, items_json,
+         total_amount, commission_rate, commission_amount, center_revenue,
+         status, delivery_note, created_at, updated_at
+       ) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12, NOW(), NOW())
+       RETURNING *`,
+      [
+        id, // $1
+        payload.userId ?? payload.user_id ?? null, // $2
+        (payload.elderName ?? payload.elder_name ?? "").toString().trim(), // $3
+        centerId, // $4
+        centerName, // $5
+        JSON.stringify(items), // $6
+        totalAmount, // $7
+        commissionRate || 0, // $8
+        commissionAmount, // $9
+        centerRevenue, // $10
+        "pending", // $11
+        (payload.deliveryNote ?? payload.delivery_note ?? "").toString().trim(), // $12
+      ],
+    );
+
+    await run("COMMIT");
+    const row = (insRes.rows || [])[0];
+    return { ok: true, order: row ? rowToOrder(row) : null };
+  } catch (error) {
+    if (began) {
+      try {
+        await run("ROLLBACK");
+      } catch (_rollbackError) {
+        // ROLLBACK 失敗只忽略（連線可能已壞），原始錯誤往上拋。
+      }
+    }
+    throw error;
+  } finally {
+    if (client && typeof client.release === "function") client.release();
+  }
+}
+
+async function createOrderJson(payload, options) {
   const productsFile = resolveProductsFile(options);
   const ordersFile = resolveOrdersFile(options);
 
-  const rawItems = Array.isArray(payload.items) ? payload.items : [];
-  if (rawItems.length === 0) {
-    return { ok: false, error: "empty_cart" };
-  }
+  const built = buildQuantities(payload);
+  if (built.error) return { ok: false, error: built.error };
+  const quantities = built.quantities;
 
   try {
     const products = await readAll(productsFile, "products");
     const byId = new Map(products.map((p) => [p.id, p]));
-
-    // 數量先依 productId 合併（同商品多列也能正確扣庫存）。
-    const quantities = new Map();
-    for (const raw of rawItems) {
-      const productId = raw && (raw.productId ?? raw.product_id);
-      const qty = Math.round(toFiniteNumber(raw && raw.quantity, 0));
-      if (!productId || qty <= 0) {
-        return { ok: false, error: "invalid_item" };
-      }
-      quantities.set(productId, (quantities.get(productId) || 0) + qty);
-    }
 
     const items = [];
     let centerId = null;
@@ -634,8 +1045,41 @@ async function createOrder(payload = {}, options = {}) {
   }
 }
 
-async function listOrders(options = {}) {
-  if (jsonFeatureBlocked(options)) throw new FeatureUnavailableInProductionError();
+async function createOrder(payload = {}, options = {}) {
+  const pg = options.pg || activePg;
+  const fallbackAllowed = isJsonFallbackAllowed(options.env || process.env);
+  if (await isDbAvailable(pg)) {
+    try {
+      return await createOrderDb(pg, payload);
+    } catch (error) {
+      logDbError("createOrder", error);
+      if (!fallbackAllowed) return { ok: false, error: "write_failed" };
+    }
+  } else if (!fallbackAllowed) {
+    return { ok: false, error: FEATURE_UNAVAILABLE_IN_PRODUCTION };
+  }
+  return createOrderJson(payload, options);
+}
+
+async function listOrdersDb(pg, options) {
+  const where = [];
+  const params = [];
+  if (options.status && options.status !== "all") {
+    params.push(options.status);
+    where.push(`status = $${params.length}`);
+  }
+  if (options.userId != null) {
+    params.push(options.userId);
+    where.push(`user_id = $${params.length}`);
+  }
+  let sql = `SELECT * FROM marketplace_orders`;
+  if (where.length > 0) sql += ` WHERE ${where.join(" AND ")}`;
+  sql += ` ORDER BY created_at DESC`;
+  const result = await pg.query(sql, params);
+  return (result.rows || []).map(rowToOrder);
+}
+
+async function listOrdersJson(options) {
   const filePath = resolveOrdersFile(options);
   let rows = await readAll(filePath, "orders");
   if (options.status && options.status !== "all") {
@@ -650,21 +1094,73 @@ async function listOrders(options = {}) {
   return rows;
 }
 
-async function getOrderById(id, options = {}) {
-  if (jsonFeatureBlocked(options)) throw new FeatureUnavailableInProductionError();
+async function listOrders(options = {}) {
+  const pg = options.pg || activePg;
+  const fallbackAllowed = isJsonFallbackAllowed(options.env || process.env);
+  if (await isDbAvailable(pg)) {
+    try {
+      return await listOrdersDb(pg, options);
+    } catch (error) {
+      logDbError("listOrders", error);
+      if (!fallbackAllowed) throw error;
+    }
+  } else if (!fallbackAllowed) {
+    throw new FeatureUnavailableInProductionError();
+  }
+  return listOrdersJson(options);
+}
+
+async function getOrderByIdDb(pg, id) {
+  const result = await pg.query(
+    `SELECT * FROM marketplace_orders WHERE id = $1`,
+    [id],
+  );
+  const row = (result.rows || [])[0];
+  return row ? rowToOrder(row) : null;
+}
+
+async function getOrderByIdJson(id, options) {
   const filePath = resolveOrdersFile(options);
   const rows = await readAll(filePath, "orders");
   return rows.find((o) => o.id === id) || null;
 }
 
-async function updateOrderStatus(id, status, fields = {}, options = {}) {
-  if (jsonFeatureBlocked(options)) {
-    return { ok: false, error: FEATURE_UNAVAILABLE_IN_PRODUCTION };
+async function getOrderById(id, options = {}) {
+  const pg = options.pg || activePg;
+  const fallbackAllowed = isJsonFallbackAllowed(options.env || process.env);
+  if (await isDbAvailable(pg)) {
+    try {
+      return await getOrderByIdDb(pg, id);
+    } catch (error) {
+      logDbError("getOrderById", error);
+      if (!fallbackAllowed) throw error;
+    }
+  } else if (!fallbackAllowed) {
+    throw new FeatureUnavailableInProductionError();
   }
-  const normalized = (status || "").toString().trim().toLowerCase();
-  if (!ORDER_STATUSES.includes(normalized)) {
-    return { ok: false, error: "invalid_status" };
+  return getOrderByIdJson(id, options);
+}
+
+async function updateOrderStatusDb(pg, id, status, fields) {
+  const sets = [`status = $2`, `updated_at = NOW()`];
+  const params = [id, status];
+  // 配送備註可一併更新（管理端填寫）。
+  if (fields.deliveryNote != null || fields.delivery_note != null) {
+    params.push(
+      (fields.deliveryNote ?? fields.delivery_note ?? "").toString().trim(),
+    );
+    sets.push(`delivery_note = $${params.length}`);
   }
+  const result = await pg.query(
+    `UPDATE marketplace_orders SET ${sets.join(", ")} WHERE id = $1 RETURNING *`,
+    params,
+  );
+  const row = (result.rows || [])[0];
+  if (!row) return { ok: false, error: "not_found" };
+  return { ok: true, order: rowToOrder(row) };
+}
+
+async function updateOrderStatusJson(id, status, fields, options) {
   const filePath = resolveOrdersFile(options);
   try {
     const rows = await readAll(filePath, "orders");
@@ -672,7 +1168,7 @@ async function updateOrderStatus(id, status, fields = {}, options = {}) {
     if (index === -1) return { ok: false, error: "not_found" };
     const updated = {
       ...rows[index],
-      status: normalized,
+      status,
       updated_at: new Date().toISOString(),
     };
     // 配送備註可一併更新（管理端填寫）。
@@ -690,6 +1186,26 @@ async function updateOrderStatus(id, status, fields = {}, options = {}) {
     });
     return { ok: false, error: "write_failed" };
   }
+}
+
+async function updateOrderStatus(id, status, fields = {}, options = {}) {
+  const normalized = (status || "").toString().trim().toLowerCase();
+  if (!ORDER_STATUSES.includes(normalized)) {
+    return { ok: false, error: "invalid_status" };
+  }
+  const pg = options.pg || activePg;
+  const fallbackAllowed = isJsonFallbackAllowed(options.env || process.env);
+  if (await isDbAvailable(pg)) {
+    try {
+      return await updateOrderStatusDb(pg, id, normalized, fields);
+    } catch (error) {
+      logDbError("updateOrderStatus", error);
+      if (!fallbackAllowed) return { ok: false, error: "write_failed" };
+    }
+  } else if (!fallbackAllowed) {
+    return { ok: false, error: FEATURE_UNAVAILABLE_IN_PRODUCTION };
+  }
+  return updateOrderStatusJson(id, normalized, fields, options);
 }
 
 module.exports = {
@@ -710,4 +1226,6 @@ module.exports = {
   updateOrderStatus,
   normalizeProduct,
   normalizeCommissionRate,
+  // 測試 / 工具用：注入 mock pg。
+  setPgForTest,
 };

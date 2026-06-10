@@ -1,15 +1,15 @@
-// CR-0057 Marketplace production 停用路徑端點測試（defense-in-depth + wire 契約一致）。
+// CR-0066+ Marketplace production DB 路徑端點測試。
 //
-// 裁決規格（architecture-agent）：
-//   - production（isJsonFallbackAllowed=false）下，marketplace 所有會出現
-//     feature_unavailable_in_production 的路由 → 統一回 501。
-//   - 形狀：{ ok:false, error:"not_enabled", message:<白話、無工程字眼/path/stack> }。
-//   - dev/test 既有行為（200/400/404）位元不變（見 marketplaceEndpoint.test.js）。
+// 背景：商城已從 JSON-only 平移到 PostgreSQL（migration 015）。production 不再回 501
+// not_enabled，而是走 DB（DATABASE_URL + PGVECTOR_ENABLED=true）正常運作。
 //
-// production 切換沿用既有端點測試慣例（careAlertNotifyAuthEndpoint.test.js #11）：
-//   require server 時 NODE_ENV=test（啟動 fail-fast no-op、不 process.exit），
-//   再於單一請求前後暫時把 NODE_ENV/APP_ENV 切到 production，finally 還原。
-//   store 在「呼叫當下」讀 process.env，故路由真的會走 production 停用分支。
+// 本測試以 setPgForTest 注入「DB 可用」的 mock pg（server.js 與本檔共用同一 store
+// singleton），並在 production env 下打 HTTP：驗證 marketplace 路由回 200 / {ok:true}。
+// 保留「缺 admin token → 401」（authN 先於 store）。
+//
+// production 切換沿用既有端點測試慣例：require server 時 NODE_ENV=test（啟動 fail-fast
+// no-op），再於單一請求前後暫時把 NODE_ENV/APP_ENV 切到 production，finally 還原；
+// store 在「呼叫當下」讀 process.env，故路由真的會走 production（DB-required）分支。
 
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
@@ -28,11 +28,113 @@ delete process.env.DATABASE_URL;
 delete process.env.TELEGRAM_BOT_TOKEN;
 
 const app = require("../../server");
+const marketplaceStore = require("./marketplaceStore");
 
 const ADMIN_HEADERS = {
   "Content-Type": "application/json",
   Authorization: "Bearer test-admin-token",
 };
+
+// 「DB 可用」mock pg：依 SQL 文字回對應 rows，使各 marketplace 路由回 {ok:true}。
+// 不提供 getPool → createOrderDb 走 pg.query（BEGIN/SELECT/UPDATE/INSERT/COMMIT 序列）。
+function makeServerMockPg() {
+  const baseProduct = {
+    id: "seed-bath-chair",
+    center_id: "center-anxin",
+    center_name: "安心長照中心",
+    name: "防滑沐浴椅",
+    description: "穩穩坐著",
+    category: "照護用品",
+    price: 1800,
+    stock: 12,
+    image_url: "",
+    status: "active",
+    commission_rate: "0.100",
+    created_at: new Date("2026-06-01T00:00:00.000Z"),
+    updated_at: new Date("2026-06-01T00:00:00.000Z"),
+  };
+  const baseOrder = {
+    id: "order-1",
+    user_id: "u-elder",
+    elder_name: "陳奶奶",
+    center_id: "center-anxin",
+    center_name: "安心長照中心",
+    items_json: [
+      { product_id: "p1", product_name: "防滑沐浴椅", quantity: 1, unit_price: 1800, subtotal: 1800 },
+    ],
+    total_amount: 1800,
+    commission_rate: "0.100",
+    commission_amount: 180,
+    center_revenue: 1620,
+    status: "pending",
+    delivery_note: "",
+    created_at: new Date("2026-06-01T00:00:00.000Z"),
+    updated_at: new Date("2026-06-01T00:00:00.000Z"),
+  };
+  return {
+    isPostgresAvailable: async () => true,
+    query: async (text, params) => {
+      const t = text.trim();
+      if (/^(BEGIN|COMMIT|ROLLBACK)$/.test(t)) return { rows: [] };
+      // ---- products ----
+      if (/SELECT \* FROM marketplace_products WHERE id = ANY/.test(t)) {
+        const ids = params[0] || [];
+        return { rows: ids.map((id) => ({ ...baseProduct, id })) };
+      }
+      if (/SELECT \* FROM marketplace_products WHERE id = \$1/.test(t)) {
+        return { rows: [{ ...baseProduct, id: params[0] }] };
+      }
+      if (/SELECT \* FROM marketplace_products/.test(t)) {
+        return { rows: [baseProduct] };
+      }
+      if (/UPDATE marketplace_products SET stock/.test(t)) {
+        return { rows: [{ id: params[0] }] };
+      }
+      if (/UPDATE marketplace_products SET status/.test(t)) {
+        return { rows: [{ ...baseProduct, status: params[1] }] };
+      }
+      if (/UPDATE marketplace_products SET/.test(t)) {
+        return { rows: [{ ...baseProduct, name: params[3] }] };
+      }
+      if (/INSERT INTO marketplace_products/.test(t)) {
+        return { rows: [] };
+      }
+      // ---- orders ----
+      if (/INSERT INTO marketplace_orders/.test(t)) {
+        return {
+          rows: [
+            {
+              id: params[0],
+              user_id: params[1],
+              elder_name: params[2],
+              center_id: params[3],
+              center_name: params[4],
+              items_json: JSON.parse(params[5]),
+              total_amount: params[6],
+              commission_rate: String(params[7]),
+              commission_amount: params[8],
+              center_revenue: params[9],
+              status: params[10],
+              delivery_note: params[11],
+              created_at: new Date("2026-06-01T00:00:00.000Z"),
+              updated_at: new Date("2026-06-01T00:00:00.000Z"),
+            },
+          ],
+        };
+      }
+      if (/SELECT \* FROM marketplace_orders WHERE id = \$1/.test(t)) {
+        return { rows: [{ ...baseOrder, id: params[0] }] };
+      }
+      if (/SELECT \* FROM marketplace_orders/.test(t)) {
+        return { rows: [baseOrder] };
+      }
+      if (/UPDATE marketplace_orders SET/.test(t)) {
+        return { rows: [{ ...baseOrder, id: params[0], status: params[1] }] };
+      }
+      return { rows: [] };
+    },
+  };
+}
 
 function startServer() {
   return new Promise((resolve) => {
@@ -63,161 +165,175 @@ async function fetchInProduction(url, init) {
   }
 }
 
-// 統一斷言：501 + marketplace 形狀（ok:false / not_enabled / 友善 message），
-// 且不外洩 stack / file path / demo / JSON 字樣。
-function assertMarketplaceDisabled(res) {
-  assert.equal(res.status, 501);
-  assert.ok(res.body && typeof res.body === "object");
-  assert.equal(res.body.ok, false);
-  assert.equal(res.body.error, "not_enabled");
-  assert.equal(typeof res.body.message, "string");
-  assert.ok(res.body.message.length > 0);
-  // 內部碼不外洩到 wire。
-  assert.ok(!res.raw.includes("feature_unavailable_in_production"));
-  // 不含工程字眼 / 路徑 / stack / demo / JSON。
-  for (const banned of ["Error", "stack", ".json", "/Users", "/var", "demo", "Demo", "JSON"]) {
-    assert.ok(!res.raw.includes(banned), `response 不應含 "${banned}"：${res.raw}`);
+// 注入「DB 可用」mock pg 跑一個 production 請求，結束後還原 store。
+async function withDbProduction(url, init) {
+  marketplaceStore.setPgForTest(makeServerMockPg());
+  try {
+    return await fetchInProduction(url, init);
+  } finally {
+    marketplaceStore.setPgForTest(null);
   }
 }
 
-test("production GET /api/marketplace/products → 501 not_enabled，不讀 JSON / 不回 demo", async () => {
+test("production GET /api/marketplace/products → 200 走 DB（不再 501）", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    const res = await fetchInProduction(`${baseUrl}/api/marketplace/products`, {});
-    assertMarketplaceDisabled(res);
+    const res = await withDbProduction(`${baseUrl}/api/marketplace/products`, {});
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ok, true);
+    assert.ok(Array.isArray(res.body.products));
+    assert.ok(res.body.products.length >= 1);
   } finally {
     server.close();
   }
 });
 
-test("production GET /api/marketplace/products/:id → 501 not_enabled", async () => {
+test("production GET /api/marketplace/products/:id → 200 + product", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    const res = await fetchInProduction(`${baseUrl}/api/marketplace/products/any-id`, {});
-    assertMarketplaceDisabled(res);
+    const res = await withDbProduction(`${baseUrl}/api/marketplace/products/seed-bath-chair`, {});
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ok, true);
+    assert.equal(res.body.product.id, "seed-bath-chair");
   } finally {
     server.close();
   }
 });
 
-test("production POST /api/marketplace/orders → 501 not_enabled（非 500）", async () => {
+test("production POST /api/marketplace/orders → 200 走 DB 交易（重算金額）", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    const res = await fetchInProduction(`${baseUrl}/api/marketplace/orders`, {
+    const res = await withDbProduction(`${baseUrl}/api/marketplace/orders`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         userId: "u-elder",
+        elderName: "陳奶奶",
         items: [{ productId: "p1", quantity: 1 }],
       }),
     });
-    assertMarketplaceDisabled(res);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ok, true);
+    assert.equal(res.body.order.status, "pending");
+    assert.equal(res.body.order.total_amount, 1800);
   } finally {
     server.close();
   }
 });
 
-test("production POST /api/admin/marketplace/products（admin 通過後）→ 501 not_enabled", async () => {
+test("production POST /api/admin/marketplace/products（admin 通過）→ 200 + product", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    const res = await fetchInProduction(`${baseUrl}/api/admin/marketplace/products`, {
+    const res = await withDbProduction(`${baseUrl}/api/admin/marketplace/products`, {
       method: "POST",
       headers: ADMIN_HEADERS,
       body: JSON.stringify({ name: "防滑沐浴椅", price: 1800, stock: 5 }),
     });
-    assertMarketplaceDisabled(res);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ok, true);
+    assert.equal(res.body.product.name, "防滑沐浴椅");
   } finally {
     server.close();
   }
 });
 
-test("production PUT /api/admin/marketplace/products/:id → 501 not_enabled", async () => {
+test("production PUT /api/admin/marketplace/products/:id → 200 + product", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    const res = await fetchInProduction(`${baseUrl}/api/admin/marketplace/products/p1`, {
+    const res = await withDbProduction(`${baseUrl}/api/admin/marketplace/products/seed-bath-chair`, {
       method: "PUT",
       headers: ADMIN_HEADERS,
-      body: JSON.stringify({ name: "x", price: 1 }),
+      body: JSON.stringify({ name: "新名稱", price: 2000 }),
     });
-    assertMarketplaceDisabled(res);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ok, true);
+    assert.equal(res.body.product.name, "新名稱");
   } finally {
     server.close();
   }
 });
 
-test("production PATCH /api/admin/marketplace/products/:id/status → 501 not_enabled", async () => {
+test("production PATCH /api/admin/marketplace/products/:id/status → 200 + 下架", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    const res = await fetchInProduction(
-      `${baseUrl}/api/admin/marketplace/products/p1/status`,
+    const res = await withDbProduction(
+      `${baseUrl}/api/admin/marketplace/products/seed-bath-chair/status`,
       {
         method: "PATCH",
         headers: ADMIN_HEADERS,
         body: JSON.stringify({ status: "inactive" }),
       },
     );
-    assertMarketplaceDisabled(res);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ok, true);
+    assert.equal(res.body.product.status, "inactive");
   } finally {
     server.close();
   }
 });
 
-test("production GET /api/admin/marketplace/orders → 501 not_enabled", async () => {
+test("production GET /api/admin/marketplace/orders → 200 + orders", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    const res = await fetchInProduction(`${baseUrl}/api/admin/marketplace/orders`, {
+    const res = await withDbProduction(`${baseUrl}/api/admin/marketplace/orders`, {
       headers: ADMIN_HEADERS,
     });
-    assertMarketplaceDisabled(res);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ok, true);
+    assert.ok(Array.isArray(res.body.orders));
   } finally {
     server.close();
   }
 });
 
-test("production GET /api/admin/marketplace/orders/:id → 501 not_enabled", async () => {
+test("production GET /api/admin/marketplace/orders/:id → 200 + order", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    const res = await fetchInProduction(`${baseUrl}/api/admin/marketplace/orders/o1`, {
+    const res = await withDbProduction(`${baseUrl}/api/admin/marketplace/orders/order-1`, {
       headers: ADMIN_HEADERS,
     });
-    assertMarketplaceDisabled(res);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ok, true);
+    assert.equal(res.body.order.id, "order-1");
   } finally {
     server.close();
   }
 });
 
-test("production PATCH /api/admin/marketplace/orders/:id/status → 501 not_enabled", async () => {
+test("production PATCH /api/admin/marketplace/orders/:id/status → 200 + 狀態更新", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    const res = await fetchInProduction(
-      `${baseUrl}/api/admin/marketplace/orders/o1/status`,
+    const res = await withDbProduction(
+      `${baseUrl}/api/admin/marketplace/orders/order-1/status`,
       {
         method: "PATCH",
         headers: ADMIN_HEADERS,
         body: JSON.stringify({ status: "confirmed" }),
       },
     );
-    assertMarketplaceDisabled(res);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ok, true);
+    assert.equal(res.body.order.status, "confirmed");
   } finally {
     server.close();
   }
 });
 
-// admin authN 仍先於 store 停用訊號：缺 token → 401（不洩漏 501/資料）。
-test("production 缺 admin token → 仍 401（authN 先於 feature 停用）", async () => {
+// admin authN 仍先於 store：缺 token → 401（不洩漏資料 / 不走 DB）。
+test("production 缺 admin token → 仍 401（authN 先於 store）", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    const res = await fetchInProduction(`${baseUrl}/api/admin/marketplace/orders`, {});
+    const res = await withDbProduction(`${baseUrl}/api/admin/marketplace/orders`, {});
     assert.equal(res.status, 401);
     assert.deepEqual(res.body, { ok: false, error: "missing_admin_token" });
   } finally {
@@ -225,14 +341,12 @@ test("production 缺 admin token → 仍 401（authN 先於 feature 停用）", 
   }
 });
 
-// reminders 在 stt_proxy 無專屬後端 HTTP 路由（屬 client 端本地功能），
-// 故以 /health 作 smoke：證明本 CR 的 501 變更僅限 marketplace/daily-care，
-// 不影響其他 production-stable 路由。
-test("reminders smoke：production 下 /health 仍 200（501 變更未外溢）", async () => {
+// /health 不受 marketplace DB 平移影響。
+test("smoke：production 下 /health 仍 200", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    const res = await fetchInProduction(`${baseUrl}/health`, {});
+    const res = await withDbProduction(`${baseUrl}/health`, {});
     assert.equal(res.status, 200);
   } finally {
     server.close();
