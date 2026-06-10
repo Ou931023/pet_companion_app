@@ -140,7 +140,7 @@
 
 ## 6. 執行資料庫 migration
 
-migration 程式：`db/migrate.js`（透過 `db/pool.js` 讀 `DATABASE_URL`）。動作：先 `CREATE EXTENSION pgcrypto / vector`，再依序套用 `db/migrations/001…014`（共 14 個 `.sql`）。
+migration 程式：`db/migrate.js`（透過 `db/pool.js` 讀 `DATABASE_URL`）。動作：先 `CREATE EXTENSION pgcrypto / vector`，再依序套用 `db/migrations/001…015`（共 15 個 `.sql`）。其中 `015_marketplace_pg_seed.sql` 會把 marketplace 表 id 放寬為 TEXT 並灌入 15 筆 `seed-*` 種子商品——商城要在正式環境出現商品，務必跑到 015。
 
 **指令（在已設好 `DATABASE_URL` 的環境執行）：**
 
