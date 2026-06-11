@@ -3480,3 +3480,43 @@ docs-only 部署指南，無 🔒 / runtime 變更，內容與程式真相一致
 
 ### 裁決
 小範圍、純新增、契約已記錄於本檔與 `PROJECT_ARCHITECTURE.md §4`，測試齊備且全綠；併入主線。部署後以新按鈕清除 production 測試訂單。
+
+---
+
+## CR-0068 — 日常照護任務（Daily Care Task）JSON → PostgreSQL production 平移
+
+### 模式
+功能平移，觸及 🔒（新增 DB schema migration 016、`package.json` test/check 清單、`PROJECT_ARCHITECTURE.md` API 表）。比照已完成並上線的 marketplace CR-0066+ pattern；**保持 API response shape 不變**，不碰 Realtime / Auth / Marketplace。
+
+### 動機 / 問題
+daily-care-tasks 為 JSON-only store，production（ALLOW_JSON_FALLBACK=false）下一律回 501 not_enabled，App 端今日任務出現「伺服器忙線中」、caregiver_web 今日任務分頁被 featureFlags 關閉。需與 marketplace 同樣平移到 PostgreSQL 才能在正式環境使用。
+
+### 變更（程式）
+- **`db/migrations/016_create_daily_care_tasks.sql`（🔒 schema，新增）**：建 `daily_care_tasks` + `daily_care_task_submissions` 兩表。id / elder_id 用 TEXT（比照 015；不綁 elders FK，避免 demo id 違規）；submission 以 `task_id` FK 參照 tasks（ON DELETE CASCADE）；verification 整包存 `verification_json` JSONB。全冪等（CREATE/INDEX IF NOT EXISTS + ADD COLUMN IF NOT EXISTS），無破壞性操作、不灌種子（任務由 App runtime 建立）。
+- **`services/dailyCareTask/dailyCareTaskStore.js`**：改 DB-優先 + JSON 降級（仿 marketplaceStore）。每個對外函式拆 `*Db` / `*Json`，wrapper 以 `isDbAvailable` 決策；production 無 DB → read 類 throw `FeatureUnavailableInProductionError`、envelope 類（updateTaskStatus）回 feature_unavailable / write_failed（行為與既有契約一致）。新增 `rowToTask` / `rowToSubmission`（snake_case row → 既有 camelCase 形狀）、`toIso` / `safeParseJson` / `setPgForTest`。`recordSubmissionDb` 用單一 transaction（SELECT FOR UPDATE → INSERT submission → UPDATE task → COMMIT）。**對外簽名 / 回傳形狀 / error 碼全不變。**
+- **server.js / Flutter / vision service：未改**（路由、request/response 契約、AI 驗證邏輯不動）。
+
+### API response shape
+不變。store 對外仍回 camelCase（id, elderId, title, type, scheduledTime, dueAt, status, proofRequired, createdAt, updatedAt；submission: id, taskId, elderId, proofImagePath, submittedAt, status, verification{verificationStatus,confidence,reason,detectedObjects,reviewRequired}, note；admin 附 latestSubmission + submissionCount）。Flutter `DailyCareTask*` model 與 caregiver_web 解析欄位皆對齊，無需改前端解析。
+
+### 前端
+- `caregiver_web/index.html`：正式 APP_CONFIG `featureFlags.dailyCareTasks` `false → true`（後端已上線）；app.js cache-bust `?v=20260611-cr0067 → 20260611-cr0068`（避免快取舊檔，CR-0067 教訓）。
+- Flutter 端無改動（端點 / 欄位不變）。
+
+### 已知限制
+完成證明圖片仍存於後端 runtime 檔系統（DB 只存 proof_image_path metadata）。Render Web Service 本機磁碟為 ephemeral，圖片不跨 redeploy 持久化——blob 物件儲存為後續獨立議題，不在本 CR 範圍。
+
+### 測試
+- 新增 `services/dailyCareTask/dailyCareTaskStore.db.test.js`（mock pg，13 例：CRUD/交易序列/task_not_found ROLLBACK/production 不降級）、`db/migration016.test.js`（靜態冪等審查，8 例）。
+- 既有 `dailyCareTaskStore.test.js`（JSON）/ `dailyCareTaskProductionEndpoint.test.js`（production 無 DB → 501 防禦）/ `dailyCareTaskEndpoint.test.js` 維持綠（重構後行為不變）。
+- `package.json` test/check 加入新檔（仿 marketplace.db.test 做法，未動依賴）。
+- 全綠：backend `npm test` **552/552**、`npm run check` exit 0；caregiver_web `node --test` **94/94**。`marketplace_admin.test.js` index.html 斷言同步更新為兩旗標皆開啟。
+
+### 限制遵守
+未讀 / 改 `.env`；未提交 runtime `data/*.json`；未碰 Realtime / Auth / Marketplace 行為；未改既有 API 路由形狀；改功能補測試、未刪既有測試。
+
+### 部署驗收（owner action）
+Render Shell 跑 `npm run db:migrate`（套用到 016）→ App 端今日任務不再「伺服器忙線中」、長者能看任務 / 拍照完成、caregiver_web 今日任務分頁可看任務與 submission。
+
+### 裁決
+比照已上線的 marketplace 平移 pattern、契約不變、測試齊備且全綠、migration 冪等無破壞性；併入主線。實際 migrate / 部署為 owner action。

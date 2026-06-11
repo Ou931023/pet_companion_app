@@ -118,7 +118,14 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
 | GET | `/api/admin/marketplace/orders` `/api/admin/marketplace/orders/:id` | 管理端訂單列表 / 詳情（requireAdmin）CR-0032 | backend |
 | PATCH | `/api/admin/marketplace/orders/:id/status` | 管理端更新訂單狀態 / 配送備註（requireAdmin）CR-0032 | backend |
 | DELETE | `/api/admin/marketplace/orders/:id` | 管理端刪除訂單並還原庫存（requireAdmin）**CR-0067** | backend |
+| GET | `/api/daily-care-tasks` | 長者端今日任務列表（?elderId/?status）CR-0025 | backend |
+| POST | `/api/daily-care-tasks` | 建立任務 CR-0025 | backend |
+| POST | `/api/daily-care-tasks/:id/submit` | 拍照完成上傳（multipart photo）+ AI Vision 驗證 + 記 submission CR-0025 | backend |
+| PATCH | `/api/daily-care-tasks/:id/status` | 更新任務狀態 CR-0025 | backend |
+| GET | `/api/daily-care-tasks/proof/:submissionId` | 取回完成證明圖片（本機檔）CR-0025 | backend |
+| GET | `/api/admin/daily-care-tasks` | 管理端任務 + 最新 submission（authz scope）CR-0025 | backend |
 
+> 註：daily-care-tasks 已於 **CR-0068** 由 JSON 平移到 PostgreSQL（migration 016：`daily_care_tasks` / `daily_care_task_submissions` 兩表）；DB-優先 + dev JSON 降級，response shape（camelCase）不變。完成證明圖片仍存 runtime 檔系統（proof_image_path 僅存 metadata）。
 > 註：本表為現況快照；新增 / 修改路由時請同步維護。
 > auth / admin 路由為 CR-0006 / CR-0007 新增（見 `docs/CHANGE_REVIEW.md`），契約定義見 §10、§11。
 
