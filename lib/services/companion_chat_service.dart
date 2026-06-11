@@ -45,6 +45,7 @@ class CompanionChatService {
     required String userText,
     String petName = '',
     String memoryContextSummary = '',
+    List<Map<String, String>> history = const [],
     String? languageHint,
     String? replyLanguage,
   }) async {
@@ -56,6 +57,11 @@ class CompanionChatService {
     }
     if (memoryContextSummary.isNotEmpty) {
       payload['memoryContextSummary'] = memoryContextSummary;
+    }
+    // CR-0072：最近對話歷史（user/assistant），給後端短期脈絡。空則不帶此欄位
+    // （向後相容；後端 sanitizeHistory 會再做 role/長度/則數清洗）。
+    if (history.isNotEmpty) {
+      payload['history'] = history;
     }
     if (languageHint != null && languageHint.isNotEmpty) {
       payload['languageHint'] = languageHint;

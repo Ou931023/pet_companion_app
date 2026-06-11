@@ -3598,3 +3598,37 @@ B 段先前僅有使用者口頭「全數通過」摘要；需一份正式、結
 
 ### 裁決
 docs-only 模板，無 🔒 / runtime 變更；併入主線。實際填寫為 owner action。
+
+---
+
+## CR-0072 — 打字對話帶最近對話歷史（修「金魚腦 / 重複開場白 / 罐頭感」）
+
+### 模式
+小批次功能修正，觸及 🔒 `server.js` API 契約（`/api/companion/chat` 新增**選用** `history` 欄位，純 additive、向後相容）。經 plan-mode 與使用者核准。不改 Realtime / Auth / Marketplace / Daily Care Tasks；不改 persona（`buildCompanionChatInstructions`）。
+
+### 動機 / 根因
+正式 build（`-7mb8`，OpenAI key 已確認串接）下使用者回報「寵物不記得剛說的事 / 回覆罐頭感 / 一直重複開場白」。根因：打字對話 `companionChatService.generateCompanionReply` 送 OpenAI 的 `messages` 只有 `[system, user(這一句)]`，**沒有 session 內最近對話歷史** → 每則都是「全新對話」。
+
+### 變更（程式）
+- `services/companionChatService.js`：`generateCompanionReply` 多收選用 `history`；新增 `sanitizeHistory`（只留 role∈{user,assistant}、content 非空字串、截 1000 字、取最後 12 則）；組 `messages = [system?, ...cleanHistory, user]`。無 history → 與既有單則完全一致。export `sanitizeHistory` 供測試。
+- `server.js` `/api/companion/chat`（🔒）：把 `req.body.history` 傳入 `generateCompanionReply`（清洗統一在 service）；response 形狀與風險側錄不變。
+- Flutter：`companion_chat_service.reply` 加選用 `history`（非空才放入 payload）；`ai_tool_router.route/_chat` 透傳；`conversation_controller._recentChatHistory`（當前 session 最近 6 輪、user/assistant 交錯、oldest→newest）在 route() 前帶入。Realtime 語音（WebRTC）完全不經此路徑、零更動。
+
+### API response shape
+不變（`{success, reply, careAlert?}`）。request 僅新增**選用** `history`。
+
+### 測試
+- `companionChatService.test.js`：history 順序 system→history→user、髒值清洗、無 history 回歸、`sanitizeHistory`（非陣列/超量截 12/截長）。
+- `companionChatEndpoint.test.js`：帶 history 仍正常（無 key→503、非 500）、history 壞值不報錯、缺 userText 仍 400。
+- Flutter `companion_chat_service_test.dart`：帶 history → payload 含 history 陣列；空 history → 不帶 key。
+- `ai_tool_router_chat_test.dart` 的 `_StubChatService.reply` 同步加 `history` 參數。
+- 全綠：backend `npm test` **558/558**、`npm run check` exit 0；flutter 相關測試（companion service / router / conversation controller / 整合語音）全 passed。
+
+### 限制遵守
+未讀 `.env`；未改 Realtime / Auth / Marketplace / Daily Care / persona；既有 API 路由形狀不變、未刪既有測試。
+
+### 範圍外（後續可選）
+長期記憶寫入「射後不理 / 抽取門檻 / 檢索靜默失敗」改善（跨 session 記更牢）另開 CR。
+
+### 裁決
+最小、向後相容、契約已記錄、測試齊備且全綠、不碰受保護模組；併入主線。

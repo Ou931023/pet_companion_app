@@ -1846,8 +1846,10 @@ ${memoryContextSummary}
     replyLanguage: req.body?.replyLanguage,
   });
 
+  // CR-0072：選用 history（最近對話歷史，user/assistant 陣列）。清洗 / 則數 / 長度
+  // 上限由 generateCompanionReply 的 sanitizeHistory 統一處理；非陣列 / 髒值安全降級為無。
   const result = await generateCompanionReply(
-    { userText, systemPrompt },
+    { userText, systemPrompt, history: req.body?.history },
     {
       client,
       hasApiKey: Boolean(process.env.OPENAI_API_KEY),

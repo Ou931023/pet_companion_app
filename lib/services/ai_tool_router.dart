@@ -60,6 +60,7 @@ class AiToolRouter {
   Future<AiToolResult> route(
     String userText, {
     String memoryContextSummary = '',
+    List<Map<String, String>> history = const [],
   }) async {
     final normalized = _toTraditional(userText.trim());
     // B4：提醒指令在 router 層接住並實際建立提醒。回 shouldSpeak:false → Realtime
@@ -95,7 +96,11 @@ class AiToolRouter {
     if (_isCompleteTask(normalized)) {
       return _completeCareTask(normalized);
     }
-    return _chat(normalized, memoryContextSummary: memoryContextSummary);
+    return _chat(
+      normalized,
+      memoryContextSummary: memoryContextSummary,
+      history: history,
+    );
   }
 
   bool shouldHandleLocally(String text) {
@@ -557,6 +562,7 @@ class AiToolRouter {
   Future<AiToolResult> _chat(
     String text, {
     String memoryContextSummary = '',
+    List<Map<String, String>> history = const [],
   }) async {
     final mode = _chatPetMode(text);
 
@@ -584,6 +590,7 @@ class AiToolRouter {
         userText: text,
         petName: profileController.petName,
         memoryContextSummary: memoryContextSummary,
+        history: history,
       );
       return AiToolResult(
         toolName: 'chat',

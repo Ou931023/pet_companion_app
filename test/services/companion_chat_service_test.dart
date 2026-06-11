@@ -58,6 +58,54 @@ void main() {
     expect(body['replyLanguage'], 'zh-TW');
   });
 
+  test('CR-0072 request：帶 history → body 含 history 陣列（role/content）', () async {
+    http.Request? captured;
+    final service = CompanionChatService(
+      client: MockClient((request) async {
+        captured = request;
+        return http.Response(
+          jsonEncode({'success': true, 'reply': '你剛說想睡覺'}),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      }),
+    );
+
+    await service.reply(
+      userText: '我剛剛說想做什麼？',
+      history: const [
+        {'role': 'user', 'content': '我想睡覺'},
+        {'role': 'assistant', 'content': '那早點休息喔'},
+      ],
+    );
+
+    final body = jsonDecode(captured!.body) as Map<String, dynamic>;
+    final history = body['history'] as List<dynamic>;
+    expect(history.length, 2);
+    expect(history.first['role'], 'user');
+    expect(history.first['content'], '我想睡覺');
+    expect(history.last['role'], 'assistant');
+  });
+
+  test('CR-0072 request：history 為空 → 不送出 history key', () async {
+    http.Request? captured;
+    final service = CompanionChatService(
+      client: MockClient((request) async {
+        captured = request;
+        return http.Response(
+          jsonEncode({'success': true, 'reply': '嗨'}),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      }),
+    );
+
+    await service.reply(userText: '你好', history: const []);
+
+    final body = jsonDecode(captured!.body) as Map<String, dynamic>;
+    expect(body.containsKey('history'), isFalse);
+  });
+
   test('request：可選欄位為空時不送出對應 key（只送必填 userText）', () async {
     http.Request? captured;
     final service = CompanionChatService(

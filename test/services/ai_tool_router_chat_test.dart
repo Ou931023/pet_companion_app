@@ -27,16 +27,19 @@ class _StubChatService extends CompanionChatService {
   final String replyValue;
   final bool shouldThrow;
   int callCount = 0;
+  List<Map<String, String>> lastHistory = const [];
 
   @override
   Future<String> reply({
     required String userText,
     String petName = '',
     String memoryContextSummary = '',
+    List<Map<String, String>> history = const [],
     String? languageHint,
     String? replyLanguage,
   }) async {
     callCount++;
+    lastHistory = history;
     if (shouldThrow) {
       throw const CompanionChatException(
         code: 'openai_unavailable',

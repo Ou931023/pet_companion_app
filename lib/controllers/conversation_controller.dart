@@ -244,6 +244,28 @@ class ConversationController extends ChangeNotifier {
         .toList();
   }
 
+  /// CR-0072：取當前 session 最近 [maxTurns] 輪對話，轉成 companion chat 的
+  /// 短期歷史（user/assistant 交錯、oldest→newest，空字串那側略過）。
+  /// 在記錄當前這一輪「之前」呼叫，故不含當前句。後端 sanitizeHistory 會再做
+  /// role/長度/則數清洗，這裡只負責提供來源。
+  List<Map<String, String>> _recentChatHistory({int maxTurns = 6}) {
+    final turns = turnsForSession(_activeSessionId);
+    final recent =
+        turns.length > maxTurns ? turns.sublist(turns.length - maxTurns) : turns;
+    final history = <Map<String, String>>[];
+    for (final turn in recent) {
+      final userText = turn.userText.trim();
+      final petReply = turn.petReply.trim();
+      if (userText.isNotEmpty) {
+        history.add({'role': 'user', 'content': userText});
+      }
+      if (petReply.isNotEmpty) {
+        history.add({'role': 'assistant', 'content': petReply});
+      }
+    }
+    return history;
+  }
+
   /// 刪除「對話紀錄」中的單筆紀錄（聊天歷史裡的一筆 user／pet 交換）。
   ///
   /// 只移除本機對話歷史並重新保存；**完全不會動到 MemoryService 的長期記憶**——
@@ -926,6 +948,7 @@ class ConversationController extends ChangeNotifier {
       final toolResult = await toolRouter.route(
         text,
         memoryContextSummary: memoryContext.memoryContextSummary ?? '',
+        history: _recentChatHistory(),
       );
       final petMode =
           emotion.emotion == 'neutral' ? toolResult.petMode : emotionMode;

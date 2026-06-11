@@ -114,3 +114,56 @@ test("OpenAI 不可用（無金鑰）→ 503 + openai_unavailable，不回 fake 
     server.close();
   }
 });
+
+// ---- CR-0072：history 欄位向後相容（帶 / 壞值都不應讓路由壞掉或變 500）----
+
+test("CR-0072 帶合法 history 仍正常處理（無金鑰→503，非 500/非崩潰）", async () => {
+  const server = await startServer();
+  try {
+    const { port } = server.address();
+    const base = `http://127.0.0.1:${port}`;
+    const res = await postChat(base, {
+      userText: "我剛剛說我叫什麼？",
+      history: [
+        { role: "user", content: "我叫阿明" },
+        { role: "assistant", content: "阿明你好呀" },
+      ],
+    });
+    assert.equal(res.status, 503);
+    assert.deepEqual(await res.json(), {
+      success: false,
+      error: "openai_unavailable",
+    });
+  } finally {
+    server.close();
+  }
+});
+
+test("CR-0072 history 為壞值（非陣列 / 髒元素）不報錯（仍走既有驗證流程）", async () => {
+  const server = await startServer();
+  try {
+    const { port } = server.address();
+    const base = `http://127.0.0.1:${port}`;
+
+    // history 非陣列 + 有效 userText → 不崩潰，無金鑰下回 503。
+    const bad = await postChat(base, { userText: "嗨", history: "not-an-array" });
+    assert.equal(bad.status, 503);
+    assert.deepEqual(await bad.json(), {
+      success: false,
+      error: "openai_unavailable",
+    });
+
+    // history 含髒元素 + 缺 userText → 仍應 400 invalid_input（驗證優先、不被 history 影響）。
+    const invalid = await postChat(base, {
+      userText: "",
+      history: [null, { role: "x" }, 123],
+    });
+    assert.equal(invalid.status, 400);
+    assert.deepEqual(await invalid.json(), {
+      success: false,
+      error: "invalid_input",
+    });
+  } finally {
+    server.close();
+  }
+});
