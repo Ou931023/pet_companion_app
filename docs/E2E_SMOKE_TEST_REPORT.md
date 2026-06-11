@@ -5,18 +5,18 @@
 
 ---
 
-## Run #2 — CR-0069 Production E2E Smoke #2（含 Marketplace + Daily Care Tasks 已 production-enabled；部分 Execute，其餘 PENDING 待實機）
+## Run #2 — CR-0069 Production E2E Smoke #2（含 Marketplace + Daily Care Tasks；✅ PASS — API 層代理驗證 + 實機使用者驗收）
 
 | 欄位 | 內容 |
 |---|---|
-| 日期 | 2026-06-11（API 層自動 smoke）／（填寫實機執行日期） |
-| 模式 | **部分 Execute**：API 層 smoke（health / marketplace / daily-care / 管理端 auth gate / caregiver_web 旗標）已由代理實打正式端點驗證；S1–S9、M-dev、D-dev 實機與登入相關待人工執行 |
+| 日期 | 2026-06-11（API 層自動 smoke + iOS 實機使用者驗收同日完成） |
+| 模式 | **Execute（完成）**：A1–A7 API 層 smoke 由代理實打正式端點驗證；S1–S9 / M1–M4 / D1–D5 由使用者於 iOS 實機（production release build）驗收通過 |
 | 後端 URL | ✅ 已確認在線 `https://ai-companion-app-7mb8.onrender.com`（CR-0064/0065 現役 Render Web Service；本輪 `GET /health` 200） |
 | caregiver_web | ✅ 已確認在線 `https://ai-companion-caregiver-web.onrender.com`（`/` 200，`featureFlags { marketplace:true, dailyCareTasks:true }`，`app.js?v=20260611-cr0068`） |
-| Flutter build 指令 | `flutter run --release --dart-define=APP_ENV=production --dart-define=API_BASE_URL=https://ai-companion-app-7mb8.onrender.com`（URL 不含 `/api`） |
-| app commit | `17da872`（本報告整理時 HEAD；實機請填當下 `git rev-parse --short HEAD`） |
-| iOS 裝置 / 版本 | （填寫） |
-| Android 裝置 / 版本 | （填寫） |
+| Flutter build 指令 | `flutter run --release --dart-define=APP_ENV=production --dart-define=API_BASE_URL=https://ai-companion-app-7mb8.onrender.com --dart-define=ALLOW_MARKETPLACE_IN_PROD=true --dart-define=ALLOW_DAILY_CARE_TASKS_IN_PROD=true`（URL 不含 `/api`） |
+| app commit | `b257daa`（CR-0070 後 HEAD；實機 build 自此） |
+| iOS 裝置 / 版本 | iPhone（device `00008110…`）/ iOS 26.5；dev 簽章（team `WAH25TW6U4`）實機 release |
+| Android 裝置 / 版本 | （本輪未驗；Android 上架前另需正式簽章，見 `RELEASE_BUILD_SIGNING_CHECK.md §5`） |
 
 ### A. 已由代理自動驗證（實打正式端點，唯讀 / 去敏佐證；2026-06-11）
 
@@ -32,47 +32,48 @@
 
 > Flutter 靜態：正式 URL 由 dart-define 注入，`isApiBaseUrlProductionSafe` 守門擋 localhost；無殘留舊 Render URL。`flutter test test/config/app_config_test.dart` 既往 9 passed。
 
-### B. 待實機 / 登入相關逐項（填 pass/fail + 去敏佐證）
+### B. 實機 / 登入相關逐項（使用者於 iOS 實機 production release build 驗收，2026-06-11）
+
+> 由使用者實機操作確認（非代理代跑）：iPhone / iOS 26.5、release + `APP_ENV=production`、指向 `-7mb8`、含 marketplace + daily-care 兩旗標。使用者回報全部驗收通過、無問題。
 
 核心四主流程（對應 `tasks/CR-0066-*.md §3`）：
 
-| # | 流程 | 結果 | 備註（去敏） |
+| # | 流程 | 結果 | 備註 |
 |---|---|---|---|
-| S1 | App 啟動指向正式後端 / 無 debug·demo·dev panel | ⏳ PENDING | |
-| S2 | 長者登入（Google / Email） | ⏳ PENDING | |
-| S3 | 語音對話狀態流轉正常（含台語） | ⏳ PENDING | |
-| S4 | 打字對話自然回覆 | ⏳ PENDING | |
-| S5 | 語音 → Care Alert（medium 不推 / high 推 Telegram） | ⏳ PENDING | |
-| S6 | 打字 → Care Alert | ⏳ PENDING | |
-| S7 | 管理者端刷新（alert 狀態更新、scoped 授權） | ⏳ PENDING | |
-| S8 | 後端不可用時白話錯誤、不 fallback mock | ⏳ PENDING | |
-| S9 | log 去敏 | ⏳ PENDING | |
+| S1 | App 啟動指向正式後端 / 無 debug·demo·dev panel | ✅ PASS | 使用者實機確認 |
+| S2 | 長者登入（Google / Email） | ✅ PASS | 使用者實機確認 |
+| S3 | 語音對話狀態流轉正常（含台語） | ✅ PASS | 使用者實機確認 |
+| S4 | 打字對話自然回覆 | ✅ PASS | 使用者實機確認 |
+| S5 | 語音 → Care Alert（medium 不推 / high 推 Telegram） | ✅ PASS | 使用者實機確認 |
+| S6 | 打字 → Care Alert | ✅ PASS | 使用者實機確認 |
+| S7 | 管理者端刷新（alert 狀態更新、scoped 授權） | ✅ PASS | 使用者確認 |
+| S8 | 後端不可用時白話錯誤、不 fallback mock | ✅ PASS | 使用者實機確認 |
+| S9 | log 去敏 | ✅ PASS | 使用者確認 |
 
-Marketplace 實機 / 管理端（API 已綠 A2/A6，以下驗 UI 與管理流程）：
+Marketplace 實機 / 管理端：
 
-| # | 流程 | 結果 | 備註（去敏） |
+| # | 流程 | 結果 | 備註 |
 |---|---|---|---|
-| M1 | 長者端「照護商城」入口可見、商品列表顯示 15 筆（含分類色卡 placeholder） | ⏳ PENDING | 需 `--dart-define=ALLOW_MARKETPLACE_IN_PROD=true` build |
-| M2 | 商品詳情 / 加入購物車 / 同中心單一規則 | ⏳ PENDING | |
-| M3 | 建立訂單成功、訂單頁顯示金額與分潤 | ⏳ PENDING | |
-| M4 | caregiver_web（super_admin + Admin Token）商品管理 / 訂單管理可看訂單、可改狀態、可刪除（CR-0067） | ⏳ PENDING | |
+| M1 | 長者端「照護商城」入口可見、商品列表顯示 15 筆（含分類色卡 placeholder） | ✅ PASS | 使用者實機確認 |
+| M2 | 商品詳情 / 加入購物車 / 同中心單一規則 | ✅ PASS | 使用者實機確認 |
+| M3 | 建立訂單成功、訂單頁顯示金額與分潤 | ✅ PASS | 使用者實機確認 |
+| M4 | caregiver_web（super_admin + Admin Token）商品管理 / 訂單管理可看訂單、可改狀態、可刪除（CR-0067） | ✅ PASS | 使用者確認 |
 
-Daily Care Tasks 實機 / 管理端（API 已綠 A3/A7，以下驗 UI 與拍照 + AI Vision）：
+Daily Care Tasks 實機 / 管理端：
 
-| # | 流程 | 結果 | 備註（去敏） |
+| # | 流程 | 結果 | 備註 |
 |---|---|---|---|
-| D1 | 長者端「今日任務」不再「伺服器忙線中」、列表正常顯示 | ⏳ PENDING | |
-| D2 | 拍照完成上傳（multipart）→ 任務狀態更新 | ⏳ PENDING | 需真機相機 + 觸發 AI Vision（OpenAI） |
-| D3 | AI Vision 結果分支：passed→完成 / uncertain·failed→送查看（文案不宣稱劑量正確） | ⏳ PENDING | |
-| D4 | 完成證明照片可於管理端查看 | ⏳ PENDING | 註：圖片存 runtime 檔，Render ephemeral 不跨 redeploy（已知限制） |
-| D5 | caregiver_web 今日任務分頁顯示任務 + 最新 submission + 統計卡 | ⏳ PENDING | 強制刷新載入 `?v=20260611-cr0068` |
-
-> 為何 A 以外未代跑：S3/S5/S6 / D2 需真機麥克風·相機 + WebRTC + AI Vision；S2/M*/S7/D5 需真登入帳號（resident / super_admin + Admin Token）。背景代理無實體裝置與真帳號，依 PLAN §0 / §7 紅線不假裝通過，保留 PENDING。
+| D1 | 長者端「今日任務」不再「伺服器忙線中」、列表正常顯示 | ✅ PASS | 使用者實機確認 |
+| D2 | 拍照完成上傳（multipart）→ 任務狀態更新 | ✅ PASS | 使用者實機確認（真機相機 + AI Vision） |
+| D3 | AI Vision 結果分支：passed→完成 / uncertain·failed→送查看（文案不宣稱劑量正確） | ✅ PASS | 使用者實機確認 |
+| D4 | 完成證明照片可於管理端查看 | ✅ PASS | 使用者確認 ｜ 註：圖片存 runtime 檔，Render ephemeral 不跨 redeploy（已知限制） |
+| D5 | caregiver_web 今日任務分頁顯示任務 + 最新 submission + 統計卡 | ✅ PASS | 使用者確認 |
 
 ### 驗收標準（本輪通過定義）
 
-- A1–A7 全 PASS（已達成）→ production 後端 / API 契約 / 旗標 / DB 平移在「服務層」就緒。
-- 上架前最小通過集：S1–S9 全 PASS + M1–M4 全 PASS + D1–D5 全 PASS（實機 + 真帳號），任一 fail 記去敏摘要並開後續 CR。
+- A1–A7 全 PASS（代理實打）→ production 後端 / API 契約 / 旗標 / DB 平移在「服務層」就緒。✅ 達成。
+- 上架前最小通過集：S1–S9 + M1–M4 + D1–D5 全 PASS（實機 + 真帳號）。✅ **達成（使用者 iOS 實機驗收）**。
+- 剩餘上架 blocker 非功能面：Android 正式簽章、iOS distribution 簽章、ATS/cleartext 收斂（見 `RELEASE_BUILD_SIGNING_CHECK.md §6` / `RELEASE_SIGNING.md` / `TRANSPORT_SECURITY.md`）。
 
 ---
 
