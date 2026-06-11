@@ -3552,3 +3552,25 @@ A1–A7 全 PASS（已達成，服務層就緒）；上架前最小通過集為 
 
 ### 裁決
 docs-only 驗收整理 + API 層 smoke 佐證，無 🔒 / runtime 變更，與正式端點實況一致、未洩 secret；併入主線。實機 S/M/D 逐項為 owner action。
+
+---
+
+## CR-0070 — Release Build / 簽章 / Production Flags 檢查（docs-only）
+
+### 模式
+**docs-only**。不新增功能、不改 Realtime / Auth / Marketplace / Daily Care Tasks 行為、不改簽章 / 傳輸 runtime 設定。盤點 release build 設定與 production flags，產出檢查報告 `docs/RELEASE_BUILD_SIGNING_CHECK.md`。無 🔒 runtime 變更。
+
+### 動機
+正式展示 / 上架前確認 release build 設定完整，且 production build 不會用 localhost / 舊 Render URL / dev panel / mock / demo-only fallback；並把 CR-0067（marketplace）、CR-0068（daily care tasks）已 production-enabled 反映到正式 build 指令。
+
+### 產出 / 確認
+- **正式 build 指令**：`flutter run --release --dart-define=APP_ENV=production --dart-define=API_BASE_URL=https://ai-companion-app-7mb8.onrender.com --dart-define=ALLOW_MARKETPLACE_IN_PROD=true --dart-define=ALLOW_DAILY_CARE_TASKS_IN_PROD=true`。⚠️ 標記：今日任務入口在 production 預設隱藏，需 `ALLOW_DAILY_CARE_TASKS_IN_PROD=true` 才顯示（CR-0068 後端雖已上線，前端入口旗標獨立）。
+- **Production flags 審查 P1–P8 全 PASS**（source = `lib/config/app_config.dart`，附 file:line）：API URL 守門擋 localhost、無寫死/殘留正式或舊 URL、mock / dev panel production 恆 false、demo·marketplace·今日任務入口由顯式旗標控制。
+- **iOS / Android 就緒盤點**：bundle id / applicationId（`tw.edu.ncyu.im.aicompanion`）、display name、版本來源、權限、Firebase 設定檔皆就緒。
+- **⛔ owner blockers（非本 CR 範圍，how-to 已在既有文件）**：Android release 仍用 debug 簽章（`RELEASE_SIGNING.md §2`）、iOS 無 distribution 簽章（§3）、ATS/cleartext 未收斂（`TRANSPORT_SECURITY.md §3`）、實機 E2E PENDING（`E2E_SMOKE_TEST_REPORT.md` Run #2）。
+
+### 限制遵守
+未改任何功能 / 簽章 / 傳輸 runtime 設定；未讀 `.env`；報告不含 keystore / 憑證 / 密碼 / key 值；未碰 Realtime / Auth / Marketplace / Daily Care Tasks 邏輯。
+
+### 裁決
+docs-only 檢查報告，無 🔒 / runtime 變更，與程式現況一致（app_config 行號、native 設定檔皆對照確認）、未洩 secret；併入主線。簽章 / 傳輸 / 實機 E2E 為既有 owner action。
