@@ -5,41 +5,74 @@
 
 ---
 
-## Run #2 — CR-0066 正式 URL 對齊 + 四主流程 smoke（PENDING / 待實機執行）
+## Run #2 — CR-0069 Production E2E Smoke #2（含 Marketplace + Daily Care Tasks 已 production-enabled；部分 Execute，其餘 PENDING 待實機）
 
 | 欄位 | 內容 |
 |---|---|
-| 日期 | （填寫執行日期） |
-| 模式 | **部分 Execute**：URL 對齊與殘留檢查已由代理靜態驗證；S1–S9 實機 smoke 待人工執行 |
-| 後端 URL | `https://ai-companion-app-7mb8.onrender.com`（CR-0064/0065 後現役 Render Web Service） |
-| caregiver_web | `https://ai-companion-caregiver-web.onrender.com`（index.html 已對齊 `-7mb8`） |
-| Flutter build 指令 | 見 `tasks/CR-0066-*.md §1`（`--dart-define=API_BASE_URL=https://ai-companion-app-7mb8.onrender.com`，URL 不含 `/api`） |
-| app commit | （填寫 `git rev-parse --short HEAD`） |
+| 日期 | 2026-06-11（API 層自動 smoke）／（填寫實機執行日期） |
+| 模式 | **部分 Execute**：API 層 smoke（health / marketplace / daily-care / 管理端 auth gate / caregiver_web 旗標）已由代理實打正式端點驗證；S1–S9、M-dev、D-dev 實機與登入相關待人工執行 |
+| 後端 URL | ✅ 已確認在線 `https://ai-companion-app-7mb8.onrender.com`（CR-0064/0065 現役 Render Web Service；本輪 `GET /health` 200） |
+| caregiver_web | ✅ 已確認在線 `https://ai-companion-caregiver-web.onrender.com`（`/` 200，`featureFlags { marketplace:true, dailyCareTasks:true }`，`app.js?v=20260611-cr0068`） |
+| Flutter build 指令 | `flutter run --release --dart-define=APP_ENV=production --dart-define=API_BASE_URL=https://ai-companion-app-7mb8.onrender.com`（URL 不含 `/api`） |
+| app commit | `17da872`（本報告整理時 HEAD；實機請填當下 `git rev-parse --short HEAD`） |
 | iOS 裝置 / 版本 | （填寫） |
 | Android 裝置 / 版本 | （填寫） |
 
-### 已由代理完成（靜態）
+### A. 已由代理自動驗證（實打正式端點，唯讀 / 去敏佐證；2026-06-11）
 
-- Flutter 端無寫死 / 無殘留舊 Render URL；正式 URL 由 dart-define 注入，`isApiBaseUrlProductionSafe` 守門擋 localhost（`lib/config/app_config.dart`）。
-- 舊 URL（不含 `-7mb8`）僅存在 `tasks/CR-0064-*.md` 歷史紀錄，非執行碼。
-- `flutter test test/config/app_config_test.dart` → 9 passed。
-- 正式後端 `GET /health` → `200 {status:"ok", hasOpenAiKey:true, realtimeModel:"gpt-realtime"}`（已確認 `-7mb8` 後端在線）。
+| # | 檢項 | 結果 | 佐證（去敏） |
+|---|---|---|---|
+| A1 | 後端在線 + 無洩 key | ✅ PASS | `GET /health` → 200 `{status:"ok", hasOpenAiKey:true, realtimeModel:"gpt-realtime"}`（只回布林，不回 key） |
+| A2 | Marketplace 商品 API（production-enabled） | ✅ PASS | `GET /api/marketplace/products` → 200 `{ok:true}`，15 筆種子商品 |
+| A3 | Daily Care Tasks API（production-enabled, CR-0068） | ✅ PASS | `GET /api/daily-care-tasks?elderId=…` → 200 `{success:true, tasks:[]}`（不再 501 not_enabled；migration 016 已套用） |
+| A4 | 管理端破壞性端點需授權 | ✅ PASS | `DELETE /api/admin/marketplace/orders/:id`（無 token）→ 401（auth gate 生效） |
+| A5 | caregiver_web 上線 + 旗標開啟 | ✅ PASS | `/` 200；`featureFlags { marketplace:true, dailyCareTasks:true }`；`app.js?v=20260611-cr0068`（新版） |
+| A6 | Marketplace 下單扣庫存（DB transaction） | ✅ PASS（CR-0067 驗收已實打） | 下單 200、庫存原子扣減、分潤正確（見 CR-0067 紀錄；本輪未重打以免留資料） |
+| A7 | Daily Care 建立/列表/改狀態往返（DB） | ✅ PASS（CR-0068 驗收已實打） | create→list→PATCH completed 往返 200、狀態持久；測試資料已清除（見 CR-0068 紀錄） |
 
-### 待實機逐項（對應 `tasks/CR-0066-*.md §3`；填 pass/fail + 去敏佐證）
+> Flutter 靜態：正式 URL 由 dart-define 注入，`isApiBaseUrlProductionSafe` 守門擋 localhost；無殘留舊 Render URL。`flutter test test/config/app_config_test.dart` 既往 9 passed。
+
+### B. 待實機 / 登入相關逐項（填 pass/fail + 去敏佐證）
+
+核心四主流程（對應 `tasks/CR-0066-*.md §3`）：
 
 | # | 流程 | 結果 | 備註（去敏） |
 |---|---|---|---|
-| S1 | App 啟動指向正式後端 / 無 debug·demo·dev panel | ⏳ | |
-| S2 | 長者登入 | ⏳ | |
-| S3 | 語音對話狀態流轉正常 | ⏳ | |
-| S4 | 打字對話自然回覆 | ⏳ | |
-| S5 | 語音 → Care Alert（medium 不推 / high 推） | ⏳ | |
-| S6 | 打字 → Care Alert | ⏳ | |
-| S7 | 管理者端刷新（含 alert 狀態更新、scoped、無 marketplace 501） | ⏳ | |
-| S8 | 後端不可用時白話錯誤、不 fallback mock | ⏳ | |
-| S9 | log 去敏 | ⏳ | |
+| S1 | App 啟動指向正式後端 / 無 debug·demo·dev panel | ⏳ PENDING | |
+| S2 | 長者登入（Google / Email） | ⏳ PENDING | |
+| S3 | 語音對話狀態流轉正常（含台語） | ⏳ PENDING | |
+| S4 | 打字對話自然回覆 | ⏳ PENDING | |
+| S5 | 語音 → Care Alert（medium 不推 / high 推 Telegram） | ⏳ PENDING | |
+| S6 | 打字 → Care Alert | ⏳ PENDING | |
+| S7 | 管理者端刷新（alert 狀態更新、scoped 授權） | ⏳ PENDING | |
+| S8 | 後端不可用時白話錯誤、不 fallback mock | ⏳ PENDING | |
+| S9 | log 去敏 | ⏳ PENDING | |
 
-> 為何未代跑：S3/S5/S6 等需真機麥克風 + WebRTC，背景代理無實體裝置可執行；不假裝通過（PLAN §0 / §7 紅線）。
+Marketplace 實機 / 管理端（API 已綠 A2/A6，以下驗 UI 與管理流程）：
+
+| # | 流程 | 結果 | 備註（去敏） |
+|---|---|---|---|
+| M1 | 長者端「照護商城」入口可見、商品列表顯示 15 筆（含分類色卡 placeholder） | ⏳ PENDING | 需 `--dart-define=ALLOW_MARKETPLACE_IN_PROD=true` build |
+| M2 | 商品詳情 / 加入購物車 / 同中心單一規則 | ⏳ PENDING | |
+| M3 | 建立訂單成功、訂單頁顯示金額與分潤 | ⏳ PENDING | |
+| M4 | caregiver_web（super_admin + Admin Token）商品管理 / 訂單管理可看訂單、可改狀態、可刪除（CR-0067） | ⏳ PENDING | |
+
+Daily Care Tasks 實機 / 管理端（API 已綠 A3/A7，以下驗 UI 與拍照 + AI Vision）：
+
+| # | 流程 | 結果 | 備註（去敏） |
+|---|---|---|---|
+| D1 | 長者端「今日任務」不再「伺服器忙線中」、列表正常顯示 | ⏳ PENDING | |
+| D2 | 拍照完成上傳（multipart）→ 任務狀態更新 | ⏳ PENDING | 需真機相機 + 觸發 AI Vision（OpenAI） |
+| D3 | AI Vision 結果分支：passed→完成 / uncertain·failed→送查看（文案不宣稱劑量正確） | ⏳ PENDING | |
+| D4 | 完成證明照片可於管理端查看 | ⏳ PENDING | 註：圖片存 runtime 檔，Render ephemeral 不跨 redeploy（已知限制） |
+| D5 | caregiver_web 今日任務分頁顯示任務 + 最新 submission + 統計卡 | ⏳ PENDING | 強制刷新載入 `?v=20260611-cr0068` |
+
+> 為何 A 以外未代跑：S3/S5/S6 / D2 需真機麥克風·相機 + WebRTC + AI Vision；S2/M*/S7/D5 需真登入帳號（resident / super_admin + Admin Token）。背景代理無實體裝置與真帳號，依 PLAN §0 / §7 紅線不假裝通過，保留 PENDING。
+
+### 驗收標準（本輪通過定義）
+
+- A1–A7 全 PASS（已達成）→ production 後端 / API 契約 / 旗標 / DB 平移在「服務層」就緒。
+- 上架前最小通過集：S1–S9 全 PASS + M1–M4 全 PASS + D1–D5 全 PASS（實機 + 真帳號），任一 fail 記去敏摘要並開後續 CR。
 
 ---
 

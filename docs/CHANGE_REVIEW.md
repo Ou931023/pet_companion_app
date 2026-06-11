@@ -3520,3 +3520,35 @@ Render Shell 跑 `npm run db:migrate`（套用到 016）→ App 端今日任務�
 
 ### 裁決
 比照已上線的 marketplace 平移 pattern、契約不變、測試齊備且全綠、migration 冪等無破壞性；併入主線。實際 migrate / 部署為 owner action。
+
+---
+
+## CR-0069 — Production E2E Smoke Run #2（docs-only：驗收整理 + API 層自動 smoke）
+
+### 模式
+**docs-only**。不改任何功能程式碼；整理 `docs/E2E_SMOKE_TEST_REPORT.md` 的 Run #2 區塊為正式實機驗收步驟、驗收標準與填寫欄位，並把 Marketplace（CR-0067）與 Daily Care Tasks（CR-0068）已 production-enabled 納入 smoke 測項。無 🔒 runtime 變更。
+
+### 動機
+Marketplace 與 Daily Care Tasks 已先後平移 PostgreSQL 並在正式環境上線，需要一份涵蓋這兩塊的正式 E2E 驗收清單；同時把背景代理「能在 API 層實打驗證」的項目先跑出去敏佐證，把需真機 / 真帳號的項目明確標 PENDING 供人工執行。
+
+### 環境確認（本輪實打）
+- 後端：✅ `https://ai-companion-app-7mb8.onrender.com`（`GET /health` 200、hasOpenAiKey:true、realtimeModel:gpt-realtime）。
+- caregiver_web：✅ `https://ai-companion-caregiver-web.onrender.com`（`/` 200、featureFlags `{marketplace:true, dailyCareTasks:true}`、`app.js?v=20260611-cr0068`）。
+
+### 已自動驗證（A1–A7，唯讀 / 去敏；寫入報告）
+- A1 /health 200 不洩 key；A2 marketplace 15 商品 200；A3 daily-care GET 200 `{success:true,tasks:[]}`（不再 501）；A4 DELETE 訂單無 token→401；A5 caregiver_web 旗標皆開 + 新版 app.js；A6 marketplace 下單扣庫存（CR-0067 已實打）；A7 daily-care 建立/列表/改狀態往返（CR-0068 已實打、測試資料已清）。
+
+### 保留 PENDING（需真機 / 真帳號，人工執行）
+- S1–S9（啟動 / 登入 / 語音含台語 / 打字 / 語音·打字 Care Alert / 管理端 scoped / 白話錯誤 / log 去敏）。
+- M1–M4（商城長者端 UI / 購物車 / 下單 / caregiver_web 訂單管理含刪除）。
+- D1–D5（今日任務 UI / 拍照上傳 + AI Vision 分支 / 證明照片管理端查看 / caregiver_web 今日任務分頁）。
+- 原因：真機麥克風·相機 + WebRTC + AI Vision + 真登入帳號，背景代理無法執行；依 PLAN 紅線不假裝通過。
+
+### 驗收標準
+A1–A7 全 PASS（已達成，服務層就緒）；上架前最小通過集為 S1–S9 + M1–M4 + D1–D5 全 PASS（實機），任一 fail 記去敏摘要並開後續 CR。
+
+### 限制遵守
+未改功能程式碼；未讀 `.env`；報告未含 token / chat id / 完整對話 / 完整 email / `DATABASE_URL` 值（佐證皆去敏）；未產生需清理的測試資料（A 為唯讀；A6/A7 引用先前已清理的紀錄）。
+
+### 裁決
+docs-only 驗收整理 + API 層 smoke 佐證，無 🔒 / runtime 變更，與正式端點實況一致、未洩 secret；併入主線。實機 S/M/D 逐項為 owner action。
