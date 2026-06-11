@@ -5,6 +5,21 @@
 
 ---
 
+## Demo Readiness Checklist（CR-0074 — 展示前檢查，非 smoke 結果）
+
+> 僅列「正式展示前要逐項確認」的項目，供發表 / 口試前 10 分鐘勾選。完整操作腳本見 `docs/DEMO_SCRIPT.md`。**這不是 smoke 通過紀錄**——實機 smoke 逐項結果見下方 Run #2 / CR-0071 佐證表。
+
+- [ ] 後端 `/health` 回 `status:ok`、`hasOpenAiKey:true`（先打一次喚醒 Render 冷啟動）。
+- [ ] caregiver_web 可登入（super_admin + Admin Token 已貼好），照護提醒 / 商品管理 / 訂單管理 / 日常任務分頁可載資料。
+- [ ] Telegram bot 可收訊（high 測試句自測過，注意冷卻）。
+- [ ] iPhone App 已用 production flags 安裝（`APP_ENV=production` + `-7mb8` + marketplace/daily-care 兩旗標）、已登入、無 debug/demo/dev 字樣。
+- [ ] 麥克風 / 相機權限已允許；網路穩定（備手機熱點）。
+- [ ] Admin Token 不外露、不當眾輸入；**不展示** OpenAI key / Firebase key / `DATABASE_URL` / 後台 log。
+- [ ] 不使用真實長者個資；測試句用 `DEMO_SCRIPT.md §2` 的設計句。
+- [ ] caregiver_web 舊測試資料（提醒 / 訂單 / 今日任務）已清場。
+
+---
+
 ## Run #2 — CR-0069 Production E2E Smoke #2（含 Marketplace + Daily Care Tasks；✅ PASS — API 層代理驗證 + 實機使用者驗收）
 
 | 欄位 | 內容 |

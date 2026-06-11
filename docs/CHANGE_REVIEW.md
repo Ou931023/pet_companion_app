@@ -3662,3 +3662,24 @@ docs-only 模板，無 🔒 / runtime 變更；併入主線。實際填寫為 ow
 
 ### 裁決
 服務內部調校 + 觀測 + 防呆，無 🔒 / schema / 契約變更、測試齊備且全綠、門檻 env 可調（production 可不重 build 微調）；併入主線。實機與 Render log 驗證為後續觀察。
+
+---
+
+## CR-0074 — Demo Script and Presentation Lock（docs-only）
+
+### 模式
+**docs-only**。不新增功能、不改後端 / Flutter / caregiver_web runtime、不改 API 契約 / schema。鎖定正式展示流程，產出可照做的 Demo Script 與展示前檢查清單。無 🔒 runtime 變更。
+
+### 產出
+- **改寫 `docs/DEMO_SCRIPT.md`** 為 production 版（取代 CR-0005 本機 localhost 版）：5–7 分鐘逐步流程（畫面 / 講稿 / 操作 / 測試句）、時間分配、全域備援、評審快答。鎖定 Render 正式 URL（`-7mb8` / `-caregiver-web`）與 production build 指令（含 marketplace / daily-care 旗標）。
+- **測試句庫**：對照 `backend/companion/safety_guard.js` 設計，可可靠觸發對應分級且得體——medium（睡不好+沒胃口→只進 caregiver_web）、high（每天都好難過+沒有人需要我→推 Telegram）、長期記憶建立/回憶句、台語句；urgent 不建議現場觸發。明確標注「Telegram 只推 high/urgent，medium 只進管理端」。
+- **`docs/E2E_SMOKE_TEST_REPORT.md`** 新增「Demo Readiness Checklist」小節：僅列展示前檢查項目，**不偽稱 smoke 全 PASS**（實機結果仍見 Run #2 / CR-0071）。
+
+### 安全 / 紅線
+腳本明訂展示時不得出現 OpenAI key / Firebase key / `DATABASE_URL` / Admin Token / 真實個資、不開 `.env` / 後台 log；Admin Token 事先貼好不當眾輸入。
+
+### 測試 / 檢查
+docs-only。`git status --short` 確認只動 `docs/`、`tasks/`，無任何 secret / `.env` / runtime data 檔被加入。未跑 backend/flutter test（無 runtime 變更）。
+
+### 裁決
+docs-only 展示腳本與檢查清單，與現行 production 行為一致（URL / 旗標 / 分級規則 / 分頁皆對照程式確認），未洩 secret；併入主線。
