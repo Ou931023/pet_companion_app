@@ -113,6 +113,11 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
 | GET | `/api/admin/elders/:elderId/physio` | 生理健康分析序列（demo 資料） | backend |
 | GET | `/api/admin/elders/:elderId/emotion` | 情緒分析歷史序列 | backend |
 | GET | `/api/admin/elders/:elderId/game-metrics` | 遊戲認知退化指標序列 | backend |
+| GET | `/api/marketplace/products` `/api/marketplace/products/:id` | 長照商城商品列表 / 詳情（長者端，公開讀）CR-0032 | backend |
+| POST | `/api/marketplace/orders` | 長者端建立訂單（扣庫存）CR-0032 | backend |
+| GET | `/api/admin/marketplace/orders` `/api/admin/marketplace/orders/:id` | 管理端訂單列表 / 詳情（requireAdmin）CR-0032 | backend |
+| PATCH | `/api/admin/marketplace/orders/:id/status` | 管理端更新訂單狀態 / 配送備註（requireAdmin）CR-0032 | backend |
+| DELETE | `/api/admin/marketplace/orders/:id` | 管理端刪除訂單並還原庫存（requireAdmin）**CR-0067** | backend |
 
 > 註：本表為現況快照；新增 / 修改路由時請同步維護。
 > auth / admin 路由為 CR-0006 / CR-0007 新增（見 `docs/CHANGE_REVIEW.md`），契約定義見 §10、§11。

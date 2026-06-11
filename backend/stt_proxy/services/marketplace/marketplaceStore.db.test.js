@@ -419,3 +419,85 @@ test("updateOrderStatus DB：UPDATE status + 配送備註 RETURNING；invalid_st
   const nf = await store.updateOrderStatus("nope", "confirmed", {}, { pg: missing });
   assert.deepEqual(nf, { ok: false, error: "not_found" });
 });
+
+// ---- deleteOrder（DB 交易路徑）----
+
+// 僅 SELECT FOR UPDATE 回訂單列；UPDATE 庫存 / DELETE / BEGIN / COMMIT 回 []。
+function deleteTxRows(orderRow) {
+  return (text) => {
+    if (/SELECT \* FROM marketplace_orders WHERE id = \$1 FOR UPDATE/.test(text)) {
+      return orderRow ? [orderRow] : [];
+    }
+    return [];
+  };
+}
+
+test("deleteOrder DB：交易序列 BEGIN→SELECT FOR UPDATE→逐項還原庫存→DELETE→COMMIT，回 order", async () => {
+  const orderRow = {
+    id: "o1",
+    user_id: "u1",
+    elder_name: "驗收測試",
+    center_id: "c1",
+    center_name: "康福長照中心",
+    items_json: [
+      { product_id: "p1", product_name: "濕巾", quantity: 2, unit_price: 120, subtotal: 240 },
+      { product_id: "p2", product_name: "拐杖", quantity: 1, unit_price: 680, subtotal: 680 },
+    ],
+    total_amount: 920,
+    commission_rate: "0.120",
+    commission_amount: 110,
+    center_revenue: 810,
+    status: "pending",
+    delivery_note: "",
+    created_at: new Date("2026-06-03T00:00:00.000Z"),
+    updated_at: new Date("2026-06-03T00:00:00.000Z"),
+  };
+  const pg = makeMockPg({ available: true, rowsFor: deleteTxRows(orderRow) });
+  const r = await store.deleteOrder("o1", { pg });
+  assert.equal(r.ok, true);
+  assert.equal(r.order.id, "o1");
+  assert.equal(r.order.items.length, 2);
+
+  const texts = pg.calls.map((c) => c.text.trim());
+  assert.equal(texts[0], "BEGIN");
+  assert.match(pg.calls[1].text, /SELECT \* FROM marketplace_orders WHERE id = \$1 FOR UPDATE/);
+  // 兩項商品各一次還原庫存（stock = stock + $2），參數對應 product_id / quantity。
+  assert.match(pg.calls[2].text, /UPDATE marketplace_products SET stock = stock \+ \$2/);
+  assert.equal(pg.calls[2].params[0], "p1");
+  assert.equal(pg.calls[2].params[1], 2);
+  assert.match(pg.calls[3].text, /UPDATE marketplace_products SET stock = stock \+ \$2/);
+  assert.equal(pg.calls[3].params[0], "p2");
+  assert.equal(pg.calls[3].params[1], 1);
+  assert.match(pg.calls[4].text, /DELETE FROM marketplace_orders WHERE id = \$1/);
+  assert.equal(texts[texts.length - 1], "COMMIT");
+});
+
+test("deleteOrder DB：訂單不存在 → ROLLBACK + not_found，不還原庫存也不刪", async () => {
+  const pg = makeMockPg({ available: true, rowsFor: deleteTxRows(null) });
+  const r = await store.deleteOrder("nope", { pg });
+  assert.deepEqual(r, { ok: false, error: "not_found" });
+  const texts = pg.calls.map((c) => c.text.trim());
+  assert.ok(texts.includes("ROLLBACK"));
+  assert.ok(!texts.includes("COMMIT"));
+  assert.ok(!pg.calls.some((c) => /DELETE FROM marketplace_orders/.test(c.text)));
+  assert.ok(!pg.calls.some((c) => /UPDATE marketplace_products/.test(c.text)));
+});
+
+test("deleteOrder：DB 例外 → ROLLBACK；production 回 write_failed（不降級 JSON）", async () => {
+  const orderRow = {
+    id: "o1",
+    items_json: [{ product_id: "p1", quantity: 1 }],
+    commission_rate: "0.100",
+    status: "pending",
+    created_at: new Date("2026-06-03T00:00:00.000Z"),
+    updated_at: new Date("2026-06-03T00:00:00.000Z"),
+  };
+  const pg = makeMockPg({
+    available: true,
+    throwOn: (text) => /DELETE FROM marketplace_orders/.test(text),
+    rowsFor: deleteTxRows(orderRow),
+  });
+  const r = await store.deleteOrder("o1", { pg, env: prodEnv });
+  assert.deepEqual(r, { ok: false, error: "write_failed" });
+  assert.ok(pg.calls.map((c) => c.text.trim()).includes("ROLLBACK"));
+});

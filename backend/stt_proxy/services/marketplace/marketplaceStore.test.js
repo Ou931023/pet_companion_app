@@ -222,6 +222,8 @@ test("marketplace：production 下 mutation 回 feature_unavailable_in_productio
   assert.equal(sts.error, "feature_unavailable_in_production");
   const ord = await store.updateOrderStatus("id", "shipping", {}, { ...opt, ...PROD });
   assert.equal(ord.error, "feature_unavailable_in_production");
+  const del = await store.deleteOrder("id", { ...opt, ...PROD });
+  assert.equal(del.error, "feature_unavailable_in_production");
   // 確認沒有任何檔案被寫出。
   assert.equal(fs.existsSync(opt.productsFilePath), false);
   assert.equal(fs.existsSync(opt.ordersFilePath), false);
@@ -248,4 +250,65 @@ test("marketplace：production seedDefaultProducts no-op（不寫種子）", asy
   const seeded = await store.seedDefaultProducts({ ...opt, ...PROD });
   assert.deepEqual(seeded, []);
   assert.equal(fs.existsSync(opt.productsFilePath), false);
+});
+
+test("deleteOrder 刪除訂單、還原庫存，訂單從此查不到", async () => {
+  const opt = tempFiles();
+  const p = await store.createProduct(
+    {
+      name: "濕式衛生紙巾",
+      center_id: "c1",
+      center_name: "康福長照中心",
+      price: 120,
+      stock: 50,
+      commission_rate: 0.12,
+    },
+    opt,
+  );
+
+  const order = await store.createOrder(
+    { userId: "u1", elderName: "測試", items: [{ productId: p.product.id, quantity: 2 }] },
+    opt,
+  );
+  assert.equal(order.ok, true);
+  // 下單後庫存先扣到 48。
+  const afterOrder = await store.getProductById(p.product.id, opt);
+  assert.equal(afterOrder.stock, 48, "50 - 2");
+
+  const del = await store.deleteOrder(order.order.id, opt);
+  assert.equal(del.ok, true);
+  assert.equal(del.order.id, order.order.id);
+
+  // 刪除後庫存加回 50。
+  const afterDelete = await store.getProductById(p.product.id, opt);
+  assert.equal(afterDelete.stock, 50, "48 + 2 還原");
+
+  // 訂單已不存在。
+  const gone = await store.getOrderById(order.order.id, opt);
+  assert.equal(gone, null);
+});
+
+test("deleteOrder 不存在的訂單回 not_found", async () => {
+  const opt = tempFiles();
+  const del = await store.deleteOrder("no-such-order", opt);
+  assert.deepEqual(del, { ok: false, error: "not_found" });
+});
+
+test("deleteOrder 商品已不存在時不阻斷刪單（略過該項庫存還原）", async () => {
+  const opt = tempFiles();
+  const p = await store.createProduct(
+    { name: "助行器", center_id: "c1", center_name: "安心", price: 2500, stock: 6 },
+    opt,
+  );
+  const order = await store.createOrder(
+    { userId: "u1", items: [{ productId: p.product.id, quantity: 1 }] },
+    opt,
+  );
+  assert.equal(order.ok, true);
+  // 直接把商品下架移除的情境：刪商品紀錄後刪單仍應成功。
+  await store.setProductStatus(p.product.id, "inactive", opt);
+  const del = await store.deleteOrder(order.order.id, opt);
+  assert.equal(del.ok, true);
+  const gone = await store.getOrderById(order.order.id, opt);
+  assert.equal(gone, null);
 });

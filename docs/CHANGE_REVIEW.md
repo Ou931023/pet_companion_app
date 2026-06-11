@@ -3442,3 +3442,41 @@ docs-only → 不需跑單元測試（runtime 未改）。既有 baseline 維持
 
 ### 裁決
 docs-only 部署指南，無 🔒 / runtime 變更，內容與程式真相一致、未洩漏 secret；併入主線。實際部署 / 設值 / 跑 migration 為 owner action（infra blocker）。
+
+---
+
+## CR-0067 — 管理端「刪除訂單」功能（DELETE 端點 + 還原庫存 + 前端按鈕）
+
+### 模式
+小批次功能新增，觸及 🔒（`server.js` 新增路由 = API 契約、`PROJECT_ARCHITECTURE.md` API 表）。經 plan-mode 與使用者核准後實作；純新增，不改任何既有路由的路徑 / 方法 / response 形狀。
+
+### 動機 / 問題
+商城上線後，管理者網頁「訂單管理」只能改狀態（pending…cancelled）與配送備註，**無法刪除訂單**（`cancelled` 只改狀態、訂單仍留列表、且不還原庫存），後端也無 DELETE 端點。驗收時於 production 留下的測試訂單（`elder_name=驗收測試(可刪)`）無法從 UI 清除。使用者要求：管理端可刪除訂單，且刪除時把商品數量加回庫存。
+
+### 變更（程式）
+- **`services/marketplace/marketplaceStore.js`**：新增 `deleteOrder(id, options)`（DB-優先 + JSON 降級，比照 `updateOrderStatus` wrapper）。
+  - `deleteOrderDb`：單一 transaction — `BEGIN` → `SELECT … FOR UPDATE`（無列→ROLLBACK+`not_found`）→ 逐項 `UPDATE marketplace_products SET stock = stock + qty`（商品不存在則略過）→ `DELETE` 訂單 → `COMMIT`，回 `rowToOrder`。
+  - `deleteOrderJson`：讀單→還原 products 庫存→`writeAll`→`splice`+`writeAll` orders。
+  - export `deleteOrder`。
+- **`server.js`（🔒）**：新增 `app.delete("/api/admin/marketplace/orders/:id", requireAdmin, …)`，沿用既有 `requireAdmin`/`isFeatureUnavailableError`/`respondFeatureDisabled`；`not_found`→404、其他→500。不改既有路由。
+- **`caregiver_web/app.js`**：訂單詳情新增 `#order-delete`（`btn btn-danger`「刪除訂單」）+ `deleteOrderFromDetail(id)`（`window.confirm` 二次確認 → `DELETE /admin/marketplace/orders/:id` 帶 Admin token → 成功關閉並 `loadOrders`）。
+- **`caregiver_web/styles.css`**：新增 `.btn-danger` 紅色危險按鈕樣式（沿用 `.btn` 尺寸 / 圓角，長者友善）。
+
+### 設計決策（與使用者確認）
+刪除一律還原庫存。理由：訂單建立必扣庫存、`cancelled` 不還原，故刪除任何狀態的訂單時把庫存加回，剛好抵銷當初扣減一次，語意一致、不重複還原。
+
+### DB schema
+**無變更**（沿用 `marketplace_orders` / `marketplace_products`，實體刪除，無 soft-delete 欄）。部署不需 migration。
+
+### 測試
+- `marketplaceStore.test.js`（JSON）：刪單還原庫存 + 查不到、`not_found`、商品已下架仍可刪；production guard 加 `deleteOrder`。
+- `marketplaceStore.db.test.js`（mock pg）：交易序列 `BEGIN→SELECT FOR UPDATE→逐項 stock+→DELETE→COMMIT`、`not_found` 走 ROLLBACK、production DB 例外回 `write_failed`。
+- `marketplaceEndpoint.test.js`（真 Express）：缺 token→401、刪存在→200、再查→404、庫存還原 50、刪不存在→404。
+- `caregiver_web/marketplace_admin.test.js`：刪除按鈕 / DELETE 呼叫 / `window.confirm` / `.btn-danger` 靜態結構。
+- 全綠：backend `npm test` **531/531**、`npm run check` exit 0；caregiver_web `node --test` **94/94**。未刪任何既有測試。
+
+### 限制遵守
+未讀 / 改 `.env`；未提交 runtime `data/*.json`；未動 Realtime 主流程 / Care Alert 契約 / DB schema；純新增 API，既有路由形狀不變。
+
+### 裁決
+小範圍、純新增、契約已記錄於本檔與 `PROJECT_ARCHITECTURE.md §4`，測試齊備且全綠；併入主線。部署後以新按鈕清除 production 測試訂單。

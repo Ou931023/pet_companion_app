@@ -1208,6 +1208,119 @@ async function updateOrderStatus(id, status, fields = {}, options = {}) {
   return updateOrderStatusJson(id, normalized, fields, options);
 }
 
+// DB 路徑：單一 transaction（BEGIN → 鎖訂單列 → 逐項還原庫存 → DELETE 訂單 → COMMIT）。
+// 訂單建立時必扣庫存、cancelled 不還原，故刪除一律把庫存加回，剛好抵銷當初扣減一次。
+// 找不到訂單 → ROLLBACK + not_found；任何例外都 ROLLBACK 後往上拋。
+async function deleteOrderDb(pg, id) {
+  const pool = typeof pg.getPool === "function" ? pg.getPool() : null;
+  const client = pool ? await pool.connect() : null;
+  const run = client ? (t, p) => client.query(t, p) : (t, p) => pg.query(t, p);
+  let began = false;
+  try {
+    await run("BEGIN");
+    began = true;
+
+    const sel = await run(
+      `SELECT * FROM marketplace_orders WHERE id = $1 FOR UPDATE`,
+      [id],
+    );
+    const row = (sel.rows || [])[0];
+    if (!row) {
+      await run("ROLLBACK");
+      return { ok: false, error: "not_found" };
+    }
+
+    // items_json：pg 取回 JSONB 已是陣列；字串則 parse。
+    let items = row.items_json ?? row.items ?? [];
+    if (typeof items === "string") {
+      try {
+        items = JSON.parse(items);
+      } catch (_parseError) {
+        items = [];
+      }
+    }
+    if (!Array.isArray(items)) items = [];
+
+    // 還原庫存：商品仍存在才加回（已下架 / 刪除的商品略過，不阻斷刪單）。
+    for (const it of items) {
+      const productId = it && it.product_id;
+      const qty = Math.max(0, Math.round(toFiniteNumber(it && it.quantity, 0)));
+      if (!productId || qty <= 0) continue;
+      await run(
+        `UPDATE marketplace_products SET stock = stock + $2, updated_at = NOW()
+         WHERE id = $1`,
+        [productId, qty],
+      );
+    }
+
+    await run(`DELETE FROM marketplace_orders WHERE id = $1`, [id]);
+    await run("COMMIT");
+    return { ok: true, order: rowToOrder(row) };
+  } catch (error) {
+    if (began) {
+      try {
+        await run("ROLLBACK");
+      } catch (_rollbackError) {
+        // ROLLBACK 失敗只忽略（連線可能已壞），原始錯誤往上拋。
+      }
+    }
+    throw error;
+  } finally {
+    if (client && typeof client.release === "function") client.release();
+  }
+}
+
+async function deleteOrderJson(id, options) {
+  const ordersFile = resolveOrdersFile(options);
+  const productsFile = resolveProductsFile(options);
+  try {
+    const orders = await readAll(ordersFile, "orders");
+    const index = orders.findIndex((o) => o.id === id);
+    if (index === -1) return { ok: false, error: "not_found" };
+    const order = orders[index];
+
+    // 還原庫存（商品仍存在才加回）。
+    const products = await readAll(productsFile, "products");
+    const byId = new Map(products.map((p) => [p.id, p]));
+    const now = new Date().toISOString();
+    for (const it of order.items || []) {
+      const product = byId.get(it && it.product_id);
+      if (!product) continue;
+      const qty = Math.max(0, Math.round(toFiniteNumber(it && it.quantity, 0)));
+      if (qty <= 0) continue;
+      product.stock = Math.round(toFiniteNumber(product.stock, 0)) + qty;
+      product.updated_at = now;
+    }
+    await writeAll(productsFile, products);
+
+    orders.splice(index, 1);
+    await writeAll(ordersFile, orders);
+
+    return { ok: true, order };
+  } catch (error) {
+    console.error("[marketplace-store] deleteOrder failed", {
+      error: error?.message || error,
+    });
+    return { ok: false, error: "write_failed" };
+  }
+}
+
+async function deleteOrder(id, options = {}) {
+  const pg = options.pg || activePg;
+  const fallbackAllowed = isJsonFallbackAllowed(options.env || process.env);
+  if (await isDbAvailable(pg)) {
+    try {
+      return await deleteOrderDb(pg, id);
+    } catch (error) {
+      logDbError("deleteOrder", error);
+      if (!fallbackAllowed) return { ok: false, error: "write_failed" };
+    }
+  } else if (!fallbackAllowed) {
+    return { ok: false, error: FEATURE_UNAVAILABLE_IN_PRODUCTION };
+  }
+  return deleteOrderJson(id, options);
+}
+
 module.exports = {
   PRODUCT_CATEGORIES,
   PRODUCT_STATUSES,
@@ -1224,6 +1337,7 @@ module.exports = {
   listOrders,
   getOrderById,
   updateOrderStatus,
+  deleteOrder,
   normalizeProduct,
   normalizeCommissionRate,
   // 測試 / 工具用：注入 mock pg。

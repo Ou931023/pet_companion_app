@@ -188,3 +188,85 @@ test("缺貨商品下單被擋（400），且不影響既有 API", async () => {
     server.close();
   }
 });
+
+test("管理端刪除訂單：需 token、刪後查不到、庫存還原；刪不存在回 404", async () => {
+  const server = await startServer();
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const p = await send(
+      baseUrl,
+      "POST",
+      "/api/admin/marketplace/products",
+      {
+        name: "濕式衛生紙巾",
+        center_id: "c-kangfu",
+        center_name: "康福長照中心",
+        category: "清潔衛生",
+        price: 120,
+        stock: 50,
+        commission_rate: 0.12,
+        status: "active",
+      },
+      ADMIN_HEADERS,
+    );
+    const productId = p.body.product.id;
+
+    const order = await send(baseUrl, "POST", "/api/marketplace/orders", {
+      userId: "u-elder",
+      elderName: "驗收測試",
+      items: [{ productId, quantity: 2 }],
+    });
+    assert.equal(order.status, 200);
+    const orderId = order.body.order.id;
+
+    // 下單後庫存先扣到 48。
+    const afterOrder = await getJson(baseUrl, `/api/marketplace/products/${productId}`);
+    assert.equal(afterOrder.body.product.stock, 48);
+
+    // 缺 token → 401。
+    const noAuth = await send(
+      baseUrl,
+      "DELETE",
+      `/api/admin/marketplace/orders/${orderId}`,
+      undefined,
+      { "Content-Type": "application/json" },
+    );
+    assert.equal(noAuth.status, 401);
+
+    // 有 token → 200，回傳被刪的訂單。
+    const del = await send(
+      baseUrl,
+      "DELETE",
+      `/api/admin/marketplace/orders/${orderId}`,
+      undefined,
+      ADMIN_HEADERS,
+    );
+    assert.equal(del.status, 200);
+    assert.equal(del.body.ok, true);
+    assert.equal(del.body.order.id, orderId);
+
+    // 訂單已查不到（404）。
+    const gone = await getJson(
+      baseUrl,
+      `/api/admin/marketplace/orders/${orderId}`,
+      { Authorization: "Bearer test-admin-token" },
+    );
+    assert.equal(gone.status, 404);
+
+    // 庫存還原回 50。
+    const afterDelete = await getJson(baseUrl, `/api/marketplace/products/${productId}`);
+    assert.equal(afterDelete.body.product.stock, 50);
+
+    // 刪不存在的訂單 → 404。
+    const missing = await send(
+      baseUrl,
+      "DELETE",
+      "/api/admin/marketplace/orders/no-such-id",
+      undefined,
+      ADMIN_HEADERS,
+    );
+    assert.equal(missing.status, 404);
+  } finally {
+    server.close();
+  }
+});

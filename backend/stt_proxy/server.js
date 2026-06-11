@@ -1695,6 +1695,15 @@ app.patch(
   },
 );
 
+// 管理者刪除訂單（super_admin / Admin Token gated）：刪單並還原庫存。
+app.delete("/api/admin/marketplace/orders/:id", requireAdmin, async (req, res) => {
+  const result = await marketplaceStore.deleteOrder(req.params.id);
+  if (result.ok) return res.json(result);
+  if (isFeatureUnavailableError(result)) return respondFeatureDisabled(res, { key: "ok" });
+  const code = result.error === "not_found" ? 404 : 500;
+  return res.status(code).json(result);
+});
+
 app.post("/api/companion/analyze", async (req, res) => {
   try {
     const userId = req.body?.userId || "default_user";
