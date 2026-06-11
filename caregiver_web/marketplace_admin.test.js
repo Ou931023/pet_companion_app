@@ -149,16 +149,16 @@ test("CR-0065：marketplace 關閉時 loadProducts / loadOrders 不打後端（�
   );
 });
 
-test("正式版 index.html：marketplace 已上線開啟、今日任務仍停用", () => {
-  // 商城已平移 PostgreSQL 並在正式環境回 200，故正式 APP_CONFIG 開啟 marketplace；
-  // 今日任務後端仍為 JSON-only（正式回 501），維持關閉（原 CR-0065 的關閉已解除）。
+test("正式版 index.html：marketplace 與今日任務皆已上線開啟", () => {
+  // 商城（CR-0067）與今日任務（CR-0068）都已平移 PostgreSQL 並在正式環境回 200，
+  // 故正式 APP_CONFIG 兩個旗標皆開啟（原 CR-0065 的關閉已全部解除）。
   assert.ok(
     /marketplace\s*:\s*true/.test(indexHtml),
     "index.html 正式設定應開啟 marketplace（後端已上線）",
   );
   assert.ok(
-    /dailyCareTasks\s*:\s*false/.test(indexHtml),
-    "index.html 正式設定應停用今日任務（後端仍回 501）",
+    /dailyCareTasks\s*:\s*true/.test(indexHtml),
+    "index.html 正式設定應開啟今日任務（後端已上線，CR-0068）",
   );
 });
 

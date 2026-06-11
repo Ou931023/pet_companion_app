@@ -715,12 +715,13 @@
       // 正式版分頁旗標：
       // - marketplace：商城已平移到 PostgreSQL 並在正式環境上線（後端回 200），
       //   故開啟商品 / 訂單管理分頁。原 CR-0065 因後端回 501 暫時關閉，現已解除。
-      // - dailyCareTasks：今日任務後端仍為 JSON-only（正式環境回 501），維持關閉。
+      // - dailyCareTasks：今日任務已平移到 PostgreSQL 並在正式環境上線（CR-0068，
+      //   migration 016），故開啟分頁。原因後端回 501 暫時關閉，現已解除。
       window.APP_CONFIG = window.APP_CONFIG || {
         apiBaseUrl: "https://ai-companion-app-7mb8.onrender.com/api",
-        featureFlags: { marketplace: true, dailyCareTasks: false },
+        featureFlags: { marketplace: true, dailyCareTasks: true },
       };
     </script>
-    <script src="./app.js?v=20260611-cr0067"></script>
+    <script src="./app.js?v=20260611-cr0068"></script>
   </body>
 </html>
