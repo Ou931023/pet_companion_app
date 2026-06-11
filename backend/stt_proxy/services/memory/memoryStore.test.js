@@ -268,11 +268,12 @@ test("same memorySummary is deduplicated without crashing", async (t) => {
 
 test("rankMemories uses similarity, importance, and recency thresholds", () => {
   const now = new Date().toISOString();
+  // CR-0073：門檻放寬後（MIN_SIMILARITY 0.30），以「明確低於門檻」的 0.2 驗證排除。
   const ranked = rankMemories([
     {
       id: 1,
       memorySummary: "低相似記憶",
-      similarity: 0.3,
+      similarity: 0.2,
       importance: 5,
       createdAt: now,
       isActive: true,
@@ -288,7 +289,7 @@ test("rankMemories uses similarity, importance, and recency thresholds", () => {
   ], "postgres_pgvector");
   assert.equal(ranked.length, 1);
   assert.equal(ranked[0].id, 2);
-  assert.ok(ranked[0].finalScore >= 0.55);
+  assert.ok(ranked[0].finalScore >= 0.42);
 });
 
 test("buildPromptBlock hides technical details and includes usage rules", () => {
@@ -324,7 +325,8 @@ test("buildMemoryContext retrieves ranked JSON fallback memories and marks them 
     await createMemory(sampleMemory({
       sourceTurnId: "context_002",
       memorySummary: "使用者不重要的低分記憶。",
-      importance: 2,
+      // CR-0073：importance 下限放寬為 2，故用 1（明確低於下限）驗證排除。
+      importance: 1,
       embedding: [1, 0, 0],
     }));
 

@@ -3632,3 +3632,33 @@ docs-only 模板，無 🔒 / runtime 變更；併入主線。實際填寫為 ow
 
 ### 裁決
 最小、向後相容、契約已記錄、測試齊備且全綠、不碰受保護模組；併入主線。
+
+---
+
+## CR-0073 — 長期記憶層調校 + 可觀測性 + 修潛在 crash
+
+### 模式
+小批次調校，**僅改 `backend/stt_proxy/services/memory/*` 服務內部邏輯**（檢索/抽取門檻、防呆、去敏 log）。**不動 server.js 路由 / response 形狀 / DB schema / Realtime / Auth / Flutter / persona**，故非 🔒 API 契約變更。經 plan-mode 與使用者核准（範圍：調校 + 觀測 + 修 crash，不碰 Auth）。
+
+### 動機 / 根因
+正式環境（key + pgvector）記憶管線其實接好了（打字對話會抽取、會檢索、會注入，且寫入/檢索同一 userId），但「想不起使用者的事」源於：檢索門檻偏高（sim≥0.40、finalScore≥0.55、importance<3 排除、topK 3）+ 抽取缺自我介紹/家人分支 + 全程靜默無法診斷。
+
+### 變更
+- `memoryContextService.js`：檢索門檻改 env 可調並放寬預設 —— `MEMORY_MIN_SIMILARITY`(0.40→**0.30**)、`MEMORY_MIN_FINAL_SCORE`(0.55→**0.42**)、`MEMORY_MIN_IMPORTANCE`(3→**2**)、`MEMORY_CONTEXT_TOPK`(3→**5**)；不合法值回退預設。`buildMemoryContext` 加去敏觀測 log（候選數 / ranked 數 / 最高 similarity 數值 / provider / 門檻；**不記內容或 userId**），catch log 帶去敏 reason。
+- `memoryExtractor.js`：放寬 <4 字硬擋白名單（+累/餓/怕/哭/名/叫）；**新增自我介紹（`personal_story`）與家人（`family`）rule 分支**（原本缺、production 只靠 AI 補）；加去敏決策 log（shouldRemember/type/reason/輸入長度，不記原文）。memoryType 皆為 005 CHECK + memoryStore 既有合法值。
+- `memoryStore.js`：`createMemoryPostgres` dedupe 末段 `existing.rows[0]` 判空防呆（避免 `duplicate.id` TypeError 崩潰），為空回非崩潰 envelope。
+
+### 測試
+- 新增 `memoryContextService.test.js`（rankMemories 放寬後 sim 0.35/importance 2 通過、sim 0.1 仍擋、topK≤5、env 覆寫 fresh-require 驗證）、`memoryExtractor.test.js`（自我介紹→personal_story、家人→family、寒暄/天氣/敏感不退化、既有喜好分支仍正常）。
+- 更新 `memoryStore.test.js` 兩個既有測試以反映放寬後門檻（用明確低於新門檻的值驗證排除，保留原意——CR 預期內的門檻變更，非為過測）。
+- `package.json` test/check 納入兩個新測試檔。
+- 全綠：backend `npm test` **571/571**、`npm run check` exit 0。
+
+### 限制遵守
+未讀 `.env`（新 env 變數只列名稱）；未碰 Auth / API 路由形狀 / DB schema / Realtime / Flutter / persona；log 全去敏（不含記憶內容 / userText / userId / token）。
+
+### 範圍外（明確不做）
+`/api/memories/*` 身分驗證（需同時接 Flutter idToken）→ 另開安全 CR。
+
+### 裁決
+服務內部調校 + 觀測 + 防呆，無 🔒 / schema / 契約變更、測試齊備且全綠、門檻 env 可調（production 可不重 build 微調）；併入主線。實機與 Render log 驗證為後續觀察。

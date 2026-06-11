@@ -9,6 +9,8 @@ const MEMORY_TYPES = new Set([
   "care_need",
   "story_preference",
   "health_lifestyle",
+  "family",
+  "personal_story",
   "other",
 ]);
 
@@ -94,7 +96,10 @@ function ruleBasedExtract({ userText, emotion }) {
   const text = (userText || "").toString().trim();
   if (!text) return falseResult("userText is required");
   if (CHATTER.has(text)) return falseResult("普通寒暄，不需保存");
-  if (chineseCharCount(text) < 4 && !hasAny(text, ["藥", "痛", "睡", "水"])) {
+  if (
+    chineseCharCount(text) < 4 &&
+    !hasAny(text, ["藥", "痛", "睡", "水", "累", "餓", "怕", "哭", "名", "叫"])
+  ) {
     return falseResult("文字太短且沒有明確長期意義");
   }
   if (text.includes("今天天氣不錯") || text.includes("天氣不錯")) {
@@ -105,6 +110,31 @@ function ruleBasedExtract({ userText, emotion }) {
   }
 
   const emotionLabel = normalizeEmotionLabel(emotion);
+
+  // CR-0073：自我介紹 / 家人關係是「要記住」的核心，但原本沒有對應 rule 分支
+  // （production 只能靠 AI 補、無 key 則漏）。在此補上，確保穩定存入。
+  if (hasAny(text, ["我叫", "我的名字", "名字是", "我是叫"])) {
+    return buildMemory({
+      memoryType: "personal_story",
+      memoryText: text,
+      memorySummary: `使用者自我介紹：${text}`,
+      importance: 4,
+      emotionLabel,
+      confidence: 0.8,
+      reason: "使用者提供姓名 / 自我介紹",
+    });
+  }
+  if (hasAny(text, ["兒子", "女兒", "孫子", "孫女", "孫", "老伴", "先生", "太太", "老公", "老婆", "媽媽", "爸爸"])) {
+    return buildMemory({
+      memoryType: "family",
+      memoryText: text,
+      memorySummary: `使用者提到家人：${text}`,
+      importance: 4,
+      emotionLabel,
+      confidence: 0.78,
+      reason: "使用者提到家人 / 重要關係",
+    });
+  }
   if (hasAny(text, ["忘記喝水", "提醒我", "吃藥", "運動"])) {
     return buildMemory({
       memoryType: "care_need",
@@ -252,6 +282,18 @@ async function extractMemoryFromTurn(input) {
     userId: input?.userId || "default_user",
   };
 
+  // CR-0073 去敏觀測：只記決策 / 類型 / reason / 輸入長度，不記任何原文或 userId。
+  const logDecision = (result, source) => {
+    console.log("[memory-extractor] decide", {
+      shouldRemember: Boolean(result.shouldRemember),
+      memoryType: result.memoryType || null,
+      reason: result.reason || null,
+      source,
+      userTextLen: normalized.userText.length,
+    });
+    return result;
+  };
+
   const precheck = ruleBasedExtract(normalized);
   if (!precheck.shouldRemember && (
     CHATTER.has(normalized.userText) ||
@@ -259,27 +301,30 @@ async function extractMemoryFromTurn(input) {
     chineseCharCount(normalized.userText) < 4 ||
     isSensitiveOrDiagnosis(normalized.userText)
   )) {
-    return precheck;
+    return logDecision(precheck, "rule_hardblock");
   }
 
   try {
     const aiResult = await aiExtract(normalized);
     if (aiResult) {
       const sanitized = sanitizeAiResult(aiResult, normalized);
-      if (sanitized.shouldRemember) return sanitized;
+      if (sanitized.shouldRemember) return logDecision(sanitized, "ai");
       if (precheck.shouldRemember) {
-        return {
-          ...precheck,
-          reason: `${precheck.reason}（AI 判 false 但規則命中，採信規則）`,
-        };
+        return logDecision(
+          {
+            ...precheck,
+            reason: `${precheck.reason}（AI 判 false 但規則命中，採信規則）`,
+          },
+          "rule_over_ai",
+        );
       }
-      return sanitized;
+      return logDecision(sanitized, "ai");
     }
   } catch (error) {
     console.warn("[memory-extractor] AI extract failed, using fallback", safeErrorMessage(error));
   }
 
-  return precheck;
+  return logDecision(precheck, "rule");
 }
 
 module.exports = {

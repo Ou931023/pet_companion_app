@@ -58,22 +58,31 @@ function scoreMemory(memory) {
   };
 }
 
-const MIN_SIMILARITY = 0.40;
-const MIN_FINAL_SCORE = 0.55;
+// CR-0073：檢索門檻改 env 可調（fallback 為放寬後的預設），讓 production 不需改 code /
+// 重 build 就能微調記憶召回。數值不合法（NaN / <=0）一律回退預設。
+function envNumber(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+const MIN_SIMILARITY = envNumber("MEMORY_MIN_SIMILARITY", 0.30); // 原 0.40
+const MIN_FINAL_SCORE = envNumber("MEMORY_MIN_FINAL_SCORE", 0.42); // 原 0.55
+const MIN_IMPORTANCE = envNumber("MEMORY_MIN_IMPORTANCE", 2); // 原硬編 3
+const CONTEXT_TOPK = Math.max(1, Math.round(envNumber("MEMORY_CONTEXT_TOPK", 5))); // 原 3
 
 function rankMemories(memories = [], provider = "none") {
   const ranked = memories
     .filter((memory) => memory && memory.isActive !== false)
     .map(scoreMemory)
     .filter((memory) => {
-      if (memory.importance < 3) return false;
+      if (memory.importance < MIN_IMPORTANCE) return false;
       if (memory.similarity == null && provider === "json_fallback") {
         return memory.finalScore >= MIN_FINAL_SCORE;
       }
       return memory.similarity >= MIN_SIMILARITY && memory.finalScore >= MIN_FINAL_SCORE;
     })
     .sort((a, b) => b.finalScore - a.finalScore)
-    .slice(0, 3);
+    .slice(0, CONTEXT_TOPK);
   return ranked;
 }
 
@@ -125,7 +134,21 @@ async function buildMemoryContext({
     }
 
     const searchResult = await searchMemoriesByEmbedding(userId, embedding, limit);
-    const ranked = rankMemories(searchResult.memories, searchResult.provider);
+    const candidates = searchResult.memories || [];
+    const ranked = rankMemories(candidates, searchResult.provider);
+    // CR-0073 去敏觀測：只記筆數 / 最高相似度（數字）/ provider / 門檻，不記任何記憶內容或 userId。
+    const topSimilarity = candidates.reduce(
+      (max, m) => (typeof m.similarity === "number" && m.similarity > max ? m.similarity : max),
+      0,
+    );
+    console.log("[memory-context] retrieve", {
+      provider: searchResult.provider,
+      candidates: candidates.length,
+      ranked: ranked.length,
+      topSimilarity: Number(topSimilarity.toFixed(3)),
+      minSimilarity: MIN_SIMILARITY,
+      minFinalScore: MIN_FINAL_SCORE,
+    });
     if (!ranked.length) {
       return emptyContext("no_relevant_memory", "none");
     }
@@ -143,7 +166,8 @@ async function buildMemoryContext({
       embeddingProvider,
     };
   } catch (error) {
-    console.warn("[memory-context] build failed", safeErrorMessage(error));
+    // CR-0073：失敗仍回 emptyContext（不影響回覆），但 log 帶去敏 reason 供 production 診斷。
+    console.warn("[memory-context] build failed", { reason: safeErrorMessage(error) });
     return emptyContext("memory context failed");
   }
 }

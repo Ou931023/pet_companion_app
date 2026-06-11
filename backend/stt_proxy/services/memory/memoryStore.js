@@ -268,6 +268,16 @@ async function createMemoryPostgres(memory) {
     [memory.userId, memory.sourceTurnId],
   );
   const duplicate = rowToMemory(existing.rows[0], PROVIDER_POSTGRES);
+  // CR-0073 防呆：INSERT 因 ON CONFLICT DO NOTHING 沒回列、但再查也查不到（race /
+  // 非預期）時 duplicate 可能為 null。先判空，避免 `duplicate.id` TypeError 讓整條寫入崩潰。
+  if (!duplicate) {
+    return {
+      memory: null,
+      provider: PROVIDER_POSTGRES,
+      duplicate: false,
+      reason: "insert_conflict_no_row",
+    };
+  }
   await recordMemoryEvent(duplicate.id, "deduplicated", "duplicate sourceTurnId ignored");
   return { memory: duplicate, provider: PROVIDER_POSTGRES, duplicate: true };
 }
