@@ -79,6 +79,19 @@ test("app.js 訂單管理呼叫正確 API、顯示抽成與長照中心實收", 
   assert.ok(appJs.includes("長照中心實收"), "詳情應顯示長照中心實收");
 });
 
+test("CR-0067：訂單詳情有刪除按鈕，呼叫 DELETE 端點且需二次確認", () => {
+  assert.ok(appJs.includes("function deleteOrderFromDetail"), "應有 deleteOrderFromDetail");
+  assert.ok(appJs.includes('id="order-delete"'), "詳情應有刪除訂單按鈕");
+  assert.ok(appJs.includes("btn-danger"), "刪除按鈕應為危險樣式 btn-danger");
+  assert.ok(
+    appJs.includes('method: "DELETE"') &&
+      appJs.includes('adminUrl("/marketplace/orders/" + encodeURIComponent(id))'),
+    "刪除應對訂單 id 打 DELETE 端點",
+  );
+  assert.ok(appJs.includes("window.confirm"), "刪除為不可復原操作，應二次確認");
+  assert.ok(stylesCss.includes(".btn-danger"), "styles.css 應有 .btn-danger 樣式");
+});
+
 test("app.js showView 與懶載入涵蓋商品 / 訂單", () => {
   assert.ok(appJs.includes('products: { view: elP.viewProducts'), "showView 應含 products");
   assert.ok(appJs.includes('orders: { view: elO.viewOrders'), "showView 應含 orders");

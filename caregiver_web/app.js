@@ -2556,12 +2556,19 @@
       escapeHtml(order.delivery_note || "") +
       "</textarea></div>" +
       '<p id="order-detail-status" class="status-message"></p>' +
-      '<div class="form-actions"><button type="button" id="order-save" class="btn btn-primary">儲存更新</button></div>';
+      '<div class="form-actions"><button type="button" id="order-save" class="btn btn-primary">儲存更新</button>' +
+      '<button type="button" id="order-delete" class="btn btn-danger">刪除訂單</button></div>';
 
     var saveBtn = document.getElementById("order-save");
     if (saveBtn) {
       saveBtn.addEventListener("click", function () {
         updateOrderFromDetail(order.id);
+      });
+    }
+    var deleteBtn = document.getElementById("order-delete");
+    if (deleteBtn) {
+      deleteBtn.addEventListener("click", function () {
+        deleteOrderFromDetail(order.id);
       });
     }
   }
@@ -2605,6 +2612,50 @@
             err && err.message === "unauthorized"
               ? "管理者權杖無效或未授權。"
               : "更新沒成功，請稍後再試。";
+          statusMsg.classList.add("error");
+        }
+      });
+  }
+
+  function deleteOrderFromDetail(id) {
+    var statusMsg = document.getElementById("order-detail-status");
+    if (!getAdminToken()) {
+      if (statusMsg) {
+        statusMsg.textContent = "請先輸入管理者權杖。";
+        statusMsg.classList.add("error");
+      }
+      return;
+    }
+    if (
+      !window.confirm(
+        "確定要刪除這筆訂單嗎？刪除後無法復原，商品庫存會自動加回。",
+      )
+    ) {
+      return;
+    }
+    if (statusMsg) {
+      statusMsg.textContent = "刪除中…";
+      statusMsg.classList.remove("error");
+    }
+    fetch(adminUrl("/marketplace/orders/" + encodeURIComponent(id)), {
+      method: "DELETE",
+      headers: adminJsonHeaders(),
+    })
+      .then(function (r) {
+        if (r.status === 401 || r.status === 403) throw new Error("unauthorized");
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function () {
+        closeOrderDetail();
+        loadOrders();
+      })
+      .catch(function (err) {
+        if (statusMsg) {
+          statusMsg.textContent =
+            err && err.message === "unauthorized"
+              ? "管理者權杖無效或未授權。"
+              : "刪除沒成功，請稍後再試。";
           statusMsg.classList.add("error");
         }
       });

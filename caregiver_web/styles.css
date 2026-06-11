@@ -211,6 +211,17 @@ code {
   background: var(--primary-dark);
 }
 
+/* 危險按鈕（刪除等不可復原操作）。 */
+.btn-danger {
+  background: #d92d2d;
+  border-color: #d92d2d;
+  color: #fff;
+}
+
+.btn-danger:hover {
+  background: #b71f1f;
+}
+
 /* ---- 統計卡 ---- */
 .stats {
   display: grid;
