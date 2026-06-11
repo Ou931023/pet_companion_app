@@ -3574,3 +3574,27 @@ docs-only 驗收整理 + API 層 smoke 佐證，無 🔒 / runtime 變更，與�
 
 ### 裁決
 docs-only 檢查報告，無 🔒 / runtime 變更，與程式現況一致（app_config 行號、native 設定檔皆對照確認）、未洩 secret；併入主線。簽章 / 傳輸 / 實機 E2E 為既有 owner action。
+
+---
+
+## CR-0071 — Manual Production E2E Smoke Evidence Fill-in（docs-only）
+
+### 模式
+**docs-only**。不改任何功能程式碼。於 `docs/E2E_SMOKE_TEST_REPORT.md` Run #2 新增「C. 人工驗收佐證填寫表」——一份可逐項填寫的模板，供使用者依序補 S1–S9 / M1–M4 / D1–D5 的 pass/fail、裝置型號、OS 版本、build 指令、去敏佐證與 fail 後續 CR。無 🔒 / runtime 變更。
+
+### 動機
+B 段先前僅有使用者口頭「全數通過」摘要；需一份正式、結構化的佐證填寫格式，讓實機驗收結果有去敏證據可追溯，並明訂 fail 時的後續 CR 流程。
+
+### 產出
+- 執行資訊表（執行者 / 日期 / 裝置型號 / OS / build 指令 / app commit / URL，每輪填一次）。
+- 逐項佐證表（17 項：S1–S9、M1–M4、D1–D5），欄位 = pass/fail｜去敏佐證｜fail→後續 CR，皆留 `（填）` 空格。
+- 去敏紅線與 fail 處理規則：佐證不得含 token / chat id / 完整對話 / 完整 email / `DATABASE_URL`；fail → 開後續 CR 記去敏摘要，不在報告直接改功能。
+
+### 後續維護約定
+使用者貼回實機結果時，維護者**只整理成報告格式，不擅自改功能程式碼**；若有 fail 需修功能，另開對應 CR 經正常流程。
+
+### 限制遵守
+未改功能 / Realtime / Auth / Marketplace / Daily Care Tasks；未讀 `.env`；模板本身不含任何 secret；B 段既有 PASS 摘要保留，C 段為補充佐證層。
+
+### 裁決
+docs-only 模板，無 🔒 / runtime 變更；併入主線。實際填寫為 owner action。

@@ -75,6 +75,49 @@ Daily Care Tasks 實機 / 管理端：
 - 上架前最小通過集：S1–S9 + M1–M4 + D1–D5 全 PASS（實機 + 真帳號）。✅ **達成（使用者 iOS 實機驗收）**。
 - 剩餘上架 blocker 非功能面：Android 正式簽章、iOS distribution 簽章、ATS/cleartext 收斂（見 `RELEASE_BUILD_SIGNING_CHECK.md §6` / `RELEASE_SIGNING.md` / `TRANSPORT_SECURITY.md`）。
 
+### C. 人工驗收佐證填寫表（CR-0071，逐項填寫用）
+
+> 上方 B 段為使用者口頭回報「全數通過」的摘要；本段為**正式佐證填寫模板**，供逐項補上去敏證據。
+> 🔴 去敏紅線：佐證不得含 token / Telegram chat id / 完整對話 / 完整 email / `DATABASE_URL` 值；截圖請遮蔽，或用「一句話 + 去敏截圖檔名」。
+> 填寫方式：可直接編輯本表，或把實機結果貼回給維護者代為整理（**只整理成報告，不改功能程式碼**）。
+
+**執行資訊（每輪填一次）**
+
+| 欄位 | 內容（填寫） |
+|---|---|
+| 執行者 | （填） |
+| 日期 | （填 YYYY-MM-DD） |
+| 裝置型號 | （填，例：iPhone 15 Pro） |
+| OS 版本 | （填，例：iOS 26.5） |
+| Build 指令 | （貼完整指令，含全部 `--dart-define`） |
+| app commit | （填 `git rev-parse --short HEAD`） |
+| 後端 / caregiver_web URL | `-7mb8` / `-caregiver-web`（如非預設請註明） |
+
+**逐項佐證（pass / fail；fail 才需填「後續 CR」）**
+
+| # | 流程 | pass/fail | 去敏佐證（截圖檔名 / 一句話） | fail → 後續 CR |
+|---|---|---|---|---|
+| S1 | App 啟動指向正式後端 / 無 debug·demo·dev panel | （填） | （填） | — |
+| S2 | 長者登入（Google / Email） | （填） | （填） | — |
+| S3 | 語音對話狀態流轉正常（含台語） | （填） | （填） | — |
+| S4 | 打字對話自然回覆 | （填） | （填） | — |
+| S5 | 語音 → Care Alert（medium 不推 / high 推 Telegram） | （填） | （填） | — |
+| S6 | 打字 → Care Alert | （填） | （填） | — |
+| S7 | 管理者端刷新（alert 狀態更新、scoped 授權） | （填） | （填） | — |
+| S8 | 後端不可用時白話錯誤、不 fallback mock | （填） | （填） | — |
+| S9 | log 去敏 | （填） | （填） | — |
+| M1 | 商城入口可見、商品列表 15 筆 | （填） | （填） | — |
+| M2 | 商品詳情 / 加入購物車 / 同中心單一規則 | （填） | （填） | — |
+| M3 | 建立訂單成功、訂單頁顯示金額與分潤 | （填） | （填） | — |
+| M4 | caregiver_web（super_admin + Admin Token）商品 / 訂單管理（看 / 改狀態 / 刪除） | （填） | （填） | — |
+| D1 | 今日任務不再「伺服器忙線中」、列表正常 | （填） | （填） | — |
+| D2 | 拍照完成上傳 → 任務狀態更新 | （填） | （填） | — |
+| D3 | AI Vision 分支：passed→完成 / uncertain·failed→送查看（文案不宣稱劑量正確） | （填） | （填） | — |
+| D4 | 完成證明照片可於管理端查看 | （填） | （填） | — |
+| D5 | caregiver_web 今日任務分頁：任務 + 最新 submission + 統計卡 | （填） | （填） | — |
+
+> fail 處理：任一項 fail → 在「後續 CR」欄填新 CR 編號（例 `CR-00XX`），並於 `docs/CHANGE_REVIEW.md` 開該 CR 記錄去敏失敗摘要與修復計畫；**不在本報告直接改功能程式碼**。
+
 ---
 
 ## Run #1 — CR-0055 套用 transport patch 嘗試（NOT EXECUTED / BLOCKED）
