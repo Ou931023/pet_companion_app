@@ -26,25 +26,73 @@ class WebSearchService {
 
   final http.Client _client;
 
+  /// CR-0080：即時資訊 intent 關鍵字。必須與後端
+  /// `tavilySearchService.js` 的 `REALTIME_INFO_KEYWORDS` 保持一致——
+  /// 前端放行的查詢，後端才會真的去搜尋並整理結果回來；兩端對齊可避免
+  /// 「前端判定要查、後端又說不用查」而回出生硬的「查不到」。
+  /// 只放「明確需要外部即時資訊」的詞，刻意不放單獨的「今天 / 現在 / 最近」，
+  /// 以免把「我今天有點累」這類心情話誤判成搜尋。
+  static const List<String> realtimeInfoKeywords = [
+    // 新聞 / 防詐
+    '今天有什麼新聞',
+    '新聞',
+    '最新消息',
+    '防詐',
+    '詐騙新聞',
+    '最近詐騙',
+    // 天氣
+    '查天氣',
+    '天氣',
+    '氣溫',
+    '會不會下雨',
+    '下雨機率',
+    // 活動
+    '附近有什麼活動',
+    '附近活動',
+    '最近活動',
+    // 主動查詢動詞
+    '幫我查',
+    '查一下',
+    '幫我搜尋',
+    '幫我搜',
+    '上網查',
+    '搜尋',
+    '即時資訊',
+    '健康資訊',
+    // 補助 / 政策
+    '補助',
+    '津貼',
+    '長照',
+    '政策',
+    '法規',
+    '規定',
+    // 價格 / 時刻
+    '油價',
+    '匯率',
+    '股市',
+    '股價',
+    '票價',
+    '高鐵時刻',
+    '台鐵時刻',
+    '營業時間',
+    '開放時間',
+    // 災防 / 公共
+    '颱風',
+    '地震',
+    '路況',
+    '停水',
+    '停電',
+    '確診',
+    '疫情',
+    // 申請流程
+    '怎麼申請',
+    '如何申請',
+  ];
+
   static bool shouldSearch(String text) {
     final normalized = text.trim();
     if (normalized.isEmpty) return false;
-    return [
-      '今天有什麼新聞',
-      '新聞',
-      '查天氣',
-      '天氣',
-      '附近有什麼活動',
-      '附近活動',
-      '最近活動',
-      '幫我查',
-      '查一下',
-      '幫我搜尋',
-      '最近詐騙',
-      '詐騙新聞',
-      '即時資訊',
-      '健康資訊',
-    ].any(normalized.contains);
+    return realtimeInfoKeywords.any(normalized.contains);
   }
 
   Future<WebSearchResult> search(String query) async {

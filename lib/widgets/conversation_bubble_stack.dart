@@ -65,6 +65,8 @@ class ConversationBubbleStack extends StatelessWidget {
       speaker: speakerLabel,
       isWaiting: waitingState,
       compact: compact,
+      // CR-0080：只有寵物字幕分頁（與語音同步）；使用者那側維持單塊顯示。
+      enablePaging: hasPet,
     );
   }
 }

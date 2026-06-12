@@ -110,6 +110,23 @@ test("G3：有記憶時夾帶記憶區塊，並維持不要說「根據紀錄」
   );
 });
 
+test("CR-0080：即時資訊問題不可冷冰冰拒絕『不能馬上查』，且不可編造假資訊", () => {
+  const prompt = buildCompanionChatInstructions("小白", "", {});
+  assert.ok(prompt.includes("【即時資訊】"), "persona 應含即時資訊段落");
+  assert.ok(
+    prompt.includes("絕對不要冷冰冰地丟一句「我不能馬上查」"),
+    "不可直接回『我不能馬上查』",
+  );
+  assert.ok(
+    prompt.includes("幫我查"),
+    "應引導長者用語音說『幫我查○○』走真正的搜尋",
+  );
+  assert.ok(
+    prompt.includes("絕對不要編造任何天氣、日期、金額、新聞或補助細節"),
+    "沒查到時不可編造假的即時資訊",
+  );
+});
+
 test("台語：replyLanguage=taigi 時夾帶台語輸出語言指示", () => {
   const prompt = buildCompanionChatInstructions("小白", "", {
     replyLanguage: "taigi",

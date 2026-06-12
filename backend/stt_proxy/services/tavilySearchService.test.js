@@ -15,9 +15,22 @@ test("needsWebSearch detects real-time information queries", () => {
   assert.equal(needsWebSearch("最近詐騙新聞有哪些？"), true);
 });
 
+// CR-0080：擴充即時資訊偵測——天氣 / 補助 / 政策 / 價格時刻等問題
+// 不應被當成一般閒聊而回「不能馬上查」。
+test("needsWebSearch detects subsidies, policy, prices and weather variants", () => {
+  assert.equal(needsWebSearch("今天嘉義天氣如何？"), true);
+  assert.equal(needsWebSearch("最近有什麼長照補助？"), true);
+  assert.equal(needsWebSearch("現在有什麼重要新聞？"), true);
+  assert.equal(needsWebSearch("敬老津貼怎麼申請？"), true);
+  assert.equal(needsWebSearch("今天油價多少？"), true);
+  assert.equal(needsWebSearch("這個颱風會不會放假？"), true);
+});
+
 test("needsWebSearch ignores ordinary companionship chat", () => {
   assert.equal(needsWebSearch("我今天有點累"), false);
   assert.equal(needsWebSearch("陪我聊聊天"), false);
+  assert.equal(needsWebSearch("我現在心情不太好"), false);
+  assert.equal(needsWebSearch("最近都睡不好"), false);
 });
 
 test("isHighRiskQuery detects health, legal, and finance topics", () => {

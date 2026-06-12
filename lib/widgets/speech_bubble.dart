@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'pet_subtitle_text.dart';
+
 class SpeechBubble extends StatelessWidget {
   const SpeechBubble({
     super.key,
@@ -7,12 +9,17 @@ class SpeechBubble extends StatelessWidget {
     this.speaker = '寵物',
     this.isWaiting = false,
     this.compact = false,
+    this.enablePaging = false,
   });
 
   final String text;
   final String speaker;
   final bool isWaiting;
   final bool compact;
+
+  /// CR-0080：是否把較長內容分頁顯示（與語音同步、不提前翻頁）。
+  /// 只在「寵物字幕」開啟；使用者泡泡 / 等待狀態維持原本單塊顯示。
+  final bool enablePaging;
 
   @override
   Widget build(BuildContext context) {
@@ -54,23 +61,39 @@ class SpeechBubble extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 3),
-                Text(
-                  isWaiting ? '我聽到了，正在想怎麼陪你說。' : text,
-                  maxLines: isWaiting ? 2 : (compact ? 4 : 6),
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: compact ? 17 : 18,
-                    height: 1.3,
-                    fontWeight: FontWeight.w600,
-                    color: isWaiting ? Colors.black54 : Colors.black87,
-                    fontStyle: isWaiting ? FontStyle.italic : FontStyle.normal,
-                  ),
-                ),
+                _buildBody(),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildBody() {
+    final textStyle = TextStyle(
+      fontSize: compact ? 17 : 18,
+      height: 1.3,
+      fontWeight: FontWeight.w600,
+      color: isWaiting ? Colors.black54 : Colors.black87,
+      fontStyle: isWaiting ? FontStyle.italic : FontStyle.normal,
+    );
+    if (isWaiting) {
+      return Text(
+        '我聽到了，正在想怎麼陪你說。',
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: textStyle,
+      );
+    }
+    if (enablePaging) {
+      return PetSubtitleText(text: text, textStyle: textStyle);
+    }
+    return Text(
+      text,
+      maxLines: compact ? 4 : 6,
+      overflow: TextOverflow.ellipsis,
+      style: textStyle,
     );
   }
 }

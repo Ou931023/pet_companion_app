@@ -95,7 +95,8 @@ void main() {
         findsOneWidget);
   });
 
-  testWidgets('petText over 80 Chinese chars does not overflow',
+  testWidgets(
+      'petText over 80 Chinese chars paginates without overflow (CR-0080)',
       (tester) async {
     final longPetText = List.filled(
       7,
@@ -103,10 +104,17 @@ void main() {
     ).join();
 
     await tester.pumpWidget(_bubbleHost(petText: longPetText));
+    await tester.pump();
 
+    // 不會 overflow，且不會把整段塞進單一 Text（已分頁）。
     expect(tester.takeException(), isNull);
-    final petTextWidget = tester.widget<Text>(find.text(longPetText));
-    expect(petTextWidget.maxLines, 6);
+    expect(find.text(longPetText), findsNothing);
+    expect(find.byKey(const ValueKey('latest-pet-message-bubble')),
+        findsOneWidget);
+
+    // 排空所有自動翻頁計時器（最後一頁不再排程），避免 pending timer。
+    await tester.pump(const Duration(seconds: 90));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('userText over 60 Chinese chars renders without overflow',
