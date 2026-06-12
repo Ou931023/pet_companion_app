@@ -161,6 +161,7 @@ class _ThrowingChatService extends CompanionChatService {
     required String userText,
     String petName = '',
     String memoryContextSummary = '',
+    List<Map<String, String>> history = const [],
     String? languageHint,
     String? replyLanguage,
   }) async {
