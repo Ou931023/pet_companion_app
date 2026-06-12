@@ -130,6 +130,7 @@ class RealtimeVoiceService {
     @visibleForTesting this.eventSenderForTesting,
     @visibleForTesting this.healthCheckImplementationForTesting,
     this.dataChannelOpenTimeout = const Duration(seconds: 8),
+    this.toolOutcomeFlushFallback = const Duration(seconds: 4),
   });
 
   @visibleForTesting
@@ -144,6 +145,12 @@ class RealtimeVoiceService {
       healthCheckImplementationForTesting;
 
   final Duration dataChannelOpenTimeout;
+
+  /// 當這一輪回覆有真正的語音 buffer 事件時，工具念稿要等
+  /// `output_audio_buffer.stopped`（語音真的播完）才送，避免字幕提早被蓋掉。
+  /// 萬一 `.stopped` 沒到（少數 session），用這個上限時間做保底 flush，確保不漏掉「後續」。
+  final Duration toolOutcomeFlushFallback;
+
   final _eventController = StreamController<RealtimeVoiceEvent>.broadcast();
   RTCPeerConnection? _peerConnection;
   RTCDataChannel? _eventsChannel;
@@ -160,6 +167,12 @@ class RealtimeVoiceService {
   // 工具結果（找新聞 / 播音樂…）要念的句子：若送來時還有 active response，先排隊，
   // 等 response.done 再送，避免「同時只能一個 response」而被丟棄。
   String? _pendingToolOutcomeLine;
+  // 這一輪回覆是否出現過 output_audio_buffer 事件（代表真的在播語音）。
+  // 用來決定排隊中的工具念稿要在 response.done 立刻送（純文字回覆），
+  // 還是等 output_audio_buffer.stopped（語音播完）才送。
+  bool _sawOutputAudioBufferThisResponse = false;
+  // response.done 後若仍在等 output_audio_buffer.stopped，這個保底計時器確保念稿不會永遠卡住。
+  Timer? _toolOutcomeFlushTimer;
   bool _isStopping = false;
   bool _isDisposed = false;
   bool _dataChannelOpen = false;
@@ -557,6 +570,31 @@ class RealtimeVoiceService {
     }
   }
 
+  /// 真的送出排隊中的工具念稿（找新聞 / 播音樂結果）並清掉排隊狀態與保底計時器。
+  /// 由 output_audio_buffer.stopped、純文字回覆的 response.done、或保底計時器觸發。
+  void _flushPendingToolOutcome() {
+    _cancelToolOutcomeFlushTimer();
+    final pending = _pendingToolOutcomeLine;
+    if (pending == null) return;
+    _pendingToolOutcomeLine = null;
+    unawaited(_sendToolOutcomeResponse(pending));
+  }
+
+  void _startToolOutcomeFlushTimer() {
+    _cancelToolOutcomeFlushTimer();
+    _toolOutcomeFlushTimer = Timer(toolOutcomeFlushFallback, () {
+      if (_isStopping || _isDisposed) return;
+      _log('output_audio_buffer.stopped not received in time; '
+          'flushing queued tool outcome via fallback');
+      _flushPendingToolOutcome();
+    });
+  }
+
+  void _cancelToolOutcomeFlushTimer() {
+    _toolOutcomeFlushTimer?.cancel();
+    _toolOutcomeFlushTimer = null;
+  }
+
   /// 目前麥克風輸入是否開啟（turn-based 輪次控制用）。
   bool get isMicEnabled => _micEnabled;
 
@@ -723,6 +761,7 @@ class RealtimeVoiceService {
 
     if (type == 'response.created') {
       _hasActiveAssistantResponse = true;
+      _sawOutputAudioBufferThisResponse = false;
       _emit(RealtimeEventType.assistantResponseStart, '');
       _emit(RealtimeEventType.state, 'thinking');
       return;
@@ -752,10 +791,21 @@ class RealtimeVoiceService {
     if (type == 'output_audio_buffer.started' ||
         type == 'response.output_audio.delta' ||
         type == 'response.audio.delta') {
+      _sawOutputAudioBufferThisResponse = true;
       if (!_isSpeaking) {
         _isSpeaking = true;
         _emit(RealtimeEventType.assistantAudioStart, '');
         _emit(RealtimeEventType.state, 'speaking');
+      }
+      return;
+    }
+
+    if (type == 'output_audio_buffer.stopped') {
+      // 這才是「語音真的播完」的時間點（response.done 只代表生成結束）。
+      // 排隊中的工具念稿要等到這裡才送，response 2 的字幕才不會在 response 1
+      // 還在播時就把字幕蓋掉。
+      if (_pendingToolOutcomeLine != null) {
+        _flushPendingToolOutcome();
       }
       return;
     }
@@ -772,12 +822,17 @@ class RealtimeVoiceService {
       _hasActiveAssistantResponse = false;
       _emit(RealtimeEventType.assistantResponseDone, '');
       _emit(RealtimeEventType.assistantAudioEnd, '');
-      // 這一輪回覆結束後，若有排隊中的工具念稿（找新聞 / 播音樂結果），現在才送，
-      // 讓寵物接著用語音把結果講出來（避免與前一個 response 撞在一起被丟棄）。
-      final pendingTool = _pendingToolOutcomeLine;
-      if (pendingTool != null) {
-        _pendingToolOutcomeLine = null;
-        unawaited(_sendToolOutcomeResponse(pendingTool));
+      // 這一輪回覆結束後，若有排隊中的工具念稿（找新聞 / 播音樂結果），決定何時送：
+      // - 純文字回覆（沒有任何 output_audio_buffer 事件）：沿用舊行為，現在立刻送。
+      // - 有語音 buffer：response.done 只代表「生成完」，語音可能還在播，
+      //   等 output_audio_buffer.stopped 才送，避免字幕提早被蓋掉；
+      //   並用保底計時器確保 .stopped 沒到時也不會漏掉「後續」。
+      if (_pendingToolOutcomeLine != null) {
+        if (_sawOutputAudioBufferThisResponse) {
+          _startToolOutcomeFlushTimer();
+        } else {
+          _flushPendingToolOutcome();
+        }
       }
       // Turn-based「一人一句」：寵物這一輪講完後**不自動回 listening**。
       // 保留同一條 Realtime 連線（不關閉、不重建 SDP / DataChannel），由
@@ -965,6 +1020,8 @@ class RealtimeVoiceService {
     _lastFinalTranscriptAt = null;
     _isSpeaking = false;
     _hasActiveAssistantResponse = false;
+    _sawOutputAudioBufferThisResponse = false;
+    _cancelToolOutcomeFlushTimer();
     _pendingToolOutcomeLine = null;
     if (emitIdle) {
       _emit(RealtimeEventType.state, 'idle');
@@ -1179,6 +1236,7 @@ $context
     _connectGeneration += 1;
     _isStopping = true;
     _cancelDataChannelOpenTimer();
+    _cancelToolOutcomeFlushTimer();
     unawaited(_resetConnectionResources(emitIdle: false));
     if (_rendererReady) {
       _remoteAudioRenderer.dispose();

@@ -486,5 +486,134 @@ void main() {
       service.dispose();
       service.dispose();
     });
+
+    bool isToolOutcomeResponse(String payload) {
+      final map = jsonDecode(payload) as Map<String, dynamic>;
+      if (map['type'] != 'response.create') return false;
+      final response = map['response'] as Map<String, dynamic>?;
+      final instructions = response?['instructions'] as String?;
+      return instructions != null && instructions.contains('天氣晴');
+    }
+
+    test(
+        'tool outcome queued during an audio response is flushed on '
+        'output_audio_buffer.stopped, not at response.done', () async {
+      final sentPayloads = <String>[];
+      final service = RealtimeVoiceService(
+        eventSenderForTesting: (payload) async {
+          sentPayloads.add(payload);
+        },
+      );
+      service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
+      await pumpEventQueue();
+
+      // 寵物先回了 filler（response 1），且開始播放語音。
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.created',
+      }));
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'output_audio_buffer.started',
+      }));
+
+      // 工具結果在 response 1 還在進行時送來 → 應被排隊，先不送出。
+      await service.speakToolOutcome('今天天氣晴');
+      await pumpEventQueue();
+      expect(sentPayloads.where(isToolOutcomeResponse), isEmpty,
+          reason: 'queued tool outcome must not be sent while response active');
+
+      // response.done 只代表生成結束，語音可能還在播 → 此時不可送工具念稿。
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.done',
+      }));
+      await pumpEventQueue();
+      expect(sentPayloads.where(isToolOutcomeResponse), isEmpty,
+          reason: 'tool outcome must NOT be flushed at response.done '
+              'when audio is still playing');
+
+      // 語音真的播完 → 現在才送出工具念稿（response 2）。
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'output_audio_buffer.stopped',
+      }));
+      await pumpEventQueue();
+      expect(sentPayloads.where(isToolOutcomeResponse), hasLength(1),
+          reason: 'tool outcome should be flushed on '
+              'output_audio_buffer.stopped');
+
+      service.dispose();
+    });
+
+    test(
+        'text-only response (no audio buffer events) still flushes the queued '
+        'tool outcome at response.done', () async {
+      final sentPayloads = <String>[];
+      final service = RealtimeVoiceService(
+        eventSenderForTesting: (payload) async {
+          sentPayloads.add(payload);
+        },
+      );
+      service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
+      await pumpEventQueue();
+
+      // 純文字回覆：只有 text delta，沒有任何 output_audio_buffer 事件。
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.created',
+      }));
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.output_text.delta',
+        'delta': '好的',
+      }));
+
+      await service.speakToolOutcome('今天天氣晴');
+      await pumpEventQueue();
+      expect(sentPayloads.where(isToolOutcomeResponse), isEmpty);
+
+      // 沒有語音 buffer → response.done 沿用舊行為，立刻送出工具念稿。
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.done',
+      }));
+      await pumpEventQueue();
+      expect(sentPayloads.where(isToolOutcomeResponse), hasLength(1),
+          reason: 'text-only fallback must still flush at response.done');
+
+      service.dispose();
+    });
+
+    test(
+        'queued tool outcome is flushed by the bounded fallback timer when '
+        'output_audio_buffer.stopped never arrives', () async {
+      final sentPayloads = <String>[];
+      final service = RealtimeVoiceService(
+        toolOutcomeFlushFallback: const Duration(milliseconds: 20),
+        eventSenderForTesting: (payload) async {
+          sentPayloads.add(payload);
+        },
+      );
+      service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
+      await pumpEventQueue();
+
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.created',
+      }));
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'output_audio_buffer.started',
+      }));
+
+      await service.speakToolOutcome('今天天氣晴');
+      await pumpEventQueue();
+
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.done',
+      }));
+      await pumpEventQueue();
+      expect(sentPayloads.where(isToolOutcomeResponse), isEmpty);
+
+      // output_audio_buffer.stopped 一直沒到，保底計時器仍會送出念稿。
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      await pumpEventQueue();
+      expect(sentPayloads.where(isToolOutcomeResponse), hasLength(1),
+          reason: 'fallback timer must flush the queued tool outcome');
+
+      service.dispose();
+    });
   });
 }
