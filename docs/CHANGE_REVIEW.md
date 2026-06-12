@@ -3716,3 +3716,27 @@ docs-only 展示腳本與檢查清單，與現行 production 行為一致（URL 
 
 ### 裁決
 契約已記錄（本檔 + PROJECT_ARCHITECTURE）、測試齊備且全綠、key 與既有資料一致不需 migration；併入主線。
+
+---
+
+## CR-0079 — Elderly Friendly Error Message Polish（含 🔒 realtime_voice_service.dart 最小修改）
+
+### 模式
+小批次 UI 文字層修正，來源為 CR-0076 audit 的程式碼 P0。觸及 🔒 `lib/services/realtime_voice_service.dart`，**已先經 architecture-agent 審查核准（結論：核准 / 風險 low）**，由 realtime-voice-agent 依核准 diff 執行；其餘檔案為非鎖定檔。不改 Realtime 主流程、不改 API 契約、不改 Auth。
+
+### 動機 / 根因
+3 處將工程錯誤字串直接顯示給長者：agent_router_service 的 `error.toString()` / HTTP 狀態碼 / `agent route` 字眼；realtime data channel `error` 事件把 API 英文原文（或「Realtime API 發生錯誤」fallback）emit 給 UI（`voice_agent_controller._handleRealtimeFailure` 在 `lastFailureType == none` 時直接顯示 payload）；settings 診斷區顯示 enum 原名。
+
+### 變更
+- `agent_router_service.dart`：HTTP ≥400 / timeout / 例外三路徑改回白話 errorMessage，工程細節進 `debugPrint`。
+- `realtime_voice_service.dart`（🔒）：error 事件分支只改 emit 字串——新增 top-level const `realtimeApiErrorUserMessage`（白話 + 引導打字），原始訊息只進 `_log`（空訊息印 `(no message)`）。`_isStopping` guard / `_isSpeaking` / `_recordFailure` 狀態機 / SDP/ICE/DataChannel 全未動；同檔 350、1124 行兩處 emit 經查無外漏路徑，不動。
+- `settings_screen.dart`：診斷「最近錯誤」由 `lastFailure.name` 改用既有 `RealtimeFailureTypeLabel.message`。
+
+### 測試
+- 更新 `test/services/agent_router_service_test.dart`（timeout 斷言改白話文案）並新增 HTTP 500 / 網路例外 2 案例（斷言無狀態碼、無 exception 字串）→ 4/4 綠。
+- 新增 `test/realtime_voice_service_test.dart`「error event surfaces plain-language message」→ 18/18 綠。
+- 下游 `voice_agent_controller_realtime_lifecycle` + `realtime_timeout` → 30/30 綠。
+- `flutter analyze`：本 CR 修改檔案 0 issue；既有無關 error（`mock_service_provider_gating_test.dart:160`，CR-0072 遺留 invalid_override）未處理、已記錄於 `docs/ERROR_MESSAGE_POLISH_CR0079.md` §5。
+
+### 裁決
+🔒 檔案僅 emit 字串內容變更，主流程與契約零影響、觀測性不變、測試齊備且全綠；併入主線。詳細文案對照見 `docs/ERROR_MESSAGE_POLISH_CR0079.md`。

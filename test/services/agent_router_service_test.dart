@@ -65,6 +65,54 @@ void main() {
     );
 
     expect(result.hasToolIntent, isFalse);
-    expect(result.errorMessage, contains('timeout'));
+    // CR-0079：逾時要回白話訊息，不可出現工程字眼。
+    expect(result.errorMessage, '等待時間比較久，請稍後再試一次。');
   }, timeout: const Timeout(Duration(seconds: 7)));
+
+  test('http error returns friendly message without status code', () async {
+    final service = AgentRouterService(
+      client: MockClient((request) async {
+        return http.Response('internal server error', 500);
+      }),
+    );
+
+    final result = await service.route(
+      sttProxyUrl: 'http://192.168.99.99:3001/api/stt/transcribe',
+      userText: '幫我打給女兒',
+      sessionId: 's',
+      turnId: 't',
+      petName: '小伴',
+      emotion: 'neutral',
+      languageHint: 'zh-TW',
+    );
+
+    expect(result.hasToolIntent, isFalse);
+    expect(result.errorMessage, '寵物現在回應比較慢，請稍等一下再試一次。');
+    expect(result.errorMessage, isNot(contains('500')));
+    expect(result.errorMessage, isNot(contains('agent route')));
+  });
+
+  test('network exception returns friendly message without raw error',
+      () async {
+    final service = AgentRouterService(
+      client: MockClient((request) async {
+        throw http.ClientException('Connection refused');
+      }),
+    );
+
+    final result = await service.route(
+      sttProxyUrl: 'http://192.168.99.99:3001/api/stt/transcribe',
+      userText: '幫我打給女兒',
+      sessionId: 's',
+      turnId: 't',
+      petName: '小伴',
+      emotion: 'neutral',
+      languageHint: 'zh-TW',
+    );
+
+    expect(result.hasToolIntent, isFalse);
+    expect(result.errorMessage, '目前連線不太穩，請確認網路後再試一次。');
+    expect(result.errorMessage, isNot(contains('Connection refused')));
+    expect(result.errorMessage, isNot(contains('Exception')));
+  });
 }

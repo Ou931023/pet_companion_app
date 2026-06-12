@@ -887,7 +887,7 @@ class _RealtimeDiagnosticsPanelState extends State<_RealtimeDiagnosticsPanel> {
           label: '最近錯誤',
           value: lastFailure == RealtimeFailureType.none
               ? '無'
-              : '${lastFailure.name}：${widget.realtimeService.lastFailureMessage}',
+              : lastFailure.message,
         ),
         _DiagnosticLine(
           label: 'WebRTC',

@@ -29,6 +29,33 @@ void main() {
       service.dispose();
     });
 
+    test('error event surfaces plain-language message instead of API text',
+        () async {
+      final service = RealtimeVoiceService();
+      final events = <RealtimeVoiceEvent>[];
+      final sub = service.events.listen(events.add);
+
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'error',
+        'error': {
+          'type': 'invalid_request_error',
+          'code': 'session_expired',
+          'message': 'The server had an error while processing your request.',
+        },
+      }));
+      await pumpEventQueue();
+
+      final errorEvents =
+          events.where((event) => event.type == RealtimeEventType.error).toList();
+      expect(errorEvents, hasLength(1));
+      expect(errorEvents.single.payload, equals(realtimeApiErrorUserMessage));
+      expect(errorEvents.single.payload, isNot(contains('server had an error')));
+      expect(errorEvents.single.payload, isNot(contains('Realtime API')));
+
+      await sub.cancel();
+      service.dispose();
+    });
+
     test('separates partial and final transcript events', () async {
       final service = RealtimeVoiceService();
       final events = <RealtimeVoiceEvent>[];

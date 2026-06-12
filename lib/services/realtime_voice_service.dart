@@ -36,6 +36,9 @@ extension RealtimeFailureTypeLabel on RealtimeFailureType {
   }
 }
 
+/// Realtime API error 事件顯示給使用者的白話訊息（CR-0079）。
+const String realtimeApiErrorUserMessage = '語音連線暫時不穩，請稍後再試一次，也可以先用打字和寵物聊天。';
+
 class RealtimeFailure implements Exception {
   const RealtimeFailure(this.type, this.message);
 
@@ -791,11 +794,14 @@ class RealtimeVoiceService {
       }
       _isSpeaking = false;
       final errorMap = map['error'] as Map<String, dynamic>?;
-      final message = errorMap?['message'] as String? ?? 'Realtime API 發生錯誤';
+      final rawMessage = errorMap?['message'] as String? ?? '';
       final code = errorMap?['code'] as String?;
       final errorType = errorMap?['type'] as String?;
-      _log('Realtime error event: type=$errorType code=$code message=$message');
-      _emit(RealtimeEventType.error, message);
+      _log('Realtime error event: type=$errorType code=$code '
+          'message=${rawMessage.isEmpty ? '(no message)' : rawMessage}');
+      // CR-0079：API 原始錯誤（多為英文工程字串）只進 log，
+      // UI 一律顯示白話提示並引導改用打字。
+      _emit(RealtimeEventType.error, realtimeApiErrorUserMessage);
     }
   }
 
