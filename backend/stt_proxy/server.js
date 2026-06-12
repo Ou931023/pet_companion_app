@@ -2046,10 +2046,35 @@ app.post("/api/asr/taigi", (req, res) => {
   });
 });
 
-app.post("/api/memory/extract", async (req, res) => {
+// CR-0075：記憶端點統一身分驗證。所有記憶路由掛 requireResidentCaller，
+// 記憶 key 一律取 server 權威的 caller.elderId（= users.elder_id，與 Flutter 既有
+// currentElderId 一致，不孤立既有記憶）。client 若帶與 caller 不符的 userId → 403。
+// 回傳 elderId（成功）或 null（已寫好 403 response，呼叫端須直接 return）。
+function resolveMemoryCaller(req, res) {
+  const callerKey = (req.residentCaller && req.residentCaller.elderId) || null;
+  if (!callerKey) {
+    res.status(403).json({ success: false, error: "forbidden_resident" });
+    return null;
+  }
+  const claimed =
+    typeof req.body?.userId === "string" && req.body.userId.trim()
+      ? req.body.userId.trim()
+      : typeof req.query?.userId === "string" && req.query.userId.trim()
+        ? req.query.userId.trim()
+        : null;
+  if (claimed != null && claimed !== callerKey) {
+    res.status(403).json({ success: false, error: "forbidden_resident" });
+    return null;
+  }
+  return callerKey;
+}
+
+app.post("/api/memory/extract", requireResidentCaller, async (req, res) => {
+  const userId = resolveMemoryCaller(req, res);
+  if (userId == null) return;
   try {
     const result = await extractAndStoreMemory({
-      userId: req.body?.userId || "local_user",
+      userId,
       sessionId: req.body?.sessionId || null,
       turnId: req.body?.turnId || null,
       userText: req.body?.userText || "",
@@ -2066,9 +2091,10 @@ app.post("/api/memory/extract", async (req, res) => {
   }
 });
 
-app.post("/api/memory/search", async (req, res) => {
+app.post("/api/memory/search", requireResidentCaller, async (req, res) => {
+  const userId = resolveMemoryCaller(req, res);
+  if (userId == null) return;
   try {
-    const userId = (req.body?.userId || "local_user").toString();
     const query = (req.body?.query || "").toString().trim();
     const topK = Number(req.body?.topK || process.env.MEMORY_TOP_K || 5);
     if (!query) {
@@ -2099,9 +2125,10 @@ app.post("/api/memory/search", async (req, res) => {
   }
 });
 
-app.get("/api/memory/greeting", async (req, res) => {
+app.get("/api/memory/greeting", requireResidentCaller, async (req, res) => {
+  const userId = resolveMemoryCaller(req, res);
+  if (userId == null) return;
   try {
-    const userId = (req.query?.userId || "local_user").toString();
     const petName = (req.query?.petName || "陪伴寶").toString();
     const localHour = Number(req.query?.localHour || 9);
     const topK = 3;
@@ -2219,9 +2246,10 @@ app.post("/api/conversation/title", async (req, res) => {
   }
 });
 
-app.post("/api/memory/forget-recent", async (req, res) => {
+app.post("/api/memory/forget-recent", requireResidentCaller, async (req, res) => {
+  const userId = resolveMemoryCaller(req, res);
+  if (userId == null) return;
   try {
-    const userId = (req.body?.userId || "local_user").toString();
     const deleted = await softDeleteRecentMemory(userId);
     return res.json({ deleted });
   } catch (error) {
@@ -2232,9 +2260,10 @@ app.post("/api/memory/forget-recent", async (req, res) => {
   }
 });
 
-app.get("/api/memories", async (req, res) => {
+app.get("/api/memories", requireResidentCaller, async (req, res) => {
+  const userId = resolveMemoryCaller(req, res);
+  if (userId == null) return;
   try {
-    const userId = (req.query?.userId || "default_user").toString();
     const result = await listMemories(userId);
     return res.json(result);
   } catch (error) {
@@ -2247,13 +2276,15 @@ app.get("/api/memories", async (req, res) => {
   }
 });
 
-app.post("/api/memories", async (req, res) => {
+app.post("/api/memories", requireResidentCaller, async (req, res) => {
+  const userId = resolveMemoryCaller(req, res);
+  if (userId == null) return;
   try {
     const content = (req.body?.content || req.body?.memorySummary || req.body?.memoryText || "").toString().trim();
     const type = (req.body?.type || req.body?.memoryType || "other").toString().trim();
     const embedding = req.body?.embedding || (await createMemoryEmbedding(content)).embedding;
     const result = await createMemory({
-      userId: req.body?.userId || "default_user",
+      userId,
       memoryType: type,
       memoryText: req.body?.memoryText || content,
       memorySummary: req.body?.memorySummary || content,
@@ -2281,10 +2312,11 @@ app.post("/api/memories", async (req, res) => {
   }
 });
 
-app.post("/api/memories/search", async (req, res) => {
+app.post("/api/memories/search", requireResidentCaller, async (req, res) => {
+  const userId = resolveMemoryCaller(req, res);
+  if (userId == null) return;
   try {
     normalizeEmbedding(req.body?.embedding);
-    const userId = (req.body?.userId || "default_user").toString();
     const limit = normalizeLimit(req.body?.limit);
     const result = await searchMemoriesByEmbedding(userId, req.body.embedding, limit);
     return res.json(result);
@@ -2305,11 +2337,13 @@ app.post("/api/memories/search", async (req, res) => {
   }
 });
 
-app.post("/api/memories/context", async (req, res) => {
+app.post("/api/memories/context", requireResidentCaller, async (req, res) => {
+  const userId = resolveMemoryCaller(req, res);
+  if (userId == null) return;
   try {
     const result = await buildMemoryContext({
       userText: req.body?.userText || "",
-      userId: req.body?.userId || "default_user",
+      userId,
       limit: req.body?.limit || 5,
     });
     return res.json(result);
@@ -2325,15 +2359,15 @@ app.post("/api/memories/context", async (req, res) => {
   }
 });
 
-app.get("/api/memories/greeting", async (req, res) => {
+app.get("/api/memories/greeting", requireResidentCaller, async (req, res) => {
   const fallback = fallbackGreeting({
     petName: (req.query?.petName || "陪伴寶").toString(),
     localHour: Number(req.query?.localHour || new Date().getHours()),
   });
+  const userId = resolveMemoryCaller(req, res);
+  if (userId == null) return;
   try {
-    const result = await buildMemoryGreeting({
-      userId: (req.query?.userId || "default_user").toString(),
-    });
+    const result = await buildMemoryGreeting({ userId });
     if (!result.memoryUsed) {
       return res.json({
         greeting: fallback,
@@ -2356,7 +2390,9 @@ app.get("/api/memories/greeting", async (req, res) => {
   }
 });
 
-app.post("/api/memories/extract", async (req, res) => {
+app.post("/api/memories/extract", requireResidentCaller, async (req, res) => {
+  const userId = resolveMemoryCaller(req, res);
+  if (userId == null) return;
   try {
     const userText = (req.body?.userText || "").toString().trim();
     if (!userText) {
@@ -2367,7 +2403,7 @@ app.post("/api/memories/extract", async (req, res) => {
     }
 
     const extracted = await extractMemoryFromTurn({
-      userId: req.body?.userId || "default_user",
+      userId,
       userText,
       agentReply: req.body?.agentReply || req.body?.aiReply || "",
       emotion: req.body?.emotion || "unknown",
@@ -2381,7 +2417,7 @@ app.post("/api/memories/extract", async (req, res) => {
 
     const embeddingResult = await createMemoryEmbedding(extracted.memorySummary);
     const storeResult = await createMemory({
-      userId: req.body?.userId || "default_user",
+      userId,
       memoryType: extracted.memoryType,
       memoryText: extracted.memoryText,
       memorySummary: extracted.memorySummary,
@@ -2419,9 +2455,10 @@ app.post("/api/memories/extract", async (req, res) => {
   }
 });
 
-app.post("/api/memories/:id/archive", async (req, res) => {
+app.post("/api/memories/:id/archive", requireResidentCaller, async (req, res) => {
+  const userId = resolveMemoryCaller(req, res);
+  if (userId == null) return;
   try {
-    const userId = (req.body?.userId || "default_user").toString();
     const result = await archiveMemory(req.params.id, userId);
     return res.json(result);
   } catch (error) {
@@ -2433,9 +2470,10 @@ app.post("/api/memories/:id/archive", async (req, res) => {
   }
 });
 
-app.patch("/api/memories/:id/archive", async (req, res) => {
+app.patch("/api/memories/:id/archive", requireResidentCaller, async (req, res) => {
+  const userId = resolveMemoryCaller(req, res);
+  if (userId == null) return;
   try {
-    const userId = (req.body?.userId || req.query?.userId || "default_user").toString();
     const result = await archiveMemory(req.params.id, userId);
     return res.json(result);
   } catch (error) {

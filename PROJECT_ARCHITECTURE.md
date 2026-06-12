@@ -102,6 +102,9 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
 | GET/POST | `/api/memories` | 記憶列表 / 新增 | companion-memory + backend |
 | POST | `/api/memories/context` | 記憶脈絡 | companion-memory + backend |
 | POST/PATCH | `/api/memories/:id/archive` | 封存記憶 | companion-memory + backend |
+
+> **CR-0075**：上列所有記憶端點（`/api/memory/*`、`/api/memories/*`）已掛 `requireResidentCaller`（須住民 Firebase idToken；無→401、無效/未綁→401/403）。記憶 key 改取 **server 權威 `req.residentCaller.elderId`**（= `users.elder_id`，與 Flutter `currentElderId` 一致）；client 帶與其不符的 `userId`（body/query）→ 403 `forbidden_resident`。成功 response 形狀不變。
+
 | POST | `/api/web/search` `/api/search` | 網路 / 可信來源搜尋 | backend |
 | POST | `/api/crawl/refresh` | 重整爬取來源 | backend |
 | POST | `/api/realtime/session` | Realtime 短期 session（含 rate limit） | backend + realtime |

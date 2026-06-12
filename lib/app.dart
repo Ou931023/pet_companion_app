@@ -101,7 +101,8 @@ class PetCompanionApp extends StatelessWidget {
               MarketplaceController(context.read<MarketplaceService>()),
         ),
         ChangeNotifierProvider(create: (_) => CartController()),
-        Provider(create: (_) => MemoryService()),
+        // MemoryService 移至 AuthController 之後（見下方）——CR-0075 記憶端點需帶
+        // idToken，token 由 AuthController 提供，故須置於其後才讀得到。
         Provider(create: (_) => const CompanionEngineService()),
         Provider(create: (_) => const CompanionReplyStrategyService()),
         Provider(create: (_) => const AiNavigationService()),
@@ -123,6 +124,14 @@ class PetCompanionApp extends StatelessWidget {
         // 置於 AuthController 之後，注入的 closure 於 notify() 時才讀取 AuthController。
         Provider(
           create: (context) => CareAlertNotificationService(
+            authTokenProvider: () =>
+                context.read<AuthController>().resolveNotifyAuthToken(),
+          ),
+        ),
+        // CR-0075：記憶端點後端已掛 requireResidentCaller，需帶 idToken（同 token 來源）。
+        // 置於 AuthController 之後、MemoryController 之前；closure 於記憶呼叫時才讀 AuthController。
+        Provider(
+          create: (context) => MemoryService(
             authTokenProvider: () =>
                 context.read<AuthController>().resolveNotifyAuthToken(),
           ),

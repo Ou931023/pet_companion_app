@@ -3683,3 +3683,36 @@ docs-only。`git status --short` 確認只動 `docs/`、`tasks/`，無任何 sec
 
 ### 裁決
 docs-only 展示腳本與檢查清單，與現行 production 行為一致（URL / 旗標 / 分級規則 / 分頁皆對照程式確認），未洩 secret；併入主線。
+
+---
+
+## CR-0075 — 記憶端點身分驗證強化（後端 auth + Flutter 帶 idToken）
+
+### 模式
+小批次安全強化，觸及 🔒 `server.js` API 契約（12 條記憶路由新增 auth）+ Auth + Flutter。經 plan-mode 與使用者核准。不改 persona / Realtime / Marketplace / Daily Care / DB schema / 記憶檢索門檻（CR-0073）。
+
+### 動機 / 根因
+`/api/memory/*` 與 `/api/memories/*`（extract/search/context/greeting/forget-recent/memories list·create/:id archive）原**完全無 auth**、userId 取自 client（任何人可讀寫他人記憶）。
+關鍵正確性發現（已驗證）：Flutter 一直以 `currentElderId`（= `session.elderId` = `users.elder_id`）當記憶 userId；`requireResidentCaller.elderId` 亦為 `users.elder_id`。∴ 記憶 key 用 caller.elderId 與既有資料完全一致，**不孤立既有記憶**。
+
+### 變更
+- `server.js`（🔒）：全部 12 條記憶路由掛 `requireResidentCaller`；新增 `resolveMemoryCaller(req,res)` helper——記憶 key 取 `req.residentCaller.elderId`，client 帶 body/query `userId` 與其不符 → 403 `forbidden_resident`（reconcile-or-403，比照 companion/chat）。成功 response 形狀不變，只新增 401/403。
+- `lib/services/memory_service.dart`：建構子加 `http.Client` + `AuthTokenProvider`；所有方法改用注入 client 並帶 `Authorization: Bearer <idToken>`；取不到 token 不掛 header、不 throw（記憶非關鍵，MemoryController 已靜默 catch）。
+- `lib/app.dart`：`MemoryService` provider 移到 `AuthController` 之後（原在其前讀不到），注入 `authTokenProvider: () => AuthController.resolveNotifyAuthToken()`（同 CompanionChat / CareAlertNotify token 來源）。
+- 不改 memory_controller 的 userId 傳遞（仍送 currentElderId；後端 reconcile 相符）。
+
+### 測試
+- 新增後端 `services/memory/memoryEndpointAuth.test.js`（真 Express + installResidentCallerStub）：無 token→401；有 token 通過；body/query userId 不符→403；相符→通過；archive/extract/forget-recent 同樣 gated。
+- 新增 Flutter `test/services/memory_service_test.dart`：有 token→帶 Authorization；無 provider / null / 例外→不掛 header 且不 throw。
+- 既有 memory_controller_test / memory_management_screen_test（fake service 繞過 http）不受影響；既有後端記憶 service 測試（非端點）不受 auth 影響。
+- `package.json` test/check 納入新後端測試。
+- 全綠：backend `npm test` **577/577**、`npm run check` exit 0；flutter memory 測試全 passed、analyze clean。
+
+### 限制遵守
+未讀 `.env`、未把 token 進 git；未改 persona/Realtime/Marketplace/Daily Care/schema/檢索門檻；既有成功 response 形狀不變。
+
+### ⚠️ 部署順序
+後端上線後，**舊 App（未帶 token）記憶呼叫會 401**（靜默降級、不崩潰）；需重 build + 重裝 iPhone App（含本 CR Flutter 版）記憶才恢復。建議合併後盡快重裝再驗收。
+
+### 裁決
+契約已記錄（本檔 + PROJECT_ARCHITECTURE）、測試齊備且全綠、key 與既有資料一致不需 migration；併入主線。
