@@ -9,6 +9,30 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
+  group('PetController Demo 旗標：所有寵物免費（freeAllSkins）', () {
+    test('旗標開啟 → 所有外觀預設即擁有', () {
+      final controller = PetController(freeAllSkins: true);
+      for (final skin in PetSkin.values) {
+        expect(controller.isOwned(skin), isTrue, reason: '$skin 應預設擁有');
+      }
+      expect(controller.ownedSkins, containsAll(PetSkin.values));
+    });
+
+    test('旗標開啟 → 直接 changeSkin 到雪貂成功，不需購買', () async {
+      final controller = PetController(freeAllSkins: true);
+      final ok = await controller.changeSkin(PetSkin.ferret);
+      expect(ok, isTrue);
+      expect(controller.currentSkin, PetSkin.ferret);
+    });
+
+    test('旗標關閉（預設）→ 維持只擁有狗狗，購買流程不受影響', () {
+      final controller = PetController(freeAllSkins: false);
+      expect(controller.isOwned(PetSkin.dog), isTrue);
+      expect(controller.isOwned(PetSkin.fox), isFalse);
+      expect(controller.isOwned(PetSkin.ferret), isFalse);
+    });
+  });
+
   group('PetController 外觀擁有 / 套用 / 購買（CR-0011 + 解鎖）', () {
     test('預設外觀為狗狗，且預設只擁有狗狗', () {
       final controller = PetController();

@@ -180,8 +180,12 @@ class PetCompanionApp extends StatelessWidget {
               walletController ?? WalletController(profile),
         ),
         ChangeNotifierProvider(
+          // DEMO：成果發表期間所有寵物一律免費、直接可換。
+          // Demo 結束要恢復付費解鎖 → 把 freeAllSkins 改回 false（或移除這行）即可，
+          // 各寵物價格仍保留在 PetSkin.unlockCost。
           create: (context) => PetController(
             storageService: context.read<LocalStorageService>(),
+            freeAllSkins: true,
           ),
         ),
         // CR-0034：mock service 注入依環境決定。production（或未開

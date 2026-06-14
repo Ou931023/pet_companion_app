@@ -10,10 +10,19 @@ import '../services/local_storage_service.dart';
 class PetController extends ChangeNotifier {
   /// [storageService] 可省略：UI / 單元測試不需要持久化時用 `PetController()` 即可，
   /// 外觀會維持預設狗狗。實際 App 會注入 storage 以記住每個帳號各自的外觀。
-  PetController({LocalStorageService? storageService})
-      : _storageService = storageService;
+  ///
+  /// [freeAllSkins] 為 true 時所有外觀一律視為已擁有，長者點一下就能換、不需解鎖。
+  /// 預設 false → 維持商店 / 金幣解鎖流程。Demo 期間 App 端會傳 true（見 app.dart）。
+  PetController({LocalStorageService? storageService, bool freeAllSkins = false})
+      : _storageService = storageService,
+        _freeAllSkins = freeAllSkins,
+        _ownedSkins =
+            freeAllSkins ? {...PetSkin.values} : {PetSkin.dog};
 
   final LocalStorageService? _storageService;
+
+  /// true → 所有外觀免費、預設擁有（Demo 用，見建構子 [freeAllSkins]）。
+  final bool _freeAllSkins;
 
   PetState _state = const PetState(
     mode: PetMode.rest,
@@ -24,7 +33,7 @@ class PetController extends ChangeNotifier {
   String _expression = 'normal';
   String _action = 'idle';
   PetSkin _currentSkin = PetSkin.dog;
-  Set<PetSkin> _ownedSkins = {PetSkin.dog};
+  Set<PetSkin> _ownedSkins;
 
   PetState get state => _state;
   PetMode get mode => _state.mode;
@@ -39,7 +48,7 @@ class PetController extends ChangeNotifier {
   /// 已擁有 / 已解鎖的外觀（狗狗永遠在內）。未擁有的需購買 / 解鎖才能套用。
   Set<PetSkin> get ownedSkins => Set.unmodifiable(_ownedSkins);
 
-  bool isOwned(PetSkin skin) => _ownedSkins.contains(skin);
+  bool isOwned(PetSkin skin) => _freeAllSkins || _ownedSkins.contains(skin);
 
   /// 載入目前帳號（elderId）保存的外觀與已擁有清單；
   /// 沒有 storage 或沒存過 → 狗狗、且只擁有狗狗。
@@ -49,7 +58,11 @@ class PetController extends ChangeNotifier {
     if (storage == null) return;
     final owned = await storage.loadOwnedPetSkins();
     final skin = await storage.loadPetSkin();
-    _ownedSkins = {PetSkin.dog, ...owned};
+    _ownedSkins = {
+      PetSkin.dog,
+      ...owned,
+      if (_freeAllSkins) ...PetSkin.values,
+    };
     final resolved = _ownedSkins.contains(skin) ? skin : PetSkin.dog;
     if (resolved == _currentSkin && _ownedSkins.length == 1) return;
     _currentSkin = resolved;
