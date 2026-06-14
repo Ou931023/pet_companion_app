@@ -234,6 +234,68 @@ void main() {
       service.dispose();
     });
 
+    test(
+        'assistant transcript deltas are throttled but the last partial '
+        'carries the full text, and assistantText fires once at response.done',
+        () async {
+      // 用較短的節流視窗讓測試可決定地等到 trailing emit。
+      final service = RealtimeVoiceService(
+        assistantPartialThrottle: const Duration(milliseconds: 20),
+      );
+      final events = <RealtimeVoiceEvent>[];
+      final sub = service.events.listen(events.add);
+
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.created',
+      }));
+      // 第一筆 delta 走 leading edge，立即送出；緊接的第二筆落在節流視窗內，
+      // 合併成一筆 trailing emit，帶當下最新累積文字。
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.output_audio_transcript.delta',
+        'delta': '我在',
+      }));
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.output_audio_transcript.delta',
+        'delta': '這裡陪你。',
+      }));
+
+      // 等過節流視窗，trailing emit 帶最新累積文字「我在這裡陪你。」送出。
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      await pumpEventQueue();
+
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.done',
+      }));
+      await pumpEventQueue();
+
+      // 即時字幕不會跨進使用者 partial 路徑。
+      final assistantPartials = events
+          .where(
+              (event) => event.type == RealtimeEventType.assistantPartialText)
+          .map((event) => event.payload)
+          .toList();
+      expect(
+        events
+            .where((event) => event.type == RealtimeEventType.partialTranscript),
+        isEmpty,
+      );
+      // Leading edge 先送出第一段，最後一筆 partial 一定帶完整累積文字（最後幾個字不丟）。
+      expect(assistantPartials.first, '我在');
+      expect(assistantPartials.last, '我在這裡陪你。');
+      // 節流確實壓低了 emit 次數（兩筆 delta 不會各送一筆 + 額外重複）。
+      expect(assistantPartials.length, lessThanOrEqualTo(2));
+
+      // Final full text still lands exactly once at response.done.
+      final finals = events
+          .where((event) => event.type == RealtimeEventType.assistantText)
+          .map((event) => event.payload)
+          .toList();
+      expect(finals, ['我在這裡陪你。']);
+
+      await sub.cancel();
+      service.dispose();
+    });
+
     test('data channel closed emits recoverable close event', () async {
       final service = RealtimeVoiceService();
       final events = <RealtimeVoiceEvent>[];

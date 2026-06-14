@@ -12,6 +12,7 @@ class ConversationBubbleStack extends StatelessWidget {
     required this.petName,
     required this.isWaiting,
     required this.compact,
+    this.streaming = false,
   });
 
   final String userText;
@@ -21,6 +22,9 @@ class ConversationBubbleStack extends StatelessWidget {
   final String petName;
   final bool isWaiting;
   final bool compact;
+
+  /// CR-0084：寵物字幕是否為「即時逐字串流中」（跟著語音走、顯示最新一頁、不用計時器翻頁）。
+  final bool streaming;
 
   @override
   Widget build(BuildContext context) {
@@ -67,6 +71,8 @@ class ConversationBubbleStack extends StatelessWidget {
       compact: compact,
       // CR-0080：只有寵物字幕分頁（與語音同步）；使用者那側維持單塊顯示。
       enablePaging: hasPet,
+      // CR-0084：寵物即時逐字字幕時，分頁器跟著文字成長顯示最新一頁、不用計時器翻頁。
+      streaming: hasPet && streaming,
     );
   }
 }

@@ -80,6 +80,7 @@ enum RealtimeEventType {
   partialTranscript,
   finalTranscript,
   assistantText,
+  assistantPartialText,
   assistantResponseStart,
   assistantResponseDone,
   assistantAudioStart,
@@ -131,6 +132,7 @@ class RealtimeVoiceService {
     @visibleForTesting this.healthCheckImplementationForTesting,
     this.dataChannelOpenTimeout = const Duration(seconds: 8),
     this.toolOutcomeFlushFallback = const Duration(seconds: 4),
+    this.assistantPartialThrottle = const Duration(milliseconds: 150),
   });
 
   @visibleForTesting
@@ -150,6 +152,12 @@ class RealtimeVoiceService {
   /// `output_audio_buffer.stopped`（語音真的播完）才送，避免字幕提早被蓋掉。
   /// 萬一 `.stopped` 沒到（少數 session），用這個上限時間做保底 flush，確保不漏掉「後續」。
   final Duration toolOutcomeFlushFallback;
+
+  /// assistant 即時字幕（partial）的節流視窗。transcript delta 可能每秒數十次，
+  /// 直接每個 delta 都 emit 會造成 UI 高頻重建、字幕在實機上「一直閃」。
+  /// 採 leading + 單一 trailing 合併：第一筆立即送、視窗內後續合併成一筆
+  /// 帶最新累積文字的 trailing emit，確保最後幾個字一定會顯示。
+  final Duration assistantPartialThrottle;
 
   final _eventController = StreamController<RealtimeVoiceEvent>.broadcast();
   RTCPeerConnection? _peerConnection;
@@ -173,6 +181,9 @@ class RealtimeVoiceService {
   bool _sawOutputAudioBufferThisResponse = false;
   // response.done 後若仍在等 output_audio_buffer.stopped，這個保底計時器確保念稿不會永遠卡住。
   Timer? _toolOutcomeFlushTimer;
+  // assistant partial 字幕節流：合併視窗內的 trailing emit + 上次 emit 時間。
+  Timer? _partialThrottleTimer;
+  DateTime? _lastPartialEmitAt;
   bool _isStopping = false;
   bool _isDisposed = false;
   bool _dataChannelOpen = false;
@@ -774,6 +785,7 @@ class RealtimeVoiceService {
         _emit(RealtimeEventType.state, 'speaking');
       }
       _assistantBuffer += map['delta'] as String? ?? '';
+      _emitAssistantPartial();
       return;
     }
 
@@ -785,6 +797,7 @@ class RealtimeVoiceService {
         _emit(RealtimeEventType.state, 'speaking');
       }
       _assistantBuffer += map['delta'] as String? ?? '';
+      _emitAssistantPartial();
       return;
     }
 
@@ -814,6 +827,10 @@ class RealtimeVoiceService {
       final text = _assistantBuffer.trim().isEmpty
           ? _extractReplyTextFromResponseDone(map).trim()
           : _assistantBuffer.trim();
+      // 這一輪已結束，取消任何待送的 partial trailing emit，避免在最終完整文字
+      // 之後又冒出一筆過時字幕；並重置節流時間，讓下一輪第一筆 partial 立即顯示。
+      _cancelPartialThrottleTimer();
+      _lastPartialEmitAt = null;
       if (text.isNotEmpty) {
         _emit(RealtimeEventType.assistantText, text);
       }
@@ -1023,6 +1040,8 @@ class RealtimeVoiceService {
     _sawOutputAudioBufferThisResponse = false;
     _cancelToolOutcomeFlushTimer();
     _pendingToolOutcomeLine = null;
+    _cancelPartialThrottleTimer();
+    _lastPartialEmitAt = null;
     if (emitIdle) {
       _emit(RealtimeEventType.state, 'idle');
     }
@@ -1176,6 +1195,46 @@ class RealtimeVoiceService {
     _eventController.add(RealtimeVoiceEvent(type: type, payload: payload));
   }
 
+  /// 寵物（assistant）語音字幕的「即時」更新：每收到一段 transcript delta，就把
+  /// 目前累積的 `_assistantBuffer` 當作部分字幕發出，讓 UI 字幕跟著語音逐步顯示，
+  /// 而不是等 response.done 才一次貼上完整文字（會落後於聲音）。
+  ///
+  /// 這條路徑只負責「assistant 即時字幕」顯示，與使用者 partial transcript
+  /// （[RealtimeEventType.partialTranscript]）完全分開，互不影響。
+  /// 最終完整文字仍由 response.done 的 [RealtimeEventType.assistantText] 負責落地。
+  void _emitAssistantPartial() {
+    final partial = _assistantBuffer.trim();
+    if (partial.isEmpty) return;
+
+    final now = DateTime.now();
+    final last = _lastPartialEmitAt;
+    if (last == null || now.difference(last) >= assistantPartialThrottle) {
+      // Leading edge：距離上次 emit 已超過節流視窗（或本輪第一筆），立即送出。
+      _cancelPartialThrottleTimer();
+      _lastPartialEmitAt = now;
+      _emit(RealtimeEventType.assistantPartialText, partial);
+      return;
+    }
+
+    // 視窗內：已排程一筆 trailing emit 就不重排，等視窗結束時送出當下最新累積文字，
+    // 確保最後幾個字一定會顯示，且只 emit 一次。
+    if (_partialThrottleTimer != null) return;
+    final remaining = assistantPartialThrottle - now.difference(last);
+    _partialThrottleTimer = Timer(remaining, () {
+      _partialThrottleTimer = null;
+      if (_isStopping || _isDisposed) return;
+      final latest = _assistantBuffer.trim();
+      if (latest.isEmpty) return;
+      _lastPartialEmitAt = DateTime.now();
+      _emit(RealtimeEventType.assistantPartialText, latest);
+    });
+  }
+
+  void _cancelPartialThrottleTimer() {
+    _partialThrottleTimer?.cancel();
+    _partialThrottleTimer = null;
+  }
+
   void _startDataChannelOpenTimer() {
     _cancelDataChannelOpenTimer();
     _dataChannelOpenTimer = Timer(dataChannelOpenTimeout, () {
@@ -1237,6 +1296,7 @@ $context
     _isStopping = true;
     _cancelDataChannelOpenTimer();
     _cancelToolOutcomeFlushTimer();
+    _cancelPartialThrottleTimer();
     unawaited(_resetConnectionResources(emitIdle: false));
     if (_rendererReady) {
       _remoteAudioRenderer.dispose();

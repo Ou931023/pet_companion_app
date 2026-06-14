@@ -209,6 +209,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ),
                                     petName: profileController.petName,
                                     compact: compact,
+                                    streaming: conversationController
+                                        .isRealtimeStreaming,
                                   ),
                                 ),
                               ),
@@ -987,6 +989,11 @@ String _resolvePetText(
   ConversationController conversation,
   String petControllerMessage,
 ) {
+  // CR-0084：寵物說話中時，優先顯示「即時逐字字幕」，讓字幕跟著聲音走。
+  // （此時 latestReply 尚未落地、且使用者氣泡可能還在，故須最先判斷。）
+  if (conversation.liveRealtimeReply.trim().isNotEmpty) {
+    return conversation.liveRealtimeReply;
+  }
   if (conversation.latestReply.trim().isNotEmpty) {
     return conversation.latestReply;
   }
@@ -1005,6 +1012,7 @@ class _ConversationDetailPanel extends StatelessWidget {
     required this.petText,
     required this.petName,
     required this.compact,
+    this.streaming = false,
   });
 
   final ConversationController conversationController;
@@ -1013,6 +1021,9 @@ class _ConversationDetailPanel extends StatelessWidget {
   final String petText;
   final String petName;
   final bool compact;
+
+  /// CR-0084：寵物字幕是否為「即時逐字串流中」（跟著語音走）。
+  final bool streaming;
 
   @override
   Widget build(BuildContext context) {
@@ -1027,6 +1038,7 @@ class _ConversationDetailPanel extends StatelessWidget {
           petName: petName,
           isWaiting: conversationController.isAwaitingPetReply,
           compact: compact,
+          streaming: streaming,
         ),
         if (conversationController.latestLanguageContextLabel.isNotEmpty) ...[
           const SizedBox(height: 6),

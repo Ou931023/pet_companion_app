@@ -10,6 +10,7 @@ class SpeechBubble extends StatelessWidget {
     this.isWaiting = false,
     this.compact = false,
     this.enablePaging = false,
+    this.streaming = false,
   });
 
   final String text;
@@ -20,6 +21,9 @@ class SpeechBubble extends StatelessWidget {
   /// CR-0080：是否把較長內容分頁顯示（與語音同步、不提前翻頁）。
   /// 只在「寵物字幕」開啟；使用者泡泡 / 等待狀態維持原本單塊顯示。
   final bool enablePaging;
+
+  /// CR-0084：是否為「即時逐字串流中」——分頁器顯示最新一頁、不用計時器翻頁。
+  final bool streaming;
 
   @override
   Widget build(BuildContext context) {
@@ -87,7 +91,11 @@ class SpeechBubble extends StatelessWidget {
       );
     }
     if (enablePaging) {
-      return PetSubtitleText(text: text, textStyle: textStyle);
+      return PetSubtitleText(
+        text: text,
+        textStyle: textStyle,
+        streaming: streaming,
+      );
     }
     return Text(
       text,

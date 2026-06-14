@@ -465,6 +465,17 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
           );
         }
         break;
+      case RealtimeEventType.assistantPartialText:
+        // 即時逐字字幕：寵物說話過程中跟著聲音更新顯示文字，純顯示用，
+        // 不記錄對話、不抽取記憶、不改寵物狀態（那些只在最終 assistantText 處理）。
+        // 若這一輪寵物文字被刻意抑制（導頁 / 改名等 _skipNextAssistantText），
+        // 連帶不顯示 partial；不在這裡重置旗標（由最終 assistantText 重置）。
+        if (_skipNextAssistantText) {
+          break;
+        }
+        conversationController
+            .updateRealtimeLivePetText(toTraditional(event.payload));
+        break;
       case RealtimeEventType.assistantAudioStart:
         _responseTurnId =
             _responseTurnId.isEmpty ? _activeTurnId : _responseTurnId;

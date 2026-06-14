@@ -99,6 +99,29 @@ void main() {
       expect(controller.temporaryUserBubbleText, isEmpty);
     });
 
+    test('live realtime pet text streams then clears on final reply', () async {
+      controller.updateRealtimeLivePetText('我在');
+      expect(controller.liveRealtimeReply, '我在');
+      expect(controller.isRealtimeStreaming, isTrue);
+
+      controller.updateRealtimeLivePetText('我在這裡陪你');
+      expect(controller.liveRealtimeReply, '我在這裡陪你');
+
+      await controller.handleRealtimeAssistantReply('我在這裡陪你。');
+      expect(controller.liveRealtimeReply, isEmpty);
+      expect(controller.isRealtimeStreaming, isFalse);
+      expect(controller.latestReply, '我在這裡陪你。');
+    });
+
+    test('live realtime pet text cleared by clearRealtimeTranscriptState', () {
+      controller.updateRealtimeLivePetText('部分回覆');
+      expect(controller.isRealtimeStreaming, isTrue);
+
+      controller.clearRealtimeTranscriptState();
+      expect(controller.liveRealtimeReply, isEmpty);
+      expect(controller.isRealtimeStreaming, isFalse);
+    });
+
     test('text input stores Taigi language context in history', () async {
       await controller.profileController.setTtsEnabled(false);
 

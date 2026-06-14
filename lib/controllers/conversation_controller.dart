@@ -91,6 +91,10 @@ class ConversationController extends ChangeNotifier {
   String _currentPartialTranscript = '';
   String _currentFinalTranscript = '';
   String _currentDraftText = '';
+  // Realtime 寵物（assistant）語音回覆的「即時」逐字文字：在寵物說話過程中由
+  // assistantPartialText 持續更新，讓字幕跟著聲音走；寵物這句講完（最終 assistantText）
+  // 或新的一輪開始時清空，改由最終靜態文字接手。純顯示用，不寫入對話紀錄。
+  String _liveRealtimeReply = '';
   bool _isUserSpeaking = false;
   bool _isAwaitingFinalTranscript = false;
   bool _isTaigiAsrRecording = false;
@@ -314,6 +318,8 @@ class ConversationController extends ChangeNotifier {
   String get currentPartialTranscript => _currentPartialTranscript;
   String get currentFinalTranscript => _currentFinalTranscript;
   String get currentDraftText => _currentDraftText;
+  String get liveRealtimeReply => _liveRealtimeReply;
+  bool get isRealtimeStreaming => _liveRealtimeReply.trim().isNotEmpty;
   bool get isUserSpeaking => _isUserSpeaking;
   bool get isAwaitingFinalTranscript => _isAwaitingFinalTranscript;
   bool get isTaigiAsrRecording => _isTaigiAsrRecording;
@@ -631,6 +637,8 @@ class ConversationController extends ChangeNotifier {
     _currentDraftText = '';
     _latestUserText = '';
     _latestReply = '';
+    // 新一輪開始：清掉上一輪的即時寵物字幕，避免殘留在畫面上。
+    _liveRealtimeReply = '';
     _isAwaitingPetReply = false;
     notifyListeners();
   }
@@ -650,6 +658,14 @@ class ConversationController extends ChangeNotifier {
       return;
     }
     _currentPartialTranscript = normalized;
+    notifyListeners();
+  }
+
+  /// Realtime 寵物（assistant）語音字幕的即時更新：寵物說話過程中每段 transcript
+  /// 抵達時呼叫，讓字幕跟著聲音逐步顯示。純顯示，不寫入對話紀錄；最終完整文字仍由
+  /// [handleRealtimeAssistantReply] 落地並清空這裡的即時文字。
+  void updateRealtimeLivePetText(String text) {
+    _liveRealtimeReply = text;
     notifyListeners();
   }
 
@@ -675,6 +691,7 @@ class ConversationController extends ChangeNotifier {
     _currentPartialTranscript = '';
     _isUserSpeaking = false;
     _isAwaitingFinalTranscript = false;
+    _liveRealtimeReply = '';
     if (notify) {
       notifyListeners();
     }
@@ -766,6 +783,8 @@ class ConversationController extends ChangeNotifier {
     String turnId = '',
   }) async {
     _latestReply = message;
+    // 最終完整回覆落地 → 清掉即時逐字字幕，改由這段靜態文字接手顯示。
+    _liveRealtimeReply = '';
     _isAwaitingPetReply = false;
     _latestSources = const [];
     _latestReplyIsSearch = false;
