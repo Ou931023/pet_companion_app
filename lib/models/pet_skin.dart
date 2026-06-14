@@ -4,6 +4,7 @@ enum PetSkin {
   dog,
   guineaPig,
   fox,
+  ferret,
 }
 
 extension PetSkinX on PetSkin {
@@ -13,6 +14,7 @@ extension PetSkinX on PetSkin {
         PetSkin.dog => 'dog',
         PetSkin.guineaPig => 'guinea_pig',
         PetSkin.fox => 'fox',
+        PetSkin.ferret => 'ferret',
       };
 
   /// 圖片檔名前綴，對應 `assets/pets/<資料夾>/<prefix>_*.png`。
@@ -20,6 +22,7 @@ extension PetSkinX on PetSkin {
         PetSkin.dog => 'dog',
         PetSkin.guineaPig => 'guinea_pig',
         PetSkin.fox => 'fox',
+        PetSkin.ferret => 'ferret',
       };
 
   /// 給長者看的中文名稱。
@@ -27,6 +30,7 @@ extension PetSkinX on PetSkin {
         PetSkin.dog => '狗狗',
         PetSkin.guineaPig => '天竺鼠',
         PetSkin.fox => '狐狸',
+        PetSkin.ferret => '雪貂',
       };
 
   /// 一句話特色描述（純呈現，僅用於外觀選擇器，不影響任何陪伴邏輯）。
@@ -34,6 +38,7 @@ extension PetSkinX on PetSkin {
         PetSkin.dog => '溫暖陪伴型',
         PetSkin.guineaPig => '可愛療癒型',
         PetSkin.fox => '活潑聰明型',
+        PetSkin.ferret => '好奇靈巧型',
       };
 
   /// 解鎖需要的金幣數（沿用既有 wallet / coins）。狗狗預設已擁有，免費。
@@ -41,6 +46,7 @@ extension PetSkinX on PetSkin {
         PetSkin.dog => 0,
         PetSkin.guineaPig => 60,
         PetSkin.fox => 80,
+        PetSkin.ferret => 100,
       };
 
   /// 是否為預設就擁有的外觀（狗狗）。其餘需購買 / 解鎖。
@@ -51,6 +57,7 @@ extension PetSkinX on PetSkin {
     return switch (id) {
       'guinea_pig' => PetSkin.guineaPig,
       'fox' => PetSkin.fox,
+      'ferret' => PetSkin.ferret,
       _ => PetSkin.dog,
     };
   }
