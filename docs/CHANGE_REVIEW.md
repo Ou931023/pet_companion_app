@@ -3740,3 +3740,46 @@ docs-only 展示腳本與檢查清單，與現行 production 行為一致（URL 
 
 ### 裁決
 🔒 檔案僅 emit 字串內容變更，主流程與契約零影響、觀測性不變、測試齊備且全綠；併入主線。詳細文案對照見 `docs/ERROR_MESSAGE_POLISH_CR0079.md`。
+
+---
+
+## CR-0085 — Change Review Backfill and Final Feature Queue Alignment（docs-only）
+
+### 模式
+**docs-only / 整理型 CR。不改任何程式、不改後端 / Flutter / caregiver_web runtime、不改 API 契約 / DB schema / Realtime 主流程。** 僅補登先前已完成卻未登錄本檔的 CR，並重新對齊重複 / 缺漏的 CR 編號。不改寫 git 歷史、不更名既有 task 檔（保留 commit ↔ 檔名可追溯性）。規格見 `tasks/CR-0085-change-review-backfill-and-cr-number-alignment.md`。
+
+### 動機 / 問題
+盤點本檔、`tasks/`、git log 後發現：
+- **編號重複**：`CR-0053`（既有 prod-e2e 已登錄 vs. 後來「雪貂」commit `65a4b8e` 誤用）、`CR-0075`（既有「記憶端點身分驗證」已登錄 vs.「寵物素材正規化」commit `2da9baa` 誤用）。
+- **已完成但未登錄**：`CR-0064`、`CR-0065`、`CR-0080`、`CR-0080A`、`CR-0083`。
+- **無 CR 編號**：「Demo 期間所有寵物外觀免費」commit `35e55f2`。
+
+### 正式編號對齊（單一真相）
+| 變更內容 | 來源 commit | 原始標示 | 正式編號 |
+|---|---|---|---|
+| 寵物素材尺寸 / 留白正規化（dog/fox/guinea_pig） | `2da9baa` | 「CR-0075」撞號 | **CR-0081** |
+| 雪貂 ferret 去背 + 換皮 / 商店整合 | `65a4b8e` | 「CR-0053」撞號 | **CR-0082** |
+| Realtime 語音工具呼叫 + 字幕 turn 整合 | `8e838a9` / `c1c52a6` | CR-0083（正確） | CR-0083 |
+| Demo：所有寵物外觀免費直接可換 | `35e55f2` | （無編號） | **CR-0084** |
+| 本整理型 CR | — | — | **CR-0085** |
+
+- 保留不再重用的歷史缺號：`CR-0077`、`CR-0078`。
+- **下一個可用的新 CR 編號：`CR-0086`**（往後一律遞增）。
+
+### 補登紀錄（編號正確、僅先前漏登）
+- **CR-0064 — Render 正式環境 caregiver_web CORS 修正**：單一 CORS middleware（白名單來源 `CORS_ALLOWED_ORIGINS`，逐一比對、fail-closed、不 allow-all）。落地：`backend/stt_proxy/server.js:166` 標記；commit `aff3027` 等。✅ 併入主線。
+- **CR-0065 — caregiver_web 正式版分頁旗標**：依 `featureFlags` 在正式版隱藏 marketplace / 今日任務分頁入口（後端上線後又以 `15832a2` 重新開啟）。落地：`caregiver_web/app.js applyFeatureFlags`；commit `188db05`。✅ 併入主線。
+- **CR-0080 — 語音字幕同步 + web-search 可靠性**：字幕分頁同步、放寬 web-search 意圖判斷（`shouldSearch` / `needsWebSearch` 對齊）。commit `c6f01ea`。✅ 併入主線。
+- **CR-0080A — 測試替身簽章對齊**：`_ThrowingChatService.reply` 簽章對齊 `CompanionChatService`。commit `32a121e`。✅ 併入主線。
+- **CR-0083 — Realtime 語音工具呼叫 + 字幕 turn 整合**：工具結果延後到語音結束才呈現，避免蓋掉字幕。commit `8e838a9` / `c1c52a6`。✅ 併入主線。
+
+### 新編號變更摘要（補追溯）
+- **CR-0081（原「CR-0075」）**：dog/fox/guinea_pig 共 51 張素材依統一規格重輸出（畫布 / 留白 / 主體位置一致）+ `scripts/normalize_pet_assets.sh`。commit `2da9baa`。✅ 併入主線。
+- **CR-0082（原「CR-0053」）**：雪貂 18 張圖去背為透明 1024² RGBA、對齊 dog 畫布與腳底基準線；`PetSkin` 新增 `ferret`、`AssetPaths` 註冊、加入換皮 / 商店清單；含測試。commit `65a4b8e`。✅ 併入主線（flutter test 全綠）。
+- **CR-0084 — Demo 全寵物免費**：`PetController` 新增 `freeAllSkins` 參數（預設 false，維持商店 / 解鎖流程）；`app.dart` 於 Demo 期間傳 `true`，價格仍保留於 `PetSkin.unlockCost`，Demo 後改回 `false` 即恢復付費。commit `35e55f2`。✅ 併入主線（600 測試全綠）。
+
+### 限制遵守
+未讀 `.env`、未把 token / runtime data 進 git；無 program code / API 契約 / schema / Realtime 變更；不改寫 git 歷史、不更名既有 task 檔；未偽稱測試結果（docs-only）。
+
+### 裁決
+docs-only 紀錄整理：補齊漏登 CR、消除 CR-0053 / CR-0075 重號歧義、宣告下一可用編號 CR-0086。與現行主線實況一致（逐筆對照 commit）、未洩 secret、無受保護模組變更；併入主線。
