@@ -30,6 +30,9 @@ class LocalStorageService {
   static const _keyPetSkin = 'petSkin';
   static const _keyOwnedPetSkins = 'ownedPetSkins';
   static const _keyHomeCoachMarkDone = 'homeCoachMarkDone';
+  // CR-0087：寵物關心提醒設定 + cooldown 紀錄（避免太頻繁打擾）。
+  static const _keyConcernRemindersEnabled = 'concernRemindersEnabled';
+  static const _keyConcernNotifyTimestamps = 'concernNotifyTimestamps';
 
   static const String defaultUserId = 'default_user';
 
@@ -77,6 +80,31 @@ class LocalStorageService {
       manualAsrStrategy: prefs.getString(_k(_keyManualAsrStrategy)) ??
           initial.manualAsrStrategy,
       familyContacts: _loadFamilyContacts(prefs),
+      concernRemindersEnabled: prefs.getBool(_k(_keyConcernRemindersEnabled)) ??
+          initial.concernRemindersEnabled,
+    );
+  }
+
+  /// CR-0087：讀取寵物關心提醒的 cooldown 紀錄（{類型/`_any` → ISO 時間字串}）。
+  /// 無紀錄 / 解析失敗 → 空 map（視為從未發過，不會誤擋）。
+  Future<Map<String, String>> loadConcernNotifyTimestamps() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_k(_keyConcernNotifyTimestamps));
+    if (raw == null || raw.trim().isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      return decoded.map((k, v) => MapEntry(k, v.toString()));
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// CR-0087：保存寵物關心提醒的 cooldown 紀錄。
+  Future<void> saveConcernNotifyTimestamps(Map<String, String> timestamps) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _k(_keyConcernNotifyTimestamps),
+      jsonEncode(timestamps),
     );
   }
 
@@ -116,6 +144,10 @@ class LocalStorageService {
     await prefs.setString(_k(_keySttMode), profile.sttMode);
     await prefs.setString(_k(_keySttProxyUrl), profile.sttProxyUrl);
     await prefs.setBool(_k(_keyTtsEnabled), profile.ttsEnabled);
+    await prefs.setBool(
+      _k(_keyConcernRemindersEnabled),
+      profile.concernRemindersEnabled,
+    );
     await prefs.setDouble(_k(_keyFontScale), profile.fontScale);
     await prefs.setDouble(_k(_keyPetVolume), profile.petVolume);
     await prefs.setString(_k(_keySpeechStyle), profile.speechStyle);

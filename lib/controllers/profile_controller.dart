@@ -24,6 +24,7 @@ class ProfileController extends ChangeNotifier {
   String? get checkInDate => _profile.checkInDate;
   Map<String, bool> get taskState => _profile.taskCompletionState;
   bool get ttsEnabled => _profile.ttsEnabled;
+  bool get concernRemindersEnabled => _profile.concernRemindersEnabled;
   double get fontScale => _profile.fontScale;
   double get petVolume => _profile.petVolume;
   String get speechStyle => _profile.speechStyle;
@@ -116,6 +117,12 @@ class ProfileController extends ChangeNotifier {
 
   Future<void> setTtsEnabled(bool enabled) async {
     _profile = _profile.copyWith(ttsEnabled: enabled);
+    await _persist();
+  }
+
+  /// CR-0087：開 / 關「寵物關心提醒」（不影響每日簽到等必要提醒）。
+  Future<void> setConcernRemindersEnabled(bool enabled) async {
+    _profile = _profile.copyWith(concernRemindersEnabled: enabled);
     await _persist();
   }
 

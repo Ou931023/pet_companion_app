@@ -4,6 +4,7 @@ import 'package:timezone/timezone.dart' as tz;
 
 import '../models/reminder.dart';
 import 'check_in_reminder_schedule.dart';
+import 'pet_concern_notification_policy.dart';
 
 class NotificationService {
   NotificationService() : _plugin = FlutterLocalNotificationsPlugin();
@@ -14,6 +15,9 @@ class NotificationService {
   /// CR-0031：點到「每日簽到提醒」通知時要做的事（例如導回首頁）。
   /// 由 App 啟動處設定；沒設定就只會打開 App，不導頁。
   void Function()? onCheckInReminderTapped;
+
+  /// CR-0087：點到「寵物關心提醒」通知時要做的事（導回首頁陪伴寵物）。
+  void Function()? onPetConcernReminderTapped;
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -33,6 +37,8 @@ class NotificationService {
       );
       // CR-0031：Android 13 以下需要先建好通知 channel，10:00 簽到提醒才會正常出現。
       await _ensureCheckInChannel();
+      // CR-0087：寵物關心提醒走獨立 channel，與簽到提醒互不干擾。
+      await _ensurePetConcernChannel();
       _initialized = true;
     } catch (_) {
       // 不對使用者顯示工程錯誤；通知無法初始化時，App 其他功能仍可正常使用。
@@ -144,9 +150,53 @@ class NotificationService {
     await cancelAll();
   }
 
+  // ── CR-0087 寵物關心提醒 ──────────────────────────────────────────────
+
+  /// 排程一則「寵物關心提醒」（id 固定 [PetConcernNotificationPolicy.notificationId]）。
+  ///
+  /// 文案由純邏輯 [PetConcernNotificationPolicy] 決定；本方法只負責薄薄一層排程。
+  /// 一律先取消舊的再排，避免重複跳。回到 App 時請呼叫 [cancelPetConcernReminder]。
+  Future<void> schedulePetConcernReminder({
+    required String title,
+    required String body,
+    required DateTime scheduledAt,
+  }) async {
+    await initialize();
+    if (!_initialized) return;
+    await cancelPetConcernReminder();
+    final scheduled = tz.TZDateTime.from(scheduledAt, tz.local);
+    await _plugin.zonedSchedule(
+      id: PetConcernNotificationPolicy.notificationId,
+      title: title,
+      body: body,
+      payload: PetConcernNotificationPolicy.payload,
+      scheduledDate: scheduled,
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          PetConcernNotificationPolicy.channelId,
+          PetConcernNotificationPolicy.channelName,
+          channelDescription: '寵物在你較少互動或狀態較低時，溫和地想你、提醒你回來陪牠',
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+        iOS: DarwinNotificationDetails(),
+      ),
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+    );
+  }
+
+  /// 取消待發的寵物關心提醒（回到 App / 已互動 / 關閉設定時呼叫）。
+  Future<void> cancelPetConcernReminder() async {
+    await initialize();
+    if (!_initialized) return;
+    await _plugin.cancel(id: PetConcernNotificationPolicy.notificationId);
+  }
+
   void _handleNotificationResponse(NotificationResponse response) {
     if (response.payload == CheckInReminderSchedule.payload) {
       onCheckInReminderTapped?.call();
+    } else if (response.payload == PetConcernNotificationPolicy.payload) {
+      onPetConcernReminderTapped?.call();
     }
   }
 
@@ -162,6 +212,20 @@ class NotificationService {
         _checkInChannelId,
         _checkInChannelName,
         description: '提醒你每天回來看看 AI 寵物、完成今日簽到',
+        importance: Importance.high,
+      ),
+    );
+  }
+
+  Future<void> _ensurePetConcernChannel() async {
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (android == null) return;
+    await android.createNotificationChannel(
+      const AndroidNotificationChannel(
+        PetConcernNotificationPolicy.channelId,
+        PetConcernNotificationPolicy.channelName,
+        description: '寵物在你較少互動或狀態較低時，溫和地想你、提醒你回來陪牠',
         importance: Importance.high,
       ),
     );

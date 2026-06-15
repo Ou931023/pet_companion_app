@@ -70,6 +70,7 @@ import 'services/mock_shop_service.dart';
 import 'services/mock_speech_to_text_service.dart';
 import 'services/native_tool_executor_service.dart';
 import 'services/notification_service.dart';
+import 'services/pet_concern_notification_policy.dart';
 import 'services/openai_speech_to_text_service.dart';
 import 'services/pet_stats_storage_service.dart';
 import 'services/realtime_voice_service.dart';
@@ -581,10 +582,17 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
         await notificationService.syncCheckInReminder(
           hasCheckedInToday: checkInController.hasCheckedInToday,
         );
+        // CR-0087：換帳號 / 啟動時清掉前一個情境留下的待發寵物關心提醒（cooldown
+        // 紀錄已隨 LocalStorageService 帳號命名空間隔離）。實際排程在離開 App 時才做。
+        await notificationService.cancelPetConcernReminder();
       }
 
       // CR-0031：點簽到提醒通知時導回首頁（不另開新路由，沿用底部分頁）。
       notificationService.onCheckInReminderTapped = () {
+        context.read<AppNavigationController>().selectShellIndex(0);
+      };
+      // CR-0087：點寵物關心提醒通知時，一樣導回首頁陪伴寵物。
+      notificationService.onPetConcernReminderTapped = () {
         context.read<AppNavigationController>().selectShellIndex(0);
       };
 
@@ -602,7 +610,16 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
+    // CR-0087：離開 App（背景）→ 依寵物與互動狀態排一則「之後才跳」的關心提醒；
+    // 回到 App → 取消它（人已回來，不需再提醒）。每日 18:00/10:00 簽到提醒邏輯不變。
+    if (state == AppLifecycleState.paused) {
+      _schedulePetConcernReminderOnLeave();
+      return;
+    }
     if (state != AppLifecycleState.resumed) return;
+    if (!mounted) return;
+    context.read<NotificationService>().cancelPetConcernReminder();
+
     final currentDateKey = _dateKey();
     if (_lastDateKey == currentDateKey) return;
     _lastDateKey = currentDateKey;
@@ -613,6 +630,65 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
     notificationService.syncCheckInReminder(
       hasCheckedInToday: checkInController.hasCheckedInToday,
     );
+  }
+
+  /// CR-0087：背景離開時評估是否排寵物關心提醒。純決策見
+  /// [PetConcernNotificationPolicy]；本方法只負責讀狀態、查 cooldown、排程與記錄。
+  Future<void> _schedulePetConcernReminderOnLeave() async {
+    if (!mounted) return;
+    final profile = context.read<ProfileController>();
+    final notificationService = context.read<NotificationService>();
+    // 關閉「寵物關心提醒」時不發此類提醒（必要照護提醒不受影響）。
+    if (!profile.concernRemindersEnabled) {
+      await notificationService.cancelPetConcernReminder();
+      return;
+    }
+    final petStats = context.read<PetStatsController>();
+    final conversation = context.read<ConversationController>();
+    final storage = context.read<LocalStorageService>();
+
+    final now = DateTime.now();
+    final history = conversation.history; // 最新在前
+    final DateTime? lastInteraction =
+        history.isNotEmpty ? history.first.timestamp : null;
+    String? latestEmotion;
+    for (final turn in history) {
+      if (turn.emotionTag != 'neutral') {
+        latestEmotion = turn.emotionTag;
+        break;
+      }
+    }
+    final hoursSince = lastInteraction == null
+        ? null
+        : now.difference(lastInteraction).inMinutes / 60.0;
+    final interactedToday = lastInteraction != null &&
+        _dateKeyOf(lastInteraction) == _dateKey();
+
+    final raw = await storage.loadConcernNotifyTimestamps();
+    final lastByType = <PetConcernType, DateTime?>{
+      for (final t in PetConcernType.values) t: _tryParseIso(raw[t.key]),
+    };
+    final decision = PetConcernNotificationPolicy.evaluate(
+      enabled: true,
+      moodValue: petStats.moodValue,
+      satiety: petStats.fullness,
+      intimacy: petStats.intimacy,
+      latestEmotionTag: latestEmotion,
+      hoursSinceLastInteraction: hoursSince,
+      hasInteractedToday: interactedToday,
+      now: now,
+      lastSentByType: lastByType,
+      lastAnySent: _tryParseIso(raw['_any']),
+    );
+    if (!decision.shouldNotify) return;
+    await notificationService.schedulePetConcernReminder(
+      title: decision.title,
+      body: decision.body,
+      scheduledAt: now.add(PetConcernNotificationPolicy.scheduleDelay),
+    );
+    raw[decision.type!.key] = now.toIso8601String();
+    raw['_any'] = now.toIso8601String();
+    await storage.saveConcernNotifyTimestamps(raw);
   }
 
   @override
@@ -754,6 +830,11 @@ class _ServiceUnavailableView extends StatelessWidget {
 }
 
 String _dateKey() => DateTime.now().toIso8601String().split('T').first;
+
+// CR-0087：寵物關心提醒輔助。
+String _dateKeyOf(DateTime d) => d.toIso8601String().split('T').first;
+DateTime? _tryParseIso(String? iso) =>
+    iso == null ? null : DateTime.tryParse(iso);
 
 /// iOS 26 原生 Liquid Glass 底部列（UiKitView）容器高度（不含底部安全區）。
 /// 原本 84 會讓浮動列顯得漂在畫面中間、離底部太遠；調小讓它更貼近螢幕底部，

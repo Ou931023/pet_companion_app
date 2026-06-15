@@ -20,6 +20,7 @@ class UserProfile {
     required this.voiceLanguageMode,
     required this.manualAsrStrategy,
     required this.familyContacts,
+    this.concernRemindersEnabled = true,
   });
 
   final bool hasCompletedOnboarding;
@@ -42,6 +43,8 @@ class UserProfile {
   // List of contacts the user keeps for voice "打給 X / 寄信給 X" — each entry
   // is {alias, phone, email}.
   final List<Map<String, String>> familyContacts;
+  // CR-0087：是否允許「寵物關心提醒」本地推播（不影響每日簽到等必要提醒）。預設開啟。
+  final bool concernRemindersEnabled;
 
   factory UserProfile.initial() {
     return UserProfile(
@@ -71,6 +74,7 @@ class UserProfile {
       voiceLanguageMode: 'defaultOpenAiRealtime',
       manualAsrStrategy: 'defaultOpenAiRealtime',
       familyContacts: [],
+      concernRemindersEnabled: true,
     );
   }
 
@@ -93,6 +97,7 @@ class UserProfile {
     String? voiceLanguageMode,
     String? manualAsrStrategy,
     List<Map<String, String>>? familyContacts,
+    bool? concernRemindersEnabled,
   }) {
     return UserProfile(
       hasCompletedOnboarding:
@@ -114,6 +119,8 @@ class UserProfile {
       voiceLanguageMode: voiceLanguageMode ?? this.voiceLanguageMode,
       manualAsrStrategy: manualAsrStrategy ?? this.manualAsrStrategy,
       familyContacts: familyContacts ?? this.familyContacts,
+      concernRemindersEnabled:
+          concernRemindersEnabled ?? this.concernRemindersEnabled,
     );
   }
 }

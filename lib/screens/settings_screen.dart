@@ -285,6 +285,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // CR-0087：寵物關心提醒開關。關閉後不發送此類陪伴提醒，
+              // 但每日簽到等必要提醒不受影響。
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: profile.concernRemindersEnabled,
+                title: const Text('寵物關心提醒'),
+                subtitle: const Text(
+                  '在你較少互動，或寵物有點低落、肚子餓時，溫和提醒你回來陪牠',
+                ),
+                onChanged: profile.setConcernRemindersEnabled,
+              ),
+              const SizedBox(height: 4),
               // CR-0025：今日任務（吃藥 / 喝水 / 運動，拍照完成）。
               // CR-0056（B2）：今日任務入口正式版完全隱藏（能力/路由保留）。
               if (AppConfig.dailyCareTasksVisible) ...[

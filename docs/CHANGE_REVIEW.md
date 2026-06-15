@@ -3819,3 +3819,38 @@ docs-only 紀錄整理：補齊漏登 CR、消除 CR-0053 / CR-0075 重號歧義
 
 ### 裁決
 新增路由與既有授權模型一致、不改既有契約形狀、誠實標註資料來源、測試齊備且全綠、未碰受保護主流程；併入主線。下一個可用 CR 編號：**CR-0087**。
+
+---
+
+## CR-0087 — Pet Concern Push Notifications（寵物關心提醒）
+
+### 模式
+小批次 Flutter 端新增功能，**全為長者端本地推播**。擴充既有 `NotificationService`（不另寫一套通知系統），不觸及 🔒 Realtime 主流程 / 後端 API / DB schema，不改 Telegram / Care Alert / 管理端。詳見 `docs/PET_CONCERN_PUSH_NOTIFICATIONS_CR0087.md`、規格 `tasks/CR-0087-pet-concern-push-notifications.md`。
+
+### 動機
+讓 AI 寵物更像會關心人的夥伴：在寵物心情低落 / 飽足度低 / 親密度低 / 長者久未互動時，對**長者本人**發溫和的本地提醒，受 cooldown 限制不打擾。與通知照護者的 Care Alert（Telegram / 後端）本質不同，不可混接。
+
+### 變更
+- 新增 `lib/services/pet_concern_notification_policy.dart`：純 Dart 決策（門檻、優先序、cooldown、文案），可單元測試、不依賴 plugin。id 10002、獨立 channel，與簽到提醒（10001）區隔。
+- 擴充 `lib/services/notification_service.dart`：`schedulePetConcernReminder` / `cancelPetConcernReminder` + 獨立 channel + tap 導回首頁。沿用既有 `zonedSchedule` 寫法，既有簽到方法不動。
+- `lib/services/local_storage_service.dart`：新增 cooldown 紀錄（`concernNotifyTimestamps`）讀寫 + 開關欄位持久化，依帳號命名空間隔離。
+- `lib/models/user_profile.dart` + `lib/controllers/profile_controller.dart`：新增 `concernRemindersEnabled`（預設開）+ setter。
+- `lib/screens/settings_screen.dart`：「日常提醒」區新增「寵物關心提醒」`SwitchListTile`（關閉不影響必要提醒）。
+- `lib/app.dart`：lifecycle `paused` 時依寵物與互動狀態評估並排「之後才跳」的關心提醒，`resumed` / 換帳號時取消；wire tap 導頁。每日簽到（10:00）邏輯保留不動。
+
+### 資料來源（真實、不捏造）
+寵物 mood/satiety/intimacy 取自長者端真實 `PetStats`（SharedPreferences）；情緒取自 `ConversationTurn.emotionTag`；inactivity 以「離開 App 當下最近一次對話 turn 時間」估算（無紀錄則不觸發）。缺資料一律不觸發對應提醒。
+
+### 測試
+- 新增 `test/services/pet_concern_notification_policy_test.dart`（純決策 14 案）、`notification_service_pet_concern_test.dart`（plugin mock 不 crash + 與簽到互不干擾）、`concern_notification_storage_test.dart`（開關 + cooldown round-trip + 帳號隔離）。
+- 既有簽到提醒測試全綠（行為未變）。
+- 全綠：`flutter analyze` No issues；`flutter test` 全部通過（619 tests）。
+
+### 限制遵守
+未讀 `.env`；未改 Telegram / Care Alert 通知規則 / Realtime 語音主流程 / 後端 / DB schema；未破壞每日簽到提醒；文案無工程字；推播有 cooldown 且可由設定開關關閉。
+
+### 已知限制
+每日簽到實際為 10:00（非規格假設 18:00），保留未動；inactivity 為前景最佳估計（無背景 isolate）；關心提醒採「離開時排未來、回來時取消」。詳見 `docs/PET_CONCERN_PUSH_NOTIFICATIONS_CR0087.md` §9。
+
+### 裁決
+擴充既有通知服務、純決策可測、不碰受保護主流程與後端契約、誠實處理缺資料、測試齊備且全綠；併入主線。**下一個可用 CR 編號：CR-0088。**
