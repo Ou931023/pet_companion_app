@@ -6,6 +6,7 @@ import '../models/pet_skin.dart';
 import '../models/pet_state.dart';
 import '../models/pet_status.dart';
 import '../services/local_storage_service.dart';
+import '../utils/pet_state_selector.dart';
 
 class PetController extends ChangeNotifier {
   /// [storageService] 可省略：UI / 單元測試不需要持久化時用 `PetController()` 即可，
@@ -29,6 +30,9 @@ class PetController extends ChangeNotifier {
     message: '準備好開始今天的陪伴了嗎？',
   );
   Timer? _idleTimer;
+  // CR-0088：互動結束後短暫顯示的情緒狀態（happy / caring / sad…）。到期自動清除。
+  PetMode? _transientMode;
+  Timer? _transientTimer;
   String _mood = 'neutral';
   String _expression = 'normal';
   String _action = 'idle';
@@ -49,6 +53,25 @@ class PetController extends ChangeNotifier {
   Set<PetSkin> get ownedSkins => Set.unmodifiable(_ownedSkins);
 
   bool isOwned(PetSkin skin) => _freeAllSkins || _ownedSkins.contains(skin);
+
+  /// CR-0088：目前的短暫情緒狀態（無則 null）。首頁狀態選擇器會優先顯示它。
+  PetMode? get transientMode => _transientMode;
+
+  /// CR-0088：互動（對話 / 任務 / 提醒）結束後，短暫顯示一個情緒狀態，到期自動退場。
+  /// 擴充既有 idle 機制：idle timer 仍負責 mode→rest 衰減，這裡只額外持有一個
+  /// 「會自己消失」的情緒狀態，供首頁選擇器在非收音 / 非播放時顯示。
+  void showTransientState(
+    PetMode mode, {
+    Duration duration = PetStateSelector.transientDuration,
+  }) {
+    _transientTimer?.cancel();
+    _transientMode = mode;
+    notifyListeners();
+    _transientTimer = Timer(duration, () {
+      _transientMode = null;
+      notifyListeners();
+    });
+  }
 
   /// 載入目前帳號（elderId）保存的外觀與已擁有清單；
   /// 沒有 storage 或沒存過 → 狗狗、且只擁有狗狗。
@@ -180,6 +203,7 @@ class PetController extends ChangeNotifier {
   @override
   void dispose() {
     _idleTimer?.cancel();
+    _transientTimer?.cancel();
     super.dispose();
   }
 }

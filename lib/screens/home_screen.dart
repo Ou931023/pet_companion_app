@@ -19,6 +19,7 @@ import '../models/inventory_item.dart';
 import '../models/language_route.dart';
 import '../models/pet_skin.dart';
 import '../models/pet_status.dart';
+import '../utils/pet_state_selector.dart';
 import '../models/pet_stats.dart';
 import '../models/source_reference.dart';
 import '../models/voice_agent_state.dart';
@@ -50,11 +51,30 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _showInventoryPanel = false;
   bool _inventoryTrayLowered = false;
   bool _didCheckTaigiAsrStatus = false;
+  // CR-0088：對話結束後短暫顯示情緒狀態。記住已處理過的最新一則對話，避免重複觸發。
+  ConversationController? _conversationForTransient;
+  String? _lastTransientTurnKey;
 
   @override
   void dispose() {
+    _conversationForTransient?.removeListener(_maybeFireTransientState);
     _messageController.dispose();
     super.dispose();
+  }
+
+  /// 對話新增一則（含情緒）時，讓寵物短暫顯示對應情緒狀態（happy / caring / sad…）。
+  /// 首頁狀態選擇器會在非收音 / 非播放時顯示它，到期自動退回 rest / care state。
+  void _maybeFireTransientState() {
+    if (!mounted) return;
+    final history = _conversationForTransient?.history ?? const [];
+    if (history.isEmpty) return;
+    final latest = history.first; // 最新在前
+    final key = '${latest.timestamp.toIso8601String()}|${latest.emotionTag}';
+    if (key == _lastTransientTurnKey) return;
+    _lastTransientTurnKey = key;
+    final mode = PetStateSelector.transientModeForEmotion(latest.emotionTag);
+    if (mode == null) return;
+    context.read<PetController>().showTransientState(mode);
   }
 
   @override
@@ -62,6 +82,9 @@ class _HomeScreenState extends State<HomeScreen> {
     super.didChangeDependencies();
     if (_didWelcome) return;
     _didWelcome = true;
+    // CR-0088：監聽對話，新一則情緒對話結束後讓寵物短暫顯示對應情緒狀態。
+    _conversationForTransient = context.read<ConversationController>();
+    _conversationForTransient!.addListener(_maybeFireTransientState);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final petController = context.read<PetController>();
       final conversationController = context.read<ConversationController>();
@@ -110,6 +133,21 @@ class _HomeScreenState extends State<HomeScreen> {
       _didCheckTaigiAsrStatus = false;
     }
     final isDead = petStatsController.lifeState == PetLifeState.dead;
+    // CR-0088：集中決定要顯示哪個寵物狀態圖（避免長時間卡在 talk / listening，
+    // 讓 happy / sad / caring / hungry / rest 等狀態都有機會出現）。純函式，
+    // 只消費既有訊號，不改 Realtime 主流程。
+    final displayPetMode = PetStateSelector.select(
+      isMicCapturing:
+          voiceAgentController.state == VoiceAgentState.listening ||
+              voiceAgentController.state == VoiceAgentState.transcribing,
+      isPetSpeaking: voiceAgentController.state == VoiceAgentState.speaking ||
+          petController.mode == PetMode.talking,
+      transientMode: petController.transientMode,
+      satiety: petStatsController.fullness,
+      mood: petStatsController.moodValue,
+      intimacy: petStatsController.intimacy,
+      hour: DateTime.now().hour,
+    );
     final showVoiceAura = switch (voiceAgentController.state) {
       VoiceAgentState.connecting ||
       VoiceAgentState.ready ||
@@ -222,7 +260,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   isDead: isDead,
                                   isPetDragHovering: _isPetDragHovering,
                                   showVoiceAura: showVoiceAura,
-                                  petMode: petController.mode,
+                                  petMode: displayPetMode,
                                   skin: petController.currentSkin,
                                   onChangeSkin: () => _openSkinPicker(context),
                                   onPetTap: () {

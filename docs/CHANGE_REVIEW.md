@@ -3854,3 +3854,33 @@ docs-only 紀錄整理：補齊漏登 CR、消除 CR-0053 / CR-0075 重號歧義
 
 ### 裁決
 擴充既有通知服務、純決策可測、不碰受保護主流程與後端契約、誠實處理缺資料、測試齊備且全綠；併入主線。**下一個可用 CR 編號：CR-0088。**
+
+---
+
+## CR-0088 — Mochi Pet Asset Integration and Pet State Trigger Expansion
+
+### 模式
+小批次 Flutter 端：(A) 新寵物 mochi 接入（同 CR-0082 ferret 模式）；(B) 寵物狀態顯示改由純函式選擇器決定。**未觸及 🔒 Realtime 主流程 / 後端 / DB**；首頁狀態選擇器為「消費既有訊號」的純函式，不改控制器內部與 Realtime。詳見 `docs/PET_ASSET_STATE_EXPANSION_CR0088.md`、規格 `tasks/CR-0088-mochi-pet-state-trigger-expansion.md`。
+
+### 動機
+(A) 新增「麻吉」貓寵物。(B) 先前首頁只讀 `petController.mode` 單一欄位，情緒狀態壽命極短、satiety/mood 等數值從未進顯示路徑 → 幾乎只在 talk/listening 間切換，其他 states 圖少有機會出現。
+
+### 變更
+- **素材**：18 張 `mochi_*.png` 去背為透明 1024² RGBA、對齊 dog 畫布與腳底基準線（原圖 738×1314 等白底 RGB）。ferret 覆查確認 CR-0082 去背仍乾淨，未更動。未建立 `assets/pets/mochi/`。
+- **registry**：`PetSkin` 加 `mochi`（麻吉 / 120 點），`AssetPaths` 註冊 talk6/rest3/listening1/states8；換皮選單由 `PetSkin.values` 自動帶入（排 ferret 之後）。Demo 全寵物免費沿用 CR-0084。
+- **狀態選擇器**：新增 `lib/utils/pet_state_selector.dart`（純函式）：listening(收音) > talking(播放) > transient(短暫情緒) > care state(satiety/mood/intimacy/深夜) > rest。`PetController` 新增 `showTransientState` 短暫情緒持有（擴充既有 idle 機制，到期自清）。`home_screen` 改以選擇器結果顯示寵物圖，並監聽對話在情緒對話結束後觸發 transient。
+- **誠實缺資料**：thirsty 無 hydration 來源 → 不硬觸發；sleepy 由真實時鐘 / `tired` 觸發；缺數值不硬觸發。
+
+### 測試
+- 新增 `test/models/mochi_skin_test.dart`、`test/utils/pet_state_selector_test.dart`、`test/controllers/pet_controller_transient_test.dart`。
+- 全寵物 8 狀態可解析、mochi 18 圖為 1024² RGBA、選擇器優先序與 mapping、transient 自清；既有寵物 / picker / avatar 測試全綠。
+- `flutter analyze` No issues；`flutter test` **665 passed / 0 failed**。
+
+### 限制遵守
+未讀 `.env`；未改 Telegram / Care Alert 後端 / 管理端分析頁 / 推播通知（CR-0087）/ Realtime 主流程 / 字幕同步（留 CR-0089）；未動既有寵物素材與邏輯；未建立 mochi 子資料夾、正式 UI 不讀 `pets_raw/`。
+
+### 已知限制
+mochi rest_03 為趴睡姿（源圖）；thirsty 缺觸發來源、sleepy 僅時鐘 / tired；連續通話中 listening 穩定顯示；字幕對齊留 CR-0089。詳見 `docs/PET_ASSET_STATE_EXPANSION_CR0088.md` §11。
+
+### 裁決
+新寵物接入與既有模式一致、狀態選擇器為消費式純函式不碰受保護主流程、誠實處理缺資料、測試齊備且全綠；併入主線。**下一個可用 CR 編號：CR-0089。**
