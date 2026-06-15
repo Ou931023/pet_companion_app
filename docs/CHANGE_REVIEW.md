@@ -3783,3 +3783,39 @@ docs-only 展示腳本與檢查清單，與現行 production 行為一致（URL 
 
 ### 裁決
 docs-only 紀錄整理：補齊漏登 CR、消除 CR-0053 / CR-0075 重號歧義、宣告下一可用編號 CR-0086。與現行主線實況一致（逐筆對照 commit）、未洩 secret、無受保護模組變更；併入主線。
+
+---
+
+## CR-0086 — Caregiver Analytics Dashboard（長者狀態分析）
+
+### 模式
+小批次新增「長者狀態分析」後台頁 + 一條 caregiver-capable 分析 API。觸及 🔒 `server.js`（新增路由，不改既有路由形狀）。經本檔登錄。沿用既有授權模型（resolveAdminAuthContext + authorizationService），不改 Telegram / Realtime 語音主流程 / 長者端 Flutter UI / DB schema / 既有 API 形狀。詳見 `docs/CAREGIVER_ANALYTICS_DASHBOARD_CR0086.md`、規格 `tasks/CR-0086-caregiver-analytics-dashboard.md`。
+
+### 動機
+後台偏「事件列表」，缺「長期觀察」。新增分析頁讓照護者用近期趨勢（警示統計、任務完成、情緒、互動）掌握長者是否變差。
+
+### 變更
+- **後端**
+  - 新增 `services/admin/caregiverAnalyticsService.js`：聚合單一長者近期狀態（純函式、資料可注入、可單元測試）。Care Alert / 任務為真實資料；情緒 / 遊戲沿用 `adminAnalysisService` 的 `dataSource`（measured / reference / insufficient）誠實標註；寵物無後端來源回空狀態。
+  - `server.js`（🔒）新增 `GET /api/caregiver/analytics?elderId=&rangeDays=`，掛 `resolveAdminAuthContext`：super_admin 任一住民；caregiver 經 `assertCanAccessResident`，跨住民 403。缺 elderId → 400；rangeDays 預設 7、夾 1..90。回 `{ ok:true, summary, emotionTrend, careAlertStats, taskStats, gameMetrics, petStatus, ... }`。不改既有路由形狀。
+- **前端（caregiver_web）**
+  - `index.html`：導覽列新增「長者狀態分析」分頁 + `view-analytics` 區塊（非醫療 + 資料來源橫幅、長者選擇器、區間選擇、各統計區塊容器）。
+  - `app.js`：新增 `elAN` 快取、`loadAnalyticsElders`（選擇器沿用 `/api/admin/elders` + `authHeaders`，依授權住民過濾）、`loadResidentAnalytics`、`renderAnalytics`；`showView` 納入 analytics + 懶載入；`currentViewName` 認得 analytics；init 綁定分頁 / 選擇 / 區間 / 重新整理。載入 / 空 / 401 / 403 / 一般錯誤皆白話，無 raw error。
+  - `styles.css`：新增分析頁控制列 / 內容區樣式（其餘卡片 / 統計 / bar 沿用既有）。
+
+### 資料真實性（誠實原則）
+真實：`care_alerts`、`daily_care_tasks`(+submissions)。簽到狀態以任務提交推估（無獨立簽到表，已標註 proxy）。情緒 / 遊戲對真實長者目前回 `insufficient`（資料表存在但無真實寫入流程）；示範種子長者顯示 `reference` 標籤資料。寵物狀態後端無來源 → 空狀態。**不以假資料偽裝正式資料**。
+
+### 測試
+- 新增後端 `services/admin/caregiverAnalyticsService.test.js`（單元）+ `caregiverAnalyticsEndpoint.test.js`（真 HTTP：401 / 400 / caregiver 授權 200 / caregiver 跨住民 403 / super_admin 200 / 空狀態 / rangeDays 非法回 7），並登記於 `package.json` test / check。
+- 新增前端 `caregiver_web/analytics_dashboard.test.js`（靜態檢查：分頁 / 橫幅 / API / caregiver-capable / 懶載入 / 空狀態白話 / 無敏感欄位）。
+- 全綠：後端 `npm test` **592 passed**、`npm run check` exit 0；前端 `node --test caregiver_web/*.test.js` **108 passed**（既有 101 + 新 7）。
+
+### 限制遵守
+未讀 `.env`；未改 Telegram / Realtime 語音主流程 / 長者端 Flutter UI / DB schema / 既有 API 形狀；caregiver 不會看到未授權住民資料（沿用既有授權模型，fail-closed）；前端無 raw error / stack trace / 工程字。
+
+### 已知限制
+簽到為任務提交 proxy；情緒 / 遊戲對真實長者多為「資料不足」（無真實寫入流程）；寵物狀態後台未串接。詳見 `docs/CAREGIVER_ANALYTICS_DASHBOARD_CR0086.md` §7。
+
+### 裁決
+新增路由與既有授權模型一致、不改既有契約形狀、誠實標註資料來源、測試齊備且全綠、未碰受保護主流程；併入主線。下一個可用 CR 編號：**CR-0087**。

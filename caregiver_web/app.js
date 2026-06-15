@@ -595,6 +595,19 @@
   var healthLoaded = false;
   var activeElderId = null;
 
+  // CR-0086 長者狀態分析 view 的元素參照與狀態。
+  var elAN = {
+    tab: document.getElementById("tab-analytics"),
+    view: document.getElementById("view-analytics"),
+    elderSelect: document.getElementById("analytics-elder"),
+    rangeSelect: document.getElementById("analytics-range"),
+    refresh: document.getElementById("analytics-refresh"),
+    status: document.getElementById("analytics-status"),
+    body: document.getElementById("analytics-body"),
+  };
+  var analyticsLoaded = false;
+  var analyticsElderId = null;
+
   // CR-0025 日常任務追蹤 view 的元素參照。
   var elT = {
     tabTasks: document.getElementById("tab-tasks"),
@@ -795,6 +808,7 @@
   function showView(name) {
     var views = {
       alerts: { view: elH.viewAlerts, tab: elH.tabAlerts },
+      analytics: { view: elAN.view, tab: elAN.tab },
       health: { view: elH.viewHealth, tab: elH.tabHealth },
       tasks: { view: elT.viewTasks, tab: elT.tabTasks },
       users: { view: elU.viewUsers, tab: elU.tabUsers },
@@ -812,6 +826,10 @@
       }
       if (entry.tab) entry.tab.classList.toggle("is-active", active);
     });
+    if (name === "analytics" && !analyticsLoaded) {
+      analyticsLoaded = true;
+      loadAnalyticsElders();
+    }
     if (name === "health" && !healthLoaded) {
       healthLoaded = true;
       loadHealthOverview();
@@ -1049,6 +1067,7 @@
 
   // 目前顯示中的分頁名稱（含 super_admin-only 分頁，供 applyAuthModeUi 判斷）。
   function currentViewName() {
+    if (elAN.view && !elAN.view.classList.contains("hidden")) return "analytics";
     if (elH.viewHealth && !elH.viewHealth.classList.contains("hidden")) return "health";
     if (elT.viewTasks && !elT.viewTasks.classList.contains("hidden")) return "tasks";
     if (elU.viewUsers && !elU.viewUsers.classList.contains("hidden")) return "users";
@@ -1613,6 +1632,280 @@
 
   function isInsufficient(dataSource, series) {
     return dataSource === "insufficient" || !series || series.length === 0;
+  }
+
+  // ========== 長者狀態分析 Dashboard（CR-0086）==========
+  // 長者選擇器沿用 GET /api/admin/elders（caregiver-capable，後端依授權住民過濾）；
+  // 分析資料用 GET /api/caregiver/analytics（同授權模型）。誠實呈現空狀態，不捏造。
+
+  function analyticsUrl(elderId, rangeDays) {
+    return (
+      getApiBase() +
+      "/caregiver/analytics?elderId=" +
+      encodeURIComponent(elderId) +
+      "&rangeDays=" +
+      encodeURIComponent(rangeDays)
+    );
+  }
+
+  // 載入長者選擇器（授權住民）。
+  function loadAnalyticsElders() {
+    if (
+      !ensureCanFetch(function (msg) {
+        elAN.status.textContent = msg;
+        elAN.elderSelect.innerHTML = "";
+      })
+    ) {
+      return;
+    }
+    elAN.status.textContent = "載入中…";
+    fetch(adminUrl("/elders"), { headers: authHeaders() })
+      .then(function (r) {
+        if (r.status === 401) {
+          handleSessionExpired();
+          throw new Error("session_expired");
+        }
+        if (r.status === 403) throw new Error("forbidden");
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (rows) {
+        if (!Array.isArray(rows) || rows.length === 0) {
+          elAN.elderSelect.innerHTML = "";
+          elAN.status.textContent = isCaregiverMode()
+            ? EMPTY_CAREGIVER_MSG
+            : "目前沒有長者資料。";
+          elAN.body.classList.add("hidden");
+          return;
+        }
+        elAN.elderSelect.innerHTML =
+          '<option value="">請選擇長者</option>' +
+          rows
+            .map(function (e) {
+              return (
+                '<option value="' +
+                escapeHtml(e.elderId) +
+                '">' +
+                escapeHtml(e.displayName || e.elderId) +
+                "</option>"
+              );
+            })
+            .join("");
+        // 只有一位授權長者時自動選取並載入。
+        if (rows.length === 1) {
+          elAN.elderSelect.value = rows[0].elderId;
+          analyticsElderId = rows[0].elderId;
+          loadResidentAnalytics();
+        } else {
+          elAN.status.textContent = "請從上方選擇一位長者，查看近期狀態分析。";
+        }
+      })
+      .catch(function (err) {
+        elAN.elderSelect.innerHTML = "";
+        elAN.body.classList.add("hidden");
+        if (err && err.message === "session_expired") {
+          elAN.status.textContent = SESSION_EXPIRED_MSG;
+        } else if (err && err.message === "forbidden") {
+          elAN.status.textContent = FORBIDDEN_MSG;
+        } else {
+          elAN.status.textContent =
+            "暫時連不上後端，請確認服務已啟動後再重新整理。";
+        }
+      });
+  }
+
+  // 載入並渲染選定長者的分析資料。
+  function loadResidentAnalytics() {
+    var elderId = analyticsElderId;
+    if (!elderId) {
+      elAN.body.classList.add("hidden");
+      elAN.status.textContent = "請從上方選擇一位長者，查看近期狀態分析。";
+      return;
+    }
+    if (sessionInvalid || !hasActiveToken()) {
+      elAN.status.textContent = sessionInvalid ? SESSION_EXPIRED_MSG : NEED_LOGIN_MSG;
+      return;
+    }
+    var rangeDays = elAN.rangeSelect ? elAN.rangeSelect.value : 7;
+    elAN.body.classList.add("hidden");
+    elAN.status.textContent = "載入中…";
+    fetch(analyticsUrl(elderId, rangeDays), { headers: authHeaders() })
+      .then(function (r) {
+        if (r.status === 401) {
+          handleSessionExpired();
+          throw new Error("session_expired");
+        }
+        if (r.status === 403) throw new Error("forbidden");
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        elAN.status.textContent = "";
+        renderAnalytics(data || {});
+        elAN.body.classList.remove("hidden");
+      })
+      .catch(function (err) {
+        elAN.body.classList.add("hidden");
+        if (err && err.message === "session_expired") {
+          elAN.status.textContent = SESSION_EXPIRED_MSG;
+        } else if (err && err.message === "forbidden") {
+          elAN.status.textContent = FORBIDDEN_MSG;
+        } else {
+          elAN.status.textContent =
+            "暫時讀不到這位長者的狀態分析，請稍後再試。";
+        }
+      });
+  }
+
+  function pct(ratio) {
+    if (ratio == null) return "—";
+    return Math.round(Number(ratio) * 100) + "%";
+  }
+
+  function statTile(value, label, cls) {
+    return (
+      '<div class="stat-card' +
+      (cls ? " " + cls : "") +
+      '"><div class="stat-text"><div class="stat-value">' +
+      escapeHtml(value == null ? "—" : String(value)) +
+      '</div><div class="stat-label">' +
+      escapeHtml(label) +
+      "</div></div></div>"
+    );
+  }
+
+  function renderAnalytics(data) {
+    var s = data.summary || {};
+    var ca = data.careAlertStats || {};
+    var ts = data.taskStats || {};
+    var game = data.gameMetrics || {};
+    var pet = data.petStatus || {};
+    var emotion = Array.isArray(data.emotionTrend) ? data.emotionTrend : [];
+
+    var html = "";
+
+    // 1) 今日總覽
+    html += '<section class="panel"><h3 class="analysis-title">今日總覽</h3>';
+    html += '<div class="stats stat-grid">';
+    html += statTile(s.todayAlertCount, "今日警示數", "stat-high");
+    html += statTile(s.rangeAlertCount, "區間警示數");
+    html +=
+      statTile(
+        s.taskCompletionRate == null ? "—" : pct(s.taskCompletionRate),
+        "任務完成率",
+      );
+    html += statTile(s.latestEmotion || "—", "最近情緒");
+    html +=
+      '<div class="stat-card"><div class="stat-text"><div class="stat-value">' +
+      (s.latestRiskLevel ? riskBadge(s.latestRiskLevel) : "—") +
+      '</div><div class="stat-label">最近風險等級</div></div></div>';
+    html += statTile(formatTime(s.lastInteractionAt), "最近互動時間");
+    html += "</div></section>";
+
+    // 2) Care Alert 統計
+    html += '<section class="panel"><h3 class="analysis-title">Care Alert 統計</h3>';
+    if (!ca.total) {
+      html += '<p class="empty">近期沒有警示紀錄。</p>';
+    } else {
+      html += '<div class="stats stat-grid">';
+      html += statTile(ca.low, "一般 low");
+      html += statTile(ca.medium, "持續觀察 medium");
+      html += statTile(ca.high, "需通知 high", "stat-high");
+      html += statTile(ca.urgent, "緊急 urgent", "stat-urgent");
+      html += "</div>";
+      html += '<div class="metric-grid">';
+      html += metricCard("總警示數", String(ca.total), null);
+      html += metricCard("高風險比例", pct(ca.highRiskRatio), "(high + urgent) / 總數");
+      html += metricCard("最近一次警示", formatTime(ca.lastAlertAt), null);
+      html += "</div>";
+    }
+    html += "</section>";
+
+    // 3) 任務 / 簽到
+    html += '<section class="panel"><h3 class="analysis-title">任務與簽到狀況</h3>';
+    if (!ts.total) {
+      html += '<p class="empty">這位長者目前沒有日常任務紀錄。</p>';
+    } else {
+      var byType = ts.byType || {};
+      var typeLabels = { medication: "吃藥", hydration: "喝水", exercise: "運動" };
+      ["medication", "hydration", "exercise"].forEach(function (t) {
+        var b = byType[t] || { completed: 0, total: 0 };
+        var ratio = b.total ? b.completed / b.total : 0;
+        html += barRow(
+          typeLabels[t] + " " + b.completed + "/" + b.total,
+          ratio,
+        );
+      });
+      html += '<div class="metric-grid">';
+      html += metricCard("整體完成率", pct(ts.completionRate), ts.completed + "/" + ts.total);
+      html += metricCard("未完成任務", String(ts.pending), null);
+      html += metricCard(
+        "簽到狀態",
+        ts.checkInStatus === "completed"
+          ? "今日已簽到"
+          : ts.checkInStatus === "pending"
+            ? "今日尚未簽到"
+            : "—",
+        ts.lastCheckInAt ? "最近：" + formatTime(ts.lastCheckInAt) : null,
+      );
+      html += "</div>";
+    }
+    html += "</section>";
+
+    // 4) 情緒趨勢（誠實標註；無真實資料 → 資料不足）
+    html += '<section class="panel"><h3 class="analysis-title">情緒趨勢</h3>';
+    html += dataSourceBadge(data.emotionDataSource);
+    if (isInsufficient(data.emotionDataSource, emotion)) {
+      html += insufficientBlock("情緒辨識");
+    } else {
+      html += '<div class="emotion-trend">';
+      html += emotion
+        .map(function (e) {
+          return (
+            '<div class="bar-row"><span class="bar-label">' +
+            escapeHtml(formatTime(e.date)) +
+            "・" +
+            escapeHtml(e.emotion || "—") +
+            "</span></div>"
+          );
+        })
+        .join("");
+      html += "</div>";
+    }
+    html += "</section>";
+
+    // 5) 遊戲退化指標
+    html += '<section class="panel"><h3 class="analysis-title">遊戲認知退化指標</h3>';
+    html += dataSourceBadge(game.dataSource);
+    if (!game.hasEnoughData) {
+      html +=
+        '<p class="muted data-insufficient">' +
+        escapeHtml(game.message || "目前尚無足夠遊戲紀錄") +
+        "。</p>";
+    } else {
+      html += '<div class="metric-grid">';
+      html += metricCard("近期趨勢", game.trend === "declining" ? "變慢（需關注）" : "穩定", null);
+      html += "</div>";
+    }
+    html += "</section>";
+
+    // 6) 寵物照護狀態（後端尚無來源 → 空狀態）
+    html += '<section class="panel"><h3 class="analysis-title">寵物照護狀態</h3>';
+    if (!pet.available) {
+      html +=
+        '<p class="muted data-insufficient">' +
+        escapeHtml(pet.message || "寵物互動資料目前保存在長者端，後台尚未串接") +
+        "。</p>";
+    } else {
+      html += '<div class="metric-grid">';
+      html += metricCard("心情", pet.mood || "—", null);
+      html += metricCard("飽足度", pet.satiety == null ? "—" : String(pet.satiety), null);
+      html += metricCard("親密度", pet.intimacy == null ? "—" : String(pet.intimacy), null);
+      html += "</div>";
+    }
+    html += "</section>";
+
+    elAN.body.innerHTML = html;
   }
 
   function renderProfile(p) {
@@ -3542,6 +3835,31 @@
       loadHealthOverview();
       loadElderList();
     });
+
+    // CR-0086 長者狀態分析分頁。
+    if (elAN.tab) {
+      elAN.tab.addEventListener("click", function () {
+        showView("analytics");
+      });
+    }
+    if (elAN.elderSelect) {
+      elAN.elderSelect.addEventListener("change", function () {
+        analyticsElderId = elAN.elderSelect.value || null;
+        loadResidentAnalytics();
+      });
+    }
+    if (elAN.rangeSelect) {
+      elAN.rangeSelect.addEventListener("change", function () {
+        if (analyticsElderId) loadResidentAnalytics();
+      });
+    }
+    if (elAN.refresh) {
+      elAN.refresh.addEventListener("click", function () {
+        // 重新整理：重抓授權長者清單；若已選長者則一併刷新其分析。
+        loadAnalyticsElders();
+        if (analyticsElderId) loadResidentAnalytics();
+      });
+    }
 
     // CR-0025 日常任務追蹤分頁。
     if (elT.tabTasks) {

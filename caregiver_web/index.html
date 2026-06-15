@@ -64,6 +64,9 @@
         <button id="tab-alerts" class="view-tab is-active" type="button" role="tab">
           照護提醒
         </button>
+        <button id="tab-analytics" class="view-tab" type="button" role="tab">
+          長者狀態分析
+        </button>
         <button id="tab-health" class="view-tab" type="button" role="tab">
           健康分析
         </button>
@@ -275,6 +278,35 @@
             </div>
           </div>
         </div>
+      </section>
+
+      <!-- 長者狀態分析 view（CR-0086）：單一長者近期狀態的趨勢彙整。 -->
+      <section id="view-analytics" class="view-analytics hidden" aria-hidden="true">
+        <p class="hint care-disclaimer">
+          長者狀態分析彙整單一長者近期的 Care Alert、任務完成、情緒與互動紀錄，僅供照護關懷參考，並非醫療診斷。
+          有真實紀錄的項目（警示、任務）以實際資料呈現；尚無真實紀錄的項目（情緒趨勢、遊戲、寵物）會顯示「資料不足」，不會以假資料填充。
+        </p>
+        <section class="panel">
+          <div class="analytics-controls">
+            <div class="analytics-control">
+              <label class="field-label" for="analytics-elder">選擇長者</label>
+              <select id="analytics-elder" class="select"></select>
+            </div>
+            <div class="analytics-control">
+              <label class="field-label" for="analytics-range">統計區間</label>
+              <select id="analytics-range" class="select">
+                <option value="7">最近 7 天</option>
+                <option value="14">最近 14 天</option>
+                <option value="30">最近 30 天</option>
+              </select>
+            </div>
+            <button id="analytics-refresh" class="btn" type="button">重新整理</button>
+          </div>
+          <p id="analytics-status" class="status-message">
+            請從上方選擇一位長者，查看近期狀態分析。
+          </p>
+        </section>
+        <div id="analytics-body" class="analytics-body hidden"></div>
       </section>
 
       <!-- 日常任務追蹤 view（CR-0025）：吃藥 / 喝水 / 運動拍照打卡 + AI 影像確認 -->

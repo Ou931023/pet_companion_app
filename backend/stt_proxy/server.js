@@ -106,6 +106,7 @@ const {
   verifyProof: verifyDailyCareTaskProof,
 } = require("./services/dailyCareTask/dailyCareTaskVisionService");
 const adminAnalysis = require("./services/admin/adminAnalysisService");
+const caregiverAnalytics = require("./services/admin/caregiverAnalyticsService");
 const requireAdmin = require("./services/admin/requireAdmin");
 // CR-0040 Batch C：resident-caregiver 授權範圍過濾（純 scope 函式）。
 // CR-0041 D2：caregiver-or-admin 路由改掛 resolveAdminAuthContext（路線 A：Firebase idToken
@@ -1269,6 +1270,41 @@ app.get("/api/admin/elders/:elderId", resolveAdminAuthContext, async (req, res) 
   } catch (error) {
     logError("admin elder analysis failed", { error: error?.message || error });
     return res.status(500).json({ success: false, error: "admin_elder_failed" });
+  }
+});
+
+// CR-0086：長者狀態分析（caregiver-capable）。單一 elderId 的近期狀態彙整。
+// 授權沿用既有模型：super_admin 可查任一長者；caregiver 只能查授權住民（跨住民 → 403）。
+// 資料誠實：Care Alert / 任務為真實資料；情緒 / 遊戲沿用 dataSource 標註，無真實資料回
+// insufficient；寵物狀態後端無來源回空狀態。不捏造。
+app.get("/api/caregiver/analytics", resolveAdminAuthContext, async (req, res) => {
+  try {
+    const authContext = req.authContext;
+    const elderId =
+      typeof req.query.elderId === "string" && req.query.elderId.trim()
+        ? req.query.elderId.trim()
+        : null;
+    if (!elderId) {
+      return res.status(400).json({ ok: false, error: "elder_id_required" });
+    }
+
+    // caregiver 跨住民 → 403；super_admin 不限。
+    if (!authz.isSuperAdmin(authContext)) {
+      const canAccess = await authz.assertCanAccessResident(authContext, elderId);
+      if (!canAccess) {
+        return res.status(403).json({ ok: false, error: "forbidden" });
+      }
+    }
+
+    const analytics = await caregiverAnalytics.buildResidentAnalytics(elderId, {
+      rangeDays: req.query.rangeDays,
+    });
+    return res.json({ ok: true, ...analytics });
+  } catch (error) {
+    logError("caregiver analytics failed", { error: error?.message || error });
+    return res
+      .status(500)
+      .json({ ok: false, error: "caregiver_analytics_failed" });
   }
 });
 

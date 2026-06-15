@@ -1652,3 +1652,28 @@ code {
 .auth-hint {
   margin: 0;
 }
+
+/* CR-0086 長者狀態分析：選擇器列與內容區。其餘卡片 / 統計 / bar 沿用既有樣式。 */
+.analytics-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+}
+.analytics-control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 200px;
+}
+.analytics-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+}
+.emotion-trend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
