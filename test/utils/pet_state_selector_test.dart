@@ -4,7 +4,7 @@ import 'package:pet_companion_app/utils/pet_state_selector.dart';
 
 /// CR-0088：寵物顯示狀態選擇器純邏輯測試（涵蓋 Part B 狀態觸發要求）。
 void main() {
-  // 健康預設（不觸發 care state）：滿足度/心情/親密度皆高、白天。
+  // 健康預設（不觸發 care state）：滿足度/心情/親密度皆高。
   PetMode sel({
     bool mic = false,
     bool speaking = false,
@@ -12,7 +12,6 @@ void main() {
     int? satiety = 70,
     int? mood = 70,
     int? intimacy = 70,
-    int? hour = 14,
   }) {
     return PetStateSelector.select(
       isMicCapturing: mic,
@@ -21,7 +20,6 @@ void main() {
       satiety: satiety,
       mood: mood,
       intimacy: intimacy,
-      hour: hour,
     );
   }
 
@@ -52,22 +50,29 @@ void main() {
     expect(sel(satiety: 70, mood: 70, intimacy: 20), PetMode.caring);
   });
 
-  test('深夜（無更高優先）→ sleepy', () {
-    expect(sel(hour: 23), PetMode.sleepy);
-    expect(sel(hour: 3), PetMode.sleepy);
+  test('CR-0094：閒置不再因時段變 sleepy（狀態正常 → rest）', () {
+    // 不論幾點，只要沒在收音/播放/短暫情緒、且數值正常 → 一律 rest（不再深夜 sleepy）。
+    expect(sel(), PetMode.rest);
+  });
+
+  test('CR-0094：sleepy 只由情緒 tired 的短暫情緒觸發（非時段）', () {
+    expect(PetStateSelector.transientModeForEmotion('tired'), PetMode.sleepy);
+    // care state 不會自己產生 sleepy。
+    expect(PetStateSelector.careStateFor(satiety: 70, mood: 70, intimacy: 70),
+        isNull);
   });
 
   test('care 內優先序：飽足度低蓋過心情低 / 親密度低', () {
     expect(sel(satiety: 10, mood: 10, intimacy: 10), PetMode.hungry);
   });
 
-  test('無互動、狀態正常、白天 → rest（待機輪播）', () {
+  test('無互動、狀態正常 → rest（待機輪播）', () {
     expect(sel(), PetMode.rest);
   });
 
   test('資料缺漏（null）不硬觸發 care，回 rest', () {
     expect(
-      sel(satiety: null, mood: null, intimacy: null, hour: null),
+      sel(satiety: null, mood: null, intimacy: null),
       PetMode.rest,
     );
   });

@@ -4063,3 +4063,21 @@ CR-0090 已改後端語音 persona，但 `realtime_voice_service.dart` 內供 `s
 
 ### 裁決
 純前端動畫節奏 + rest ping-pong（通用 1~4 張）、不破壞其他狀態、不碰素材與受保護模組、測試齊備且全綠；併入主線。**下一個可用 CR 編號：CR-0094。**
+
+---
+
+## CR-0094 — Remove Time-Based Sleepy Idle State
+
+### 模式
+**純前端 Flutter** 小修：移除 CR-0088「深夜(22:00–06:00) → sleepy」時段規則（實機晚上測試時寵物閒置一直 sleepy）。只動 `lib/utils/pet_state_selector.dart`（移除 hour 參數 / sleepy 分支）+ `lib/screens/home_screen.dart`（移除傳 hour）+ 測試。不碰素材 / Realtime / 字幕 / persona / 推播 / 後台 / Care Alert / App icon。詳見 `docs/PET_IDLE_SLEEPY_REMOVAL_CR0094.md`。
+
+### 變更
+- `PetStateSelector.careStateFor` / `select`：移除 `hour` 參數與 `深夜 → sleepy` 分支。閒置一律回 rest；sleepy 改只由情緒 `tired` 的短暫情緒（`transientModeForEmotion`）觸發。
+- `home_screen.dart`：移除 `hour: DateTime.now().hour`。
+- 優先序不變：listening > talking > transient > care(hungry/sad/caring) > rest。
+
+### 測試
+`pet_state_selector_test.dart` 更新（移除深夜 sleepy 測試、改測閒置回 rest + sleepy 只由 tired 觸發）；`flutter analyze` No issues；`flutter test` **693 passed / 0 failed**。
+
+### 裁決
+純前端調整、移除時段 sleepy、sleepy 改由情緒觸發、不碰受保護模組與素材、測試齊備且全綠；併入主線。**下一個可用 CR 編號：CR-0095。**

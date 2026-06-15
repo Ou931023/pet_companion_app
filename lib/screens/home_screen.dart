@@ -146,7 +146,6 @@ class _HomeScreenState extends State<HomeScreen> {
       satiety: petStatsController.fullness,
       mood: petStatsController.moodValue,
       intimacy: petStatsController.intimacy,
-      hour: DateTime.now().hour,
     );
     final showVoiceAura = switch (voiceAgentController.state) {
       VoiceAgentState.connecting ||

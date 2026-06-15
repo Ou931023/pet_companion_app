@@ -10,8 +10,9 @@ import '../models/pet_status.dart';
 /// 1. listening：麥克風正在收音（使用者說話中）。
 /// 2. talking：寵物正在播放語音。
 /// 3. transient：互動剛結束的短暫情緒（happy / caring / sad…，由 PetController 持有計時）。
-/// 4. care state：由寵物數值推得（飽足度低 → hungry、心情低 → sad、親密度低 → caring、
-///    深夜 → sleepy）。資料缺漏不硬觸發。
+/// 4. care state：由寵物數值推得（飽足度低 → hungry、心情低 → sad、親密度低 → caring）。
+///    資料缺漏不硬觸發。CR-0094：移除「深夜 → sleepy」時段規則（避免整晚閒置一直 sleepy）；
+///    sleepy 只在對話情緒分析為 tired 時，由短暫情緒（transient）短暫出現。
 /// 5. rest：以上皆非時的閒置待機（rest frames 輪播）。
 class PetStateSelector {
   const PetStateSelector._();
@@ -29,7 +30,6 @@ class PetStateSelector {
   /// - [isPetSpeaking]：寵物語音正在播放（voiceState speaking 或既有 talking 模式）。
   /// - [transientMode]：短暫情緒（[PetController.transientMode]），無則 null。
   /// - [satiety]/[mood]/[intimacy]：寵物數值 0..100，未知傳 null（不硬觸發）。
-  /// - [hour]：當地小時（0..23），用於深夜 sleepy；未知傳 null。
   static PetMode select({
     required bool isMicCapturing,
     required bool isPetSpeaking,
@@ -37,7 +37,6 @@ class PetStateSelector {
     int? satiety,
     int? mood,
     int? intimacy,
-    int? hour,
   }) {
     if (isMicCapturing) return PetMode.listening;
     if (isPetSpeaking) return PetMode.talking;
@@ -46,7 +45,6 @@ class PetStateSelector {
       satiety: satiety,
       mood: mood,
       intimacy: intimacy,
-      hour: hour,
     );
     if (care != null) return care;
     return PetMode.rest;
@@ -54,18 +52,17 @@ class PetStateSelector {
 
   /// 由寵物數值推得「照護狀態」。皆無命中回 null（→ 交回 rest）。
   ///
-  /// 只接目前真實存在的數值（satiety / mood / intimacy）與時鐘（深夜）；
-  /// 沒有 hydration / energy 資料 → 不硬觸發 thirsty / 由感測推得的 sleepy。
+  /// 只接目前真實存在的數值（satiety / mood / intimacy）；沒有 hydration 資料 → 不硬觸發
+  /// thirsty。CR-0094：移除「深夜 → sleepy」時段規則，避免整晚閒置都顯示 sleepy；
+  /// sleepy 改只由情緒分析 tired 的短暫情緒觸發。
   static PetMode? careStateFor({
     int? satiety,
     int? mood,
     int? intimacy,
-    int? hour,
   }) {
     if (satiety != null && satiety < satietyThreshold) return PetMode.hungry;
     if (mood != null && mood < moodThreshold) return PetMode.sad;
     if (intimacy != null && intimacy < intimacyThreshold) return PetMode.caring;
-    if (hour != null && (hour >= 22 || hour < 6)) return PetMode.sleepy;
     return null;
   }
 
