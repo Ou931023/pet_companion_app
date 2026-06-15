@@ -6,6 +6,24 @@ import '../models/pet_skin.dart';
 import '../models/pet_status.dart';
 import '../utils/asset_paths.dart';
 
+/// CR-0093：rest 待機動畫的 ping-pong（來回）影格索引，通用支援 1～4 張 frame。
+///
+/// 不再讓最後一張直接跳回第一張，改成來回播放，看起來更柔和：
+/// - N=1 → 0,0,0…
+/// - N=2 → 0,1,0,1…
+/// - N=3 → 0,1,2,1,0,1,2,1…（rest_01→02→03→02→01→…）
+/// - N=4 → 0,1,2,3,2,1,0,1,2,3…
+int pingPongFrameIndex(int counter, int frameCount) {
+  if (frameCount <= 1) return 0;
+  final period = 2 * (frameCount - 1); // 一個來回的長度
+  final pos = counter % period;
+  return pos < frameCount ? pos : period - pos;
+}
+
+/// CR-0093：動畫節奏放慢，讓待機與說話看起來更柔和（原本固定 220ms）。
+const Duration kTalkFrameDuration = Duration(milliseconds: 320);
+const Duration kRestFrameDuration = Duration(milliseconds: 480);
+
 class PetAvatar extends StatefulWidget {
   const PetAvatar({
     super.key,
@@ -44,12 +62,17 @@ class _PetAvatarState extends State<PetAvatar> {
 
   void _setupAnimationTimer() {
     _timer?.cancel();
-    if (widget.mode == PetMode.talking || widget.mode == PetMode.rest) {
-      _timer = Timer.periodic(const Duration(milliseconds: 220), (_) {
-        if (!mounted) return;
-        setState(() => _frameIndex++);
-      });
-    }
+    // CR-0093：talk / rest 動畫放慢；其餘狀態為單張靜態圖、不需計時器。
+    final Duration? frameDuration = switch (widget.mode) {
+      PetMode.talking => kTalkFrameDuration,
+      PetMode.rest => kRestFrameDuration,
+      _ => null,
+    };
+    if (frameDuration == null) return;
+    _timer = Timer.periodic(frameDuration, (_) {
+      if (!mounted) return;
+      setState(() => _frameIndex++);
+    });
   }
 
   String _imagePath() {
@@ -60,7 +83,8 @@ class _PetAvatarState extends State<PetAvatar> {
     }
     if (widget.mode == PetMode.rest) {
       final frames = AssetPaths.restFrames(widget.skin);
-      return frames[_frameIndex % frames.length];
+      // CR-0093：ping-pong 來回播放（不讓最後一張直接跳回第一張）。
+      return frames[pingPongFrameIndex(_frameIndex, frames.length)];
     }
     if (widget.mode == PetMode.listening) {
       return AssetPaths.listening(widget.skin);

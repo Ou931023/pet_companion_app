@@ -4037,3 +4037,29 @@ CR-0090 已改後端語音 persona，但 `realtime_voice_service.dart` 內供 `s
 
 ### 裁決
 🔒 改動經 architecture-agent 核准、僅同步 persona 文字、payload 形狀與狀態機不變、安全強化、測試齊備且全綠；併入主線。**主線下一個可用 CR 編號仍為：CR-0093（App Icon Replacement）。**
+
+---
+
+## CR-0093 — Pet Animation Pacing and Rest Ping-Pong Loop
+
+> 註：原規劃 CR-0093 為 App Icon Replacement，本輪改先處理動畫節奏（App icon 先不做、延後）。CR-0093 編號用於本動畫 CR。
+
+### 模式
+**純前端 Flutter** 動畫節奏調整，只動 `lib/widgets/pet_avatar.dart`（+ 對應測試）。不改寵物素材檔、Realtime、字幕同步、AI persona、推播、後台、Care Alert、App icon。詳見 `docs/PET_ANIMATION_PACING_CR0093.md`、規格 `tasks/CR-0093-pet-animation-pacing-and-rest-ping-pong-loop.md`。
+
+### 變更
+- 放慢動畫：talk 220ms→320ms（`kTalkFrameDuration`）、rest→480ms（`kRestFrameDuration`）；其餘單張狀態不啟計時器。
+- rest 改 ping-pong：新增純函式 `pingPongFrameIndex(counter, frameCount)`，通用支援 1~4 張（N=3 → 0,1,2,1,0…，尾張不直接跳回首張）；talk 維持線性。
+- 與寵物種類無關（rest frames 來自 `AssetPaths.restFrames`）→ dog/fox/guinea_pig/ferret/mochi 全適用。
+
+### 素材備註
+發現工作區有 stray 未提交改動把 `assets/pets/rest/mochi_rest_03.png` 換成 428×761 WebP（.png 副檔名、非合法 PNG）；因本 CR 不改素材，已 `git checkout` 還原為 CR-0088 已提交的 1024² 透明 PNG。
+
+### 測試
+`test/widgets/pet_avatar_test.dart`：`pingPongFrameIndex`（N=1/2/3/4 序列、尾張不跳首張）、rest widget 動畫不 crash、talk 改用新節奏常數。`flutter analyze` No issues；`flutter test` **692 passed / 0 failed**。
+
+### 限制遵守
+未讀 `.env`；純前端 widget 動畫；未改素材檔（mochi_rest_03 還原為提交狀態）/ Realtime / 字幕 / persona / 推播 / 後台 / Care Alert / Telegram / App icon。
+
+### 裁決
+純前端動畫節奏 + rest ping-pong（通用 1~4 張）、不破壞其他狀態、不碰素材與受保護模組、測試齊備且全綠；併入主線。**下一個可用 CR 編號：CR-0094。**

@@ -35,9 +35,9 @@ void main() {
     await tester.pumpWidget(
       wrap(const PetAvatar(mode: PetMode.talking, skin: PetSkin.guineaPig)),
     );
-    // 推進超過 3 個 frame 週期（220ms * 6）。
+    // 推進超過 3 個 talk frame 週期（CR-0093 放慢後）。
     for (var i = 0; i < 6; i++) {
-      await tester.pump(const Duration(milliseconds: 220));
+      await tester.pump(kTalkFrameDuration);
     }
     expect(tester.takeException(), isNull);
     expect(
@@ -51,5 +51,45 @@ void main() {
       wrap(const PetAvatar(mode: PetMode.listening, skin: PetSkin.fox)),
     );
     expect(_firstAssetName(tester), 'assets/pets/listening/fox_listening.png');
+  });
+
+  testWidgets('CR-0093 rest 動畫 ping-pong 播放、停在 rest frame、不 crash', (tester) async {
+    await tester.pumpWidget(
+      wrap(const PetAvatar(mode: PetMode.rest, skin: PetSkin.dog)),
+    );
+    // 起始為第一張 rest frame。
+    expect(_firstAssetName(tester), 'assets/pets/rest/dog_rest_01.png');
+    // 推進多個 rest frame 週期，全程不 crash、且都還在 rest frames 內。
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(kRestFrameDuration);
+      expect(tester.takeException(), isNull);
+      expect(_firstAssetName(tester), startsWith('assets/pets/rest/dog_rest_'));
+    }
+  });
+
+  group('CR-0093 pingPongFrameIndex（通用 1~4 張，不讓尾張直接跳回首張）', () {
+    List<int> seq(int n, int count) =>
+        [for (var i = 0; i < count; i++) pingPongFrameIndex(i, n)];
+
+    test('N=1 → 一律 0', () {
+      expect(seq(1, 5), [0, 0, 0, 0, 0]);
+    });
+    test('N=2 → 0,1,0,1…', () {
+      expect(seq(2, 5), [0, 1, 0, 1, 0]);
+    });
+    test('N=3 → 0,1,2,1,0,1,2,1（rest_01→02→03→02→01…）', () {
+      expect(seq(3, 8), [0, 1, 2, 1, 0, 1, 2, 1]);
+    });
+    test('N=4 → 0,1,2,3,2,1,0,1…', () {
+      expect(seq(4, 8), [0, 1, 2, 3, 2, 1, 0, 1]);
+    });
+    test('N=3：最後一張(2)之後是 1，不直接跳回 0', () {
+      for (var i = 0; i < 20; i++) {
+        if (pingPongFrameIndex(i, 3) == 2) {
+          expect(pingPongFrameIndex(i + 1, 3), 1,
+              reason: 'rest_03 後應回 rest_02，不跳回 rest_01');
+        }
+      }
+    });
   });
 }
