@@ -10,7 +10,10 @@ delete process.env.OPENAI_API_KEY;
 delete process.env.TELEGRAM_BOT_TOKEN;
 delete process.env.TELEGRAM_CARE_CHAT_ID;
 
-const { buildCompanionChatInstructions } = require("../server");
+const {
+  buildCompanionChatInstructions,
+  buildRealtimeInstructions,
+} = require("../server");
 
 // 模擬 /api/companion/chat 端點對 memoryBlock 的組裝方式（CR-0049 inline 區塊）。
 function buildMemoryBlock(summary) {
@@ -127,13 +130,22 @@ test("CR-0080：即時資訊問題不可冷冰冰拒絕『不能馬上查』，�
   );
 });
 
-test("台語：replyLanguage=taigi 時夾帶台語輸出語言指示", () => {
+test("CR-0090 台語：replyLanguage=taigi 時夾帶自然台語指示（以台語為主、聽得懂優先）", () => {
   const prompt = buildCompanionChatInstructions("小白", "", {
     replyLanguage: "taigi",
   });
+  // CR-0090：不再硬要「整段純台語」，改以自然口語、長者聽得懂優先（允許國台語混用）。
   assert.ok(
-    prompt.includes("你必須整段使用台語（Taiwanese Hokkien）回覆"),
+    prompt.includes("以台語為主"),
     "台語提示時需輸出台語指示（證明 outputLanguageInstruction 已串接）",
+  );
+  assert.ok(
+    prompt.includes("長者聽得懂優先"),
+    "台語自然度：以長者聽得懂為優先",
+  );
+  assert.ok(
+    prompt.includes("不要每句都硬翻成純台語"),
+    "台語自然度：不要每句硬翻成難懂純台語",
   );
 });
 
@@ -144,7 +156,69 @@ test("國語預設：無台語線索時不強制台語", () => {
     "預設需輸出繁體中文指示",
   );
   assert.ok(
-    !prompt.includes("你必須整段使用台語（Taiwanese Hokkien）回覆"),
-    "無台語線索時不應強制台語",
+    !prompt.includes("以台語為主"),
+    "無台語線索時不應出現台語指示",
   );
+});
+
+test("CR-0090 自然陪伴（打字）：抗重複 + 不硬轉任務 + 先陪伴後求助", () => {
+  const prompt = buildCompanionChatInstructions("小白", "", {});
+  assert.ok(prompt.includes("【自然陪伴】"), "typed persona 應含自然陪伴段落");
+  assert.ok(
+    prompt.includes("不要連續用一樣的開頭或同一句安慰"),
+    "需指示避免重複開頭 / 同一句罐頭安慰",
+  );
+  assert.ok(
+    prompt.includes("不要每次都用「聽起來…」開頭"),
+    "需指示避免每次都用『聽起來』開頭",
+  );
+  assert.ok(
+    prompt.includes("就自然接話，不要硬轉成提醒、喝水、吃藥或任務"),
+    "閒聊時不可硬轉成提醒 / 喝水 / 吃藥 / 任務",
+  );
+  assert.ok(
+    prompt.includes("先簡短接住情緒、陪他一下，不急著給解法"),
+    "低落時先陪伴、不急著給解法",
+  );
+});
+
+test("CR-0090 語音 persona：陪伴優先 + 抗重複 + 工具表只在明確需求時套用 + 安全保留", () => {
+  const voice = buildRealtimeInstructions("小白", [], "", "", {});
+  // 陪伴優先 / 不硬轉功能。
+  assert.ok(voice.includes("【陪伴優先 / 自然度】"), "語音 persona 應含陪伴優先段落");
+  assert.ok(
+    voice.includes("普通聊天就自然接話"),
+    "普通聊天就自然接話、不硬轉功能",
+  );
+  assert.ok(
+    voice.includes("不要硬把話題帶去提醒、喝水、吃藥、運動或任務"),
+    "不可硬把話題帶去提醒 / 喝水 / 吃藥 / 任務",
+  );
+  // 抗重複。
+  assert.ok(
+    voice.includes("這類同一句罐頭，換個說法"),
+    "需避免同一句罐頭安慰",
+  );
+  assert.ok(
+    voice.includes("不要每句都用問句收尾"),
+    "不要每句都用問句收尾",
+  );
+  // 明確需求仍可用工具：工具表保留，且有「只在明確要你做某件事時才套用」的閘門。
+  assert.ok(voice.includes("【你能做的事 / App 工具】"), "工具能力表需保留（明確需求仍可用工具）");
+  assert.ok(
+    voice.includes("只在長者「明確要你做某件事」時才套用"),
+    "工具表需有『只在明確需求時套用』的閘門",
+  );
+  // 安全邊界不可弱化。
+  assert.ok(
+    voice.includes("胸痛、呼吸困難、跌倒、嚴重不適、自傷意念"),
+    "高風險安全提醒需保留",
+  );
+});
+
+test("CR-0090 語音 persona：無工程字眼指示（不出現 tool call / JSON / API 等）", () => {
+  const voice = buildRealtimeInstructions("小白", [], "", "", {});
+  for (const term of ["tool call", "riskLevel", "emotionTag", "JSON", "response.create"]) {
+    assert.ok(!voice.includes(term), `persona 不應外漏工程字眼：${term}`);
+  }
 });

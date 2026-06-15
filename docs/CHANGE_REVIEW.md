@@ -3916,3 +3916,34 @@ mochi rest_03 為趴睡姿（源圖）；thirsty 缺觸發來源、sleepy 僅時
 
 ### 裁決
 🔒 改動純加法且兩度經 architecture-agent 核准、收 turn 改以真實語音播完為準、測試齊備且全綠、不碰受保護連線主流程；併入主線。**下一個可用 CR 編號：CR-0090。**
+
+---
+
+## CR-0090 — Companion Conversation Naturalness Polish
+
+### 模式
+小批次 **後端 persona / instruction 字串** 調校，改善對話自然度。**未碰 🔒 `realtime_voice_service.dart`（理論成立，本 CR 不需該檔）**，亦未改 server.js 路由 / response 形狀（API 契約）—— 僅改 persona 常數字串 + 一個測試用純函式匯出，故非 🔒 API 契約變更。不改 persona 安全邊界、不降 Care Alert、不改字幕同步 / 寵物素材 / 推播 / Telegram / 後台 / DB。詳見 `docs/COMPANION_CONVERSATION_NATURALNESS_CR0090.md`、規格 `tasks/CR-0090-companion-conversation-naturalness-polish.md`。
+
+### 動機
+展示時最易感受到的問題：對話太罐頭、重複同句安慰、每次硬轉提醒 / 任務、安慰過度醫療化、台語每句硬翻成難懂純台語。
+
+### 變更（皆 `backend/stt_proxy/server.js` persona 常數）
+- **語音 `REALTIME_INSTRUCTIONS`**：新增「【陪伴優先 / 自然度】」（抗重複、不硬轉功能、先陪伴、不過度醫療化、不每句問句收尾）；工具「意義對照表」前加閘門「**只在長者明確要你做某件事時才套用**」——閒聊不套用、不硬轉功能。工具能力與高風險安全句**原樣保留**。
+- **打字 `COMPANION_CHAT_PERSONA`**：新增「【自然陪伴】」（同段不重複開頭 / 安慰、不每次「聽起來…」開頭、不每次問句結尾、閒聊不硬轉任務、低落先陪伴後求助、一次一個溫和回應）。
+- **台語 `outputLanguageInstruction`**：由「整段純台語、不可用標準中文」改為「自然口語、以台語為主、**長者聽得懂優先**、可國台語混用、不用生僻字」。
+- `module.exports.buildRealtimeInstructions`：測試用純函式匯出。
+
+### 安全
+`safety_guard.js`、Care Alert 摘要、`next_strategy_planner.js` 安全分支、兩個 persona 的高風險安全句**完全未改**；既有安全 / Care Alert 斷言全綠（安全閂未動）。
+
+### 測試
+更新 / 新增 `companionChatPersona.test.js`：台語自然 guardrail（以台語為主 / 聽得懂優先 / 不每句硬翻純台語）、打字自然陪伴 guardrail、語音 persona guardrail（陪伴優先 + 抗重複 + 工具表只在明確需求套用 + 安全保留 + 無工程字眼）。`npm test` **595 passed**、`npm run check` exit 0。未改 Flutter，未跑 flutter test。
+
+### 後續事項（交 realtime-voice-agent）
+🔒 `realtime_voice_service.dart` `_instructionsWithCompanionContext`（L1279-1308）含一份**縮版語音 persona 副本**（mid-session `session.update` 用）+ 自帶台語指引 + 工具念稿包裝，不會反映本 CR persona / 台語措辭。建議 realtime-voice-agent 後續同步（屬 🔒 檔，須經其 owner / architecture-agent）。session 起始 instructions 來自後端 `/api/realtime/call`（已套用本 CR），影響有限。Flutter `companion_reply_strategy_service.dart` fallback 句庫亦列為後續可選。
+
+### 限制遵守
+未讀 `.env`；未碰 🔒 Realtime 檔與 server.js 路由 / response 契約；未弱化安全 / Care Alert；不讓 AI 做醫療診斷。
+
+### 裁決
+後端 persona 字串調校、安全邊界與工具能力原樣保留、抗重複 / 不硬轉任務 / 台語自然由 guardrail 測試把關、測試全綠、不碰受保護模組；併入主線。**下一個可用 CR 編號：CR-0091。**
