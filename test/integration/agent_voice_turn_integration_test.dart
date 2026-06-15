@@ -115,7 +115,13 @@ void main() {
 
     harness.realtime.handleDataChannelEventForTest('{"type":"response.done"}');
     await pumpEventQueue();
-    // 一人一句：寵物講完回到 idle，等使用者再按一次才開始下一句。
+    // CR-0089：response.done ≠ 語音播完 → 仍 speaking，talk/字幕保留。
+    expect(harness.controller.state, VoiceAgentState.speaking);
+
+    // 語音真的播完 → 一人一句：回到 idle，等使用者再按一次才開始下一句。
+    harness.realtime
+        .handleDataChannelEventForTest('{"type":"output_audio_buffer.stopped"}');
+    await pumpEventQueue();
     expect(harness.controller.state, VoiceAgentState.idle);
     expect(harness.controller.canStartVoiceInput, isTrue);
 

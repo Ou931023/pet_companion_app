@@ -84,7 +84,15 @@ enum RealtimeEventType {
   assistantResponseStart,
   assistantResponseDone,
   assistantAudioStart,
+  // CR-0089：assistantAudioStart 連「純文字回覆」第一筆 delta 也會觸發；
+  // assistantAudioPlaybackStarted 只在「真實語音 buffer」開始時發出一次，
+  // 供 controller 判斷本輪是否有語音（決定收 turn 要不要等語音播完）。
+  assistantAudioPlaybackStarted,
+  // CR-0089：語意區分（勿混淆）——
+  // assistantAudioEnd = 生成結束（response.done 時發出，語音可能還在播）。
+  // assistantAudioPlaybackStopped = 語音「真的播完」（output_audio_buffer.stopped）。
   assistantAudioEnd,
+  assistantAudioPlaybackStopped,
   dataChannelOpen,
   dataChannelClosed,
   peerConnectionFailed,
@@ -804,7 +812,13 @@ class RealtimeVoiceService {
     if (type == 'output_audio_buffer.started' ||
         type == 'response.output_audio.delta' ||
         type == 'response.audio.delta') {
-      _sawOutputAudioBufferThisResponse = true;
+      // CR-0089：本輪首次出現「真實語音」→ 發一次 assistantAudioPlaybackStarted。
+      // 守在 _sawOutputAudioBufferThisResponse（非 _isSpeaking）：文字先於語音的
+      // 混合回覆，_isSpeaking 可能已被文字 delta 設 true，仍要正確發出本訊號。
+      if (!_sawOutputAudioBufferThisResponse) {
+        _sawOutputAudioBufferThisResponse = true;
+        _emit(RealtimeEventType.assistantAudioPlaybackStarted, '');
+      }
       if (!_isSpeaking) {
         _isSpeaking = true;
         _emit(RealtimeEventType.assistantAudioStart, '');
@@ -820,6 +834,10 @@ class RealtimeVoiceService {
       if (_pendingToolOutcomeLine != null) {
         _flushPendingToolOutcome();
       }
+      // CR-0089：把「語音真的播完」當成事件對外發出（response.done ≠ 播完）。
+      // 放在 flush 之後：排隊的工具念稿文字會先於本訊號進入 stream，CR-0083 順序不變。
+      // 供 VoiceAgentController 把 talk 狀態 / 字幕保留到語音真的結束才收掉。
+      _emit(RealtimeEventType.assistantAudioPlaybackStopped, '');
       return;
     }
 

@@ -84,6 +84,14 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   String _activeTurnId = '';
   String _responseTurnId = '';
   String _latestCompanionTurnId = '';
+  // CR-0089：字幕 / talk 狀態保留到「語音真的播完」才收。
+  // _currentTurnHadAudio：本輪是否有播語音（assistantAudioStart 設）。
+  // _awaitingAudioStop：response.done 已到、正在等 assistantAudioPlaybackStopped。
+  bool _currentTurnHadAudio = false;
+  bool _awaitingAudioStop = false;
+  Timer? _audioStopFallbackTimer;
+  // 安全保底：output_audio_buffer.stopped 漏訊號時的最大等待（非用秒數猜音長）。
+  static const Duration _audioStopFallback = Duration(seconds: 15);
   String _lastAlertedTurnId = '';
   String _partialTranscript = '';
   DateTime? _speechStartedAt;
@@ -413,6 +421,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
         break;
       case RealtimeEventType.assistantResponseStart:
         _responseTurnId = _activeTurnId;
+        _currentTurnHadAudio = false; // CR-0089：新一輪重置「是否有語音」。
         _startTimeout(
           RealtimeTimeoutType.responseTimeout,
           turnId: _responseTurnId,
@@ -431,8 +440,9 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
           );
           return;
         }
-        // Turn-based：寵物這一輪結束 → 回 idle（不是 listening），等使用者再按一次。
-        _finishPetTurn('realtime_response_done');
+        // CR-0089：response.done ≠ 語音播完。若本輪有語音，保留 talk / 字幕，
+        // 等 assistantAudioPlaybackStopped 才收 turn（純文字回覆則照舊立即收）。
+        _requestFinishPetTurn('realtime_response_done');
         break;
       case RealtimeEventType.assistantText:
         if (_skipNextAssistantText) {
@@ -485,10 +495,24 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
           turnId: _responseTurnId,
         );
         break;
+      case RealtimeEventType.assistantAudioPlaybackStarted:
+        // CR-0089：本輪有「真實語音」（非純文字）→ 收 turn 要等語音真的播完。
+        // 不在 assistantAudioStart 設，因為那連純文字回覆也會觸發。
+        _currentTurnHadAudio = true;
+        break;
       case RealtimeEventType.assistantAudioEnd:
         _cancelTimeout(RealtimeTimeoutType.responseTimeout);
-        // Turn-based：寵物語音播放完成 → 回 idle，使用者要說下一句須再按一次。
-        _finishPetTurn('speaking_completed');
+        // CR-0089：assistantAudioEnd 在 response.done 時發出（語音可能還在播），
+        // 不在此直接收 turn；交給 _requestFinishPetTurn 決定立即收或等播完。
+        _requestFinishPetTurn('speaking_completed');
+        break;
+      case RealtimeEventType.assistantAudioPlaybackStopped:
+        // CR-0089：語音「真的播完」。此時才把 talk 狀態 / 字幕收掉。
+        _audioStopFallbackTimer?.cancel();
+        _audioStopFallbackTimer = null;
+        if (_awaitingAudioStop || _state == VoiceAgentState.speaking) {
+          _finishPetTurn('audio_playback_stopped');
+        }
         break;
       case RealtimeEventType.dataChannelOpen:
         _cancelTimeout(RealtimeTimeoutType.connectionTimeout);
@@ -1125,8 +1149,38 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   /// Realtime 連線。使用者要說下一句，必須再次按語音按鈕（走 [startRealtimeConversation]
   /// 的「下一句」分支）。對 `assistantAudioEnd` 與 `assistantResponseDone` 都呼叫，
   /// 具冪等性：已在 idle 就不重複處理（避免兩個事件先後到達時互相覆蓋）。
+  /// CR-0089：response.done 到達時呼叫。本輪有語音 → 不立即收 turn，保留 talk /
+  /// 字幕並暫停麥克風（避免播放時被使用者插話蓋字幕），等 [_audioStopFallback] 或
+  /// assistantAudioPlaybackStopped 才真的收；純文字回覆（無語音）則照舊立即收。
+  /// assistantResponseDone 與 assistantAudioEnd 都會走這裡，靠 _awaitingAudioStop
+  /// 與 _finishPetTurn 的 idle guard 達成幂等。
+  void _requestFinishPetTurn(String reason) {
+    if (_awaitingAudioStop) return; // 已在等播完（第二次 done/audioEnd 忽略）。
+    if (_currentTurnHadAudio && _state != VoiceAgentState.idle) {
+      _awaitingAudioStop = true;
+      // 沿用既有行為：response.done 即暫停麥克風，語音尾段不被使用者插話覆蓋字幕。
+      realtimeVoiceService.pauseMicInput();
+      _startAudioStopFallback(reason);
+      return;
+    }
+    _finishPetTurn(reason);
+  }
+
+  void _startAudioStopFallback(String reason) {
+    _audioStopFallbackTimer?.cancel();
+    _audioStopFallbackTimer = Timer(_audioStopFallback, () {
+      // 漏掉 output_audio_buffer.stopped 時的防呆上限：把 turn 收掉，避免永遠卡 speaking。
+      _awaitingAudioStop = false;
+      _finishPetTurn('${reason}_audio_stop_fallback');
+    });
+  }
+
   void _finishPetTurn(String reason) {
     if (_state == VoiceAgentState.idle) return;
+    _audioStopFallbackTimer?.cancel();
+    _audioStopFallbackTimer = null;
+    _awaitingAudioStop = false;
+    _currentTurnHadAudio = false;
     _cancelTimeout(RealtimeTimeoutType.responseTimeout);
     _turnCoordinator.clearActiveTurn(_responseTurnId);
     _activeTurnId = '';
@@ -1563,6 +1617,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _cancelAllTimeouts();
     _timeouts.dispose();
+    _audioStopFallbackTimer?.cancel();
     _sub?.cancel();
     realtimeVoiceService.dispose();
     super.dispose();

@@ -677,5 +677,149 @@ void main() {
 
       service.dispose();
     });
+
+    // CR-0089：暴露「語音真的播完」訊號（output_audio_buffer.stopped）。
+    test(
+        'CR-0089: output_audio_buffer.stopped emits assistantAudioPlaybackStopped '
+        'exactly once; response.done still emits assistantAudioEnd', () async {
+      final service = RealtimeVoiceService();
+      final events = <RealtimeVoiceEvent>[];
+      final sub = service.events.listen(events.add);
+
+      service.handleDataChannelEventForTest(
+          jsonEncode({'type': 'response.created'}));
+      service.handleDataChannelEventForTest(
+          jsonEncode({'type': 'output_audio_buffer.started'}));
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.output_audio_transcript.delta',
+        'delta': '好的',
+      }));
+      service.handleDataChannelEventForTest(
+          jsonEncode({'type': 'response.done'}));
+      await pumpEventQueue();
+
+      // response.done 仍照常發 assistantAudioEnd（不可移除）。
+      expect(
+        events.where((e) => e.type == RealtimeEventType.assistantAudioEnd),
+        hasLength(1),
+      );
+      // 此時語音尚未播完 → 還不該有 playback-stopped。
+      expect(
+        events.where(
+            (e) => e.type == RealtimeEventType.assistantAudioPlaybackStopped),
+        isEmpty,
+      );
+
+      service.handleDataChannelEventForTest(
+          jsonEncode({'type': 'output_audio_buffer.stopped'}));
+      await pumpEventQueue();
+      // 播完 → 恰好一次 playback-stopped。
+      expect(
+        events.where(
+            (e) => e.type == RealtimeEventType.assistantAudioPlaybackStopped),
+        hasLength(1),
+      );
+
+      await sub.cancel();
+      service.dispose();
+    });
+
+    // CR-0089：順序回歸 —— 有 pending tool outcome 時，flush（送工具念稿）必須
+    // 先於 assistantAudioPlaybackStopped（保留 CR-0083 既有 flush 時機與順序）。
+    test(
+        'CR-0089: pending tool outcome flush precedes assistantAudioPlaybackStopped',
+        () async {
+      final order = <String>[];
+      final service = RealtimeVoiceService(
+        eventSenderForTesting: (payload) async {
+          if (isToolOutcomeResponse(payload)) order.add('flush');
+        },
+      );
+      final sub = service.events.listen((e) {
+        if (e.type == RealtimeEventType.assistantAudioPlaybackStopped) {
+          order.add('stopped');
+        }
+      });
+      service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
+      await pumpEventQueue();
+
+      service.handleDataChannelEventForTest(
+          jsonEncode({'type': 'response.created'}));
+      service.handleDataChannelEventForTest(
+          jsonEncode({'type': 'output_audio_buffer.started'}));
+      await service.speakToolOutcome('今天天氣晴');
+      service.handleDataChannelEventForTest(
+          jsonEncode({'type': 'response.done'}));
+      await pumpEventQueue();
+      service.handleDataChannelEventForTest(
+          jsonEncode({'type': 'output_audio_buffer.stopped'}));
+      await pumpEventQueue();
+
+      expect(order, ['flush', 'stopped']);
+
+      await sub.cancel();
+      service.dispose();
+    });
+
+    // CR-0089：assistantAudioPlaybackStarted 只在「真實語音」出現時發一次。
+    int startedCount(List<RealtimeVoiceEvent> events) => events
+        .where((e) => e.type == RealtimeEventType.assistantAudioPlaybackStarted)
+        .length;
+
+    test('CR-0089: audio response emits assistantAudioPlaybackStarted exactly once',
+        () async {
+      final service = RealtimeVoiceService();
+      final events = <RealtimeVoiceEvent>[];
+      final sub = service.events.listen(events.add);
+      service.handleDataChannelEventForTest(
+          jsonEncode({'type': 'response.created'}));
+      service.handleDataChannelEventForTest(
+          jsonEncode({'type': 'output_audio_buffer.started'}));
+      service.handleDataChannelEventForTest(
+          jsonEncode({'type': 'response.output_audio.delta'}));
+      await pumpEventQueue();
+      expect(startedCount(events), 1);
+      await sub.cancel();
+      service.dispose();
+    });
+
+    test('CR-0089: text-only response emits NO assistantAudioPlaybackStarted',
+        () async {
+      final service = RealtimeVoiceService();
+      final events = <RealtimeVoiceEvent>[];
+      final sub = service.events.listen(events.add);
+      service.handleDataChannelEventForTest(
+          jsonEncode({'type': 'response.created'}));
+      service.handleDataChannelEventForTest(jsonEncode(
+          {'type': 'response.output_text.delta', 'delta': '好的'}));
+      service.handleDataChannelEventForTest(
+          jsonEncode({'type': 'response.done'}));
+      await pumpEventQueue();
+      expect(startedCount(events), 0);
+      await sub.cancel();
+      service.dispose();
+    });
+
+    test(
+        'CR-0089: text-then-audio response still emits assistantAudioPlaybackStarted once',
+        () async {
+      final service = RealtimeVoiceService();
+      final events = <RealtimeVoiceEvent>[];
+      final sub = service.events.listen(events.add);
+      service.handleDataChannelEventForTest(
+          jsonEncode({'type': 'response.created'}));
+      // 文字 delta 先到（_isSpeaking 已被設 true），語音才開始。
+      service.handleDataChannelEventForTest(jsonEncode(
+          {'type': 'response.output_audio_transcript.delta', 'delta': '我在'}));
+      service.handleDataChannelEventForTest(
+          jsonEncode({'type': 'output_audio_buffer.started'}));
+      service.handleDataChannelEventForTest(
+          jsonEncode({'type': 'response.output_audio.delta'}));
+      await pumpEventQueue();
+      expect(startedCount(events), 1,
+          reason: '文字先於語音時仍要正確發出一次（守 _sawOutputAudioBufferThisResponse）');
+      await sub.cancel();
+      service.dispose();
+    });
   });
 }

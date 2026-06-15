@@ -3884,3 +3884,35 @@ mochi rest_03 為趴睡姿（源圖）；thirsty 缺觸發來源、sleepy 僅時
 
 ### 裁決
 新寵物接入與既有模式一致、狀態選擇器為消費式純函式不碰受保護主流程、誠實處理缺資料、測試齊備且全綠；併入主線。**下一個可用 CR 編號：CR-0089。**
+
+---
+
+## CR-0089 — Voice Caption Synchronization Polish
+
+### 模式
+小批次修正字幕 / talk 與實際語音對齊。**觸及 🔒 `lib/services/realtime_voice_service.dart`，已先經 architecture-agent 審查核准（兩次：原案 + 修正案，皆 ✅ / 風險 LOW，核准紀錄見下）**，改動為純加法（不動 SDP / ICE / DataChannel / connect / response 生命週期）。其餘修正在 controller / 測試層。不改 persona（CR-0090）、不改寵物素材（CR-0088）、不改推播（CR-0087）。詳見 `docs/VOICE_CAPTION_SYNC_CR0089.md`、規格 `tasks/CR-0089-voice-caption-synchronization-polish.md`。
+
+### 動機 / 根因
+收 turn 綁在 `response.done`（生成結束）而非語音播完：service 在 response.done 即送 `assistantAudioEnd`，controller 隨即 `_finishPetTurn` 收掉 talk / 字幕，但語音可能還在播 → 字幕與正在播的語音對不上、下一段提前接手。真正「播完」訊號 `output_audio_buffer.stopped` 原本只在 service 內部用（CR-0083），未對外發出。
+
+### 變更
+- **🔒 `realtime_voice_service.dart`（純加法，經核准）**：新增兩個 event —— `assistantAudioPlaybackStarted`（真實語音開始、一輪一次，守 `!_sawOutputAudioBufferThisResponse`）與 `assistantAudioPlaybackStopped`（`output_audio_buffer.stopped`，於 CR-0083 flush 之後發）。保留 response.done 既有 `assistantAudioEnd`。
+- **`voice_agent_controller.dart`**：`_currentTurnHadAudio`（只在 playback-started 設、每輪 response-start 重置）+ `_awaitingAudioStop` + 15s 保底計時器。response.done（done/audioEnd 兩路徑）改走 `_requestFinishPetTurn`：有真實語音 → 保留 speaking + 字幕、暫停麥克風，等 playback-stopped 才 `_finishPetTurn`（幂等）；純文字回覆 → 立即收。
+- **測試**：service（started/stopped 條件、順序回歸）、controller（有語音延後 / 純文字立即 / 字幕保留）、既有 lifecycle + integration 改寫為新時序。
+
+### architecture-agent 核准紀錄（🔒 realtime_voice_service.dart）
+- **原案（assistantAudioPlaybackStopped）**：✅ APPROVE，風險 LOW。條件：service emit 與 controller case 同批次落地（switch 無 default）、新 emit 置於 `_flushPendingToolOutcome()` 之後、保留 response.done 的 assistantAudioEnd、`_finishPetTurn` 對兩路徑幂等 + 保留 4s/保底計時器、service 測試補齊、enum 加語意註解。
+- **修正案（assistantAudioPlaybackStarted）**：🔁 MODIFY-then-approve，風險 LOW。修正要點：emit 必須守 `!_sawOutputAudioBufferThisResponse`（**非** `_isSpeaking`，否則文字先於語音的混合回覆會漏發、導致字幕提前被切）；controller `_currentTurnHadAudio` 須於 turn 起始重置；補 audio-only / text-only / text-then-audio 三路徑測試。
+- 兩案要求皆已落實；合併後 `flutter analyze` 零警告、相關 service / controller / integration 測試全綠。
+
+### 測試
+`flutter analyze` No issues；`flutter test` **672 passed / 0 failed**（連續兩次穩定）。涵蓋 service 兩新事件條件 + 順序回歸、controller 有語音延後收 / 純文字立即收 / 字幕保留、既有時序測試更新。
+
+### 限制遵守
+未讀 `.env`；🔒 檔僅加事件、未動 SDP/ICE/DataChannel/連線/response 生命週期，且有 architecture-agent 核准紀錄；未改 persona / 寵物素材 / 推播 / Care Alert / Telegram / 後台 / 後端 / DB；未刪既有測試（行為時序變更處據實更新並註明 CR-0089）。
+
+### 已知限制
+依賴 `output_audio_buffer.stopped`（漏訊號由 15s 保底收尾）；純文字 Realtime 回覆沿用 response.done 立即收；playback-stopped 未帶 turn id（沿用既有 turn 守門）。詳見 `docs/VOICE_CAPTION_SYNC_CR0089.md` §6。
+
+### 裁決
+🔒 改動純加法且兩度經 architecture-agent 核准、收 turn 改以真實語音播完為準、測試齊備且全綠、不碰受保護連線主流程；併入主線。**下一個可用 CR 編號：CR-0090。**

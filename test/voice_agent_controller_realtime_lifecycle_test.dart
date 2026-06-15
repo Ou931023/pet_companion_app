@@ -452,7 +452,15 @@ void main() {
       service.handleDataChannelEventForTest('{"type":"response.done"}');
       await pumpEventQueue();
 
-      // 回 idle（不是 listening），麥克風維持關閉，可再次開始下一句。
+      // CR-0089：response.done ≠ 語音播完 → 仍 speaking、talk/字幕保留；
+      // 但麥克風已在 response.done 暫停（語音尾段不被使用者插話蓋字幕）。
+      expect(harness.controller.state, VoiceAgentState.speaking);
+      expect(service.isMicEnabled, isFalse);
+
+      // 語音真的播完（output_audio_buffer.stopped）→ 才回 idle。
+      service.handleDataChannelEventForTest(
+          '{"type":"output_audio_buffer.stopped"}');
+      await pumpEventQueue();
       expect(harness.controller.state, VoiceAgentState.idle);
       expect(service.isMicEnabled, isFalse);
       expect(harness.controller.canStartVoiceInput, isTrue);
@@ -469,9 +477,15 @@ void main() {
       final harness = await _VoiceControllerHarness.create(service);
       await _reachSpeaking(harness, service);
 
-      // response.done 會先後送出 assistantResponseDone 與 assistantAudioEnd，
-      // 兩者都收尾到 idle；確認不會互相覆蓋、也不會被任何殘留事件拉回 listening。
+      // CR-0089：response.done 會先後送出 assistantResponseDone 與 assistantAudioEnd，
+      // 本輪有語音 → 兩條結束路徑都先「等播完」（保留 speaking），不互相覆蓋、
+      // 也不被殘留事件拉回 listening。output_audio_buffer.stopped 才冪等收斂到 idle。
       service.handleDataChannelEventForTest('{"type":"response.done"}');
+      await pumpEventQueue();
+      expect(harness.controller.state, VoiceAgentState.speaking);
+
+      service.handleDataChannelEventForTest(
+          '{"type":"output_audio_buffer.stopped"}');
       await pumpEventQueue();
       expect(harness.controller.state, VoiceAgentState.idle);
 
@@ -494,6 +508,10 @@ void main() {
       await _reachSpeaking(harness, service);
       service.handleDataChannelEventForTest('{"type":"response.done"}');
       await pumpEventQueue();
+      // CR-0089：有語音 → 先保留 speaking，播完才收 idle。
+      service.handleDataChannelEventForTest(
+          '{"type":"output_audio_buffer.stopped"}');
+      await pumpEventQueue();
       expect(harness.controller.state, VoiceAgentState.idle);
       expect(attempts, 1);
 
@@ -504,6 +522,65 @@ void main() {
       expect(attempts, 1, reason: '同一條連線開始下一句，不重建連線');
       expect(harness.controller.state, VoiceAgentState.listening);
       expect(service.isMicEnabled, isTrue);
+
+      harness.dispose();
+    });
+
+    test('CR-0089：有語音時 response.done 不收 turn，保留 speaking + 字幕；播完才 idle',
+        () async {
+      final service = RealtimeVoiceService(
+        healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+        connectImplementationForTesting: (_) async {},
+      );
+      final harness = await _VoiceControllerHarness.create(service);
+      await _reachListening(harness, service);
+      service.handleDataChannelEventForTest('{"type":"response.created"}');
+      await pumpEventQueue();
+      service.handleDataChannelEventForTest(
+        '{"type":"response.output_audio_transcript.delta","delta":"我在這裡陪你。"}',
+      );
+      // 真實語音開始 → assistantAudioPlaybackStarted。
+      service.handleDataChannelEventForTest(
+          '{"type":"response.output_audio.delta"}');
+      await pumpEventQueue();
+      expect(harness.controller.state, VoiceAgentState.speaking);
+
+      service.handleDataChannelEventForTest('{"type":"response.done"}');
+      await pumpEventQueue();
+      // response.done 後仍 speaking、字幕（latestReply）保留 → 不被提前清除/切換。
+      expect(harness.controller.state, VoiceAgentState.speaking);
+      expect(harness.conversationController.latestReply, '我在這裡陪你。');
+
+      service.handleDataChannelEventForTest(
+          '{"type":"output_audio_buffer.stopped"}');
+      await pumpEventQueue();
+      expect(harness.controller.state, VoiceAgentState.idle);
+      // 字幕在語音播完後仍保留（不立即清空）。
+      expect(harness.conversationController.latestReply, '我在這裡陪你。');
+
+      harness.dispose();
+    });
+
+    test('CR-0089：純文字回覆（無語音 buffer）→ response.done 立即收 idle，不等播完',
+        () async {
+      final service = RealtimeVoiceService(
+        healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+        connectImplementationForTesting: (_) async {},
+      );
+      final harness = await _VoiceControllerHarness.create(service);
+      await _reachListening(harness, service);
+      service.handleDataChannelEventForTest('{"type":"response.created"}');
+      await pumpEventQueue();
+      // 只有純文字 delta，沒有任何 output_audio_buffer / audio delta。
+      service.handleDataChannelEventForTest(
+        '{"type":"response.output_text.delta","delta":"好的"}',
+      );
+      await pumpEventQueue();
+
+      service.handleDataChannelEventForTest('{"type":"response.done"}');
+      await pumpEventQueue();
+      // 無真實語音 → 不延後，response.done 立即回 idle（不會卡在 speaking 等保底）。
+      expect(harness.controller.state, VoiceAgentState.idle);
 
       harness.dispose();
     });
