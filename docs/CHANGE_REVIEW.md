@@ -4098,3 +4098,59 @@ CR-0090 已改後端語音 persona，但 `realtime_voice_service.dart` 內供 `s
 
 ### 裁決
 純素材重做、幾何對齊既有 rest 幀、真 PNG、不碰程式與受保護模組、素材測試全綠；併入主線。**下一個可用 CR 編號：CR-0096。**
+
+---
+
+## CR-0096 — Manual Voice Stop Submit and Noise Suppression
+
+### 模式
+**觸及 🔒** `lib/services/realtime_voice_service.dart`，已先送 **architecture-agent 審查並核准**（agentId a81bffb4145fbd32f，medium risk）。修正「聆聽中按停止，剛說的話沒送出、寵物不回覆」：把按鈕從「取消並斷線」改成「停止收音並送出本輪語音」，並加上噪音抑制。詳見 `docs/MANUAL_VOICE_STOP_SUBMIT_CR0096.md`。
+
+> 任務檔內文沿用舊草稿編號 CR-0095（已用於 mochi 素材），本任務正式編號 CR-0096。
+
+### 根因
+`home_screen.dart` 在聆聽中呼叫 `stopRealtimeConversation()` → `realtimeVoiceService.stop()` + `clearRealtimeTranscriptState()` + 回 idle，等於取消並斷線、清掉 transcript，故寵物不回覆。
+
+### 變更
+- 🔒 service：`getUserMedia` 加 `echoCancellation/noiseSuppression/autoGainControl` + try/catch 降級；新增 `commitUserAudioAndRespond()`（pauseMicInput → `input_audio_buffer.commit` → 僅 `!_hasActiveAssistantResponse` 才 `response.create`）；`error` 事件白名單過濾良性碼 `input_audio_buffer_commit_empty` / `conversation_already_has_active_response`（只 log、不打斷對話）。
+- controller：新增 `stopListeningAndSubmit()`（有語音才 commit、進 thinking、掛 responseTimeout、不清 transcript、不斷線）+ 新 getter `isCapturingUserSpeech`（ready/listening/transcribing）。
+- home_screen：聆聽/轉錄中按鈕改呼叫 `stopListeningAndSubmit()`（原 `stopRealtimeConversation` 語意保留）。
+- 文案：listening/ready/transcribing 改「正在聽你說，說完再按一下」。
+
+### architecture-agent 裁決摘要
+- 方案 **(a) 強化版** 核准；(b) 關 server_vad、(c) 只 commit 不送 response.create 駁回。
+- 放行條件（全數已落實）：error 良性碼過濾 + controller 端有語音才 commit + thinking 掛 responseTimeout + getUserMedia try/catch 降級 + 補測試。
+- 不動 SDP/ICE/DataChannel；CR-0089/CR-0083 字幕不受影響；無 API 契約 / DB / Care Alert 變更。
+- owner：realtime-voice-agent 主導 🔒；frontend-ux-agent 改 home_screen 呼叫點。
+
+### 測試
+`flutter analyze` No issues；`flutter test` **699 passed / 0 failed**（新增 6 筆：service commit/error 過濾、controller stop-and-submit 有/無語音、presentation 文案）。
+
+### 裁決
+觸及 🔒 但已走核准流程並滿足全部放行條件、不破壞既有 Realtime 主流程與字幕、測試齊備且全綠；併入主線。**尚未實機驗收**（需 iPhone 跑情境 1–5）。**下一個可用 CR 編號：CR-0097。**
+
+---
+
+## CR-0097 — Pet Asset 去背 Audit + Mochi Reprocess
+
+### 模式
+**純素材重做 + 檢查**（frontend-ux-agent 範圍，寵物動畫軌道）：檢查 5 隻寵物 rest/states/talk 去背狀況，修復去背吃掉本體白毛與使用者新放的白底 WebP。不改 enum/resolver/動畫程式，不擴大成重做素材系統，不碰 persona/Realtime/字幕/推播/Care Alert/後台/App icon。詳見 `docs/PET_ASSET_CLEANUP_CR0097.md`。
+
+### 關鍵釐清
+「rest 多出難過/睡覺狀態」非程式 bug：`restFrames` 永遠只解析 `_rest_01/02/03`，問題在 `*_rest_03.png` 檔案內容本身；使用者已替換新 rest pose 圖。
+
+### 變更（只動素材檔）
+- guinea_pig_rest_03：白底 WebP → 1024² RGBA 去背 PNG（fuzz 12% 四角）。
+- mochi 16 張從使用者乾淨原圖重做（rest_01/02、7 states、listening、talk×6；talk 用聯集 bbox 維持對位）。
+- fox/guinea_pig 5 張白底 WebP states 去背（fox_hungry/thirsty、guinea_pig_excited/hungry/sleepy）。
+- fox_rest_03：使用者新圖已合格，原樣納入。
+
+### 已知限制（缺原圖、待補）
+- mochi_normal：無乾淨原圖，維持現狀（仍合格 PNG、測試可過）。
+- ferret_sad / ferret_caring：無 ferret 原圖、損傷輕微，依使用者決定先不動僅記錄。
+
+### 測試
+`flutter test` **699 passed / 0 failed**（mochi/ferret/pet skin tests 全綠）；素材內容以洋紅底目視驗證無破洞。
+
+### 裁決
+純素材去背修復、幾何對齊既有慣例（feet 944 / 1024² RGBA）、ping-pong 一致、不碰程式與受保護模組、測試全綠；併入主線。**mochi_normal / ferret 缺原圖部分待使用者補圖。下一個可用 CR 編號：CR-0098。**
