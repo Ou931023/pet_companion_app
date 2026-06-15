@@ -4081,3 +4081,20 @@ CR-0090 已改後端語音 persona，但 `realtime_voice_service.dart` 內供 `s
 
 ### 裁決
 純前端調整、移除時段 sleepy、sleepy 改由情緒觸發、不碰受保護模組與素材、測試齊備且全綠；併入主線。**下一個可用 CR 編號：CR-0095。**
+
+---
+
+## CR-0095 — Mochi rest_03 Asset Reprocess
+
+### 模式
+**純素材重做**（frontend-ux-agent 範圍）：使用者提供新的 mochi rest 圖（428×761 WebP、白底），用正式去背 / 1024² 流程重做 `assets/pets/rest/mochi_rest_03.png`。不改任何程式、Realtime、字幕、persona、推播、後台、Care Alert。詳見 `docs/MOCHI_REST03_REPROCESS_CR0095.md`。
+
+### 變更
+- `assets/pets/rest/mochi_rest_03.png`：428×761 WebP → **1024×1024 RGBA PNG**，content bbox `478×800+273+144`（腳底 y944、水平置中、底部留白 80px，對齊 mochi rest_01/02）。
+- 去背：edge flood-fill **四角**、**fuzz 12%**（28% 會吃掉淺色貓的白胸/臉/腳掌，已用洋紅底目視驗證）。
+
+### 測試
+`flutter test test/models/mochi_skin_test.dart` **31 passed**（含「存在、1024² RGBA、透明背景」檢查）。
+
+### 裁決
+純素材重做、幾何對齊既有 rest 幀、真 PNG、不碰程式與受保護模組、素材測試全綠；併入主線。**下一個可用 CR 編號：CR-0096。**
