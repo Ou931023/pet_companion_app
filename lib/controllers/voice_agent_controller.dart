@@ -153,6 +153,14 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       _state == VoiceAgentState.ready ||
       _state == VoiceAgentState.listening;
 
+  /// CR-0096：正在收使用者這一輪語音（待命聆聽 ready/listening，或已在串流 partial
+  /// transcript 的 transcribing）。這些狀態下按一下按鈕＝「停止收音並送出本輪語音」。
+  /// 不含 thinking/speaking（寵物回覆中）與 connecting/recovering（連線中）。
+  bool get isCapturingUserSpeech =>
+      _state == VoiceAgentState.ready ||
+      _state == VoiceAgentState.listening ||
+      _state == VoiceAgentState.transcribing;
+
   /// Turn-based：是否已經在處理某一輪的寵物回覆（已收下使用者這句、正在生成 / 播放回覆）。
   ///
   /// 用來在「寵物回覆中」阻擋後續使用者語音事件與 server VAD 觸發的 listening /
@@ -350,6 +358,32 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     conversationController.clearRealtimeTranscriptState();
     _transition(VoiceAgentState.idle, 'manual_stop');
     petController.setMessage('我先在旁邊陪你。想不到要聊什麼也沒關係，要不要跟我說說今天最舒服的一刻？');
+  }
+
+  /// CR-0096：聆聽中按一下「送出」——停止收音並把這一輪語音送出讓寵物回覆。
+  ///
+  /// 與 [stopRealtimeConversation]（結束整段對話、回 idle、清掉 transcript）語意明確區分：
+  /// 這裡**不取消、不斷線、不清空 transcript**，而是 commit 本輪語音 + 請求回覆，
+  /// 讓吵雜環境下使用者不必等 server VAD 自動判斷靜音，自己按一下就能結束說話並得到回覆。
+  ///
+  /// 只有這一輪「確實有語音」（已收到 user speech started，或已有 partial transcript）時才
+  /// 送出，避免空 buffer 觸發 `input_audio_buffer_commit_empty`；送出後進入 thinking
+  /// （UI 顯示「想一下」）並掛 responseTimeout，確保萬一沒回覆也不會卡死。
+  Future<void> stopListeningAndSubmit() async {
+    if (!isCapturingUserSpeech) return;
+    final hasSpeech =
+        _speechStartedAt != null || _partialTranscript.trim().isNotEmpty;
+    if (!hasSpeech) {
+      // 使用者按了按鈕但這一輪還沒開口：不送空 commit，維持待命聆聽，等使用者開口。
+      debugPrint('[VOICE_TURN] manual stop ignored: no speech captured yet');
+      return;
+    }
+    // 暫停麥克風 + commit 本輪語音 + （無 active response 時）請求回覆。
+    await realtimeVoiceService.commitUserAudioAndRespond();
+    // 進入處理中：保留 _speechStartedAt / transcript 狀態，等 final transcript 與
+    // response 照既有事件流程接續處理（會重設帶 turnId 的 responseTimeout）。
+    _transition(VoiceAgentState.thinking, 'manual_stop_submit');
+    _startTimeout(RealtimeTimeoutType.responseTimeout);
   }
 
   /// Turn-based：寵物回覆中（thinking / speaking）**不可被打斷**。

@@ -28,7 +28,9 @@ String realtimeVoiceButtonLabel(
     case VoiceAgentState.ready:
     case VoiceAgentState.listening:
     case VoiceAgentState.transcribing:
-      return '正在聽你說';
+      // CR-0096：聆聽中按一下＝停止收音並送出本輪語音，文案明說「說完再按一下」，
+      // 讓長者知道吵雜環境也能自己決定何時結束說話。
+      return '正在聽你說，說完再按一下';
     case VoiceAgentState.thinking:
       return '$name想一下';
     case VoiceAgentState.speaking:

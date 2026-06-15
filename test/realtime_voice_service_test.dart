@@ -864,4 +864,104 @@ void main() {
       service.dispose();
     });
   });
+
+  group('CR-0096 手動結束本輪語音 + 良性錯誤過濾', () {
+    test('commitUserAudioAndRespond：無 active response 時送 commit + response.create',
+        () async {
+      final sent = <String>[];
+      final service = RealtimeVoiceService(
+        eventSenderForTesting: (payload) async => sent.add(payload),
+      );
+      service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
+      await pumpEventQueue();
+
+      await service.commitUserAudioAndRespond();
+
+      expect(sent, hasLength(2));
+      expect(sent[0], contains('input_audio_buffer.commit'));
+      expect(sent[1], contains('response.create'));
+
+      service.dispose();
+    });
+
+    test('commitUserAudioAndRespond：已有 active response 時只送 commit、不重送 response.create',
+        () async {
+      final sent = <String>[];
+      final service = RealtimeVoiceService(
+        eventSenderForTesting: (payload) async => sent.add(payload),
+      );
+      service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
+      // server VAD 已搶先建立 response。
+      service.handleDataChannelEventForTest(
+          jsonEncode({'type': 'response.created'}));
+      await pumpEventQueue();
+
+      await service.commitUserAudioAndRespond();
+
+      expect(sent, hasLength(1));
+      expect(sent.single, contains('input_audio_buffer.commit'));
+      expect(sent.where((p) => p.contains('response.create')), isEmpty);
+
+      service.dispose();
+    });
+
+    test('良性錯誤碼（commit_empty / already_has_active_response）只 log，不轉成 error 事件',
+        () async {
+      final service = RealtimeVoiceService();
+      final events = <RealtimeVoiceEvent>[];
+      final sub = service.events.listen(events.add);
+
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'error',
+        'error': {
+          'type': 'invalid_request_error',
+          'code': 'input_audio_buffer_commit_empty',
+          'message': 'buffer too small',
+        },
+      }));
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'error',
+        'error': {
+          'type': 'invalid_request_error',
+          'code': 'conversation_already_has_active_response',
+          'message': 'already active',
+        },
+      }));
+      await pumpEventQueue();
+
+      expect(
+        events.where((event) => event.type == RealtimeEventType.error),
+        isEmpty,
+        reason: '良性錯誤不應打斷整段對話',
+      );
+
+      await sub.cancel();
+      service.dispose();
+    });
+
+    test('非良性錯誤碼仍照常上報白話 error（不被過濾吞掉）', () async {
+      final service = RealtimeVoiceService();
+      final events = <RealtimeVoiceEvent>[];
+      final sub = service.events.listen(events.add);
+
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'error',
+        'error': {
+          'type': 'server_error',
+          'code': 'session_expired',
+          'message': 'session expired',
+        },
+      }));
+      await pumpEventQueue();
+
+      final errorEvents = events
+          .where((event) => event.type == RealtimeEventType.error)
+          .toList();
+      expect(errorEvents, hasLength(1));
+      expect(errorEvents.single.payload, equals(realtimeApiErrorUserMessage));
+
+      await sub.cancel();
+      service.dispose();
+    });
+  });
 }

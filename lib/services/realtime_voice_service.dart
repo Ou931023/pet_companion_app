@@ -452,10 +452,25 @@ class RealtimeVoiceService {
     _startDataChannelOpenTimer();
 
     try {
-      _localStream = await navigator.mediaDevices.getUserMedia({
-        'audio': true,
-        'video': false,
-      });
+      // CR-0096：開啟噪音抑制 / 回音消除 / 自動增益，降低背景音把 server VAD
+      // 拖住的機率，讓長者在吵雜環境也能靠「按一下送出」結束本輪。
+      try {
+        _localStream = await navigator.mediaDevices.getUserMedia({
+          'audio': {
+            'echoCancellation': true,
+            'noiseSuppression': true,
+            'autoGainControl': true,
+          },
+          'video': false,
+        });
+      } catch (_) {
+        // 某些 constraint 在特定 iOS / 裝置不支援時安全降級回基本音訊；
+        // 若是真的權限問題，降級呼叫仍會 throw 並由外層接住（只會有一次權限決策）。
+        _localStream = await navigator.mediaDevices.getUserMedia({
+          'audio': true,
+          'video': false,
+        });
+      }
     } catch (error) {
       throw RealtimeFailure(
         RealtimeFailureType.microphonePermissionDenied,
@@ -668,6 +683,48 @@ class RealtimeVoiceService {
     } catch (error) {
       _log('Unable to send typed user text: $error');
     }
+  }
+
+  /// CR-0096：手動結束「這一輪純語音」並請寵物回覆（吵雜環境下使用者按一下就送出，
+  /// 不必等 server VAD 自己偵測靜音）。
+  ///
+  /// 流程（architecture-agent 核准的方案 a 強化版）：
+  /// 1. `pauseMicInput()`：先停止麥克風，背景音不再進 buffer；server 之後只收到靜音，
+  ///    不會再自動觸發第二輪 commit / response。
+  /// 2. `input_audio_buffer.commit`：把已收到的這段語音明確收尾（server VAD 沒 fire 時的
+  ///    唯一收尾來源）。
+  /// 3. **僅當沒有 active response 時**才送 `response.create`：server VAD 若剛好搶先建了
+  ///    response，就不重送，從源頭避免 double-response。
+  ///
+  /// 全程走既有 `_sendEventPayload`（含 data channel 未開排隊保護）；**不動 SDP / ICE /
+  /// DataChannel、不 disconnect、不清空 transcript**。本輪是否真的有語音由 controller 端
+  /// 判斷後才呼叫，避免空 buffer 觸發 `input_audio_buffer_commit_empty`。
+  Future<void> commitUserAudioAndRespond() async {
+    try {
+      pauseMicInput();
+      await _sendEventPayload(jsonEncode({'type': 'input_audio_buffer.commit'}));
+      if (!_hasActiveAssistantResponse) {
+        await _sendEventPayload(jsonEncode({'type': 'response.create'}));
+        _log('Manual stop: committed user audio + requested response');
+      } else {
+        _log('Manual stop: committed user audio; response already active, '
+            'skip response.create');
+      }
+    } catch (error) {
+      _log('Unable to finalize user audio turn: $error');
+    }
+  }
+
+  /// CR-0096：手動結束本輪語音時，OpenAI 可能回的「良性錯誤」碼——這些只代表
+  /// 「沒有新音訊可 commit」或「server VAD 已搶先建 response」，不是真故障，
+  /// 不應打斷整段對話。其他錯誤一律照常上報。
+  bool _isBenignRealtimeErrorCode(String? code, String? type) {
+    const benign = {
+      'input_audio_buffer_commit_empty',
+      'conversation_already_has_active_response',
+    };
+    return (code != null && benign.contains(code)) ||
+        (type != null && benign.contains(type));
   }
 
   Future<void> stop() async {
@@ -889,6 +946,16 @@ class RealtimeVoiceService {
       final errorType = errorMap?['type'] as String?;
       _log('Realtime error event: type=$errorType code=$code '
           'message=${rawMessage.isEmpty ? '(no message)' : rawMessage}');
+      // CR-0096：手動結束本輪（input_audio_buffer.commit / response.create）時，
+      // OpenAI 可能回兩種「良性錯誤」——這一輪沒有新音訊就按了停止
+      // (input_audio_buffer_commit_empty)，或 server VAD 剛好搶先建了 response
+      // (conversation_already_has_active_response)。這兩種只 log、不打斷對話、
+      // 不轉 error 狀態，避免「一個事件就把整段對話弄壞」。其他錯誤照常上報。
+      if (_isBenignRealtimeErrorCode(code, errorType)) {
+        _log('Ignore benign realtime error (manual turn finalize): '
+            'code=$code type=$errorType');
+        return;
+      }
       // CR-0079：API 原始錯誤（多為英文工程字串）只進 log，
       // UI 一律顯示白話提示並引導改用打字。
       _emit(RealtimeEventType.error, realtimeApiErrorUserMessage);

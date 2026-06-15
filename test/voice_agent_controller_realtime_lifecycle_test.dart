@@ -684,6 +684,69 @@ void main() {
       harness.dispose();
     });
 
+    test('CR-0096：聆聽中有語音時按停止＝送出本輪（commit+response.create、進 thinking、不斷線不清字幕）',
+        () async {
+      final sentPayloads = <String>[];
+      final service = RealtimeVoiceService(
+        healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+        connectImplementationForTesting: (_) async {},
+        eventSenderForTesting: (payload) async {
+          sentPayloads.add(payload);
+        },
+      );
+      final harness = await _VoiceControllerHarness.create(service);
+      await _reachListening(harness, service);
+
+      // 使用者開口（server VAD 偵測到 speech started）+ 串流 partial transcript。
+      service.handleDataChannelEventForTest(
+          '{"type":"input_audio_buffer.speech_started"}');
+      service.handleDataChannelEventForTest(
+        '{"type":"conversation.item.input_audio_transcription.delta","transcript":"我今天有點累"}',
+      );
+      await pumpEventQueue();
+      expect(harness.controller.isCapturingUserSpeech, isTrue);
+      expect(harness.controller.partialTranscript, '我今天有點累');
+
+      await harness.controller.stopListeningAndSubmit();
+      await pumpEventQueue();
+
+      // 送出本輪：commit + response.create（不是取消、不是斷線）。
+      expect(sentPayloads, hasLength(2));
+      expect(sentPayloads[0], contains('input_audio_buffer.commit'));
+      expect(sentPayloads[1], contains('response.create'));
+      // 進入處理中（不是 idle），而且剛說的話沒被清掉（stopRealtimeConversation 才會清 partial）。
+      expect(harness.controller.state, VoiceAgentState.thinking);
+      expect(harness.controller.partialTranscript, '我今天有點累');
+
+      harness.dispose();
+    });
+
+    test('CR-0096：聆聽中還沒開口就按停止＝不送空 commit、維持待命（不誤觸 commit_empty）',
+        () async {
+      final sentPayloads = <String>[];
+      final service = RealtimeVoiceService(
+        healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+        connectImplementationForTesting: (_) async {},
+        eventSenderForTesting: (payload) async {
+          sentPayloads.add(payload);
+        },
+      );
+      final harness = await _VoiceControllerHarness.create(service);
+      await _reachListening(harness, service);
+      expect(harness.controller.isAwaitingUserSpeech, isTrue);
+
+      // 沒有任何 speech_started / partial transcript 就按停止。
+      await harness.controller.stopListeningAndSubmit();
+      await pumpEventQueue();
+
+      expect(sentPayloads.where((p) => p.contains('input_audio_buffer.commit')),
+          isEmpty);
+      expect(harness.controller.isAwaitingUserSpeech, isTrue);
+      expect(harness.controller.state, isNot(VoiceAgentState.thinking));
+
+      harness.dispose();
+    });
+
     test('error 狀態可以重試：canStartVoiceInput 為 true 且能再次連線', () async {
       var shouldFail = true;
       var attempts = 0;

@@ -20,13 +20,13 @@ void main() {
       expect(label(VoiceAgentState.connecting), '正在連線，馬上就好');
     });
 
-    test('listening：正在聽你說這一句', () {
-      expect(label(VoiceAgentState.listening), '正在聽你說');
-      expect(label(VoiceAgentState.ready), '正在聽你說');
+    test('listening：正在聽你說、提示說完再按一下送出（CR-0096）', () {
+      expect(label(VoiceAgentState.listening), '正在聽你說，說完再按一下');
+      expect(label(VoiceAgentState.ready), '正在聽你說，說完再按一下');
     });
 
-    test('transcribing：正在把使用者的話轉文字', () {
-      expect(label(VoiceAgentState.transcribing), '正在聽你說');
+    test('transcribing：正在把使用者的話轉文字（CR-0096 仍可按一下送出）', () {
+      expect(label(VoiceAgentState.transcribing), '正在聽你說，說完再按一下');
     });
 
     test('thinking：寵物正在想（帶寵物名字）', () {

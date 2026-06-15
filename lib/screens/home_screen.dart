@@ -402,9 +402,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ),
                                   );
                                 } else if (voiceAgentController
-                                    .isAwaitingUserSpeech) {
+                                    .isCapturingUserSpeech) {
+                                  // CR-0096：聆聽 / 轉錄中按一下＝「停止收音並送出本輪語音」，
+                                  // 不是取消、不斷線（吵雜環境也能手動結束說話並得到回覆）。
                                   await voiceAgentController
-                                      .stopRealtimeConversation();
+                                      .stopListeningAndSubmit();
                                 }
                               },
                       ),
