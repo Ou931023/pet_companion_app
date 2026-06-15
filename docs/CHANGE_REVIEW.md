@@ -4008,3 +4008,32 @@ mochi rest_03 為趴睡姿（源圖）；thirsty 缺觸發來源、sleepy 僅時
 
 ### 裁決
 沿用既有跨頁機制做最小擴充、不重構導航、降級安全不 crash、測試齊備且全綠、不碰受保護模組；併入主線。**下一個可用 CR 編號：CR-0093。**
+
+---
+
+## CR-0093A — Realtime Mid-session Persona Alignment（CR-0090 後續小修）
+
+> 用 **A 編號**避免打亂主線：**主線下一個 CR 仍為 CR-0093 — App Icon Replacement**，本 CR 不佔用該序號。
+
+### 模式
+CR-0090 後續小修，**觸及 🔒 `lib/services/realtime_voice_service.dart`，已先經 architecture-agent 審查核准（✅ / 風險 LOW，核准紀錄見下）**。僅同步該檔 mid-session `session.update` 縮版 persona 的**字串內容**，不改 SDP / ICE / DataChannel / 連線 / response lifecycle / 字幕同步 / 工具路由 / 狀態機 / 後端 persona / Care Alert / Telegram。詳見 `docs/REALTIME_MID_SESSION_PERSONA_ALIGNMENT_CR0093A.md`、規格 `tasks/CR-0093A-realtime-mid-session-persona-alignment.md`。
+
+### 動機
+CR-0090 已改後端語音 persona，但 `realtime_voice_service.dart` 內供 `session.update` 用的縮版 persona 副本（`_instructionsWithCompanionContext`）未同步 → 通話中 nextStrategy 變更時會回到舊版（較制式 / 易重複 / 硬轉任務）。
+
+### 變更
+- `_instructionsWithCompanionContext`（≈1279-1300）persona 字串加入 CR-0090 規則：陪伴優先不硬轉任務、避免重複罐頭 / 不每句問句收尾、低落先陪伴不過度醫療化，並**新增急性風險安全句**（胸痛 / 呼吸困難 / 跌倒 / 嚴重不適 / 自傷意念 → 提高安全提醒、建議聯絡家人或就醫；此縮版原本缺，屬加法強化）。
+- `_outputLanguageGuidance`（≈1302-1310）台語措辭同步為「以台語為主、長者聽得懂優先、可國台語混用、不硬翻生僻字」；`replyLanguage=` regex 與 `mixed-zh-taigi`/`taigi`/default switch key 不變。
+- payload 形狀不變、保留 nextStrategy 框架語、不外漏分析欄位名稱。
+
+### architecture-agent 核准紀錄（🔒 realtime_voice_service.dart）
+✅ APPROVED，風險 LOW。確認改動僅為兩私有字串建構器內容、`session.update` payload 形狀不變、未觸及連線 / lifecycle / CR-0089 audio 事件 / 佇列 / tool flush / 字幕 / 狀態機 / 簽章；安全句為加法強化。綁定條件（皆已遵守）：只改兩方法字串、不改名 / 簽章；保留 `$context` 注入與框架語；保留 `_outputLanguageGuidance` regex 與 switch key（僅措辭）；payload 精簡；安全句溫暖不重複；以 `eventSenderForTesting` 補測試、不弱化既有 realtime 測試。
+
+### 測試
+新增 `realtime_voice_service_test.dart`「CR-0093A …」：捕捉 `session.update` payload、解析 instructions、斷言含 CR-0090 guardrail（不硬轉任務 / 避免重複 / 不每句問句 / 低落先陪伴不過度醫療化 / 安全句 / 台語自然 / 保留 nextStrategy 框架語）。不影響既有 realtime / CR-0089 audio 事件測試。`flutter analyze` No issues；`flutter test` **686 passed / 0 failed**。
+
+### 限制遵守
+未讀 `.env`；🔒 檔僅改 persona 字串且經 architecture-agent 核准；未改後端 persona / 工具路由 / Care Alert / Telegram / 字幕同步 / App icon；未弱化安全。
+
+### 裁決
+🔒 改動經 architecture-agent 核准、僅同步 persona 文字、payload 形狀與狀態機不變、安全強化、測試齊備且全綠；併入主線。**主線下一個可用 CR 編號仍為：CR-0093（App Icon Replacement）。**

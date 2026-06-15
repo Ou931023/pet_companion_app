@@ -416,6 +416,48 @@ void main() {
       service.dispose();
     });
 
+    test(
+        'CR-0093A: mid-session session.update persona 同步 CR-0090 自然度 + 台語自然 + 安全',
+        () async {
+      final sentPayloads = <String>[];
+      final service = RealtimeVoiceService(
+        eventSenderForTesting: (payload) async {
+          sentPayloads.add(payload);
+        },
+      );
+
+      // 帶 taigi 的 nextStrategy context → 觸發台語輸出指引。
+      await service.updateCompanionContext('replyLanguage=taigi\n先陪他聊聊天');
+      service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
+      await pumpEventQueue();
+
+      final updates =
+          sentPayloads.where((p) => p.contains('session.update')).toList();
+      expect(updates, isNotEmpty);
+      final instructions =
+          ((jsonDecode(updates.last) as Map)['session'] as Map)['instructions']
+              as String;
+
+      // 陪伴優先 / 不硬轉任務。
+      expect(instructions,
+          contains('不要硬把話題帶去提醒、喝水、吃藥或任務'));
+      // 避免重複。
+      expect(instructions, contains('這類同一句罐頭'));
+      expect(instructions, contains('不要每句都用問句收尾'));
+      // 低落先陪伴、不過度醫療化。
+      expect(instructions, contains('先陪伴，不急著解決、不過度醫療化'));
+      // 安全邊界（新增，未弱化）。
+      expect(instructions,
+          contains('胸痛、呼吸困難、跌倒、嚴重不適或自傷意念'));
+      // 台語自然、長者聽得懂優先。
+      expect(instructions, contains('以台語為主、長者聽得懂優先'));
+      // 仍保留 nextStrategy 框架語，不外漏分析欄位名稱。
+      expect(instructions,
+          contains('請優先遵守 nextStrategy，但不要提到 Companion Engine'));
+
+      service.dispose();
+    });
+
     test('closed peer state prevents sending on an old open data channel',
         () async {
       final sentPayloads = <String>[];
