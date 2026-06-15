@@ -3947,3 +3947,34 @@ mochi rest_03 為趴睡姿（源圖）；thirsty 缺觸發來源、sleepy 僅時
 
 ### 裁決
 後端 persona 字串調校、安全邊界與工具能力原樣保留、抗重複 / 不硬轉任務 / 台語自然由 guardrail 測試把關、測試全綠、不碰受保護模組；併入主線。**下一個可用 CR 編號：CR-0091。**
+
+---
+
+## CR-0091 — Conversation History UX Polish
+
+### 模式
+**純前端 Flutter** 紀錄頁 UX：去工程化 + 本地搜尋。資料本地（`ConversationController.history` / `sessionSummaries`）、量不大 → 採前端本地搜尋，**未新增後端 API**（任務 D1）。不改 AI persona（CR-0090）/ Realtime / 字幕同步（CR-0089）/ 寵物素材（CR-0088）/ 推播（CR-0087）/ Care Alert / Telegram / 後台（CR-0086）/ DB。詳見 `docs/CONVERSATION_HISTORY_UX_CR0091.md`、規格 `tasks/CR-0091-conversation-history-ux-polish.md`。
+
+### 動機
+紀錄頁直接把 `emotionTag` / `petMood` 原值顯示給長者（「情緒：sad｜寵物心情：neutral」、卡片 chip 顯示 sad / neutral），且紀錄多了沒有搜尋。
+
+### 變更
+- 新增 `lib/utils/conversation_history_display.dart`（純函式）：`friendlyMoodLabel`（情緒→白話心情，neutral / raw key → null 不顯示）+ `filterConversationSessions`（本地搜尋：標題 / 預覽 / 長者話 / 寵物回覆，大小寫不敏感，中文 + 台語漢字）。
+- `conversation_detail_screen.dart`：刪整段那行不再外漏 emotionTag / petMood，改友善心情 + 刪除提示（neutral 只剩刪除提示），長按刪整段保留。
+- `conversation_session_tile.dart`：卡片 chip 改友善心情；neutral / 不認得不顯示 chip。
+- `history_screen.dart`：新增搜尋框（放大鏡 + 清除 ✕、字級 18）、本地即時過濾；空狀態分「沒有紀錄」與「搜尋無結果」兩種白話提示。
+
+### 不外漏 raw 欄位
+全 app 掃描確認紀錄頁 Text() 不再渲染 emotionTag / petMood / riskLevel / 「情緒：」「寵物心情：」；home_screen / agent_confirmation 的 emotionTag / riskLevel 僅為邏輯用途（未顯示）。
+
+### 測試
+新增 `test/utils/conversation_history_display_test.dart`（friendlyMoodLabel + 搜尋：中文 / 台語 / 大小寫 / 無結果 / 空查詢）；`conversation_controller_ui_state_test.dart` 更新詳情刪整段文案 + 新增 HistoryScreen 搜尋 widget 測試（搜長者話 / 寵物回覆、清除恢復、畫面無 raw neutral / sad、無結果友善空狀態）。`flutter analyze` No issues；`flutter test` **684 passed / 0 failed**。
+
+### 限制遵守
+未讀 `.env`；純前端、未動後端 / API / DB / Realtime / persona / Care Alert / Telegram / 後台；不把 raw 情緒分析顯示給長者；錯誤 / 空狀態白話、不露 stack trace。
+
+### 已知限制
+搜尋為 substring（無模糊 / 拼音）；台語以漢字比對；日期文字搜尋未納入（可選）。詳見 `docs/CONVERSATION_HISTORY_UX_CR0091.md` §7。
+
+### 裁決
+純前端紀錄頁去工程化 + 本地搜尋、不外漏 raw 欄位、不新增後端、空 / 錯誤狀態白話、測試齊備且全綠、不碰受保護模組；併入主線。**下一個可用 CR 編號：CR-0092。**

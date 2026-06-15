@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/conversation_session_summary.dart';
+import '../utils/conversation_history_display.dart';
 
 class ConversationSessionTile extends StatelessWidget {
   const ConversationSessionTile({
@@ -18,6 +19,8 @@ class ConversationSessionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // CR-0091：心情標籤改成長者友善描述；neutral / 不認得就不顯示（不外漏 emotionTag）。
+    final mood = friendlyMoodLabel(summary.emotionTag);
     return Card(
       child: ListTile(
         onTap: onTap,
@@ -29,7 +32,7 @@ class ConversationSessionTile extends StatelessWidget {
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
-        trailing: Chip(label: Text(summary.emotionTag)),
+        trailing: mood == null ? null : Chip(label: Text(mood)),
       ),
     );
   }

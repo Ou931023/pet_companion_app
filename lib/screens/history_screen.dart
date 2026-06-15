@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../controllers/conversation_controller.dart';
 import '../models/conversation_session_summary.dart';
 import '../routes/app_routes.dart';
+import '../utils/conversation_history_display.dart';
 import '../widgets/conversation_session_tile.dart';
 import '../widgets/ui/empty_state.dart';
 
@@ -15,6 +16,10 @@ class HistoryScreen extends StatefulWidget {
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
+  // CR-0091：對話搜尋（本地、即時過濾）。
+  final _searchController = TextEditingController();
+  String _query = '';
+
   @override
   void initState() {
     super.initState();
@@ -27,8 +32,20 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final sessions = context.watch<ConversationController>().sessionSummaries;
+    final controller = context.watch<ConversationController>();
+    final sessions = controller.sessionSummaries;
+    final filtered = filterConversationSessions(
+      sessions: sessions,
+      allTurns: controller.history,
+      query: _query,
+    );
     return SafeArea(
       bottom: false,
       child: ListView(
@@ -45,27 +62,70 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ),
           ),
           const SizedBox(height: 12),
+          // 沒有任何紀錄：只顯示空狀態，不顯示搜尋框。
           if (sessions.isEmpty)
             const EmptyState(
               icon: Icons.chat_bubble_outline,
-              message: '還沒有聊天紀錄',
-              hint: '回首頁點「想聊天就點我」，和寵物說說話吧。',
-            ),
-          for (final s in sessions)
-            ConversationSessionTile(
-              summary: s,
-              onTap: () {
-                Navigator.of(context).pushNamed(
-                  AppRoute.conversationDetail,
-                  arguments: ConversationDetailArgs(
-                    sessionId: s.sessionId,
-                    title: s.title,
-                  ),
-                );
-              },
-              onLongPress: () => _confirmDeleteSession(context, s),
-            ),
+              message: '還沒有對話紀錄',
+              hint: '之後和寵物聊天，內容會出現在這裡。',
+            )
+          else ...[
+            _buildSearchBar(),
+            const SizedBox(height: 12),
+            if (filtered.isEmpty)
+              const EmptyState(
+                icon: Icons.search_off,
+                message: '找不到相關對話',
+                hint: '換個關鍵字試試看。',
+              )
+            else
+              for (final s in filtered)
+                ConversationSessionTile(
+                  summary: s,
+                  onTap: () {
+                    Navigator.of(context).pushNamed(
+                      AppRoute.conversationDetail,
+                      arguments: ConversationDetailArgs(
+                        sessionId: s.sessionId,
+                        title: s.title,
+                      ),
+                    );
+                  },
+                  onLongPress: () => _confirmDeleteSession(context, s),
+                ),
+          ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return TextField(
+      controller: _searchController,
+      onChanged: (value) => setState(() => _query = value),
+      style: const TextStyle(fontSize: 18),
+      textInputAction: TextInputAction.search,
+      decoration: InputDecoration(
+        hintText: '搜尋和寵物聊過的內容',
+        prefixIcon: const Icon(Icons.search),
+        suffixIcon: _query.isEmpty
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.clear),
+                tooltip: '清除搜尋',
+                onPressed: () {
+                  _searchController.clear();
+                  setState(() => _query = '');
+                },
+              ),
+        filled: true,
+        fillColor: Colors.black.withValues(alpha: 0.04),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
       ),
     );
   }

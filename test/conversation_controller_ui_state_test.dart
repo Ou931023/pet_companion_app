@@ -467,9 +467,10 @@ void main() {
       );
       await tester.pump();
 
-      // 長按情緒列（含「長按這行刪整段」）→ 出現刪整段確認。
+      // CR-0091：情緒列不再外漏 emotionTag / petMood；neutral 時只剩刪除提示。
+      // 長按這行 → 出現刪整段確認。
       await tester.longPress(
-        find.text('情緒：neutral｜寵物心情：neutral　·　長按這行刪整段').first,
+        find.text('長按這行可刪整段').first,
       );
       await tester.pumpAndSettle();
       expect(find.text('要刪除整段對話嗎？'), findsOneWidget);
@@ -638,6 +639,75 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('想刪的對話'), findsNothing);
       expect(find.text('保留的對話'), findsOneWidget);
+    });
+
+    testWidgets('CR-0091 搜尋：可搜長者話與寵物回覆、清除恢復、無工程字眼', (tester) async {
+      final controller =
+          _createConversationController(titleService: const _FakeTitleService(null));
+      addTearDown(controller.dispose);
+      controller.startNewSession();
+      final a = controller.activeSessionId;
+      controller.appendExternalTurn(
+          makeTurn(a, DateTime(2026, 1, 1), '我今天去公園散步', '散步對身體很好'));
+      controller.startNewSession();
+      final b = controller.activeSessionId;
+      controller.appendExternalTurn(
+          makeTurn(b, DateTime(2026, 1, 2), '等一下提醒我吃藥', '好的我會記得'));
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<ConversationController>.value(
+          value: controller,
+          child: const MaterialApp(home: Scaffold(body: HistoryScreen())),
+        ),
+      );
+      await tester.pump();
+
+      // 兩則都在；不外漏 raw emotionTag（neutral / sad 等不應出現在畫面）。
+      expect(find.text('我今天去公園散步'), findsOneWidget);
+      expect(find.text('等一下提醒我吃藥'), findsOneWidget);
+      expect(find.text('neutral'), findsNothing);
+      expect(find.text('sad'), findsNothing);
+
+      // 搜尋長者話的關鍵字「散步」→ 只留 A。
+      await tester.enterText(find.byType(TextField), '散步');
+      await tester.pump();
+      expect(find.text('我今天去公園散步'), findsOneWidget);
+      expect(find.text('等一下提醒我吃藥'), findsNothing);
+
+      // 搜尋寵物回覆關鍵字「我會記得」→ 只留 B。
+      await tester.enterText(find.byType(TextField), '我會記得');
+      await tester.pump();
+      expect(find.text('等一下提醒我吃藥'), findsOneWidget);
+      expect(find.text('我今天去公園散步'), findsNothing);
+
+      // 清除搜尋 → 恢復全部。
+      await tester.tap(find.byTooltip('清除搜尋'));
+      await tester.pump();
+      expect(find.text('我今天去公園散步'), findsOneWidget);
+      expect(find.text('等一下提醒我吃藥'), findsOneWidget);
+    });
+
+    testWidgets('CR-0091 搜尋無結果 → 友善空狀態', (tester) async {
+      final controller =
+          _createConversationController(titleService: const _FakeTitleService(null));
+      addTearDown(controller.dispose);
+      controller.startNewSession();
+      final a = controller.activeSessionId;
+      controller.appendExternalTurn(
+          makeTurn(a, DateTime(2026, 1, 1), '今天天氣不錯', '是啊很舒服'));
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<ConversationController>.value(
+          value: controller,
+          child: const MaterialApp(home: Scaffold(body: HistoryScreen())),
+        ),
+      );
+      await tester.pump();
+
+      await tester.enterText(find.byType(TextField), '不存在的關鍵字xyz');
+      await tester.pump();
+      expect(find.text('找不到相關對話'), findsOneWidget);
+      expect(find.text('今天天氣不錯'), findsNothing);
     });
   });
 }

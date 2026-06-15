@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../controllers/conversation_controller.dart';
 import '../models/conversation_turn.dart';
+import '../utils/conversation_history_display.dart';
 
 class ConversationDetailScreen extends StatelessWidget {
   const ConversationDetailScreen({
@@ -110,18 +111,28 @@ class ConversationDetailScreen extends StatelessWidget {
                 ),
               ),
             ),
-          // 長按下面這行（情緒資訊）→ 刪整段（這則和它的回覆一起）。
+          // 長按下面這行 → 刪整段（這則和它的回覆一起）。
+          // CR-0091：不再外漏 emotionTag / petMood 原值；只用長者友善的心情描述，
+          // neutral / 不認得時就只留刪除提示。
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onLongPress: () => _confirmDeleteTurn(context, controller, t),
             child: Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                '情緒：${t.emotionTag}｜寵物心情：${t.petMood}　·　長按這行刪整段',
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontSize: 12,
-                ),
+              child: Builder(
+                builder: (_) {
+                  final mood = friendlyMoodLabel(t.emotionTag);
+                  final text = mood == null
+                      ? '長按這行可刪整段'
+                      : '那天$mood　·　長按這行可刪整段';
+                  return Text(
+                    text,
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 12,
+                    ),
+                  );
+                },
               ),
             ),
           ),
