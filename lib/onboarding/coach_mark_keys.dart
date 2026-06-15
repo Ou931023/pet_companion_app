@@ -25,9 +25,28 @@ class CoachMarkKeys {
   /// 解決原生列拿不到框、底部 tab 不會亮的實機問題）。
   final GlobalKey navBarKey = GlobalKey(debugLabel: 'coach_nav_bar');
 
-  /// 設定頁「家人聯絡人」入口的 key（Step 13 跨頁高亮用）。
+  /// 設定頁「家人聯絡人」入口的 key（跨頁高亮用）。
   final GlobalKey settingsContactKey =
       GlobalKey(debugLabel: 'coach_settings_contact');
+
+  // CR-0092：跨頁導覽真正切到該頁並高亮頁內目標（不再只亮底部分頁按鈕）。
+  /// 商城頁頂部（切到商城分頁時高亮）。
+  final GlobalKey shopKey = GlobalKey(debugLabel: 'coach_shop');
+
+  /// 紀錄頁標題（切到紀錄分頁時高亮）。
+  final GlobalKey historyTitleKey = GlobalKey(debugLabel: 'coach_history_title');
+
+  /// 紀錄頁搜尋框（CR-0091）；無紀錄時搜尋框不顯示 → overlay 自動降級置中卡。
+  final GlobalKey historySearchKey =
+      GlobalKey(debugLabel: 'coach_history_search');
+
+  /// 設定頁「換一隻陪你的夥伴 / 更換外觀」入口（切到設定分頁時高亮）。
+  final GlobalKey settingsAppearanceKey =
+      GlobalKey(debugLabel: 'coach_settings_appearance');
+
+  /// 設定頁「重新觀看新手導覽」入口。
+  final GlobalKey settingsReplayKey =
+      GlobalKey(debugLabel: 'coach_settings_replay');
 }
 
 /// 取底部導覽列第 [index] 格（共 [total] 格）的高亮框。
@@ -53,18 +72,23 @@ Rect navBarSlot(Rect raw, int index, {int total = 4, double bottomInset = 0}) {
 Rect settingsRightQuarter(Rect raw, {double bottomInset = 0}) =>
     navBarSlot(raw, 3, bottomInset: bottomInset);
 
-/// 首頁新手導覽的步驟，共 **13 步**（單一完整導覽，不再分快速 / 完整版）：
+/// 首頁新手導覽的步驟，共 **16 步**（單一完整導覽，CR-0092 改為「實際帶走一遍」跨頁）：
 ///
-/// 1 寵物 → 2 說話 → 3 先聽牠說完 → 4 狀態 → 5 親密度 → 6 飽足感 →
-/// 7 點寵物玩遊戲 → 8 每日簽到 → 9 金幣 → 10 商城 → 11 紀錄 →
-/// 12 設定改名 / 語音 → 13 設定新增聯絡人。
+/// 首頁：1 寵物 → 2 說話 → 3 先聽牠說完 → 4 狀態 → 5 親密度 → 6 飽足感 →
+/// 7 點寵物玩遊戲 → 8 每日簽到 → 9 金幣 →
+/// 商城頁：10 商城 →
+/// 紀錄頁：11 紀錄 → 12 搜尋紀錄 →
+/// 設定頁：13 換造型 → 14 家人聯絡人 → 15 重看導覽 →
+/// 回首頁：16 開始使用。
 ///
-/// 每步只介紹一件事、文字白話溫柔，並盡量高亮畫面上對應的位置：
+/// 每步只介紹一件事、文字白話溫柔，並高亮畫面上對應位置：
 /// - 首頁可見元件（寵物 / 語音鍵 / 狀態面板 / 簽到 / 金幣）直接 spotlight。
-/// - 商城 / 紀錄 / 設定高亮底部導覽列對應那一格。
-/// - 第 13 步跨頁切到設定頁，高亮「家人聯絡人」入口。
-/// - 第 3 步是行為提示（先聽牠說完），無對應元件 → overlay 自動降級成置中說明卡。
-/// 任何 target 取不到時（還沒繪製 / 跨頁未就緒）都會安全降級成置中卡片，不 crash。
+/// - CR-0092：商城 / 紀錄 / 設定步驟帶 `shellTabIndex`，先切到該分頁再高亮頁內目標
+///   （不再只亮底部分頁按鈕）；最後一步切回首頁。切頁由 CoachMarkHost 處理，
+///   overlay 會等該頁目標 render 好再高亮。
+/// - 第 3 步是行為提示（先聽牠說完），無對應元件 → 置中說明卡。
+/// - 第 12 步搜尋框在「尚無紀錄」時不顯示 → 安全降級置中卡。
+/// 任何 target 取不到時（還沒繪製 / 跨頁未就緒 / 該元件隱藏）都會安全降級成置中卡片，不 crash。
 List<CoachMarkStep> buildHomeCoachMarkSteps(
   CoachMarkKeys keys, {
   double bottomNavInset = 0,
@@ -116,31 +140,48 @@ List<CoachMarkStep> buildHomeCoachMarkSteps(
       radius: 14,
       text: '上面這些金幣，可以用來解鎖新的寵物外觀。',
     ),
-    // 10：商城可以購買或解鎖物品（高亮底部「商城」分頁）。
+    // 10：CR-0092 切到「商城」分頁，高亮商城頁本身（不再只亮底部按鈕）。
     CoachMarkStep(
-      targetKey: keys.navBarKey,
-      rectTransform: (raw) => navBarSlot(raw, 1, bottomInset: bottomNavInset),
-      text: '最下面的「商城」可以用金幣解鎖外觀或其他物品。',
+      targetKey: keys.shopKey,
+      shellTabIndex: 1,
+      text: '這是「商城」，可以用金幣幫寵物解鎖外觀或買點東西。',
     ),
-    // 11：記錄可以查看過去狀態（高亮底部「紀錄」分頁）。
+    // 11：切到「紀錄」分頁，高亮紀錄頁標題。
     CoachMarkStep(
-      targetKey: keys.navBarKey,
-      rectTransform: (raw) => navBarSlot(raw, 2, bottomInset: bottomNavInset),
-      text: '旁邊的「記錄」可以回顧以前的心情、提醒和互動。',
+      targetKey: keys.historyTitleKey,
+      shellTabIndex: 2,
+      text: '這是「紀錄」，可以回顧你和寵物聊過的話。',
     ),
-    // 12：設定可以改寵物名稱和語音方式（高亮底部「設定」分頁）。
+    // 12：仍在紀錄頁，高亮搜尋框（CR-0091）。無紀錄時搜尋框未顯示 → 安全降級置中卡。
     CoachMarkStep(
-      targetKey: keys.navBarKey,
-      rectTransform: (raw) =>
-          settingsRightQuarter(raw, bottomInset: bottomNavInset),
-      text: '「設定」可以幫寵物改名字，也可以調整說話的語音方式。',
+      targetKey: keys.historySearchKey,
+      shellTabIndex: 2,
+      text: '想找以前聊過的內容，可以在這裡搜尋。',
     ),
-    // 13：設定可以新增聯絡人 → 跨頁切到設定頁、高亮「家人聯絡人」入口（最後一步）。
+    // 13：切到「設定」分頁，高亮「換一隻夥伴 / 更換外觀」。
+    CoachMarkStep(
+      targetKey: keys.settingsAppearanceKey,
+      shellTabIndex: 3,
+      text: '在「設定」可以幫寵物換造型，狗狗、狐狸、雪貂、麻吉都能挑。',
+    ),
+    // 14：仍在設定頁，高亮「家人聯絡人」入口（沿用既有）。
     CoachMarkStep(
       targetKey: keys.settingsContactKey,
       shellTabIndex: 3,
       radius: 14,
       text: '在「設定」裡還能新增家人或照護人員，需要時更方便聯絡。',
+    ),
+    // 15：仍在設定頁，高亮「重新觀看新手導覽」，告訴長者之後可重看。
+    CoachMarkStep(
+      targetKey: keys.settingsReplayKey,
+      shellTabIndex: 3,
+      text: '以後想再看一次導覽，從這裡就能重新看一遍。',
+    ),
+    // 16：切回首頁，高亮寵物，結束導覽。
+    CoachMarkStep(
+      targetKey: keys.petKey,
+      shellTabIndex: 0,
+      text: '好了！現在就回到寵物身邊，開始陪牠聊聊天吧。',
     ),
   ];
 }

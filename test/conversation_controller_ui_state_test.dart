@@ -20,6 +20,7 @@ import 'package:pet_companion_app/controllers/profile_controller.dart';
 import 'package:pet_companion_app/controllers/reminder_controller.dart';
 import 'package:pet_companion_app/controllers/task_controller.dart';
 import 'package:pet_companion_app/controllers/wallet_controller.dart';
+import 'package:pet_companion_app/onboarding/coach_mark_keys.dart';
 import 'package:pet_companion_app/services/ai_navigation_service.dart';
 import 'package:pet_companion_app/services/ai_tool_router.dart';
 import 'package:pet_companion_app/services/asr_strategy_service.dart';
@@ -613,8 +614,11 @@ void main() {
       controller.appendExternalTurn(makeTurn(b, DateTime(2026, 1, 2), '保留的對話', 'y'));
 
       await tester.pumpWidget(
-        ChangeNotifierProvider<ConversationController>.value(
-          value: controller,
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<ConversationController>.value(value: controller),
+            Provider<CoachMarkKeys>(create: (_) => CoachMarkKeys()),
+          ],
           child: const MaterialApp(home: Scaffold(body: HistoryScreen())),
         ),
       );
@@ -655,8 +659,11 @@ void main() {
           makeTurn(b, DateTime(2026, 1, 2), '等一下提醒我吃藥', '好的我會記得'));
 
       await tester.pumpWidget(
-        ChangeNotifierProvider<ConversationController>.value(
-          value: controller,
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<ConversationController>.value(value: controller),
+            Provider<CoachMarkKeys>(create: (_) => CoachMarkKeys()),
+          ],
           child: const MaterialApp(home: Scaffold(body: HistoryScreen())),
         ),
       );
@@ -697,8 +704,11 @@ void main() {
           makeTurn(a, DateTime(2026, 1, 1), '今天天氣不錯', '是啊很舒服'));
 
       await tester.pumpWidget(
-        ChangeNotifierProvider<ConversationController>.value(
-          value: controller,
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<ConversationController>.value(value: controller),
+            Provider<CoachMarkKeys>(create: (_) => CoachMarkKeys()),
+          ],
           child: const MaterialApp(home: Scaffold(body: HistoryScreen())),
         ),
       );

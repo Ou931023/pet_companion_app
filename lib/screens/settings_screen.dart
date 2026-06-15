@@ -95,9 +95,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
         const SizedBox(height: 14),
-        const _SettingsSection(
-          title: '換一隻陪你的夥伴',
-          child: PetSkinPicker(),
+        // CR-0092：新手導覽切到設定頁時高亮「換造型」。
+        KeyedSubtree(
+          key: context.read<CoachMarkKeys>().settingsAppearanceKey,
+          child: const _SettingsSection(
+            title: '換一隻陪你的夥伴',
+            child: PetSkinPicker(),
+          ),
         ),
         const SizedBox(height: 14),
         _SettingsSection(
@@ -413,17 +417,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 style: TextStyle(fontSize: 16, height: 1.4),
               ),
               const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: () => _replayCoachMark(context),
-                icon: const Icon(Icons.menu_book_outlined, size: 24),
-                label: const Text(
-                  '重新觀看新手導覽',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-                ),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+              // CR-0092：新手導覽最後幾步會高亮這顆「重看導覽」按鈕。
+              KeyedSubtree(
+                key: context.read<CoachMarkKeys>().settingsReplayKey,
+                child: OutlinedButton.icon(
+                  onPressed: () => _replayCoachMark(context),
+                  icon: const Icon(Icons.menu_book_outlined, size: 24),
+                  label: const Text(
+                    '重新觀看新手導覽',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
                 ),
               ),

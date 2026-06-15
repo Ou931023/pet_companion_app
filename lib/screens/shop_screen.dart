@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../config/app_config.dart';
+import '../onboarding/coach_mark_keys.dart';
 import '../controllers/inventory_controller.dart';
 import '../controllers/pet_stats_controller.dart';
 import '../controllers/wallet_controller.dart';
@@ -26,7 +27,11 @@ class ShopScreen extends StatelessWidget {
       child: ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       children: [
-        _ShopHeader(coins: wallet.coins),
+        // CR-0092：新手導覽切到商城頁時高亮這裡。
+        KeyedSubtree(
+          key: context.read<CoachMarkKeys>().shopKey,
+          child: _ShopHeader(coins: wallet.coins),
+        ),
         const SizedBox(height: 16),
         // CR-0056（A2）：marketplace 入口正式版完全隱藏（能力/路由保留）。
         if (AppConfig.marketplaceVisible) ...[

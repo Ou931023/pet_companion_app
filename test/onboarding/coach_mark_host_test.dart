@@ -49,7 +49,7 @@ Widget _app({
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('首次進首頁（未看過 + petKey 就緒）會自動開始 13 步導覽', (tester) async {
+  testWidgets('首次進首頁（未看過 + petKey 就緒）會自動開始 16 步導覽', (tester) async {
     final controller = CoachMarkController();
     final keys = CoachMarkKeys();
     final nav = AppNavigationController();
@@ -68,8 +68,8 @@ void main() {
     await tester.pump();
 
     expect(controller.isActive, isTrue);
-    expect(controller.stepCount, 13);
-    expect(find.text('第 1 步 / 共 13 步'), findsOneWidget);
+    expect(controller.stepCount, 16);
+    expect(find.text('第 1 步 / 共 16 步'), findsOneWidget);
   });
 
   testWidgets('已看過則不自動開始導覽', (tester) async {
@@ -92,7 +92,8 @@ void main() {
     expect(controller.isActive, isFalse);
   });
 
-  testWidgets('Step 13 跨頁：host 把底部分頁切到設定(index 3)；完成後切回首頁(0) 並記錄已看過',
+  testWidgets(
+      'CR-0092 跨頁：host 依步驟把分頁切到 商城(1)/紀錄(2)/設定(3)，最後回首頁(0) 並記錄已看過',
       (tester) async {
     final controller = CoachMarkController();
     final keys = CoachMarkKeys();
@@ -109,25 +110,35 @@ void main() {
     ));
     await tester.pump();
 
-    controller.start(buildHomeCoachMarkSteps(keys));
+    final steps = buildHomeCoachMarkSteps(keys);
+    controller.start(steps);
     await tester.pump();
-    expect(nav.currentShellIndex, 0, reason: '前 12 步都在首頁，不切頁');
+    expect(nav.currentShellIndex, 0, reason: '首頁段(前 9 步)不切頁');
 
-    // 前進到最後一步（共 13 步 → next 12 次）。
-    for (var i = 0; i < 12; i++) {
-      controller.markTypingDone();
-      controller.next();
-      await tester.pump();
+    // 前進到指定 step index，逐步驅動 host 的切頁。
+    Future<void> advanceTo(int index) async {
+      while (controller.currentIndex < index) {
+        controller.markTypingDone();
+        controller.next();
+        await tester.pump();
+      }
     }
-    expect(controller.currentIndex, 12, reason: '已到第 13 步');
-    expect(nav.currentShellIndex, 3, reason: 'Step 13 應跨頁切到設定分頁');
+
+    await advanceTo(9); // 商城
+    expect(nav.currentShellIndex, 1, reason: 'Step 10 跨頁到商城分頁');
+    await advanceTo(10); // 紀錄
+    expect(nav.currentShellIndex, 2, reason: 'Step 11 跨頁到紀錄分頁');
+    await advanceTo(12); // 設定（換造型）
+    expect(nav.currentShellIndex, 3, reason: 'Step 13 跨頁到設定分頁');
+    await advanceTo(steps.length - 1); // 最後一步：回首頁
+    expect(nav.currentShellIndex, 0, reason: '最後一步切回首頁');
 
     // 完成導覽。
     controller.markTypingDone();
     controller.next();
     await tester.pump();
     expect(controller.isActive, isFalse);
-    expect(nav.currentShellIndex, 0, reason: '完成後切回首頁，不把使用者留在設定頁');
+    expect(nav.currentShellIndex, 0, reason: '完成後留在首頁');
     expect(storage.savedDone, isTrue, reason: '完成後記錄已看過，下次不自動顯示');
   });
 }

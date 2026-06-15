@@ -8,6 +8,7 @@ import 'package:pet_companion_app/controllers/inventory_controller.dart';
 import 'package:pet_companion_app/controllers/pet_stats_controller.dart';
 import 'package:pet_companion_app/controllers/profile_controller.dart';
 import 'package:pet_companion_app/controllers/wallet_controller.dart';
+import 'package:pet_companion_app/onboarding/coach_mark_keys.dart';
 import 'package:pet_companion_app/screens/shop_screen.dart';
 import 'package:pet_companion_app/services/inventory_storage_service.dart';
 import 'package:pet_companion_app/services/local_storage_service.dart';
@@ -121,6 +122,7 @@ Widget _shopHost(_ShopHarness harness) {
         value: harness.inventoryController,
       ),
       Provider<ShopService>.value(value: harness.shopService),
+      Provider<CoachMarkKeys>(create: (_) => CoachMarkKeys()),
     ],
     child: MaterialApp(
       home: const Scaffold(

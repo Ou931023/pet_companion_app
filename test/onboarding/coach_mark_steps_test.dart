@@ -4,9 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pet_companion_app/onboarding/coach_mark_keys.dart';
 
 void main() {
-  test('首頁新手導覽是單一完整導覽，共有 13 步', () {
+  test('首頁新手導覽是單一完整導覽，CR-0092 改為跨頁共有 16 步', () {
     final steps = buildHomeCoachMarkSteps(CoachMarkKeys());
-    expect(steps.length, 13);
+    expect(steps.length, 16);
   });
 
   test('navBarSlot 高亮框排除 bottom safe area、不往下多出一截（CR-0023）', () {
@@ -54,19 +54,22 @@ void main() {
       '飽足',
       '金幣',
       '商城',
-      '記錄',
+      '紀錄',
+      '搜尋',
       '設定',
+      '換造型',
       '聯絡',
     ]) {
       expect(joined, contains(keyword), reason: '導覽應涵蓋「$keyword」');
     }
   });
 
-  test('第一步指向寵物、最後一步指向設定頁聯絡人入口', () {
+  test('第一步指向寵物；CR-0092 最後一步切回首頁、指向寵物', () {
     final keys = CoachMarkKeys();
     final steps = buildHomeCoachMarkSteps(keys);
     expect(steps.first.targetKey, keys.petKey);
-    expect(steps.last.targetKey, keys.settingsContactKey);
+    expect(steps.last.targetKey, keys.petKey);
+    expect(steps.last.shellTabIndex, 0, reason: '最後一步切回首頁');
   });
 
   test('Step 8 高亮每日簽到 icon、Step 9 高亮金幣區（index 7 / 8）', () {
@@ -76,20 +79,34 @@ void main() {
     expect(steps[8].targetKey, keys.coinKey);
   });
 
-  test('Step 10 / 11 / 12 都高亮底部導覽列（商城 / 紀錄 / 設定，index 9~11）', () {
+  test('CR-0092 跨頁：商城(idx9,tab1) / 紀錄(idx10,tab2) / 搜尋(idx11,tab2) 切到該頁高亮頁內目標', () {
     final keys = CoachMarkKeys();
     final steps = buildHomeCoachMarkSteps(keys);
-    for (final i in [9, 10, 11]) {
-      expect(steps[i].targetKey, keys.navBarKey, reason: 'Step ${i + 1} 應高亮底部列');
-      expect(steps[i].rectTransform, isNotNull, reason: 'Step ${i + 1} 應切出對應那一格');
-    }
+    expect(steps[9].targetKey, keys.shopKey);
+    expect(steps[9].shellTabIndex, 1);
+    expect(steps[10].targetKey, keys.historyTitleKey);
+    expect(steps[10].shellTabIndex, 2);
+    expect(steps[11].targetKey, keys.historySearchKey);
+    expect(steps[11].shellTabIndex, 2);
+    // 不再用底部列按鈕的 rectTransform 切格。
+    expect(steps[9].rectTransform, isNull);
   });
 
-  test('Step 13 跨頁切到設定頁（shellTabIndex=3）並高亮聯絡人入口', () {
+  test('CR-0092 跨頁設定段：換造型(idx12) / 聯絡人(idx13) / 重看導覽(idx14) 皆 shellTabIndex=3', () {
     final keys = CoachMarkKeys();
     final steps = buildHomeCoachMarkSteps(keys);
-    expect(steps[12].targetKey, keys.settingsContactKey);
+    expect(steps[12].targetKey, keys.settingsAppearanceKey);
     expect(steps[12].shellTabIndex, 3);
+    expect(steps[13].targetKey, keys.settingsContactKey);
+    expect(steps[13].shellTabIndex, 3);
+    expect(steps[14].targetKey, keys.settingsReplayKey);
+    expect(steps[14].shellTabIndex, 3);
+  });
+
+  test('CR-0092 導覽涵蓋所有分頁切換（home/shop/history/settings 都有）', () {
+    final steps = buildHomeCoachMarkSteps(CoachMarkKeys());
+    final tabs = steps.map((s) => s.shellTabIndex).whereType<int>().toSet();
+    expect(tabs, containsAll(<int>[0, 1, 2, 3]));
   });
 
   test('有 target 的步驟都指向已知的高亮 key（不會指到野生 key）', () {
@@ -104,6 +121,11 @@ void main() {
       keys.dailyCheckInKey,
       keys.coinKey,
       keys.settingsContactKey,
+      keys.shopKey,
+      keys.historyTitleKey,
+      keys.historySearchKey,
+      keys.settingsAppearanceKey,
+      keys.settingsReplayKey,
     };
     for (final step in steps) {
       if (step.targetKey != null) {

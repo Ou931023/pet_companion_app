@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../controllers/conversation_controller.dart';
 import '../models/conversation_session_summary.dart';
+import '../onboarding/coach_mark_keys.dart';
 import '../routes/app_routes.dart';
 import '../utils/conversation_history_display.dart';
 import '../widgets/conversation_session_tile.dart';
@@ -40,6 +41,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<ConversationController>();
+    final coachKeys = context.read<CoachMarkKeys>();
     final sessions = controller.sessionSummaries;
     final filtered = filterConversationSessions(
       sessions: sessions,
@@ -51,8 +53,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
         children: [
-          const Text('對話紀錄',
-              style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800)),
+          // CR-0092：新手導覽切到紀錄頁時高亮標題。
+          KeyedSubtree(
+            key: coachKeys.historyTitleKey,
+            child: const Text('對話紀錄',
+                style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800)),
+          ),
           const SizedBox(height: 4),
           Text(
             '這裡會留著你和寵物聊過的話。長按一則可以刪掉那則紀錄。',
@@ -70,7 +76,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
               hint: '之後和寵物聊天，內容會出現在這裡。',
             )
           else ...[
-            _buildSearchBar(),
+            // CR-0092：新手導覽高亮搜尋框（CR-0091）。
+            KeyedSubtree(
+              key: coachKeys.historySearchKey,
+              child: _buildSearchBar(),
+            ),
             const SizedBox(height: 12),
             if (filtered.isEmpty)
               const EmptyState(

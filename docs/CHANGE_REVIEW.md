@@ -3978,3 +3978,33 @@ mochi rest_03 為趴睡姿（源圖）；thirsty 缺觸發來源、sleepy 僅時
 
 ### 裁決
 純前端紀錄頁去工程化 + 本地搜尋、不外漏 raw 欄位、不新增後端、空 / 錯誤狀態白話、測試齊備且全綠、不碰受保護模組；併入主線。**下一個可用 CR 編號：CR-0092。**
+
+---
+
+## CR-0092 — Onboarding Navigation Flow Polish
+
+### 模式
+**純前端 Flutter** 新手導覽跨頁化。**沿用既有跨頁機制**（`CoachMarkStep.shellTabIndex` + `CoachMarkHost` 切分頁 + overlay 掛在 shell 之上 + 18-frame target 重試 + 置中降級），**未重構導航**。不改 Realtime / persona（CR-0090）/ 紀錄搜尋（CR-0091）/ 字幕（CR-0089）/ 寵物素材（CR-0088）/ 推播（CR-0087）/ 後台（CR-0086）/ App icon。詳見 `docs/ONBOARDING_NAVIGATION_FLOW_CR0092.md`、規格 `tasks/CR-0092-onboarding-navigation-flow-polish.md`。
+
+### 動機
+導覽大多停在首頁：商城/紀錄/設定步驟只亮底部分頁按鈕，使用者沒真的看到頁面。
+
+### 變更
+- `coach_mark_keys.dart`：新增 5 個 target key（`shopKey` / `historyTitleKey` / `historySearchKey` / `settingsAppearanceKey` / `settingsReplayKey`）；`buildHomeCoachMarkSteps` 由 13 步改 **16 步**——步驟 10/11/12 從「亮按鈕」改為帶 `shellTabIndex` 真正切到商城(1)/紀錄(2)/設定(3) 並高亮頁內目標，新增「搜尋紀錄」「重看導覽」步驟與「回首頁」收尾步。
+- 三畫面用 `KeyedSubtree` 掛上對應 key：`shop_screen.dart`（商城標題）、`history_screen.dart`（標題 + CR-0091 搜尋框）、`settings_screen.dart`（換造型區 + 重看導覽鈕）。
+- Controller / Host / overlay **未改**（機制已足夠）。
+
+### target ready / fallback
+切頁後 overlay 逐 frame 重試取 target（上限 18，無硬編延遲），取不到 / 元件隱藏 → 置中說明卡，不 crash、不黑屏、不露工程訊息。搜尋框在尚無紀錄時降級置中卡。
+
+### 測試
+更新 `coach_mark_steps_test.dart`（16 步、各步 shellTabIndex / target、四分頁覆蓋、無工程字）、`coach_mark_host_test.dart`（自動 16 步、逐步切 1→2→3→0、完成回首頁記已看過）；既有 HistoryScreen / ShopScreen widget 測試補 `CoachMarkKeys` provider。`flutter analyze` No issues；`flutter test` **685 passed / 0 failed**。
+
+### 限制遵守
+未讀 `.env`；純前端、未重構導航、未動受保護模組；GlobalKey 取不到安全降級不 crash；首次與重看共用同一套 controller。
+
+### 已知限制
+僅走底部分頁；若未來導覽要指向 pushed route（marketplace 內頁 / 提醒 / 記憶 / Care Alert / 拼圖）需調整 overlay 掛載層級 → 另開 CR 先回報。詳見 `docs/ONBOARDING_NAVIGATION_FLOW_CR0092.md` §7。
+
+### 裁決
+沿用既有跨頁機制做最小擴充、不重構導航、降級安全不 crash、測試齊備且全綠、不碰受保護模組；併入主線。**下一個可用 CR 編號：CR-0093。**
