@@ -57,6 +57,59 @@ void main() {
     expect(launched?.path, '0912345678');
   });
 
+  test('play_music：已知類型直接開 YouTube 影片播放（watch），不是搜尋頁', () async {
+    final cases = <String, String>{
+      '台語老歌 放鬆': 'aRrXwHP0v4A',
+      '懷舊老歌': 'aRrXwHP0v4A',
+      '白噪音': '-ERFwSSqg1Y',
+      '放鬆音樂': 'Qes9vypXOlE',
+      '輕音樂': 'Qes9vypXOlE',
+    };
+    for (final entry in cases.entries) {
+      Uri? launched;
+      final service = NativeToolExecutorService(
+        launch: (uri, mode) async {
+          launched = uri;
+          expect(mode, LaunchMode.externalApplication);
+          return true;
+        },
+      );
+      final result = await service.execute(
+        intent: _intent('play_music', arguments: {'query': entry.key}),
+        reminderController: _FakeReminderController(),
+        searchService: SearchService(),
+        navigationController: AppNavigationController(),
+        memoryController: _memoryController(),
+      );
+      expect(result.success, isTrue, reason: result.message);
+      expect(result.message, contains('播放'), reason: '「${entry.key}」應回播放訊息');
+      expect(launched?.host, 'www.youtube.com');
+      expect(launched?.path, '/watch', reason: '「${entry.key}」應開 watch 播放頁');
+      expect(launched?.queryParameters['v'], entry.value,
+          reason: '「${entry.key}」應對應到精選影片 ${entry.value}');
+    }
+  });
+
+  test('play_music：認不得的查詢（指定歌手）退回 YouTube 搜尋', () async {
+    Uri? launched;
+    final service = NativeToolExecutorService(
+      launch: (uri, mode) async {
+        launched = uri;
+        return true;
+      },
+    );
+    final result = await service.execute(
+      intent: _intent('play_music', arguments: {'query': '周杰倫'}),
+      reminderController: _FakeReminderController(),
+      searchService: SearchService(),
+      navigationController: AppNavigationController(),
+      memoryController: _memoryController(),
+    );
+    expect(result.success, isTrue, reason: result.message);
+    expect(launched?.path, '/results');
+    expect(launched?.queryParameters['search_query'], '周杰倫');
+  });
+
   test('create reminder delegates to reminder controller', () async {
     final reminderController = _FakeReminderController();
     final service = NativeToolExecutorService(launch: (_, __) async => true);

@@ -84,7 +84,7 @@ function buildIntentDraft({ userText = "", petName = "陪伴寶" } = {}) {
     return {
       toolName: "play_music",
       arguments: { query: extractMusicQuery(text) },
-      userFacingMessage: "我幫你打開音樂搜尋。",
+      userFacingMessage: "好的，幫你播放音樂。",
     };
   }
 

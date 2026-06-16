@@ -107,20 +107,53 @@ class NativeToolExecutorService {
     }
   }
 
+  /// 長者說「播放音樂」時要真的「開始播放」，而不是只丟一頁 YouTube 搜尋結果讓他自己找。
+  /// 依長者講的類型對應到精選、長輩友善、無廣告的 YouTube 影片（開 watch 連結，
+  /// iOS 會交給 YouTube App 直接播放）。認不得的查詢（指定歌手 / 歌名等）才退回搜尋。
+  ///
+  /// 影片來源（皆為公開、可用、無廣告長片，2026-06 驗證可播）：
+  /// - 放鬆 / 輕音樂：「放鬆音樂 - Relaxing Music Sleep」高品質放鬆輕音樂。
+  /// - 台語老歌：「懷舊台語老歌金曲」雨夜花 / 望春風 / 港都夜雨。
+  /// - 白噪音 / 助眠：「自然音樂」樹林雨聲雷聲助眠白噪音。
+  static const String _relaxingMusicVideoId = 'Qes9vypXOlE';
+  static const String _taiwaneseOldiesVideoId = 'aRrXwHP0v4A';
+  static const String _whiteNoiseVideoId = '-ERFwSSqg1Y';
+
+  /// 由 backend agent（extractMusicQuery）帶來的 query 或長者口語，判斷要播哪一類。
+  /// 認不得 → 回 null，由呼叫端退回 YouTube 搜尋（保留任意歌手 / 歌名仍可查的能力）。
+  static String? _curatedMusicVideoIdFor(String query) {
+    bool hasAny(List<String> keywords) =>
+        keywords.any((keyword) => query.contains(keyword));
+
+    // 先比對較專一的類別，避免被通用詞搶走。
+    if (hasAny(['台語', '老歌', '懷舊', '望春風', '雨夜花', '港都'])) {
+      return _taiwaneseOldiesVideoId;
+    }
+    if (hasAny(['白噪音', '雨聲', '海浪', '助眠', '入睡', 'asmr', '睡覺', '睏'])) {
+      return _whiteNoiseVideoId;
+    }
+    if (hasAny(['放鬆', '輕音樂', '療癒', '冥想', '紓壓', '舒壓', '放空'])) {
+      return _relaxingMusicVideoId;
+    }
+    return null;
+  }
+
   Future<AgentToolExecutionResult> _playMusic(AgentToolIntent intent) async {
     final query = _stringArg(intent, 'query', fallback: '放鬆音樂');
-    final uri = Uri.https('www.youtube.com', '/results', {
-      'search_query': query,
-    });
+    final videoId = _curatedMusicVideoIdFor(query);
+    final isPlayback = videoId != null;
+    final uri = isPlayback
+        ? Uri.https('www.youtube.com', '/watch', {'v': videoId})
+        : Uri.https('www.youtube.com', '/results', {'search_query': query});
     final ok = await _launch(uri, LaunchMode.externalApplication);
     return ok
         ? AgentToolExecutionResult.succeeded(
             toolName: intent.toolName,
-            message: '已開啟 YouTube 音樂搜尋。',
+            message: isPlayback ? '好的，幫你播放音樂了。' : '已開啟 YouTube 音樂搜尋。',
           )
         : AgentToolExecutionResult.failed(
             toolName: intent.toolName,
-            message: '目前無法開啟音樂搜尋。',
+            message: '目前無法開啟音樂。',
           );
   }
 
