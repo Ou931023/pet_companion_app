@@ -25,6 +25,7 @@ import '../models/source_reference.dart';
 import '../models/voice_agent_state.dart';
 import '../utils/voice_button_presentation.dart';
 import '../routes/app_routes.dart';
+import '../widgets/agent/agent_confirmation_sheet.dart';
 import '../widgets/bag_icon_button.dart';
 import '../widgets/coin_badge.dart';
 import '../widgets/conversation_bubble_stack.dart';
@@ -54,6 +55,8 @@ class _HomeScreenState extends State<HomeScreen> {
   // CR-0088：對話結束後短暫顯示情緒狀態。記住已處理過的最新一則對話，避免重複觸發。
   ConversationController? _conversationForTransient;
   String? _lastTransientTurnKey;
+  // 已對哪個 pendingIntent 顯示過確認 sheet（避免 rebuild 重複彈出）。
+  String? _shownConfirmIntentId;
 
   @override
   void dispose() {
@@ -118,6 +121,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final inventoryController = context.watch<InventoryController>();
     final petStatsController = context.watch<PetStatsController>();
     final agentToolController = _maybeWatchAgentToolController(context);
+    if (agentToolController != null) {
+      // 高風險工具（撥號 / 寄信 / 傳訊息…）會把 pendingIntent 設成需確認，
+      // 在這裡跳出確認 sheet，使用者按「確認執行」才真的執行（不會自動撥 / 寄）。
+      _maybeShowAgentConfirmation(context, agentToolController);
+    }
     final coachKeys = context.read<CoachMarkKeys>();
     final useTaigiShortRecording =
         profileController.voiceLanguageMode == VoiceLanguageMode.taigiPreferred;
@@ -599,6 +607,55 @@ class _HomeScreenState extends State<HomeScreen> {
     } on ProviderNotFoundException {
       return null;
     }
+  }
+
+  /// 高風險工具（撥號 / 寄信 / 傳訊息…）需要使用者明確確認才執行。
+  /// 偵測到需確認的 pendingIntent 時跳出一次確認 sheet：
+  /// 按「確認執行」→ confirmAndExecute；按「取消」或滑掉 → cancelIntent。
+  /// 低風險工具（播音樂 / 查資訊…）不會進這裡（已自動執行）。
+  void _maybeShowAgentConfirmation(
+    BuildContext context,
+    AgentToolController controller,
+  ) {
+    final intent = controller.pendingIntent;
+    if (intent == null) {
+      _shownConfirmIntentId = null;
+      return;
+    }
+    if (!intent.requiresConfirmation) return;
+    if (_shownConfirmIntentId == intent.id) return;
+    _shownConfirmIntentId = intent.id;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      var handled = false;
+      showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        builder: (sheetContext) => AgentConfirmationSheet(
+          intent: intent,
+          onConfirm: () {
+            handled = true;
+            Navigator.of(sheetContext).pop();
+            controller.confirmAndExecute();
+          },
+          onCancel: () {
+            handled = true;
+            Navigator.of(sheetContext).pop();
+            controller.cancelIntent();
+          },
+        ),
+      ).then((_) {
+        // 使用者沒按任何鈕、直接把 sheet 滑掉 → 視為取消，清掉 pending 不卡住。
+        if (!handled && controller.pendingIntent?.id == intent.id) {
+          controller.cancelIntent();
+        }
+      });
+    });
   }
 }
 
