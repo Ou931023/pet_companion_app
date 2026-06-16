@@ -754,6 +754,19 @@
         featureFlags: { marketplace: true, dailyCareTasks: true },
       };
     </script>
+    <script>
+      // 本機開發覆寫：在 localhost / 127.0.0.1 開啟時改用同源相對路徑 "/api"，
+      // 交給本機 dev server（caregiver_web/serve_local.js）反向代理到本機後端，
+      // 避免跨網域 CORS，並讀取與手機 App 同一份本機資料。
+      // 不影響正式網域（Render 等）的已部署後端預設。
+      if (
+        location.hostname === "localhost" ||
+        location.hostname === "127.0.0.1" ||
+        location.hostname === "[::1]"
+      ) {
+        window.APP_CONFIG.apiBaseUrl = null;
+      }
+    </script>
     <script src="./app.js?v=20260611-cr0068"></script>
   </body>
 </html>
