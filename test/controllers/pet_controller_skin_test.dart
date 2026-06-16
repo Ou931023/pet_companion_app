@@ -18,18 +18,18 @@ void main() {
       expect(controller.ownedSkins, containsAll(PetSkin.values));
     });
 
-    test('旗標開啟 → 直接 changeSkin 到雪貂成功，不需購買', () async {
+    test('旗標開啟 → 直接 changeSkin 到付費外觀（mochi）成功，不需購買', () async {
       final controller = PetController(freeAllSkins: true);
-      final ok = await controller.changeSkin(PetSkin.ferret);
+      final ok = await controller.changeSkin(PetSkin.mochi);
       expect(ok, isTrue);
-      expect(controller.currentSkin, PetSkin.ferret);
+      expect(controller.currentSkin, PetSkin.mochi);
     });
 
     test('旗標關閉（預設）→ 維持只擁有狗狗，購買流程不受影響', () {
       final controller = PetController(freeAllSkins: false);
       expect(controller.isOwned(PetSkin.dog), isTrue);
       expect(controller.isOwned(PetSkin.fox), isFalse);
-      expect(controller.isOwned(PetSkin.ferret), isFalse);
+      expect(controller.isOwned(PetSkin.mochi), isFalse);
     });
   });
 
@@ -171,6 +171,32 @@ void main() {
       final ok = await controller.changeSkin(PetSkin.dog); // 已是 dog
       expect(ok, isTrue);
       expect(notified, 0);
+    });
+  });
+
+  group('CR-0096 雪貂下架：舊存檔 ferret 自動 fallback 成狗狗，不 crash', () {
+    test('fromStorageId(\'ferret\') 還原為狗狗（已下架）', () {
+      expect(PetSkinX.fromStorageId('ferret'), PetSkin.dog);
+    });
+
+    test('本機存到 ferret（目前外觀 + 已擁有清單）→ loadSkin 顯示狗狗、不丟例外',
+        () async {
+      // 模擬升級前長者已把外觀設成雪貂、且解鎖清單含 ferret 的舊存檔。
+      SharedPreferences.setMockInitialValues({
+        'petSkin': 'ferret',
+        'ownedPetSkins': <String>['dog', 'ferret'],
+      });
+      final controller = PetController(storageService: LocalStorageService());
+      await controller.loadSkin();
+
+      // 目前外觀 fallback 成狗狗，名稱不會顯示雪貂。
+      expect(controller.currentSkin, PetSkin.dog);
+      expect(controller.currentSkin.label, '狗狗');
+      // 舊的 ferret 在還原時併入狗狗，擁有清單裡不會殘留雪貂。
+      expect(
+        controller.ownedSkins.map((s) => s.storageId),
+        isNot(contains('ferret')),
+      );
     });
   });
 }

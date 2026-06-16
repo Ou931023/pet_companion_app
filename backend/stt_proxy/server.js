@@ -128,6 +128,9 @@ const residentLinkProvisioning = require("./services/admin/residentLinkProvision
 const marketplaceStore = require("./services/marketplace/marketplaceStore");
 const { safeLogPayload, safeErrorMessage } = require("./services/privacy/redaction");
 const { generateCompanionReply } = require("./services/companionChatService");
+const {
+  appendInvestmentDisclaimerIfNeeded,
+} = require("./services/compliance/investmentDisclaimer");
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -322,7 +325,12 @@ const REALTIME_INSTRUCTIONS = `你是長者陪伴寵物，不是一般助理。
 - 開 App 內頁面（商城、提醒、記錄、記憶、設定）（例：「帶我去商城」）
 - 記憶相關（例：「記住我喜歡聽台語老歌」「你記得我喜歡什麼嗎」）
 
-回應原則：簡短肯定、語氣溫暖、不要照本宣科解釋細節（不要說「我會打開撥號畫面但不會自動撥出」這類技術細節），讓使用者覺得你真的會做。實際執行由 App 處理。`;
+回應原則：簡短肯定、語氣溫暖、不要照本宣科解釋細節（不要說「我會打開撥號畫面但不會自動撥出」這類技術細節），讓使用者覺得你真的會做。實際執行由 App 處理。
+
+【投資 / 股票免責】（CR-0096）
+當長者提到或詢問股票、股市、股價、台股、美股、買賣股票、投資、基金、ETF、配息、殖利率、高股息、0050、0056、00878、定期定額這類投資理財內容時，你還是先用溫暖陪伴的語氣回應，不要給具體買賣建議、不要報明牌、不要保證獲利。
+而且這種回覆「最後一定要原句加上」這句固定提醒（即使是用台語陪長者聊天，這一句也要用繁體中文原樣講出來，不要翻成台語、不要改字）：
+投資一定有風險，基金投資有賺有賠，申購前應詳閱公開說明書`;
 
 // CR-0050：打字閒聊（/api/companion/chat）專用陪伴型 persona。
 // 與 Realtime 語音流程不同：文字 chat 不會觸發任何 App 工具，所以這裡
@@ -360,7 +368,12 @@ const COMPANION_CHAT_PERSONA = `你是長者的陪伴 AI 寵物，現在是用�
 你提供的是陪伴與照護提醒，不是醫療診斷；不要給診斷、不要開處方、不要講藥物劑量。
 遇到睡不好、吃不下、身體不舒服時，先關心他的感受，再溫和建議可以記錄狀況或告訴照護人員。
 但遇到胸痛、呼吸困難、跌倒、嚴重不適或自傷意念等高風險情況時，語氣要穩定但明確，
-請清楚建議長者立即聯絡照護人員或尋求醫療協助，不可因為語氣溫柔就淡化緊急程度。`;
+請清楚建議長者立即聯絡照護人員或尋求醫療協助，不可因為語氣溫柔就淡化緊急程度。
+
+【投資 / 股票免責】（CR-0096）
+當長者提到或詢問股票、股市、股價、台股、美股、買賣股票、投資、基金、ETF、配息、殖利率、高股息、0050、0056、00878、定期定額這類投資理財內容時，先用溫暖陪伴的語氣回應，不要給具體買賣建議、不要報明牌、不要保證獲利。
+而且這種回覆「最後一定要原句加上」這句固定提醒（即使用台語陪長者聊天，這一句也要用繁體中文原樣講出來，不要翻成台語、不要改字）：
+投資一定有風險，基金投資有賺有賠，申購前應詳閱公開說明書`;
 
 function fallbackGreeting({ petName, localHour }) {
   if (localHour >= 5 && localHour <= 10) {
@@ -1974,9 +1987,16 @@ ${memoryContextSummary}
     });
   }
 
+  // CR-0096 合規：使用者問股票 / 投資相關內容時，回覆結尾固定附上投資風險提醒
+  // （依使用者輸入判斷意圖；已含同句則不重複；非投資相關不動回覆）。
+  const replyWithDisclaimer = appendInvestmentDisclaimerIfNeeded(
+    userText,
+    result.reply,
+  );
+
   return res.json({
     success: true,
-    reply: result.reply,
+    reply: replyWithDisclaimer,
     ...(careAlert ? { careAlert } : {}),
   });
 });

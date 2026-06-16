@@ -6,7 +6,7 @@ import 'package:pet_companion_app/models/pet_status.dart';
 import 'package:pet_companion_app/utils/asset_paths.dart';
 
 /// CR-0088：新寵物「麻吉 mochi」整合 + 全寵物 8 狀態可解析測試。
-/// 不更動 dog / fox / guineaPig / ferret。
+/// 不更動 dog / fox / guineaPig。（CR-0096：雪貂 ferret 已下架。）
 void main() {
   group('PetSkin：麻吉已正確註冊', () {
     test('label / assetPrefix / storageId', () {
@@ -19,16 +19,20 @@ void main() {
       expect(PetSkinX.fromStorageId('mochi'), PetSkin.mochi);
     });
 
-    test('出現在換皮 / 商店清單（PetSkin.values），排在 ferret 之後', () {
+    test('出現在換皮 / 商店清單（PetSkin.values），排在最後', () {
       expect(PetSkin.values, contains(PetSkin.mochi));
       expect(PetSkin.values.last, PetSkin.mochi);
     });
 
-    test('不影響既有 dog / fox / guineaPig / ferret', () {
+    test('不影響既有 dog / fox / guineaPig', () {
       expect(PetSkin.dog.assetPrefix, 'dog');
       expect(PetSkin.fox.assetPrefix, 'fox');
       expect(PetSkin.guineaPig.assetPrefix, 'guinea_pig');
-      expect(PetSkin.ferret.assetPrefix, 'ferret');
+    });
+
+    test('CR-0096：雪貂 ferret 已從外觀清單移除', () {
+      expect(PetSkin.values.map((s) => s.storageId), isNot(contains('ferret')));
+      expect(PetSkin.values.map((s) => s.label), isNot(contains('雪貂')));
     });
   });
 

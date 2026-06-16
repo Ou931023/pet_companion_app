@@ -162,7 +162,7 @@ List<CoachMarkStep> buildHomeCoachMarkSteps(
     CoachMarkStep(
       targetKey: keys.settingsAppearanceKey,
       shellTabIndex: 3,
-      text: '在「設定」可以幫寵物換造型，狗狗、狐狸、雪貂、麻吉都能挑。',
+      text: '在「設定」可以幫寵物換造型，狗狗、天竺鼠、狐狸、麻吉都能挑。',
     ),
     // 14：仍在設定頁，高亮「家人聯絡人」入口（沿用既有）。
     CoachMarkStep(

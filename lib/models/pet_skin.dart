@@ -4,7 +4,6 @@ enum PetSkin {
   dog,
   guineaPig,
   fox,
-  ferret,
   mochi,
 }
 
@@ -15,7 +14,6 @@ extension PetSkinX on PetSkin {
         PetSkin.dog => 'dog',
         PetSkin.guineaPig => 'guinea_pig',
         PetSkin.fox => 'fox',
-        PetSkin.ferret => 'ferret',
         PetSkin.mochi => 'mochi',
       };
 
@@ -24,7 +22,6 @@ extension PetSkinX on PetSkin {
         PetSkin.dog => 'dog',
         PetSkin.guineaPig => 'guinea_pig',
         PetSkin.fox => 'fox',
-        PetSkin.ferret => 'ferret',
         PetSkin.mochi => 'mochi',
       };
 
@@ -33,7 +30,6 @@ extension PetSkinX on PetSkin {
         PetSkin.dog => '狗狗',
         PetSkin.guineaPig => '天竺鼠',
         PetSkin.fox => '狐狸',
-        PetSkin.ferret => '雪貂',
         PetSkin.mochi => '麻吉',
       };
 
@@ -42,7 +38,6 @@ extension PetSkinX on PetSkin {
         PetSkin.dog => '溫暖陪伴型',
         PetSkin.guineaPig => '可愛療癒型',
         PetSkin.fox => '活潑聰明型',
-        PetSkin.ferret => '好奇靈巧型',
         PetSkin.mochi => '黏人撒嬌型',
       };
 
@@ -51,7 +46,6 @@ extension PetSkinX on PetSkin {
         PetSkin.dog => 0,
         PetSkin.guineaPig => 60,
         PetSkin.fox => 80,
-        PetSkin.ferret => 100,
         PetSkin.mochi => 120,
       };
 
@@ -59,11 +53,12 @@ extension PetSkinX on PetSkin {
   bool get ownedByDefault => this == PetSkin.dog;
 
   /// 從存檔字串還原；認不得（含 null / 舊資料）一律回預設狗狗，永不 crash。
+  /// CR-0096：雪貂 `ferret` 已下架，舊存檔若還是 `ferret` 會自動 fallback 成狗狗，
+  /// 不會 crash、也不會顯示雪貂名稱或抓不到素材。
   static PetSkin fromStorageId(String? id) {
     return switch (id) {
       'guinea_pig' => PetSkin.guineaPig,
       'fox' => PetSkin.fox,
-      'ferret' => PetSkin.ferret,
       'mochi' => PetSkin.mochi,
       _ => PetSkin.dog,
     };

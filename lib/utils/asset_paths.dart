@@ -8,7 +8,6 @@ import '../models/pet_status.dart';
 /// - dog：talk 6 / rest 3 / listening 1 / states 8
 /// - guineaPig：talk 3 / rest 3 / listening 1 / states 8
 /// - fox：talk 6 / rest 3 / listening 1 / states 8
-/// - ferret：talk 6 / rest 3 / listening 1 / states 8
 /// - mochi：talk 6 / rest 3 / listening 1 / states 8
 class AssetPaths {
   const AssetPaths._();
@@ -18,7 +17,6 @@ class AssetPaths {
     PetSkin.dog: 6,
     PetSkin.guineaPig: 3,
     PetSkin.fox: 6,
-    PetSkin.ferret: 6,
     PetSkin.mochi: 6,
   };
 
@@ -27,7 +25,6 @@ class AssetPaths {
     PetSkin.dog: 3,
     PetSkin.guineaPig: 3,
     PetSkin.fox: 3,
-    PetSkin.ferret: 3,
     PetSkin.mochi: 3,
   };
 

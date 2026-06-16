@@ -4154,3 +4154,35 @@ CR-0090 已改後端語音 persona，但 `realtime_voice_service.dart` 內供 `s
 
 ### 裁決
 純素材去背修復、幾何對齊既有慣例（feet 944 / 1024² RGBA）、ping-pong 一致、不碰程式與受保護模組、測試全綠；併入主線。**mochi_normal / ferret 缺原圖部分待使用者補圖。下一個可用 CR 編號：CR-0098。**
+
+---
+
+## CR-0096 — 移除雪貂 ferret + 投資/股票回覆固定免責聲明 + 全功能回歸
+
+> 註：CR 編號沿用任務檔名 `tasks/CR-0096-...md`（早於 CR-0097 開立、晚於它落地），非時間順序倒掛，僅編號早於前一筆。
+
+### 模式
+**跨邊界小批次**（touches frontend-ux / companion-memory(persona) / backend）：雪貂展示前下架避免品質不穩素材曝光；投資相關回覆補法定免責聲明。經 architecture-agent 視角確認：未動 Realtime 主流程 SDP/ICE、未改 server.js API 契約形狀、未改 DB schema、未改依賴版本。
+
+### Part 1 — 移除雪貂（Flutter only；後端 / caregiver_web 本就無 ferret）
+- `lib/models/pet_skin.dart`：`PetSkin.ferret` 自 enum 與所有 switch（storageId/assetPrefix/label/tagline/unlockCost）移除。
+- `fromStorageId`：移除 `'ferret'` 對應 → 舊存檔 `ferret` 自動 fallback 成 `dog`（不 crash、不顯示雪貂名、不抓缺檔）。
+- `lib/utils/asset_paths.dart`：移除 ferret 的 talk/rest frame count 與註解。
+- `lib/onboarding/coach_mark_keys.dart`：新手導覽換造型文案由「狗狗、狐狸、雪貂、麻吉」改為「狗狗、天竺鼠、狐狸、麻吉」。
+- 換皮彈窗 / 商店 / 解鎖清單皆走 `PetSkin.values`，enum 移除後自動不再出現雪貂（無額外硬寫入口）。
+- 資源：刪除 `assets/pets/{listening,states,rest,talk}/ferret_*.png` 共 18 張（採任務 1.3 選項 A，避免正式 build 打包）。
+- 測試：刪 `test/models/ferret_skin_test.dart`；`mochi_skin_test.dart` / `pet_controller_skin_test.dart` 去除 ferret 參照並新增「雪貂已下架 + 舊存檔 ferret→dog 防呆」測試。
+
+### Part 2 — 投資 / 股票免責聲明
+- 新增 `backend/stt_proxy/services/compliance/investmentDisclaimer.js`（純函式）：`isInvestmentRelatedText` / `appendInvestmentDisclaimerIfNeeded`，中英文 + 代號關鍵字；空 / 非字串不 crash；已含同句不重複；只附加不覆蓋。
+- `/api/companion/chat`（typed chat）：成功回覆後依「使用者輸入」判斷意圖，命中即於結尾附固定提醒。
+- Realtime 語音 persona（`REALTIME_INSTRUCTIONS`）與 chat persona（`COMPANION_CHAT_PERSONA`）：加入【投資/股票免責】指示，要求投資相關回覆結尾「原句」附上提醒，台語模式亦以繁體中文原樣講出，不報明牌、不保證獲利。
+- 固定句：`投資一定有風險，基金投資有賺有賠，申購前應詳閱公開說明書`。
+
+### 測試（全綠）
+- 後端 `npm test`：**604 passed / 0 failed**（含新增 investmentDisclaimer 9 例）。
+- Flutter `flutter test`：**671 passed / 0 failed**；`flutter analyze`（變更檔）：No issues。
+- caregiver_web `node --test *.test.js`：**101 passed / 0 failed**（管理者網頁 smoke）。
+
+### 裁決
+雪貂下架乾淨（程式 / 素材 / 入口 / 文案皆無殘留，僅保留 fallback 防呆與下架測試）；投資免責以「後端決定性附加」+「persona 指示」雙保險覆蓋 typed / Realtime / 台語；未碰受保護主流程與 API 契約；三端測試全綠。併入主線。**下一個可用 CR 編號：CR-0098。**
