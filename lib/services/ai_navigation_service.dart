@@ -1,13 +1,18 @@
 import '../routes/app_routes.dart';
 
+/// CR-0101：導航後額外動作。
+enum NavigationAction { none, replayOnboarding }
+
 class AiNavigationIntent {
   const AiNavigationIntent({
     required this.route,
     required this.reply,
+    this.action = NavigationAction.none,
   });
 
   final String route;
   final String reply;
+  final NavigationAction action;
 }
 
 class AiNavigationService {
@@ -40,6 +45,34 @@ class AiNavigationService {
       return const AiNavigationIntent(
         route: AppRoute.album,
         reply: '好，我帶你去看照片。',
+      );
+    }
+
+    // CR-0101：更換寵物造型 → 設定頁。
+    if (_containsAny(
+        normalized, const ['我要換造型', '幫寵物換外觀', '換寵物', '換造型'])) {
+      return const AiNavigationIntent(
+        route: AppRoute.settings,
+        reply: '好，我帶你去更換寵物造型。',
+      );
+    }
+
+    // CR-0101：今日關心紀錄。
+    if (_containsAny(
+        normalized, const ['我要看關心紀錄', '今天有什麼關心紀錄', '關心紀錄'])) {
+      return const AiNavigationIntent(
+        route: AppRoute.careAlerts,
+        reply: '好，我帶你去看今天的關心紀錄。',
+      );
+    }
+
+    // CR-0101：重新觀看新手導覽 → 首頁 + 觸發 replay。
+    if (_containsAny(
+        normalized, const ['重新教我一次', '再看一次新手導覽', '重新看導覽'])) {
+      return const AiNavigationIntent(
+        route: AppRoute.home,
+        reply: '好，我帶你重新看一次新手導覽。',
+        action: NavigationAction.replayOnboarding,
       );
     }
 

@@ -347,6 +347,7 @@ class PetCompanionApp extends StatelessWidget {
                 context.read<CompanionReplyStrategyService>(),
             languageRoutingService: context.read<LanguageRoutingService>(),
             taigiAsrService: context.read<TaigiAsrService>(),
+            coachMarkController: context.read<CoachMarkController>(),
           ),
           update: (context, profile, pet, router, tts, search, controller) =>
               controller ??
@@ -373,6 +374,7 @@ class PetCompanionApp extends StatelessWidget {
                     context.read<CompanionReplyStrategyService>(),
                 languageRoutingService: context.read<LanguageRoutingService>(),
                 taigiAsrService: context.read<TaigiAsrService>(),
+                coachMarkController: context.read<CoachMarkController>(),
               ),
         ),
         ChangeNotifierProxyProvider6<
@@ -398,6 +400,7 @@ class PetCompanionApp extends StatelessWidget {
             careAlertController: context.read<CareAlertController>(),
             careAlertNotificationService:
                 context.read<CareAlertNotificationService>(),
+            coachMarkController: context.read<CoachMarkController>(),
           ),
           update: (context, profile, pet, petStats, conversation,
                   realtimeService, navigation, controller) =>
@@ -417,6 +420,7 @@ class PetCompanionApp extends StatelessWidget {
                 careAlertController: context.read<CareAlertController>(),
                 careAlertNotificationService:
                     context.read<CareAlertNotificationService>(),
+                coachMarkController: context.read<CoachMarkController>(),
               ),
         ),
       ],

@@ -7,6 +7,7 @@ import '../controllers/reminder_controller.dart';
 import '../controllers/task_controller.dart';
 import '../controllers/wallet_controller.dart';
 import '../models/ai_tool_result.dart';
+import '../models/language_route.dart';
 import '../models/pet_status.dart';
 import 'companion_chat_service.dart';
 import 'companion_content_service.dart';
@@ -72,6 +73,12 @@ class AiToolRouter {
     if (reminderController.isListReminderCommand(normalized)) {
       return _listReminders();
     }
+    if (_isVoiceLanguageSwitch(normalized)) {
+      return _setVoiceLanguage(normalized);
+    }
+    if (_isConcernReminderToggle(normalized)) {
+      return _setConcernReminder(normalized);
+    }
     if (_isDailyCheckIn(normalized)) {
       return _dailyCheckIn();
     }
@@ -105,7 +112,9 @@ class AiToolRouter {
 
   bool shouldHandleLocally(String text) {
     final normalized = _toTraditional(text.trim());
-    return _isDailyCheckIn(normalized) ||
+    return _isVoiceLanguageSwitch(normalized) ||
+        _isConcernReminderToggle(normalized) ||
+        _isDailyCheckIn(normalized) ||
         _isBuyRequest(normalized) ||
         _isSettingsRequest(normalized) ||
         _isGetStatus(normalized) ||
@@ -127,7 +136,8 @@ class AiToolRouter {
     '现': '現', '钱': '錢', '钢': '鋼', '银': '銀', '门': '門', '区': '區',
     '动': '動', '运': '運', '总': '總', '远': '遠', '过': '過', '应': '應',
     '处': '處', '会': '會', '后': '後', '从': '從', '们': '們', '为': '為',
-    '东': '東', '车': '車', '电': '電', '简': '簡',
+        '东': '東', '车': '車', '电': '電', '简': '簡',
+        '语': '語', '换': '換', '观': '觀', '导': '導',
   };
 
   static String _toTraditional(String input) {
@@ -149,6 +159,18 @@ class AiToolRouter {
     // a check-in.
     final phoneticMisreads = ['停到', '添到', '添道', '籤到', '簽道', '簽倒', '僉到', '前到'];
     return phoneticMisreads.any(text.contains);
+  }
+
+  /// CR-0101：語音切換台語 / 中文語音模式。
+  bool _isVoiceLanguageSwitch(String text) {
+    return text.contains('台語') ||
+        (text.contains('中文') &&
+            (text.contains('改') || text.contains('用') || text.contains('切換') || text.contains('說')));
+  }
+
+  bool _isConcernReminderToggle(String text) {
+    return text.contains('關心提醒') ||
+        (text.contains('關心') && text.contains('我'));
   }
 
   bool _isBuyRequest(String text) {
@@ -259,6 +281,37 @@ class AiToolRouter {
       petMode: PetMode.excited,
       shouldSpeak: true,
       updatedCoins: walletController.coins,
+    );
+  }
+
+  /// CR-0101：語音切換台語 / 中文語音模式。
+  Future<AiToolResult> _setVoiceLanguage(String text) async {
+    final isTaigi = text.contains('台語');
+    final mode = isTaigi
+        ? VoiceLanguageMode.taigiRealtime
+        : VoiceLanguageMode.defaultOpenAiRealtime;
+    await profileController.setVoiceLanguageMode(mode);
+    return AiToolResult(
+      toolName: 'setVoiceLanguage',
+      success: true,
+      message: isTaigi
+          ? '好，我之後會用台語陪你說話。'
+          : '好，我之後會用中文陪你說話。',
+      petMode: PetMode.happy,
+      shouldSpeak: true,
+    );
+  }
+
+  /// CR-0101：語音開關寵物關心提醒。
+  Future<AiToolResult> _setConcernReminder(String text) async {
+    final enable = !text.contains('關掉') && !text.contains('關閉') && !text.contains('不要');
+    await profileController.setConcernRemindersEnabled(enable);
+    return AiToolResult(
+      toolName: 'setConcernReminder',
+      success: true,
+      message: enable ? '好，我會記得關心你。' : '好，我暫時不會主動關心你。',
+      petMode: PetMode.happy,
+      shouldSpeak: true,
     );
   }
 
