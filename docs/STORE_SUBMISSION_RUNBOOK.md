@@ -4,7 +4,7 @@
 > 用途：每次送 TestFlight、Internal testing、App Store Connect 或 Google Play Console 前，都依本 Runbook 跑一次。
 > 紅線：任何標示 `BLOCKER` 的項目未完成，不得送審；不得以 localhost、假 URL、假素材、硬編帳號或 demo fallback 代替正式流程。
 
-相關文件：`docs/FINAL_STORE_BLOCKER_BOARD.md`、`docs/INTERNAL_TESTING_SMOKE_RUNBOOK.md`、`docs/STORE_REVIEW_NOTES_TEMPLATE.md`、`docs/STORE_RELEASE_CHECKLIST.md`、`docs/PRODUCTION_CONFIG_CHECKLIST.md`、`docs/STORE_ASSET_CHECKLIST.md`、`docs/APP_STORE_METADATA.md`、`docs/GOOGLE_PLAY_DATA_SAFETY.md`、`docs/E2E_SMOKE_TEST_PLAN.md`。
+相關文件：`docs/FINAL_STORE_BLOCKER_BOARD.md`、`docs/INTERNAL_TESTING_SMOKE_RUNBOOK.md`、`docs/STORE_REVIEW_NOTES_TEMPLATE.md`、`docs/BACKEND_DEPLOYMENT_GUIDE.md`、`docs/STORE_RELEASE_CHECKLIST.md`、`docs/PRODUCTION_CONFIG_CHECKLIST.md`、`docs/STORE_ASSET_CHECKLIST.md`、`docs/APP_STORE_METADATA.md`、`docs/GOOGLE_PLAY_DATA_SAFETY.md`、`docs/E2E_SMOKE_TEST_PLAN.md`。
 
 ---
 
@@ -12,7 +12,7 @@
 
 以下資料由 owner / 發行負責人提供，只記錄「名稱與狀態」，不可寫入 secret 值。
 
-- [ ] `BLOCKER` production HTTPS API 網域：供 `API_BASE_URL=https://...` 使用，不能是 localhost / LAN IP / ngrok。
+- [ ] `BLOCKER` production HTTPS API 網域：依 `docs/BACKEND_DEPLOYMENT_GUIDE.md` 部署 Render + Neon 後取得，供 `API_BASE_URL=https://...` 使用，不能是 localhost / LAN IP / ngrok。
 - [x] hosted 隱私權政策 URL：`https://ou931023.github.io/pet_companion_app/privacy.html`，供 `PRIVACY_POLICY_URL` 與商店後台使用。
 - [x] hosted 服務條款 URL：`https://ou931023.github.io/pet_companion_app/terms.html`，供 `TERMS_OF_SERVICE_URL` 使用。
 - [x] hosted 支援頁 URL：`https://ou931023.github.io/pet_companion_app/support.html`，供 `SUPPORT_URL` 與商店後台使用。
@@ -22,7 +22,7 @@
 - [ ] `BLOCKER` iOS distribution certificate / provisioning profile / App Store Connect app record。
 - [x] Android target API gate：`android/app/build.gradle.kts` 明確要求 Android 16 / API 36 以上；本機 / CI 需安裝對應 Android SDK platform。
 - [ ] `BLOCKER` Firebase iOS / Android app config 已對應 `tw.edu.ncyu.im.aicompanion`。
-- [ ] `BLOCKER` production PostgreSQL migrations 已執行。
+- [ ] `BLOCKER` Neon / production PostgreSQL migrations 已執行，含 `app_usage_events`。
 - [ ] `BLOCKER` OpenAI / Firebase Admin / Telegram / DB / admin token 等後端正式 env 已由部署平台設定。
 - [x] App icon、Android adaptive icon、screenshots、feature graphic、launch screen 已提供正式候選素材。
 - [ ] `BLOCKER` 審查用測試帳號已由 Firebase / 後端正式建立，不硬編在 App 或 repo。

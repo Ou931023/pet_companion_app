@@ -1,18 +1,41 @@
-# Backend Deployment Guide — `backend/stt_proxy` 部署到 Render / Railway
+# Backend Deployment Guide — `backend/stt_proxy` 部署到 Render + Neon
 
 > 對象：要把本系統 Node 後端（`backend/stt_proxy`）部署成正式 HTTPS 服務的人。
 > 範圍：**docs-only**。本文件只說明部署步驟與「需要哪些環境變數名稱」，**不含任何真實值、不印 secret**。
 > 來源依據（程式真相）：`backend/stt_proxy/config/env.js`（env 契約 + production fail-fast）、`server.js`（PORT/HOST/health）、`db/migrate.js` + `db/pool.js`（migration）、`db/postgres.js`（runtime pool）。
 > 對照：`docs/ENVIRONMENT_SETUP.md §3`（三環境語義與 production 必要變數總表）、`docs/PRODUCTION_CONFIG_CHECKLIST.md`、`docs/STORE_RELEASE_CHECKLIST.md`、`docs/RELEASE_HANDOFF.md`。
 > 紅線：不要把 `.env` / keystore / Firebase service account / token 進版控；本文件不替任何 secret 給值。
+> 推薦上線路線：**Render Web Service + Neon Postgres（pgvector）+ GitHub Pages legal/support site**。
 
 ---
 
-## 0. TL;DR（最容易踩雷的三件事）
+## 0. TL;DR（最容易踩雷的四件事）
 
 1. **`HOST` 必須設成 `0.0.0.0`**。程式預設 `HOST=127.0.0.1`（`server.js:165`），在 Render / Railway 上會導致服務「啟動成功卻無法被路由連到」。
 2. **`PGVECTOR_ENABLED=true` 必須顯式開啟**。它**不在** fail-fast 必檢清單內，但 runtime Postgres pool（`db/postgres.js:14`）在沒有它時會回傳 `null` → 長期記憶 / Admin Users / care alert 持久化等功能不會用 DB。設了 `DATABASE_URL` 卻忘了這個，會「靜默」少一半功能。
 3. **`DATABASE_URL` 的 SSL**。`db/pool.js` / `db/postgres.js` 直接把 `DATABASE_URL` 丟給 `pg`，**沒有**額外設 `ssl` 選項。雲端託管 PG 多半要求 TLS → 若連線報 SSL 錯，請在連線字串尾端加 `?sslmode=require`（自簽憑證用 `?sslmode=no-verify`）。**不需要改程式**，只改連線字串。
+4. **Render Free 可用來先跑正式 HTTPS smoke，但會休眠**。語音陪伴 App 正式送審前建議升級到 always-on；否則長者第一次開 App 可能遇到冷啟動等待。
+
+---
+
+## 0.5 最省錢推薦架構
+
+```text
+Flutter App / caregiver_web
+  -> Render HTTPS Web Service
+      -> backend/stt_proxy Node.js Express
+      -> Neon Postgres + pgvector
+      -> OpenAI Realtime / Firebase Admin / Telegram
+
+GitHub Pages
+  -> privacy.html / terms.html / support.html
+```
+
+- **法律頁**：維持 GitHub Pages，已是 HTTPS 靜態網站。
+- **後端 API**：Render Web Service，Root Directory 指向 `backend/stt_proxy`。
+- **資料庫**：Neon Postgres，migration 啟用 `pgcrypto` 與 `vector`。
+- **正式 App build**：`API_BASE_URL` 指向 Render 給的 HTTPS URL。
+- **正式送審前 No-Go**：若仍使用會休眠的免費 web service，必須在 `docs/E2E_SMOKE_TEST_REPORT.md` 記錄冷啟動行為；若語音首次連線等待太久，應升級 always-on。
 
 ---
 
@@ -87,60 +110,70 @@
 
 ---
 
-## 3. 共通前置（兩平台都需要）
+## 3. 共通前置
 
 1. **Postgres 需支援 `vector` 擴充（pgvector）**。migration 會 `CREATE EXTENSION IF NOT EXISTS vector`（`db/migrate.js:8-11`）；選的 PG 必須能裝 pgvector，否則 migration 失敗。
-   - Railway：用官方 **pgvector** 模板 / image。
-   - Render：用 Render Postgres（近版支援 `CREATE EXTENSION vector`），或自備支援 pgvector 的實例。
+   - 推薦：Neon Postgres（支援 extension，適合先用免費方案 smoke）。
+   - 備案：Render Postgres / Railway Postgres / Supabase Postgres，只要能建立 `vector` extension。
 2. **Monorepo root**：後端在子目錄 `backend/stt_proxy`，部署時要把 **Root Directory 設成 `backend/stt_proxy`**（否則找不到 `package.json`）。
 3. **Firebase 私鑰換行**：用三件組時，`FIREBASE_PRIVATE_KEY` 在環境變數 UI 內常需把實際換行寫成 `\n` 字面字串（後端 firebase-admin 初始化會處理）。若驗證 idToken 失敗，多半是換行被吃掉——**請勿把私鑰貼進程式碼或 git，只放部署環境 secret**。
 
 ---
 
-## 4. Render 部署步驟
+## 4. Neon 建立 PostgreSQL / pgvector
 
-> 目標：一個 Render **Web Service**（後端）+ 一個 **Postgres**。
+> 目標：拿到一個 production `DATABASE_URL`，並確認 pgvector migration 能跑。
 
-1. **建立 Postgres**：Render Dashboard → New → Postgres（選支援 pgvector 的版本）。建立後取得 **Internal Database URL**（同區服務間連線免 SSL 困擾）。
-2. **建立 Web Service**：New → Web Service → 連結這個 repo。
+1. Neon Dashboard → New Project。
+2. Project name 建議：`ai-companion-production`。
+3. Region 儘量選與 Render Web Service 接近的區域，降低 Realtime 工具呼叫與 DB 延遲。
+4. 建立 database，例如 `aicompanion`。
+5. 到 Connection Details 複製連線字串給 Render 的 `DATABASE_URL` 使用。
+   - 只放在 Render Environment。
+   - 不寫進 repo、文件、issue、PR、截圖。
+   - 若連線或 migration 顯示 SSL 問題，在 connection string 尾端使用平台建議的 SSL 參數，例如 `sslmode=require`。
+6. migration 會自動執行：
+   - `CREATE EXTENSION IF NOT EXISTS pgcrypto`
+   - `CREATE EXTENSION IF NOT EXISTS vector`
+   - `db/migrations/*.sql`
+
+> 驗收重點：`npm run db:migrate` 成功印出 `[DB] migrations completed`。這比 `/health` 更重要，因為後台真數據、`app_usage_events`、長期記憶與 Care Alert 都靠 migration。
+
+---
+
+## 5. Render 部署 Web Service
+
+> 目標：一個 Render **Web Service**，提供正式 HTTPS API 給 Flutter App 與 caregiver_web。
+
+1. Render Dashboard → New → Web Service → Connect GitHub repo。
+2. Web Service 設定：
    - **Root Directory**：`backend/stt_proxy`
    - **Build Command**：`npm ci`（或 `npm install`）
    - **Start Command**：`node server.js`
    - **Health Check Path**：`/health`
    - Node 版本：在環境變數設 `NODE_VERSION=20`（或更新）以固定 runtime。
-3. **設定環境變數**（Service → Environment）：把 §2 的變數逐一加入。
-   - `DATABASE_URL` = 步驟 1 的 Internal Database URL（跨外網才需 `?sslmode=require`）。
+3. Plan：
+   - Free 可以先跑 production-like smoke。
+   - 正式送審前建議改 always-on，避免後端休眠造成 Realtime 首次連線等待。
+4. 設定環境變數（Service → Environment）：把 §2 的變數逐一加入。
+   - `DATABASE_URL` = Neon connection string。
    - `APP_ENV=production`、`HOST=0.0.0.0`、`PGVECTOR_ENABLED=true`。
    - `PORT` 由 Render 自動注入，**不用手動設**。
+   - `CORS_ALLOWED_ORIGINS` 填公開 HTTPS 前端來源，例如 caregiver_web 的 GitHub Pages / Render Static Site / 自訂網域。多個來源用逗號分隔；不要用 `*`。
    - 其餘 secret（`OPENAI_API_KEY` / `ADMIN_API_TOKEN` / Firebase / Telegram）一律用 Environment / Secret，**不進 git**。
-4. **跑 migration**：見 §6（Render 用 Shell 或一次性 Job）。
-5. **驗證**：見 §7 health check。
-
----
-
-## 5. Railway 部署步驟
-
-> 目標：一個 Railway **service**（後端）+ 一個 **Postgres (pgvector)** plugin。
-
-1. **建立專案 + Postgres**：New Project → Provision PostgreSQL（選 **pgvector** 模板）。Railway 會自動提供 `DATABASE_URL` 變數，可在後端 service 以 reference 變數引用。
-2. **部署後端 service**：Deploy from GitHub repo。
-   - **Root Directory**：`backend/stt_proxy`（Settings → Root Directory）。
-   - **Start Command**：`node server.js`（Railway 通常自動偵測 `npm start`）。
-   - Build：預設 `npm ci` / Nixpacks 自動安裝。
-3. **設定環境變數**（service → Variables）：
-   - `DATABASE_URL` = 引用 Postgres plugin 的連線字串（必要時加 `?sslmode=require`）。
-   - `APP_ENV=production`、`HOST=0.0.0.0`、`PGVECTOR_ENABLED=true`。
-   - `PORT`：Railway 會注入；程式讀 `process.env.PORT`，**不用手動固定**。
-   - secret 同 §2，放 Variables，**不進 git**。
-4. **產生對外網域**：Settings → Networking → Generate Domain（取得 HTTPS URL）。
-5. **跑 migration**：見 §6（Railway 用 service shell 或一次性 command）。
-6. **驗證**：見 §7。
+5. Deploy。
+6. 若 deploy 失敗且 log 只列缺少變數名稱，代表 production fail-fast 正常運作；補齊對應變數後重 deploy。
+7. Deploy 成功後，記下 Render HTTPS URL，例如 `https://<service-name>.onrender.com`。這就是 App 的 `API_BASE_URL`。
 
 ---
 
 ## 6. 執行資料庫 migration
 
-migration 程式：`db/migrate.js`（透過 `db/pool.js` 讀 `DATABASE_URL`）。動作：先 `CREATE EXTENSION pgcrypto / vector`，再依序套用 `db/migrations/001…016`（共 16 個 `.sql`）。其中 `015_marketplace_pg_seed.sql` 會把 marketplace 表 id 放寬為 TEXT 並灌入 15 筆 `seed-*` 種子商品——商城要在正式環境出現商品，務必跑到 015。`016_create_daily_care_tasks.sql` 建立 `daily_care_tasks` / `daily_care_task_submissions` 兩表（CR-0068 今日任務 PostgreSQL 化），今日任務要在正式環境可用須跑到 016。
+migration 程式：`db/migrate.js`（透過 `db/pool.js` 讀 `DATABASE_URL`）。動作：先 `CREATE EXTENSION pgcrypto / vector`，再依序套用 `db/migrations/001…017`（共 17 個 `.sql`）。其中：
+
+- `015_marketplace_pg_seed.sql`：marketplace 表 id 放寬為 TEXT 並灌入 15 筆 `seed-*` 種子商品。
+- `016_create_daily_care_tasks.sql`：建立 `daily_care_tasks` / `daily_care_task_submissions`。
+- `017_create_app_usage_events.sql`：建立 `app_usage_events`，管理者 / 照護者 analytics 需要它才看得到真實使用數據。
 
 **指令（在已設好 `DATABASE_URL` 的環境執行）：**
 
@@ -149,8 +182,7 @@ cd backend/stt_proxy
 npm run db:migrate
 ```
 
-- **Render**：Service → Shell 進入容器後跑上述指令；或建一個 one-off Job（同 repo、Root Directory 同設）以 `npm run db:migrate` 為指令。
-- **Railway**：service 的 Shell / Run command 跑 `npm run db:migrate`；或臨時把 Start Command 換成 migrate 跑一次再換回。
+- **Render**：Service → Shell 進入容器後跑上述指令；或建立 one-off Job（同 repo、Root Directory 同設）以 `npm run db:migrate` 為指令。
 - **冪等**：migration 用 `CREATE EXTENSION IF NOT EXISTS` 與各 `.sql`；重跑前請確認各 migration 檔本身可安全重入。成功會印 `[DB] migrations completed`；失敗會印 `[DB] migration failed:` 並 `exitCode=1`。
 - migration **需要** `DATABASE_URL`；它**不**讀 `PGVECTOR_ENABLED`（那只影響 runtime pool）。但 runtime 要用到資料就仍需 `PGVECTOR_ENABLED=true`。
 
@@ -176,10 +208,35 @@ curl https://<你的正式網域>/health
 
 ## 8. 部署後串接（下游）
 
-- **Flutter**：release build 帶 `--dart-define=API_BASE_URL=https://<正式網域>`（否則守門畫面會擋）。見 `ENVIRONMENT_SETUP §3.3`。
+- **Flutter**：release build 帶 `--dart-define=API_BASE_URL=https://<Render HTTPS URL>`（否則守門畫面會擋）。見 `ENVIRONMENT_SETUP §3.3`。
 - **caregiver_web**：`config.js` 指向正式 API URL；把該 origin 加入後端 `CORS_ALLOWED_ORIGINS`。見 `ENVIRONMENT_SETUP §3.4`。
 - **transport 收斂**（CR-0054/0055）：HTTPS 後端就緒後，才可套用 iOS ATS / Android cleartext 收斂 patch 並做實機 smoke。
 - **真環境 E2E**（CR-0053 Execute）：HTTPS 後端 + 真 PG/Firebase/OpenAI/Telegram 齊全後，依 `E2E_SMOKE_TEST_PLAN` 執行並寫 Run 報告。
+
+### 8.1 App production build 範例
+
+```bash
+flutter build appbundle --release \
+  --dart-define=APP_ENV=production \
+  --dart-define=API_BASE_URL=https://<Render HTTPS URL> \
+  --dart-define=PRIVACY_POLICY_URL=https://ou931023.github.io/pet_companion_app/privacy.html \
+  --dart-define=TERMS_OF_SERVICE_URL=https://ou931023.github.io/pet_companion_app/terms.html \
+  --dart-define=SUPPORT_URL=https://ou931023.github.io/pet_companion_app/support.html \
+  --dart-define=CONTACT_EMAIL=aicompanion.support@gmail.com
+```
+
+正式 iOS build 同樣帶相同 dart-define。`API_BASE_URL` 不可使用 localhost、LAN IP、ngrok 或暫時 tunnel。
+
+### 8.2 管理者 / 照護者數據驗收
+
+部署完成後，必跑以下 smoke：
+
+1. App 用 production build 開啟一次，確認後端收到 app/session usage event。
+2. 語音互動開始 / 結束一次，確認 `voice_interaction_start` / `voice_interaction_end` 寫入 `app_usage_events`。
+3. 打字聊天一次，確認 `typed_chat_sent` 寫入。
+4. 觸發一筆 medium Care Alert，確認持久化但不推 Telegram。
+5. 觸發一筆 high / urgent 測試 Care Alert，確認持久化並推 Telegram（若已啟用）。
+6. caregiver_web / admin analytics 以正式 API 讀取，確認顯示真實彙整，不是空殼或假資料。
 
 ---
 
