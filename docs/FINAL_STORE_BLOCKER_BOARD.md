@@ -4,7 +4,7 @@
 > 用途：把 App Store / Google Play 送審前剩餘事項集中到單一頁面。此表是「是否可以送審」的最後 Go / No-Go 入口。
 > 紅線：不得把 `.env`、API key、token、keystore、Apple 憑證、Firebase service account、完整 email、完整對話、Telegram chat id、`DATABASE_URL` 寫進 repo 或截圖。
 
-相關文件：`docs/STORE_SUBMISSION_RUNBOOK.md`、`docs/INTERNAL_TESTING_SMOKE_RUNBOOK.md`、`docs/RELEASE_SIGNING.md`、`docs/APP_STORE_METADATA.md`、`docs/GOOGLE_PLAY_DATA_SAFETY.md`、`docs/E2E_SMOKE_TEST_PLAN.md`、`docs/E2E_SMOKE_TEST_REPORT.md`。
+相關文件：`docs/STORE_SUBMISSION_RUNBOOK.md`、`docs/INTERNAL_TESTING_SMOKE_RUNBOOK.md`、`docs/STORE_REVIEW_NOTES_TEMPLATE.md`、`docs/RELEASE_SIGNING.md`、`docs/APP_STORE_METADATA.md`、`docs/GOOGLE_PLAY_DATA_SAFETY.md`、`docs/E2E_SMOKE_TEST_PLAN.md`、`docs/E2E_SMOKE_TEST_REPORT.md`。
 
 ---
 
@@ -25,6 +25,7 @@
 - [x] Store readiness test：`flutter test test/config/store_readiness_test.dart`。
 - [x] Release signing readiness script：`bash scripts/check_release_signing_readiness.sh`。
 - [x] Internal testing smoke runbook：`docs/INTERNAL_TESTING_SMOKE_RUNBOOK.md`。
+- [x] Store review notes / app access template：`docs/STORE_REVIEW_NOTES_TEMPLATE.md`。
 
 ---
 
@@ -35,7 +36,7 @@
 | Production API | 正式 HTTPS `API_BASE_URL`，不能是 local / LAN / temporary tunnel | 不可用 localhost、127.0.0.1、10.0.2.2、ngrok 送審 |
 | Backend env | 部署平台設定 `DATABASE_URL`、`OPENAI_API_KEY`、Firebase Admin、`ADMIN_API_TOKEN`、`CORS_ALLOWED_ORIGINS`、Telegram 測試通知設定 | 不可貼值到 repo / 文件 / chat |
 | PostgreSQL | production migration 已執行，含 `app_usage_events` | 不可用本機 DB 當正式依據 |
-| Firebase 測試帳號 | resident / caregiver / super_admin 三種測試帳號，供審查與 smoke | 不可 hardcode 帳密到 App |
+| Firebase 測試帳號 | resident / caregiver / super_admin 三種測試帳號，供審查與 smoke；只填在商店後台受保護欄位 | 不可 hardcode 帳密到 App 或 repo |
 | Android signing | upload keystore、`android/key.properties` 本機/CI secret、Play App Signing | 不可 commit `.jks`、`.keystore`、`key.properties` |
 | iOS signing | Apple Developer、App Store Connect app record、distribution signing / provisioning | 不可 commit `.p8`、`.cer`、`.p12`、`.mobileprovision` |
 | iPhone pairing | Xcode Devices 完成 pairing，iPhone 信任這台 Mac | 不可把未配對狀態標 PASS |
@@ -69,14 +70,15 @@
 - [ ] Subtitle / description 不宣稱診斷、治療、緊急救援或取代醫師。
 - [ ] Privacy Policy URL：`https://ou931023.github.io/pet_companion_app/privacy.html`。
 - [ ] Support URL：`https://ou931023.github.io/pet_companion_app/support.html`。
-- [ ] Review notes：提供審查用測試帳號、麥克風用途、Care Alert 非醫療診斷說明、登入路徑。
+- [x] Review notes 模板已備妥：`docs/STORE_REVIEW_NOTES_TEMPLATE.md`。
+- [ ] Review notes 後台填寫：提供審查用測試帳號、麥克風用途、Care Alert 非醫療診斷說明、登入路徑。
 - [ ] App Privacy：申報帳號資料、語音/文字互動、健康相關推論、App 活動、使用分析。
 - [ ] 若第三方登入未完成，審查流程只出現 Email login/register。
 
 ### Google Play Console
 
 - [ ] App 名稱：`AI陪伴`。
-- [ ] Data Safety 依 `docs/GOOGLE_PLAY_DATA_SAFETY.md` 填寫。
+- [ ] Data Safety 依 `docs/GOOGLE_PLAY_DATA_SAFETY.md` 與 `docs/STORE_REVIEW_NOTES_TEMPLATE.md` 填寫。
 - [ ] Health / medical 聲明不宣稱診斷、治療、緊急救援。
 - [ ] Privacy Policy URL：`https://ou931023.github.io/pet_companion_app/privacy.html`。
 - [ ] Feature graphic / screenshots / icon 預覽無裁切、無 debug/demo/mock。

@@ -4,7 +4,7 @@
 > 用途：每次送 TestFlight、Internal testing、App Store Connect 或 Google Play Console 前，都依本 Runbook 跑一次。
 > 紅線：任何標示 `BLOCKER` 的項目未完成，不得送審；不得以 localhost、假 URL、假素材、硬編帳號或 demo fallback 代替正式流程。
 
-相關文件：`docs/FINAL_STORE_BLOCKER_BOARD.md`、`docs/INTERNAL_TESTING_SMOKE_RUNBOOK.md`、`docs/STORE_RELEASE_CHECKLIST.md`、`docs/PRODUCTION_CONFIG_CHECKLIST.md`、`docs/STORE_ASSET_CHECKLIST.md`、`docs/APP_STORE_METADATA.md`、`docs/GOOGLE_PLAY_DATA_SAFETY.md`、`docs/E2E_SMOKE_TEST_PLAN.md`。
+相關文件：`docs/FINAL_STORE_BLOCKER_BOARD.md`、`docs/INTERNAL_TESTING_SMOKE_RUNBOOK.md`、`docs/STORE_REVIEW_NOTES_TEMPLATE.md`、`docs/STORE_RELEASE_CHECKLIST.md`、`docs/PRODUCTION_CONFIG_CHECKLIST.md`、`docs/STORE_ASSET_CHECKLIST.md`、`docs/APP_STORE_METADATA.md`、`docs/GOOGLE_PLAY_DATA_SAFETY.md`、`docs/E2E_SMOKE_TEST_PLAN.md`。
 
 ---
 
@@ -25,6 +25,7 @@
 - [ ] `BLOCKER` OpenAI / Firebase Admin / Telegram / DB / admin token 等後端正式 env 已由部署平台設定。
 - [x] App icon、Android adaptive icon、screenshots、feature graphic、launch screen 已提供正式候選素材。
 - [ ] `BLOCKER` 審查用測試帳號已由 Firebase / 後端正式建立，不硬編在 App 或 repo。
+- [x] App Store / Play review notes 模板已備妥：`docs/STORE_REVIEW_NOTES_TEMPLATE.md`。
 
 ---
 
@@ -169,7 +170,8 @@ flutter build appbundle --release \
 
 - [ ] App Store Connect：metadata 無醫療診斷或過度宣稱。
 - [ ] App Store Connect：若未啟用第三方登入，審查流程只出現 Email login / register。
-- [ ] App Store Connect：Review notes 提供測試帳號、Care Alert 非醫療診斷說明、麥克風用途。
+- [x] App Store Connect：Review notes 模板已備妥於 `docs/STORE_REVIEW_NOTES_TEMPLATE.md`。
+- [ ] App Store Connect：Review notes 後台填入測試帳號、Care Alert 非醫療診斷說明、麥克風用途。
 - [ ] App Store Privacy Nutrition Labels 已申報帳號資料、語音 / 文字互動、App 使用紀錄與照護分析用途。
 - [ ] Google Play Console：Data Safety 依 `docs/GOOGLE_PLAY_DATA_SAFETY.md` 填寫。
 - [ ] Google Play Console：Health / medical 類聲明不宣稱診斷、治療或緊急救援。

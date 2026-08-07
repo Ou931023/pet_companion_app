@@ -4,7 +4,7 @@
 > 用途：每次上傳 TestFlight 或 Google Play Internal testing 後，用真裝置、真帳號、真後端跑一次。
 > 紅線：不貼 `.env`、token、keystore、Apple 憑證、Firebase service account、完整 email、完整對話、Telegram chat id 或 `DATABASE_URL`。所有截圖都要去識別化。
 
-相關文件：`docs/STORE_SUBMISSION_RUNBOOK.md`、`docs/E2E_SMOKE_TEST_PLAN.md`、`docs/E2E_SMOKE_TEST_REPORT.md`、`docs/RELEASE_SIGNING.md`、`docs/GOOGLE_PLAY_DATA_SAFETY.md`、`docs/APP_STORE_METADATA.md`。
+相關文件：`docs/STORE_SUBMISSION_RUNBOOK.md`、`docs/STORE_REVIEW_NOTES_TEMPLATE.md`、`docs/E2E_SMOKE_TEST_PLAN.md`、`docs/E2E_SMOKE_TEST_REPORT.md`、`docs/RELEASE_SIGNING.md`、`docs/GOOGLE_PLAY_DATA_SAFETY.md`、`docs/APP_STORE_METADATA.md`。
 
 ---
 
@@ -147,7 +147,7 @@ flutter build appbundle --release \
 | # | 平台 | 項目 |
 |---|---|---|
 | S1 | App Store Connect | App 名稱 `AI陪伴`；描述無醫療診斷宣稱 |
-| S2 | App Store Connect | Review notes 含測試帳號、麥克風用途、Care Alert 非醫療診斷說明 |
+| S2 | App Store Connect | Review notes 依 `docs/STORE_REVIEW_NOTES_TEMPLATE.md` 填寫，含測試帳號、麥克風用途、Care Alert 非醫療診斷說明 |
 | S3 | App Store Connect | App Privacy 申報帳號資料、語音/文字互動、App 使用紀錄與照護分析用途 |
 | S4 | Google Play | Data Safety 依 `docs/GOOGLE_PLAY_DATA_SAFETY.md` 填寫 |
 | S5 | Google Play | Health / medical 類聲明不宣稱診斷、治療、緊急救援 |
