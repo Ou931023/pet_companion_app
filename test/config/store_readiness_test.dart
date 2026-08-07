@@ -52,6 +52,10 @@ void main() {
         contains('docs/STORE_REVIEW_NOTES_TEMPLATE.md'),
       );
       expect(
+        _read('docs/STORE_SUBMISSION_RUNBOOK.md'),
+        contains('docs/BACKEND_DEPLOYMENT_GUIDE.md'),
+      );
+      expect(
         _read('docs/STORE_RELEASE_CHECKLIST.md'),
         contains('docs/FINAL_STORE_BLOCKER_BOARD.md'),
       );
@@ -404,6 +408,56 @@ void main() {
         'debug key 送審',
       ]) {
         expect(board, isNot(contains(forbidden)));
+      }
+    });
+
+    test('backend deployment guide covers Render and Neon production setup',
+        () {
+      final guide = _read('docs/BACKEND_DEPLOYMENT_GUIDE.md');
+      final runbook = _read('docs/STORE_SUBMISSION_RUNBOOK.md');
+
+      expect(guide, contains('Render + Neon'));
+      expect(guide, contains('Render Web Service'));
+      expect(guide, contains('Neon Postgres'));
+      expect(guide, contains('GitHub Pages legal/support site'));
+      expect(guide, contains('Root Directory'));
+      expect(guide, contains('backend/stt_proxy'));
+      expect(guide, contains('Build Command'));
+      expect(guide, contains('npm ci'));
+      expect(guide, contains('Start Command'));
+      expect(guide, contains('node server.js'));
+      expect(guide, contains('Health Check Path'));
+      expect(guide, contains('/health'));
+      expect(guide, contains('DATABASE_URL'));
+      expect(guide, contains('OPENAI_API_KEY'));
+      expect(guide, contains('CORS_ALLOWED_ORIGINS'));
+      expect(guide, contains('FIREBASE_PROJECT_ID'));
+      expect(guide, contains('FIREBASE_CLIENT_EMAIL'));
+      expect(guide, contains('FIREBASE_PRIVATE_KEY'));
+      expect(guide, contains('ADMIN_API_TOKEN'));
+      expect(guide, contains('HOST=0.0.0.0'));
+      expect(guide, contains('PGVECTOR_ENABLED=true'));
+      expect(guide, contains('npm run db:migrate'));
+      expect(guide, contains('CREATE EXTENSION IF NOT EXISTS vector'));
+      expect(guide, contains('app_usage_events'));
+      expect(guide, contains('API_BASE_URL=https://<Render HTTPS URL>'));
+      expect(guide, contains('voice_interaction_start'));
+      expect(guide, contains('voice_interaction_end'));
+      expect(guide, contains('typed_chat_sent'));
+      expect(guide, contains('caregiver_web / admin analytics'));
+      expect(guide, contains('不進 git'));
+
+      expect(runbook, contains('docs/BACKEND_DEPLOYMENT_GUIDE.md'));
+      expect(runbook, contains('Render + Neon'));
+      expect(runbook, contains('Neon / production PostgreSQL migrations'));
+
+      for (final forbidden in [
+        'OPENAI_API_KEY=sk-',
+        'ADMIN_API_TOKEN=',
+        'FIREBASE_PRIVATE_KEY=-----BEGIN',
+        'DATABASE_URL=postgres://',
+      ]) {
+        expect(guide, isNot(contains(forbidden)));
       }
     });
 
