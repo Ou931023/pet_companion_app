@@ -12,7 +12,7 @@
 //   - 情緒趨勢 / 遊戲退化 → 沿用 adminAnalysisService 的資料真實性標註
 //     （measured / reference / insufficient）。真實長者目前無真實情緒 / 遊戲寫入流程，
 //     會回 insufficient（前端顯示「資料不足」），不捏造數據。
-//   - 寵物照護狀態目前無後端資料來源 → available:false 空狀態，不假裝。
+//   - App 使用 / 寵物互動 → 來自真實 app_usage_events；沒有上報時回資料不足。
 //
 // 可測試性：核心資料（alerts / tasks / analysis）可由 options 直接注入，
 // 不注入時才走真實 store；故聚合邏輯可在無 DB 環境單元測試。
@@ -20,6 +20,7 @@
 const defaultCareAlertStore = require("../careAlertStoreService");
 const defaultDailyCareTaskStore = require("../dailyCareTask/dailyCareTaskStore");
 const defaultAdminAnalysis = require("./adminAnalysisService");
+const defaultAppUsageStore = require("../appUsageEventStore");
 
 const RISK_LEVELS = ["low", "medium", "high", "urgent"];
 const HIGH_RISK_LEVELS = new Set(["high", "urgent"]);
@@ -90,6 +91,27 @@ async function safeElderAnalysis(elderId, analysis, options) {
     return await analysis.getElderAnalysis(elderId, options);
   } catch (_error) {
     return null;
+  }
+}
+
+async function safeUsageStats(elderId, store, options) {
+  try {
+    return await store.getUsageStats(elderId, {
+      rangeDays: options.rangeDays,
+      nowIso: options.nowIso,
+      pg: options.pg,
+      eventsFilePath: options.eventsFilePath,
+      events: options.usageEvents,
+    });
+  } catch (_error) {
+    return {
+      available: false,
+      totalEvents: 0,
+      activeDays: 0,
+      totalDurationMs: 0,
+      lastEventAt: null,
+      byType: {},
+    };
   }
 }
 
@@ -201,8 +223,21 @@ function buildGameMetrics(analysis) {
   };
 }
 
-// 寵物照護狀態：目前僅存在長者端本機，後端無資料來源 → 空狀態，不捏造。
-function buildPetStatus() {
+// 寵物照護狀態：來自 app_usage_events 的真實寵物互動 / 外觀偏好事件。
+function buildPetStatus(usageStats) {
+  if (usageStats && usageStats.available) {
+    const meta = usageStats.latestPetMetadata || {};
+    return {
+      available: true,
+      mood: meta.mood || null,
+      satiety: meta.satiety == null ? null : meta.satiety,
+      intimacy: meta.intimacy == null ? null : meta.intimacy,
+      petType: meta.petType || meta.petStyle || null,
+      lastInteractionAt: usageStats.lastEventAt,
+      interactionCount: usageStats.petInteractions || 0,
+      message: null,
+    };
+  }
   return {
     available: false,
     mood: null,
@@ -210,7 +245,7 @@ function buildPetStatus() {
     intimacy: null,
     petType: null,
     lastInteractionAt: null,
-    message: "寵物互動資料目前保存在長者端，後台尚未串接",
+    message: "目前尚無寵物互動上報資料",
   };
 }
 
@@ -219,7 +254,7 @@ function buildPetStatus() {
 //   - rangeDays：天數（預設 7，夾 1..90）
 //   - nowIso：時間錨點（測試可注入；預設現在）
 //   - alerts / tasks / analysis：可直接注入資料（單元測試用），不注入才走真實 store
-//   - careAlertStore / dailyCareTaskStore / adminAnalysis：可替換的依賴
+//   - careAlertStore / dailyCareTaskStore / adminAnalysis / appUsageStore：可替換的依賴
 //   - careAlertsFilePath / tasksFilePath / submissionsFilePath / pg：傳給 store 的測試 seam
 async function buildResidentAnalytics(elderId, options = {}) {
   const rangeDays = clampRangeDays(options.rangeDays);
@@ -227,6 +262,7 @@ async function buildResidentAnalytics(elderId, options = {}) {
   const careAlertStore = options.careAlertStore || defaultCareAlertStore;
   const dailyCareTaskStore = options.dailyCareTaskStore || defaultDailyCareTaskStore;
   const adminAnalysis = options.adminAnalysis || defaultAdminAnalysis;
+  const appUsageStore = options.appUsageStore || defaultAppUsageStore;
 
   const alerts = Array.isArray(options.alerts)
     ? options.alerts
@@ -238,6 +274,11 @@ async function buildResidentAnalytics(elderId, options = {}) {
     options.analysis !== undefined
       ? options.analysis
       : await safeElderAnalysis(elderId, adminAnalysis, options);
+  const usageStats = await safeUsageStats(elderId, appUsageStore, {
+    ...options,
+    rangeDays,
+    nowIso,
+  });
 
   const alertsInRange = alerts.filter((a) =>
     withinRange(alertTime(a), nowIso, rangeDays),
@@ -250,12 +291,12 @@ async function buildResidentAnalytics(elderId, options = {}) {
   const taskStats = buildTaskStats(tasks, nowIso);
   const emotion = buildEmotionTrend(analysis);
   const gameMetrics = buildGameMetrics(analysis);
-  const petStatus = buildPetStatus();
+  const petStatus = buildPetStatus(usageStats);
 
-  // 最近一次互動：取最近警示與最近任務提交中較新的一個。
+  // 最近一次互動：取最近 app usage、警示與任務提交中較新的一個。
   const latestAlertAt = careAlertStats.lastAlertAt || (alerts.length ? alertTime(alerts[0]) : null);
   const lastInteractionAt =
-    [latestAlertAt, taskStats.lastCheckInAt]
+    [usageStats.lastEventAt, latestAlertAt, taskStats.lastCheckInAt]
       .filter(Boolean)
       .sort((a, b) => String(b).localeCompare(String(a)))[0] || null;
 
@@ -277,6 +318,7 @@ async function buildResidentAnalytics(elderId, options = {}) {
     emotionDataSource: emotion.emotionDataSource,
     careAlertStats,
     taskStats,
+    usageStats,
     gameMetrics,
     petStatus,
   };
@@ -288,6 +330,7 @@ module.exports = {
   clampRangeDays,
   buildCareAlertStats,
   buildTaskStats,
+  buildPetStatus,
   withinRange,
   DEFAULT_RANGE_DAYS,
   MAX_RANGE_DAYS,

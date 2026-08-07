@@ -4,7 +4,7 @@
 > 本檔列出 iOS / Android 正式上架前的待辦、已完成項，以及**必須由負責人決策或提供素材的 blocker**。
 > 規則：凡標 ⛔ **BLOCKER** 者，未完成前不得送審；不得以假值/假完成充數。
 
-相關文件：`docs/APP_STORE_METADATA.md`、`docs/GOOGLE_PLAY_DATA_SAFETY.md`、`docs/ENVIRONMENT_SETUP.md`、`docs/PRODUCTION_CONFIG_CHECKLIST.md`、`docs/AUTHORIZATION_MODEL.md`。
+相關文件：`docs/STORE_SUBMISSION_RUNBOOK.md`（上架前單一 smoke 入口）、`docs/APP_STORE_METADATA.md`、`docs/GOOGLE_PLAY_DATA_SAFETY.md`、`docs/ENVIRONMENT_SETUP.md`、`docs/PRODUCTION_CONFIG_CHECKLIST.md`、`docs/AUTHORIZATION_MODEL.md`。
 
 ---
 
@@ -36,7 +36,7 @@
 |---|---|---|
 | 麥克風權限文案 `NSMicrophoneUsageDescription` | ✅ | 長者友善、無工程字眼 |
 | 相機 / 相簿 / 語音辨識 / 區網權限文案 | ✅ | 皆清楚、無 demo/test/mock |
-| ATS（App Transport Security） | ⛔🔁 **BLOCKER** | 目前 `NSAllowsArbitraryLoads=true`（全域允許明文）。**CR-0054** 已備妥就緒 patch（`NSAllowsArbitraryLoads=false` + `NSAllowsLocalNetworking=true`）於 `docs/TRANSPORT_SECURITY.md §3.2`，**需 HTTPS 後端就緒 + 實體裝置 smoke 後另開 CR 套用**，否則回退 |
+| ATS（App Transport Security） | 🔁 | CR-0096S Batch 3 已收斂為 `NSAllowsArbitraryLoads=false` + `NSAllowsLocalNetworking=true`。仍需 HTTPS 後端就緒 + iOS 實體裝置 Realtime / REST smoke 後才能送審結案 |
 | Display name（CFBundleDisplayName） | ✅ （CR-0061） | `AI Companion`（owner 拍板定值），已寫入 `Info.plist` |
 | Bundle ID | ✅ （CR-0061） | `tw.edu.ncyu.im.aicompanion`（嘉義大學反向網域，owner 拍板）。已寫入 pbxproj（app + RunnerTests）。後續 Apple 憑證 / Firebase iOS App / Sign in with Apple 須對應此 ID（上架後不可改） |
 | App icon（全尺寸） | ⛔ **BLOCKER** | 需正式 icon 素材 |
@@ -50,7 +50,7 @@
 | 項目 | 狀態 | 說明 |
 |---|---|---|
 | 權限（INTERNET / RECORD_AUDIO / MODIFY_AUDIO_SETTINGS / POST_NOTIFICATIONS / ACCESS_NETWORK_STATE / READ_MEDIA_IMAGES / READ_EXTERNAL_STORAGE≤32） | ✅ | 與實際功能相符；POST_NOTIFICATIONS 供 Android 13+ |
-| `usesCleartextTraffic` / network security config | ⛔🔁 **BLOCKER** | 目前 `usesCleartextTraffic="true"`。**CR-0054** 已備妥就緒 patch（release `network_security_config` 禁明文 + debug override 留 LAN）於 `docs/TRANSPORT_SECURITY.md §3.1`，需 HTTPS 後端 + 裝置 smoke 後另開 CR 套用 |
+| `usesCleartextTraffic` / network security config | 🔁 | CR-0096S Batch 2 已收斂：release/main 禁明文，debug/profile 保留本機開發 HTTP。仍需 HTTPS 後端 + Android 實體裝置 smoke 後才能送審結案 |
 | `applicationId` | ✅ （CR-0061） | `tw.edu.ncyu.im.aicompanion`（對齊 iOS，owner 拍板）。已寫入 `build.gradle.kts`。**上架後不可再改**。namespace 維持 `com.example.pet_companion_app`（owner 指定不動，與 applicationId 獨立） |
 | `android:label` | ✅ （CR-0061） | `AI Companion`（owner 拍板定值，與 iOS CFBundleDisplayName 一致），已寫入 `AndroidManifest.xml` |
 | Adaptive icon / launcher icon | ⛔ **BLOCKER** | 需正式 icon 素材 |
@@ -73,9 +73,9 @@
 
 1. ✅ **正式品牌 display name**（CR-0061 已定值）：iOS CFBundleDisplayName = Android `android:label` = 商店 App 名稱 = `AI Companion`（中文 `AI陪伴`）。發行者：國立嘉義大學資訊管理學系專題第四組。
 2. ✅ **App 識別碼正式化**（CR-0061 已定值）：iOS Bundle ID = Android `applicationId` = `tw.edu.ncyu.im.aicompanion`（**一旦上架不可更改**；後續 Apple/Google/Firebase 憑證與 Sign in with Apple 設定須對應此 ID）。
-3. ⛔ **Hosted 法務/支援 URL + 客服信箱**：`privacyPolicyUrl` / `termsOfServiceUrl` / `supportUrl` / `contactEmail`（目前 `lib/config/legal_config.dart` 為 `TODO_*` 佔位；**禁止偽造已部署 URL**）。需法務校稿同意內文。
+3. ⛔ **Hosted 法務/支援 URL + 客服信箱**：`privacyPolicyUrl` / `termsOfServiceUrl` / `supportUrl` / `contactEmail` 已支援透過 `--dart-define` 注入；目前預設仍為 `TODO_*` 佔位。需提供真實公開頁面與客服信箱，**禁止偽造已部署 URL**。
 4. ⛔ **視覺素材**：App icon（iOS 全尺寸 + Android adaptive/launcher）、launch screen、商店 screenshots、feature graphic。
-5. ⛔ **Release signing**：Android keystore、iOS 簽章憑證 / provisioning profile（**禁止提交進版控**）。
+5. ⛔ **Release signing**：Android Gradle 已接 `android/key.properties` 並不再使用 debug key；仍需正式 upload keystore / CI secret。iOS 仍需簽章憑證 / provisioning profile（**禁止提交進版控**）。
 6. 🟡 **Production 環境**（部分完成）：
    - Firebase：✅ iOS/Android App 已以正式 Bundle ID `tw.edu.ncyu.im.aicompanion` 註冊，`GoogleService-Info.plist`（BUNDLE_ID 對齊）/ `google-services.json`（含對應 client）已落地，**兩檔 gitignored 不進版控**（CR-0062）。🟡 待真機 Firebase Auth smoke。
    - ⛔ 仍待 owner：正式後端 HTTPS 網域、`CORS_ALLOWED_ORIGINS`、OpenAI / Telegram / PostgreSQL 正式憑證（走 env，**不寫死、不進版控**）。
@@ -134,8 +134,10 @@ android:networkSecurityConfig="@xml/network_security_config"
 
 ## 7. Build / 測試
 
+- 🔁 ⛔ **上架 smoke 單一 Runbook**：送 TestFlight / Internal testing / App Store / Google Play 前，需依 `docs/STORE_SUBMISSION_RUNBOOK.md` 完整執行並留下 Run 記錄。未跑完不得送審。
 - ✅ `flutter analyze`（CR-0046 後）
 - ✅ `flutter test`（授權鏈相關測試綠；整包回歸建議於 CI 跑）
+- ✅ repo 自動 store readiness test 已建立：`flutter test test/config/store_readiness_test.dart`
 - 🔁 ⛔ `flutter build apk --release` — 需在具 Android SDK 環境嘗試；失敗記錄 blocker 與錯誤摘要，不偽造綠燈
 - 🔁 ⛔ `flutter build ios --release --no-codesign` — 需 macOS + CocoaPods；失敗記錄 blocker
 - 🔁 上架前三大 smoke（真環境）：Auth 登入 / Realtime 語音 / Care Alert → Telegram
@@ -145,6 +147,8 @@ android:networkSecurityConfig="@xml/network_security_config"
 ## 8. 內容合規（送審前掃描）
 
 - ✅ App 內無 demo/test/mock/debug 對使用者可見字樣（dev panel / Demo 登入由 flag 隔離、production 強制關）
+- ✅ **CR-0101A 第三方登入上架策略**：Apple Sign in 尚未完成前，production 隱藏 Google / Apple 入口，只保留 Email login / Email register，避免 App Store Sign in with Apple 與 placeholder 風險。
+- ✅ **CR-0101A in-app support / account deletion wording**：設定頁有 App 內隱私 / 條款、重新檢視同意、支援說明與帳號刪除流程；刪除確認文案明確說明會刪除伺服器帳號資料與本機寵物 / 記憶 / 提醒 / 使用紀錄。
 - ✅ pubspec `description` 已移除 "demo"（CR-0046）
 - 🔁 mock service build-flavor 隔離（CR-0048，詳見 `docs/FLUTTER_BUILD_FLAVORS.md`）：
   - ✅ `MockShopService` 已隔離（production 不注入）。
@@ -163,6 +167,9 @@ android:networkSecurityConfig="@xml/network_security_config"
 - ⛔ **BLOCKER** Google Play Data Safety 表單填寫（依 `docs/GOOGLE_PLAY_DATA_SAFETY.md`）
 - ⛔ **BLOCKER** App Store 隱私問卷 / metadata（依 `docs/APP_STORE_METADATA.md`）
 - ⛔ **BLOCKER** 對外可存取的隱私政策 URL（Apple/Google 皆要求）
+- ⛔ **BLOCKER** 對外可存取的支援 URL / 客服信箱（store metadata 必填或強烈建議；App 內外部按鈕只有正式值注入後才顯示）
+- ✅ **CR-0097 usage tracking in-app disclosure**：同意畫面與 App 內隱私政策已揭露 App 使用時間、語音/打字互動、寵物互動、提醒、任務、照片驗證、小遊戲等使用紀錄；`LegalConfig.consentVersion` 已更新，舊版同意者會被要求重新同意。
+- ⛔ **BLOCKER** Hosted 隱私政策 / 商店後台需同步 CR-0097：正式 hosted 隱私政策、Google Play Data Safety、App Store Privacy Nutrition Labels 必須申報 `app_usage_events` 對應的 App 活動 / 使用分析資料，且用途限 App 功能、照護分析、產品改善，不可填成未收集。
 
 ---
 

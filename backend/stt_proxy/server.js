@@ -88,6 +88,9 @@ const {
   getConsent,
 } = require("./services/consentStoreService");
 const {
+  recordEvent: recordAppUsageEvent,
+} = require("./services/appUsageEventStore");
+const {
   createSession,
   deleteUserByFirebaseUid,
   mockAllowed: authMockAllowed,
@@ -988,6 +991,31 @@ app.post("/api/consent", async (req, res) => {
   } catch (error) {
     logError("consent record exception", { error: error?.message || error });
     return res.status(500).json({ success: false, error: "consent_failed" });
+  }
+});
+
+// CR-0097：App 使用事件上報。長者端只送 eventType / metadata；elderId 由
+// requireResidentCaller 根據 Bearer idToken 權威推導，避免前端偽造別人的使用資料。
+app.post("/api/app-usage/events", requireResidentCaller, async (req, res) => {
+  try {
+    const event = await recordAppUsageEvent(req.body || {}, req.residentCaller);
+    return res.status(201).json({
+      success: true,
+      event: {
+        id: event.id,
+        eventType: event.eventType,
+        eventAt: event.eventAt,
+      },
+    });
+  } catch (error) {
+    if (error && error.code === "invalid_event_type") {
+      return res.status(400).json({ success: false, error: "invalid_event_type" });
+    }
+    if (isFeatureUnavailableError(error)) {
+      return res.status(501).json({ success: false, error: "not_enabled" });
+    }
+    logError("app usage event failed", { error: error?.message || error });
+    return res.status(500).json({ success: false, error: "app_usage_event_failed" });
   }
 });
 

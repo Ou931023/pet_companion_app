@@ -1,7 +1,7 @@
 # STORE_ASSET_CHECKLIST — Icon / Screenshot / Launch Screen 素材檢查
 
 > 建立：CR-0058。狀態：**規格清單 + owner 素材 blocker**。素材多需 owner 提供正式美術，本檔列規格與紅線。
-> 對照：`docs/APP_STORE_METADATA.md`、`docs/STORE_RELEASE_CHECKLIST.md`。
+> 對照：`docs/STORE_SUBMISSION_RUNBOOK.md`、`docs/APP_STORE_METADATA.md`、`docs/STORE_RELEASE_CHECKLIST.md`。
 
 ---
 
@@ -66,3 +66,18 @@
 - [ ] 補 Android adaptive icon 檔（anydpi-v26 xml + foreground/background）。
 - [ ] 5 組去識別化 screenshots（兩平台尺寸）+ Android feature graphic。
 - [ ] 確認 launch screen 非 Flutter 預設、品牌一致。
+
+---
+
+## 6. Runbook 對應檔位
+
+送審前依 `docs/STORE_SUBMISSION_RUNBOOK.md` §6 驗收，素材落點如下：
+
+- iOS icon：`ios/Runner/Assets.xcassets/AppIcon.appiconset/`
+- Android legacy icon：`android/app/src/main/res/mipmap-*/ic_launcher.png`
+- Android adaptive icon：`android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml`
+- Android adaptive foreground/background：建議放在 `android/app/src/main/res/drawable/` 或 `android/app/src/main/res/values/`，依實際素材型態決定。
+- iOS launch：`ios/Runner/Base.lproj/LaunchScreen.storyboard`
+- Android launch：`android/app/src/main/res/drawable*/launch_background.xml` 與 theme 設定。
+
+若上述檔案尚未存在或仍為預設素材，狀態維持 `BLOCKER`，不得在 store checklist 標為完成。

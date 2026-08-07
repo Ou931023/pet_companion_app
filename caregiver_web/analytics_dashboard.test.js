@@ -45,11 +45,22 @@ test("showView 納入 analytics，懶載入只在切到分頁時觸發", () => {
 test("空狀態 / 401 / 403 友善提示（不顯示工程字串）", () => {
   assert.ok(appJs.includes("近期沒有警示紀錄"), "警示空狀態白話");
   assert.ok(appJs.includes("目前尚無足夠遊戲紀錄"), "遊戲資料不足白話");
-  assert.ok(appJs.includes("後台尚未串接"), "寵物無來源空狀態白話");
+  assert.ok(appJs.includes("目前尚無寵物互動上報資料"), "寵物無來源空狀態白話");
+  assert.ok(appJs.includes("目前尚無 App 使用上報資料"), "使用資料空狀態白話");
   // 沿用既有友善常數處理 401/403。
   const fn = appJs.slice(appJs.indexOf("function loadResidentAnalytics"));
   assert.ok(fn.includes("SESSION_EXPIRED_MSG"), "401 用 session 過期文案");
   assert.ok(fn.includes("FORBIDDEN_MSG"), "403 用權限不足文案");
+});
+
+test("分析頁會渲染真實 usageStats，不只顯示 Care Alert 與任務", () => {
+  assert.ok(appJs.includes("App 使用狀況"), "應有 App 使用狀況區塊");
+  assert.ok(appJs.includes("voiceInteractions"), "應顯示語音互動數");
+  assert.ok(appJs.includes("typedChats"), "應顯示打字訊息數");
+  assert.ok(appJs.includes("petInteractions"), "應顯示寵物互動數");
+  assert.ok(appJs.includes("remindersCreated"), "應顯示提醒建立數");
+  assert.ok(appJs.includes("puzzleCompletions"), "應顯示拼圖完成數");
+  assert.ok(appJs.includes("usageStats"), "應讀取後端 usageStats");
 });
 
 test("不捏造：前端不出現工程 / 敏感字樣", () => {

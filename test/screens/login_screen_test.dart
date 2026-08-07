@@ -65,6 +65,7 @@ Future<void> _pumpLogin(
   VoidCallback? onRegister,
   // 預設帶出 Demo 備援按鈕，方便沿用既有 Demo 測試；正式模式另有專門測試。
   bool showDemoLogin = true,
+  bool showSocialSignIn = true,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -79,6 +80,7 @@ Future<void> _pumpLogin(
           onSignedIn: onSignedIn,
           onRegister: onRegister,
           showDemoLogin: showDemoLogin,
+          showSocialSignIn: showSocialSignIn,
         ),
       ),
     ),
@@ -284,7 +286,8 @@ void main() {
     useTallView(tester);
     final controller = AuthController(authService: _FakeAuthService());
     var registerTapped = false;
-    await _pumpLogin(tester, controller, onRegister: () => registerTapped = true);
+    await _pumpLogin(tester, controller,
+        onRegister: () => registerTapped = true);
 
     await tester.tap(find.text('開始陪伴生活'));
     await tester.pump();
@@ -292,19 +295,25 @@ void main() {
     expect(registerTapped, isTrue);
   });
 
-  testWidgets('正式模式（showDemoLogin=false）：無測試感按鈕，主視覺為 Google/Email/建立帳號入口',
-      (tester) async {
+  testWidgets('正式模式：只顯示 Email/建立帳號，無 Demo 與未完成第三方入口', (tester) async {
     useTallView(tester);
     final controller = AuthController(authService: _FakeAuthService());
-    await _pumpLogin(tester, controller, showDemoLogin: false);
+    await _pumpLogin(
+      tester,
+      controller,
+      showDemoLogin: false,
+      showSocialSignIn: false,
+    );
 
-    // 主視覺：Google 登入 / Email 登入 / 建立帳號入口
-    expect(find.text('用 Google 登入'), findsOneWidget);
+    // 主視覺：Email 登入 / 建立帳號入口。
     expect(find.text('用 Email 登入'), findsOneWidget);
     expect(find.text('開始陪伴生活'), findsOneWidget);
 
-    // 不出現測試感字樣 / Demo 按鈕。
+    // 不出現測試感字樣 / Demo 按鈕 / Apple placeholder。
     expect(find.text('先進去陪伴'), findsNothing);
+    expect(find.text('用 Google 登入'), findsNothing);
+    expect(find.text('用 Apple 登入'), findsNothing);
+    expect(find.textContaining('Apple 登入準備中'), findsNothing);
     expect(find.textContaining('Demo'), findsNothing);
     expect(find.textContaining('demo'), findsNothing);
     expect(find.textContaining('測試'), findsNothing);

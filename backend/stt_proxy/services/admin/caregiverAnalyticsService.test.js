@@ -110,6 +110,7 @@ test("無資料：空狀態不崩潰、不捏造（careAlert 0 / task none / 情
   assert.equal(out.gameMetrics.hasEnoughData, false);
   assert.equal(out.gameMetrics.message, "目前尚無足夠遊戲紀錄");
   assert.equal(out.petStatus.available, false);
+  assert.equal(out.usageStats.available, false);
   assert.equal(out.summary.latestRiskLevel, null);
 });
 
@@ -135,4 +136,64 @@ test("情緒趨勢沿用 analysis：reference 序列轉成 {date,emotion,score}�
   assert.equal(out.gameMetrics.hasEnoughData, true);
   assert.equal(out.gameMetrics.dataSource, "reference");
   assert.equal(out.gameMetrics.abnormal, true);
+});
+
+test("App usage events 進入 summary / usageStats / petStatus，後台顯示真實互動資料", async () => {
+  const usageEvents = [
+    {
+      eventType: "app_open",
+      eventAt: "2026-06-15T08:55:00.000Z",
+      durationMs: null,
+      metadata: {},
+    },
+    {
+      eventType: "voice_interaction_end",
+      eventAt: "2026-06-15T09:00:00.000Z",
+      durationMs: 45000,
+      metadata: {},
+    },
+    {
+      eventType: "typed_chat_sent",
+      eventAt: "2026-06-15T09:02:00.000Z",
+      durationMs: null,
+      metadata: { source: "home_text_bar" },
+    },
+    {
+      eventType: "reminder_created",
+      eventAt: "2026-06-15T09:04:00.000Z",
+      durationMs: null,
+      metadata: { repeatType: "daily" },
+    },
+    {
+      eventType: "pet_interaction",
+      eventAt: "2026-06-15T09:05:00.000Z",
+      durationMs: null,
+      metadata: {
+        petType: "dog",
+        mood: "happy",
+        satiety: 88,
+        intimacy: 42,
+      },
+    },
+  ];
+  const out = await svc.buildResidentAnalytics("elder-usage", {
+    nowIso: NOW,
+    alerts: [],
+    tasks: [],
+    analysis: null,
+    usageEvents,
+  });
+
+  assert.equal(out.usageStats.available, true);
+  assert.equal(out.usageStats.totalEvents, 5);
+  assert.equal(out.usageStats.voiceInteractions, 1);
+  assert.equal(out.usageStats.typedChats, 1);
+  assert.equal(out.usageStats.remindersCreated, 1);
+  assert.equal(out.petStatus.available, true);
+  assert.equal(out.petStatus.petType, "dog");
+  assert.equal(out.petStatus.mood, "happy");
+  assert.equal(out.petStatus.satiety, 88);
+  assert.equal(out.petStatus.intimacy, 42);
+  assert.equal(out.petStatus.interactionCount, 1);
+  assert.equal(out.summary.lastInteractionAt, "2026-06-15T09:05:00.000Z");
 });

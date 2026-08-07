@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../config/app_config.dart';
+import '../config/legal_config.dart';
 import '../controllers/app_navigation_controller.dart';
 import '../controllers/auth_controller.dart';
 import '../controllers/consent_controller.dart';
@@ -204,8 +206,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 switch (profile.voiceLanguageMode) {
                   VoiceLanguageMode.taigiRealtime =>
                     '台語即時語音對話會使用原本即時語音連線，可以直接用台語或台語混中文跟寵物說話。',
-                  _ =>
-                    '中文即時語音對話會使用原本的 Realtime 連線。',
+                  _ => '中文即時語音對話會使用原本的 Realtime 連線。',
                 },
                 style: TextStyle(
                   color: Colors.black.withValues(alpha: 0.58),
@@ -492,6 +493,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
               ),
+              const SizedBox(height: 16),
+              const Divider(height: 1),
+              const SizedBox(height: 12),
+              const Text(
+                '需要幫忙或想詢問資料刪除，也可以透過正式支援管道聯絡我們。',
+                style: TextStyle(fontSize: 16, height: 1.4),
+              ),
+              if (!LegalConfig.isPlaceholder(LegalConfig.supportUrl)) ...[
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () => _openExternalUri(
+                    LegalConfig.supportUrl,
+                    '支援頁暫時打不開，請稍後再試一次。',
+                  ),
+                  icon: const Icon(Icons.help_outline, size: 24),
+                  label: const Text(
+                    '聯絡支援',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                ),
+              ],
+              if (!LegalConfig.isPlaceholder(LegalConfig.contactEmail)) ...[
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () => _openExternalUri(
+                    'mailto:${LegalConfig.contactEmail}',
+                    '信箱暫時打不開，請稍後再試一次。',
+                  ),
+                  icon: const Icon(Icons.mail_outline, size: 24),
+                  label: const Text(
+                    '寫信給客服',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -518,7 +560,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     foregroundColor: const Color(0xFFC2410C),
-                    side: const BorderSide(color: Color(0xFFC2410C), width: 1.5),
+                    side:
+                        const BorderSide(color: Color(0xFFC2410C), width: 1.5),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
@@ -529,7 +572,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const Divider(height: 1),
               const SizedBox(height: 16),
               const Text(
-                '刪除帳號會清除這個帳號的所有資料，且無法復原。需要時可以重新註冊。',
+                '刪除帳號會清除伺服器上的帳號資料，以及這台手機裡的寵物、記憶與提醒紀錄。'
+                '刪除後無法復原，之後需要時可以重新註冊。',
                 style: TextStyle(fontSize: 16, height: 1.4),
               ),
               const SizedBox(height: 12),
@@ -654,7 +698,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
           ),
           content: const Text(
-            '刪除後，這個帳號的寵物、紀錄與設定都會清除，無法復原。需要時可以再重新註冊。',
+            '刪除後，伺服器上的帳號資料，以及這台手機裡的寵物、記憶、提醒與使用紀錄都會清除，'
+            '無法復原。需要時可以再重新註冊。',
             style: TextStyle(fontSize: 18, height: 1.4),
           ),
           actions: [
@@ -689,7 +734,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
           ),
           content: const Text(
-            '真的要刪除帳號嗎？這個動作沒辦法復原喔。',
+            '真的要刪除帳號嗎？我們會送出刪除要求並清除本機資料，這個動作沒辦法復原喔。',
             style: TextStyle(fontSize: 18, height: 1.4),
           ),
           actions: [
@@ -753,6 +798,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return showDialog<String>(
       context: context,
       builder: (_) => const _DeletePasswordDialog(),
+    );
+  }
+
+  Future<void> _openExternalUri(String value, String fallbackMessage) async {
+    final uri = Uri.tryParse(value);
+    if (uri == null) {
+      _showSnackBar(fallbackMessage);
+      return;
+    }
+    try {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened) {
+        _showSnackBar(fallbackMessage);
+      }
+    } catch (_) {
+      _showSnackBar(fallbackMessage);
+    }
+  }
+
+  void _showSnackBar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, style: const TextStyle(fontSize: 18)),
+        duration: const Duration(seconds: 3),
+      ),
     );
   }
 
@@ -1276,4 +1347,3 @@ class _DeletePasswordDialogState extends State<_DeletePasswordDialog> {
     );
   }
 }
-

@@ -1778,6 +1778,7 @@
     var s = data.summary || {};
     var ca = data.careAlertStats || {};
     var ts = data.taskStats || {};
+    var us = data.usageStats || {};
     var game = data.gameMetrics || {};
     var pet = data.petStatus || {};
     var emotion = Array.isArray(data.emotionTrend) ? data.emotionTrend : [];
@@ -1852,7 +1853,25 @@
     }
     html += "</section>";
 
-    // 4) 情緒趨勢（誠實標註；無真實資料 → 資料不足）
+    // 4) App 使用狀況（來自 app_usage_events 真實上報）
+    html += '<section class="panel"><h3 class="analysis-title">App 使用狀況</h3>';
+    if (!us.available) {
+      html += '<p class="muted data-insufficient">目前尚無 App 使用上報資料。</p>';
+    } else {
+      html += '<div class="metric-grid">';
+      html += metricCard("使用天數", String(us.activeDays || 0), "區間內");
+      html += metricCard("語音互動", String(us.voiceInteractions || 0), null);
+      html += metricCard("打字訊息", String(us.typedChats || 0), null);
+      html += metricCard("寵物互動", String(us.petInteractions || 0), null);
+      html += metricCard("建立提醒", String(us.remindersCreated || 0), null);
+      html += metricCard("任務完成", String(us.dailyTasksCompleted || 0), null);
+      html += metricCard("拼圖完成", String(us.puzzleCompletions || 0), null);
+      html += metricCard("最近使用", formatTime(us.lastEventAt), null);
+      html += "</div>";
+    }
+    html += "</section>";
+
+    // 5) 情緒趨勢（誠實標註；無真實資料 → 資料不足）
     html += '<section class="panel"><h3 class="analysis-title">情緒趨勢</h3>';
     html += dataSourceBadge(data.emotionDataSource);
     if (isInsufficient(data.emotionDataSource, emotion)) {
@@ -1874,7 +1893,7 @@
     }
     html += "</section>";
 
-    // 5) 遊戲退化指標
+    // 6) 遊戲退化指標
     html += '<section class="panel"><h3 class="analysis-title">遊戲認知退化指標</h3>';
     html += dataSourceBadge(game.dataSource);
     if (!game.hasEnoughData) {
@@ -1889,18 +1908,20 @@
     }
     html += "</section>";
 
-    // 6) 寵物照護狀態（後端尚無來源 → 空狀態）
+    // 7) 寵物照護狀態（來自 app_usage_events）
     html += '<section class="panel"><h3 class="analysis-title">寵物照護狀態</h3>';
     if (!pet.available) {
       html +=
         '<p class="muted data-insufficient">' +
-        escapeHtml(pet.message || "寵物互動資料目前保存在長者端，後台尚未串接") +
+        escapeHtml(pet.message || "目前尚無寵物互動上報資料") +
         "。</p>";
     } else {
       html += '<div class="metric-grid">';
       html += metricCard("心情", pet.mood || "—", null);
       html += metricCard("飽足度", pet.satiety == null ? "—" : String(pet.satiety), null);
       html += metricCard("親密度", pet.intimacy == null ? "—" : String(pet.intimacy), null);
+      html += metricCard("互動次數", String(pet.interactionCount || 0), null);
+      html += metricCard("最近互動", formatTime(pet.lastInteractionAt), null);
       html += "</div>";
     }
     html += "</section>";

@@ -99,8 +99,7 @@ void main() {
     await _pumpHomeScreen(tester, harness);
   });
 
-  testWidgets('每日簽到彈窗在小螢幕（320 寬）不 overflow，且顯示標題與簽到按鈕',
-      (tester) async {
+  testWidgets('每日簽到彈窗在小螢幕（320 寬）不 overflow，且顯示標題與簽到按鈕', (tester) async {
     await binding.setSurfaceSize(const Size(320, 568));
     addTearDown(() => binding.setSurfaceSize(null));
     final harness = await _HomeHarness.create();
@@ -267,8 +266,7 @@ void main() {
     expect(find.text('AI Agent 工具測試'), findsNothing);
   });
 
-  testWidgets(
-      'SettingsScreen「今日任務」入口依環境顯示（CR-0056 B2：production 隱藏 / dev 顯示）',
+  testWidgets('SettingsScreen「今日任務」入口依環境顯示（CR-0056 B2：production 隱藏 / dev 顯示）',
       (tester) async {
     final harness = await _HomeHarness.create();
     addTearDown(harness.dispose);
@@ -298,8 +296,7 @@ void main() {
     expect(find.widgetWithText(OutlinedButton, '管理提醒'), findsOneWidget);
   });
 
-  testWidgets('首頁「使用教學」入口存在且較淡，點擊會觸發重新觀看導覽（CR-0020）',
-      (tester) async {
+  testWidgets('首頁「使用教學」入口存在且較淡，點擊會觸發重新觀看導覽（CR-0020）', (tester) async {
     await binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => binding.setSurfaceSize(null));
     final harness = await _HomeHarness.create();
@@ -326,8 +323,7 @@ void main() {
     harness.dispose();
   });
 
-  testWidgets('設定頁有「重新觀看新手導覽」按鈕，點擊觸發 replay 並切回首頁',
-      (tester) async {
+  testWidgets('設定頁有「重新觀看新手導覽」按鈕，點擊觸發 replay 並切回首頁', (tester) async {
     final harness = await _HomeHarness.create();
     addTearDown(harness.dispose);
     final coachController = CoachMarkController();
@@ -379,6 +375,8 @@ void main() {
     await tester.tap(find.widgetWithText(TextButton, '刪除帳號'));
     await tester.pumpAndSettle();
     expect(find.text('要刪除帳號嗎？'), findsOneWidget);
+    expect(find.textContaining('伺服器上的帳號資料'), findsWidgets);
+    expect(find.textContaining('這台手機裡的寵物、記憶、提醒與使用紀錄'), findsOneWidget);
 
     // 第一關按「取消」→ 不進入第二關、不刪除。
     await tester.tap(find.text('取消'));
@@ -411,11 +409,32 @@ void main() {
 
     // 第二關「最後確認」。
     expect(find.text('最後確認'), findsOneWidget);
+    expect(find.textContaining('送出刪除要求並清除本機資料'), findsOneWidget);
     await tester.tap(find.text('確定刪除'));
     await tester.pumpAndSettle();
 
     // 測試環境 Firebase 不可用 → deleteCurrentUser no-op，仍會清本機 session 並登出。
     expect(auth.status, AuthStatus.unauthenticated);
+  });
+
+  testWidgets('設定頁提供支援說明，未設定 hosted URL 時不露 TODO', (tester) async {
+    final harness = await _HomeHarness.create();
+    addTearDown(harness.dispose);
+    final auth = AuthController();
+    addTearDown(auth.dispose);
+
+    await tester.pumpWidget(_settingsHostWithAuth(harness, auth));
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.textContaining('正式支援管道'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    expect(find.textContaining('正式支援管道'), findsOneWidget);
+    expect(find.textContaining('TODO'), findsNothing);
+    expect(find.textContaining('placeholder'), findsNothing);
   });
 }
 

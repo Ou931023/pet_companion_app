@@ -12,17 +12,18 @@ import 'legal_document_screen.dart';
 /// 登入頁。
 ///
 /// 正式展示主視覺：先看到放大的陪伴寵物與溫暖文案，再呈現登入選項
-/// （Google / Apple / 用 Email 登入）。Email / 密碼欄位預設收合，點「用 Email 登入」
-/// 才展開，避免一開始就太像工具表單。Demo 快速登入預設隱藏，由
-/// `AppConfig.showDemoLoginButton`（或建構參數 [showDemoLogin]）控制，開發時可開啟。
+/// （第三方登入於開發版可見；正式版暫以 Email 登入為主）。Email / 密碼欄位預設收合，
+/// 點「用 Email 登入」才展開，避免一開始就太像工具表單。Demo 快速登入預設隱藏，由
+/// `AppConfig.demoLoginVisible`（或建構參數 [showDemoLogin]）控制，開發時可開啟。
 ///
-/// 本次只調整 UI / UX 與文案；Google / Apple / Email 登入邏輯一字未動。
+/// Apple Sign in 完成前，正式版不顯示第三方登入入口，避免商店審查看到未完成按鈕。
 class LoginScreen extends StatefulWidget {
   const LoginScreen({
     super.key,
     this.onSignedIn,
     this.onRegister,
     this.showDemoLogin,
+    this.showSocialSignIn,
   });
 
   /// 登入成功（state=authenticated）後通知外層。
@@ -34,13 +35,17 @@ class LoginScreen extends StatefulWidget {
   /// 是否顯示 Demo 快速登入（備援）。null → 沿用 [AppConfig.showDemoLoginButton]。
   final bool? showDemoLogin;
 
+  /// 是否顯示 Google / Apple 登入。null → 沿用 [AppConfig.socialSignInVisible]。
+  final bool? showSocialSignIn;
+
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  bool get _showDemoLogin =>
-      widget.showDemoLogin ?? AppConfig.demoLoginVisible;
+  bool get _showDemoLogin => widget.showDemoLogin ?? AppConfig.demoLoginVisible;
+  bool get _showSocialSignIn =>
+      widget.showSocialSignIn ?? AppConfig.socialSignInVisible;
 
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
@@ -217,19 +222,21 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                         const Spacer(),
-                        AuthProviderButton(
-                          icon: Icons.g_mobiledata,
-                          label: '用 Google 登入',
-                          iconColor: const Color(0xFF4285F4),
-                          onPressed: () => _handleGoogleSignIn(),
-                        ),
-                        const SizedBox(height: 14),
-                        AuthProviderButton(
-                          icon: Icons.apple,
-                          label: '用 Apple 登入',
-                          onPressed: _handleApplePending,
-                        ),
-                        const SizedBox(height: 14),
+                        if (_showSocialSignIn) ...[
+                          AuthProviderButton(
+                            icon: Icons.g_mobiledata,
+                            label: '用 Google 登入',
+                            iconColor: const Color(0xFF4285F4),
+                            onPressed: () => _handleGoogleSignIn(),
+                          ),
+                          const SizedBox(height: 14),
+                          AuthProviderButton(
+                            icon: Icons.apple,
+                            label: '用 Apple 登入',
+                            onPressed: _handleApplePending,
+                          ),
+                          const SizedBox(height: 14),
+                        ],
                         _buildEmailSection(),
                         if (errorMessage != null) ...[
                           const SizedBox(height: 16),
@@ -363,8 +370,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   SizedBox(width: 14),
                   Text(
                     '正在帶你進去…',
-                    style:
-                        TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
                   ),
                 ],
               )

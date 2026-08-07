@@ -1,15 +1,22 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/care_task.dart';
+import '../services/app_usage_tracking_service.dart';
 import 'profile_controller.dart';
 
 class TaskController extends ChangeNotifier {
-  TaskController(this.profileController) {
+  TaskController(
+    this.profileController, {
+    AppUsageTrackingService? trackingService,
+  }) : _trackingService = trackingService {
     _syncFromProfile();
     profileController.addListener(_onProfileChanged);
   }
 
   final ProfileController profileController;
+  final AppUsageTrackingService? _trackingService;
   List<CareTask> _tasks = const [];
 
   List<CareTask> get tasks => _tasks;
@@ -83,6 +90,16 @@ class TaskController extends ChangeNotifier {
       checkInDate: taskId == 'dailyCheckIn'
           ? DateTime.now().toIso8601String().split('T').first
           : profileController.checkInDate,
+    );
+    unawaited(
+      _trackingService?.track(
+            'daily_task_completed',
+            metadata: {
+              'taskId': taskId,
+              'grantReward': grantReward,
+            },
+          ) ??
+          Future<bool>.value(false),
     );
     notifyListeners();
     return true;

@@ -6,6 +6,7 @@ import '../models/pet_skin.dart';
 import '../models/pet_state.dart';
 import '../models/pet_status.dart';
 import '../services/local_storage_service.dart';
+import '../utils/app_log.dart';
 import '../utils/pet_state_selector.dart';
 
 class PetController extends ChangeNotifier {
@@ -14,11 +15,11 @@ class PetController extends ChangeNotifier {
   ///
   /// [freeAllSkins] 為 true 時所有外觀一律視為已擁有，長者點一下就能換、不需解鎖。
   /// 預設 false → 維持商店 / 金幣解鎖流程。Demo 期間 App 端會傳 true（見 app.dart）。
-  PetController({LocalStorageService? storageService, bool freeAllSkins = false})
+  PetController(
+      {LocalStorageService? storageService, bool freeAllSkins = false})
       : _storageService = storageService,
         _freeAllSkins = freeAllSkins,
-        _ownedSkins =
-            freeAllSkins ? {...PetSkin.values} : {PetSkin.dog};
+        _ownedSkins = freeAllSkins ? {...PetSkin.values} : {PetSkin.dog};
 
   final LocalStorageService? _storageService;
 
@@ -196,8 +197,9 @@ class PetController extends ChangeNotifier {
   }
 
   void _logPetState() {
-    debugPrint(
-        '[PET_CONTROLLER] mood=$_mood expression=$_expression action=$_action mode=${_state.mode.name}');
+    AppLog.debug(
+      '[PET_CONTROLLER] mood=$_mood expression=$_expression action=$_action mode=${_state.mode.name}',
+    );
   }
 
   @override

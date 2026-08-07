@@ -6,9 +6,9 @@ import '../widgets/auth/auth_visuals.dart';
 
 /// 註冊頁（CR-0006 Batch 3b UI / Batch 4b 接上 Email 註冊）。
 ///
-/// 長者友善：大字、大按鈕、溫暖語氣。**註冊頁只做 Email 註冊**；Google / Apple
-/// 綁定統一放在最前面的登入頁，這裡不重複（CR-0009 後續調整）。Email 註冊成功
-/// 後不自動登入，會提示「請用 Email 登入」並返回登入頁。
+/// 長者友善：大字、大按鈕、溫暖語氣。**註冊頁只做 Email 註冊**；Email 註冊成功
+/// 後不自動登入，會提示「請用 Email 登入」並返回登入頁。第三方登入待 Apple + Google
+/// 兩者皆完成後再另開 CR 開啟，避免正式版出現未完成入口。
 ///
 /// 視覺重設計：沿用登入頁的暖色背景，表單收進白色圓角卡片，輸入框高度統一、
 /// 圓角柔和；「建立帳號」主按鈕固定在安全區上方。登入 / 註冊邏輯一字未動。
@@ -192,7 +192,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        '想用 Google 或 Apple？回上一頁就能綁定。',
+                        '請使用常用的 Email，之後回來就能接著陪伴。',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 16,

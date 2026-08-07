@@ -2,7 +2,7 @@
 
 > 目的：正式上架前，App 不應全域允許 iOS arbitrary loads，也不應在 Android production 允許 cleartext。本文件定義傳輸安全政策、dev/prod 差異、**可直接套用的收斂 patch**、smoke checklist 與 rollback。
 > 建立：CR-0054（Batch 2，PATCH-READY）。
-> 狀態：**設計就緒、尚未套用 runtime**。落地依賴 CR-0053 兩項 blocker（正式 HTTPS 後端就緒 + 實體裝置 smoke），須**另開 CR** 套用並驗證。
+> 狀態：**Android 已於 CR-0096S Batch 2 套用 runtime 收斂；iOS ATS 已於 CR-0096S Batch 3 套用 runtime 收斂；兩平台仍需正式 HTTPS 後端與實體裝置 smoke 才能送審結案**。
 > 對照：`docs/E2E_SMOKE_TEST_PLAN.md §5`（A1–A5）、`docs/E2E_SMOKE_TEST_REPORT.md`、`docs/ENVIRONMENT_SETUP.md`、`docs/STORE_RELEASE_CHECKLIST.md`。
 
 > ⚠️ 紅線：本文件只列設定方式與**變數 / 網域名稱**，不含任何 secret / token / keystore / service account / 真實憑證。不得盲套（CR-0054 §5.2 / §11.1）。
@@ -26,14 +26,14 @@
 
 ## 2. 現況（CR-0054 盤點）
 
-- iOS `ios/Runner/Info.plist`：`NSAppTransportSecurity` = `{ NSAllowsArbitraryLoads: true }`（全域明文，**未收斂**）。單一 plist、單一 Runner.xcscheme，未用 build-var 區分 dev/prod。
-- Android `android/app/src/main/AndroidManifest.xml`：`<application ... android:usesCleartextTraffic="true">`（**未收斂**）。無 `res/xml/network_security_config.xml`。已有 `src/debug/AndroidManifest.xml`、`src/profile/AndroidManifest.xml`（目前僅 INTERNET 權限）。`build.gradle.kts` 只有 `buildTypes.release`、無 productFlavors。
+- ✅ iOS `ios/Runner/Info.plist`：CR-0096S Batch 3 已將 `NSAllowsArbitraryLoads=false`，並保留 `NSAllowsLocalNetworking=true` 供本機 / 區網開發；正式公網 API 仍需 HTTPS。
+- ✅ Android `android/app/src/main/AndroidManifest.xml`：CR-0096S Batch 2 已移除 `android:usesCleartextTraffic="true"`，改掛 `@xml/network_security_config`；main/release config 禁明文，debug/profile resource overlay 保留本機開發 HTTP。
 - ✅ 後端 CORS（CR-0054 Batch 1 已修）：middleware 經 `resolveCorsOrigins` 取白名單，production 因 fail-fast 保證非空 → 不再 allow-all。
 - ✅ Flutter `AppConfig.isApiBaseUrlProductionSafe`：production base URL 為 localhost/空 → 友善守門畫面，不進主流程。
 
 ---
 
-## 3. 收斂 Patch（就緒、待套用）
+## 3. 收斂 Patch（Android / iOS 已套用；待實機 smoke）
 
 ### 3.1 Android — network security config + debug override
 
@@ -47,18 +47,13 @@
 </network-security-config>
 ```
 
-**新增** debug-only network security config `android/app/src/debug/res/xml/network_security_config.xml`（dev 允許 loopback / 模擬器 / LAN）：
+**新增** debug/profile network security config（dev 允許本機 / 模擬器 / LAN）：
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- 開發用：僅對本機 / 模擬器 / 區網開放明文，正式網域仍走 HTTPS。 -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">localhost</domain>
-        <domain includeSubdomains="true">127.0.0.1</domain>
-        <domain includeSubdomains="true">10.0.2.2</domain>   <!-- Android emulator → host -->
-        <!-- 若用實機 + 區網後端，於此加該 LAN IP（dev 專用，勿進 release） -->
-    </domain-config>
+    <!-- 開發 / profile 用：允許本機與 LAN HTTP；release 使用 main config 禁止明文。 -->
+    <base-config cleartextTrafficPermitted="true" />
 </network-security-config>
 ```
 
@@ -74,7 +69,7 @@
 
 > manifest 合併：debug build 以 `src/debug/res/xml/network_security_config.xml` 覆蓋 release 版（同名資源 debug 優先），故 debug 取得 LAN 明文、release 取得禁明文。**毋須** `tools:replace`（資源覆蓋層級即可），但若改採 debug manifest 覆蓋 `networkSecurityConfig` 屬性，則需在 debug manifest 的 `<application>` 加 `tools:replace="android:networkSecurityConfig"`。優先採「同名資源覆蓋」較單純。
 
-### 3.2 iOS — ATS 收斂 + 本機網路例外
+### 3.2 iOS — ATS 收斂 + 本機網路例外（已套用）
 
 **改** `ios/Runner/Info.plist` 的 `NSAppTransportSecurity`：
 
@@ -140,10 +135,10 @@
 | 項目 | 狀態 |
 |---|---|
 | 後端 CORS allow-all 缺口 | ✅ 已修（CR-0054 Batch 1） |
-| iOS ATS 全域明文 | ⛔ **未收斂**（patch 就緒，待 HTTPS 後端 + 裝置 smoke） |
-| Android cleartext | ⛔ **未收斂**（patch 就緒，同上） |
+| iOS ATS 全域明文 | ✅ Runtime 已收斂（CR-0096S Batch 3）；⛔ 待 HTTPS 後端 + iOS 實機 smoke |
+| Android cleartext | ✅ Runtime 已收斂（CR-0096S Batch 2）；⛔ 待 HTTPS 後端 + Android 實機 smoke |
 | 正式 HTTPS 後端網域 | ⛔ **未確認就緒**（前置 blocker，owner action） |
 
-> 本文件**不**等於 transport 已硬化。iOS/Android 收斂為 runtime 變更，依架構裁決須另開 CR、備齊前置、跑 §5 smoke 後落地。
+> 本文件已完成 iOS / Android runtime 設定收斂，但**不**等於 store submission transport smoke 已結案。仍需備齊正式 HTTPS 後端與實體裝置，跑 §5 smoke 後才能將傳輸安全 gate 標為完全通過。
 >
 > **CR-0055（2026-06-09）落地嘗試 = BLOCKED**：執行環境無正式 HTTPS 後端、無實體 iOS/Android 裝置，§4 前置未齊 → 依 task §2/§12.2 **未套用 patch、未跑 smoke**，`Info.plist` / `AndroidManifest.xml` 維持原樣。詳見 `docs/E2E_SMOKE_TEST_REPORT.md` Run #1。前置齊備後重跑本文件 §3 套用 + §5 smoke。

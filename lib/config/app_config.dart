@@ -40,6 +40,20 @@ class AppConfig {
   /// 實際是否啟用 mock service：production 一律 false（強制走正式路徑）。
   static bool get mockServicesEnabled => allowMockServices && !isProduction;
 
+  /// 是否允許「所有寵物外觀預設已擁有」的原始開關。
+  ///
+  /// 這是成果展示 / 內部測試用旗標；正式上架版不得把付費 / 解鎖流程
+  /// 硬改成全免費。需要展示全部寵物時，用
+  /// `--dart-define=FREE_ALL_PET_SKINS=true` 開啟。
+  /// 實際是否啟用請用 [freeAllPetSkinsEnabled]（production 一律關閉）。
+  static const bool freeAllPetSkins = bool.fromEnvironment(
+    'FREE_ALL_PET_SKINS',
+    defaultValue: false,
+  );
+
+  /// Demo 全寵物免費實際是否啟用：production 強制關閉。
+  static bool get freeAllPetSkinsEnabled => freeAllPetSkins && !isProduction;
+
   /// 是否在登入頁顯示 Demo 快速登入按鈕（原始開關）。
   ///
   /// **正式展示 / 截圖預設為 false**（登入頁只露 Google / Email / 建立帳號，
@@ -52,20 +66,21 @@ class AppConfig {
     defaultValue: false,
   );
 
-  /// Demo 登入按鈕實際是否顯示。
-  ///
-  /// 一般以 [showDemoLoginButton]（`--dart-define=SHOW_DEMO_LOGIN`）控制；
-  /// production 預設仍隱藏，但**明確指定 `SHOW_DEMO_LOGIN=true` 時即顯示**，
-  /// 作為真登入暫時不可用時的訪客備援入口（「先進去陪伴」）。
-  static bool get demoLoginVisible =>
-      showDemoLoginButton && (!isProduction || allowDemoLoginInProduction);
+  /// Demo 登入按鈕實際是否顯示：production 強制隱藏。
+  static bool get demoLoginVisible => showDemoLoginButton && !isProduction;
 
-  /// 是否允許在 production 顯示訪客入口（需同時開 [showDemoLoginButton]）。
-  /// 由 `--dart-define=ALLOW_DEMO_LOGIN_IN_PROD=true` 控制，預設 false。
-  static const bool allowDemoLoginInProduction = bool.fromEnvironment(
-    'ALLOW_DEMO_LOGIN_IN_PROD',
-    defaultValue: false,
+  /// 是否顯示第三方登入（Google / Apple）的原始開關。
+  ///
+  /// 目前 Apple Sign in 尚未正式接線。為避免 App Store 審查看到未完成入口，
+  /// production 先只顯示 Email 登入 / 註冊；第三方登入待 Apple + Google 兩者皆完成
+  /// 後再另開 CR 開啟。
+  static const bool showSocialSignIn = bool.fromEnvironment(
+    'SHOW_SOCIAL_SIGN_IN',
+    defaultValue: true,
   );
+
+  /// Google / Apple 登入入口實際是否顯示：production 強制隱藏。
+  static bool get socialSignInVisible => showSocialSignIn && !isProduction;
 
   /// 是否顯示「照護用品商城」入口（marketplace）的原始開關。
   ///
@@ -80,19 +95,8 @@ class AppConfig {
     defaultValue: true,
   );
 
-  /// marketplace 入口實際是否顯示。
-  ///
-  /// 以 [showMarketplace] 為總開關；production 預設隱藏（CR-0056 A2），
-  /// 但明確指定 `ALLOW_MARKETPLACE_IN_PROD=true` 時即顯示。
-  static bool get marketplaceVisible =>
-      showMarketplace && (!isProduction || allowMarketplaceInProduction);
-
-  /// 是否允許在 production 顯示照護商城入口（需同時開 [showMarketplace]）。
-  /// 由 `--dart-define=ALLOW_MARKETPLACE_IN_PROD=true` 控制，預設 false。
-  static const bool allowMarketplaceInProduction = bool.fromEnvironment(
-    'ALLOW_MARKETPLACE_IN_PROD',
-    defaultValue: false,
-  );
+  /// marketplace 入口實際是否顯示：production 強制隱藏。
+  static bool get marketplaceVisible => showMarketplace && !isProduction;
 
   /// 是否顯示「今日任務」入口（dailyCareTask）的原始開關。
   ///
@@ -107,25 +111,15 @@ class AppConfig {
     defaultValue: true,
   );
 
-  /// 今日任務入口實際是否顯示。
-  ///
-  /// 以 [showDailyCareTasks] 為總開關；production 預設隱藏（CR-0056 B2），
-  /// 但明確指定 `ALLOW_DAILY_CARE_TASKS_IN_PROD=true` 時即顯示。
-  static bool get dailyCareTasksVisible =>
-      showDailyCareTasks &&
-      (!isProduction || allowDailyCareTasksInProduction);
-
-  /// 是否允許在 production 顯示今日任務入口（需同時開 [showDailyCareTasks]）。
-  /// 由 `--dart-define=ALLOW_DAILY_CARE_TASKS_IN_PROD=true` 控制，預設 false。
-  static const bool allowDailyCareTasksInProduction = bool.fromEnvironment(
-    'ALLOW_DAILY_CARE_TASKS_IN_PROD',
-    defaultValue: false,
-  );
+  /// 今日任務入口實際是否顯示：production 強制隱藏。
+  static bool get dailyCareTasksVisible => showDailyCareTasks && !isProduction;
 
   static const String defaultSttProxyUrl = '$backendBaseUrl/api/stt/transcribe';
   static const String realtimeSessionUrl =
       '$backendBaseUrl/api/realtime/session';
   static const String realtimeCallUrl = '$backendBaseUrl/api/realtime/call';
+  static const String appUsageEventsUrl =
+      '$backendBaseUrl/api/app-usage/events';
   static const String careMallUrl = String.fromEnvironment(
     'CARE_MALL_URL',
     defaultValue: 'http://127.0.0.1:5500',

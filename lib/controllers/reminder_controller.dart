@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/reminder.dart';
+import '../services/app_usage_tracking_service.dart';
 import '../services/notification_service.dart';
 import '../services/reminder_service.dart';
 
@@ -8,11 +11,14 @@ class ReminderController extends ChangeNotifier {
   ReminderController({
     required ReminderService reminderService,
     required NotificationService notificationService,
+    AppUsageTrackingService? trackingService,
   })  : _reminderService = reminderService,
-        _notificationService = notificationService;
+        _notificationService = notificationService,
+        _trackingService = trackingService;
 
   final ReminderService _reminderService;
   final NotificationService _notificationService;
+  final AppUsageTrackingService? _trackingService;
 
   List<Reminder> _reminders = [];
   bool _isLoading = true;
@@ -31,12 +37,26 @@ class ReminderController extends ChangeNotifier {
 
   Future<void> addOrUpdate(Reminder reminder) async {
     final index = _reminders.indexWhere((item) => item.id == reminder.id);
+    final isNew = index == -1;
     if (index == -1) {
       _reminders = [..._reminders, reminder];
     } else {
       _reminders = [..._reminders]..[index] = reminder;
     }
     await _persistAndSchedule(reminder);
+    if (isNew) {
+      unawaited(
+        _trackingService?.track(
+              'reminder_created',
+              metadata: {
+                'repeatType': reminder.repeatType,
+                'enabled': reminder.enabled,
+                'hour': reminder.hour,
+              },
+            ) ??
+            Future<bool>.value(false),
+      );
+    }
   }
 
   Future<void> remove(String id) async {
