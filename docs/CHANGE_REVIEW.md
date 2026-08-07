@@ -4576,3 +4576,30 @@ Release signing 的 repo 端文件與自動檢查已可執行；真正送審仍�
 
 ### 裁決
 最後上架 blocker 已集中到 `docs/FINAL_STORE_BLOCKER_BOARD.md`。repo 能補的 store readiness 文件、素材與自動檢查已收斂；剩餘不可假完成的項目是 production HTTPS API、正式簽章、production env、測試帳號、真機 smoke 與商店後台隱私/資料安全表單。
+
+---
+
+## CR-0101B — Store Review Notes Template
+
+### 模式
+**商店審查備註 / App access template 小批次**。補齊 App Store Connect Review notes、Google Play App access instructions、Data Safety / App Privacy owner checklist 與審查帳號建立規則。此批次不放真帳號、不放密碼、不讀 `.env`、不接觸任何 secret。
+
+### 變更
+- 新增 `docs/STORE_REVIEW_NOTES_TEMPLATE.md`：
+  - App Store Connect Review notes 可貼模板。
+  - Google Play app access instructions 可貼模板。
+  - Data Safety / App Privacy owner checklist。
+  - 審查帳號建立規則：resident / caregiver / super_admin 分離，真帳密只填商店後台受保護欄位，不寫入 repo。
+  - No-Go 條件：review notes 缺登入路徑、legal URL 不可開、Care Alert 寫成醫療診斷、審查帳號或後端 URL 寫入 repo 等。
+- `docs/APP_STORE_METADATA.md`：Review notes / 測試帳號策略從「待定」改為模板已備妥，owner 仍需於商店後台填真帳號與正式 `API_BASE_URL`。
+- `docs/FINAL_STORE_BLOCKER_BOARD.md`、`docs/STORE_SUBMISSION_RUNBOOK.md`、`docs/INTERNAL_TESTING_SMOKE_RUNBOOK.md`：加入 review notes template 入口。
+- `test/config/store_readiness_test.dart`：新增 template regression checks，確保包含麥克風用途、Realtime、Care Alert 非醫療、Email login/register、帳號刪除、Data Safety / App Privacy、legal URL、support email，且不含常見 secret pattern。
+
+### 測試
+- `dart format test/config/store_readiness_test.dart`：完成格式化（0 changed）。
+- `flutter test test/config/store_readiness_test.dart`：**13 passed / 0 failed**。
+- `flutter analyze`：No issues found。
+- `git diff --check`：通過。
+
+### 裁決
+商店審查文案 repo 端已可貼用；真正送審前仍需 owner 在 App Store Connect / Play Console 的受保護欄位填入審查專用帳號與正式 production HTTPS API 資訊，不能寫入 repo。

@@ -3,7 +3,7 @@
 > 狀態：CR-0046 第一輪草稿。所有 `⛔ 待定` 項需負責人 / 法務確認後填入，**禁止以假值送審**。
 > 本檔為文案草稿，實際送審以商店後台為準。
 
-相關文件：`docs/STORE_RELEASE_CHECKLIST.md`、`docs/GOOGLE_PLAY_DATA_SAFETY.md`。
+相關文件：`docs/STORE_RELEASE_CHECKLIST.md`、`docs/GOOGLE_PLAY_DATA_SAFETY.md`、`docs/STORE_REVIEW_NOTES_TEMPLATE.md`。
 
 ---
 
@@ -41,8 +41,8 @@
   > 註：本 App 的關懷提醒是「照護輔助提醒」，不是醫療診斷，不能取代專業醫療或照護人員的判斷。
 - **關鍵字（≤100 字元，逗號分隔）**：草稿「長者,陪伴,語音,AI,寵物,關懷,照護,記憶,聊天,孤單,長照,family」
 - **What's New（首版）**：草稿「首次推出：即時語音陪伴、長期記憶、關懷提醒。」
-- **審查備註 Review notes**：⛔ 待定——需說明：(1) 需麥克風做即時語音；(2) Care Alert 為照護提醒非醫療；(3) 後端需正式 URL/金鑰；(4) 若需審查用測試帳號，提供 demo 帳號策略（見下）。
-- **Demo / 測試帳號策略（審查用）**：⛔ 待定——建議提供一組「審查專用」Firebase 帳號 + 預先指派的住民資料，讓審查員能走完登入→語音→Care Alert；**不可用 production super_admin token、不可 hardcode**。
+- **審查備註 Review notes**：✅ 模板已備妥於 `docs/STORE_REVIEW_NOTES_TEMPLATE.md`；owner 需在 App Store Connect 填入測試帳號與正式 `API_BASE_URL`，不得寫入 repo。
+- **測試帳號策略（審查用）**：✅ 策略已定：提供一組「審查專用」Firebase resident 帳號 + 預先指派的住民資料，讓審查員能走完登入→語音→設定/刪除帳號；如需 caregiver_web 審查再另提供 caregiver / super_admin 測試帳號。**不可用 production super_admin token、不可 hardcode、不可寫進 repo**。
 - **Sign in with Apple**：若上架時提供第三方登入（Google），Apple 規範要求同時提供 Sign in with Apple。✅ CR-0101A 決策：Apple Sign in 完成前，production build 隱藏 Google / Apple 第三方登入入口，只保留 Email login / Email register；未完成入口不得出現在送審截圖或審查流程。
 - **App Privacy 補充（CR-0097）**：隱私問卷需申報 App 活動 / 使用分析（App 開啟與使用時間、語音/打字互動、寵物互動、提醒/任務、照片驗證、小遊戲等）。用途限 App Functionality / Analytics / Product Personalization（若後台選項適用），不得填成 tracking 或 advertising。
 - **帳號刪除 / 支援備註（CR-0101A）**：設定頁提供「刪除帳號」入口與二次確認，文案說明會刪除伺服器帳號資料與本機 App 紀錄。審查備註可指出：登入後進入設定 → 帳號 → 刪除帳號。正式支援 URL / 客服信箱需由 `SUPPORT_URL` / `CONTACT_EMAIL` 注入並與商店後台一致。
@@ -55,8 +55,8 @@
 - **簡短描述（≤80 字元）**：草稿「對 AI 寵物說說話，牠陪你聊、記得你，也讓家人適時關心。」
 - **完整描述（≤4000 字元）**：同 §2 完整描述（可加長）。
 - **分類**：Health & Fitness
-- **內容分級問卷**：⛔ 待定（依 IARC 問卷，含使用者語音對話）
-- **Data Safety 表單**：見 `docs/GOOGLE_PLAY_DATA_SAFETY.md`（⛔ 需於後台逐項填寫）
+- **內容分級問卷**：⛔ owner 需於 Play Console 依 IARC 問卷實際填寫（含使用者語音/文字對話）；不得由 repo 假完成。
+- **Data Safety 表單**：見 `docs/GOOGLE_PLAY_DATA_SAFETY.md` 與 `docs/STORE_REVIEW_NOTES_TEMPLATE.md`（⛔ 需於後台逐項填寫）
 - **目標客群 / 兒童政策**：本 App 面向成人（長者），非兒童導向。
 - **Feature graphic / screenshots**：✅ feature graphic 與兩平台候選 screenshots 已輸出於 `store_assets/`；送審前仍需商店後台人工預覽裁切。
 

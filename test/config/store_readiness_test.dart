@@ -48,6 +48,10 @@ void main() {
         contains('docs/FINAL_STORE_BLOCKER_BOARD.md'),
       );
       expect(
+        _read('docs/STORE_SUBMISSION_RUNBOOK.md'),
+        contains('docs/STORE_REVIEW_NOTES_TEMPLATE.md'),
+      );
+      expect(
         _read('docs/STORE_RELEASE_CHECKLIST.md'),
         contains('docs/FINAL_STORE_BLOCKER_BOARD.md'),
       );
@@ -393,6 +397,7 @@ void main() {
       expect(board, contains('非醫療診斷'));
       expect(
           board, contains('bash scripts/check_release_signing_readiness.sh'));
+      expect(board, contains('docs/STORE_REVIEW_NOTES_TEMPLATE.md'));
 
       for (final forbidden in [
         'API_BASE_URL=http://',
@@ -400,6 +405,52 @@ void main() {
       ]) {
         expect(board, isNot(contains(forbidden)));
       }
+    });
+
+    test('store review notes template keeps reviewer access safe', () {
+      final template = _read('docs/STORE_REVIEW_NOTES_TEMPLATE.md');
+      final metadata = _read('docs/APP_STORE_METADATA.md');
+      final internalRunbook = _read('docs/INTERNAL_TESTING_SMOKE_RUNBOOK.md');
+
+      expect(template, contains('Store Review Notes'));
+      expect(template, contains('App Store Connect Review Notes'));
+      expect(template, contains('Google Play Review'));
+      expect(template, contains('Resident account'));
+      expect(template, contains('Password'));
+      expect(template, contains('麥克風用途'));
+      expect(template, contains('OpenAI Realtime'));
+      expect(template, contains('Care Alert'));
+      expect(template, contains('不是醫療診斷'));
+      expect(template, contains('Email login / Email register'));
+      expect(template, contains('帳號刪除'));
+      expect(template, contains('Data Safety'));
+      expect(template, contains('App Store Privacy'));
+      expect(template, contains('aicompanion.support@gmail.com'));
+      expect(
+          template,
+          contains(
+              'https://ou931023.github.io/pet_companion_app/privacy.html'));
+      expect(template,
+          contains('https://ou931023.github.io/pet_companion_app/terms.html'));
+      expect(
+          template,
+          contains(
+              'https://ou931023.github.io/pet_companion_app/support.html'));
+      expect(template, contains('不寫入 repo'));
+      expect(template, contains('No-Go'));
+
+      for (final forbidden in [
+        'sk-',
+        'DATABASE_URL=',
+        'storePassword=',
+        'keyPassword=',
+        'BEGIN PRIVATE KEY',
+      ]) {
+        expect(template, isNot(contains(forbidden)));
+      }
+
+      expect(metadata, contains('docs/STORE_REVIEW_NOTES_TEMPLATE.md'));
+      expect(internalRunbook, contains('docs/STORE_REVIEW_NOTES_TEMPLATE.md'));
     });
   });
 }
