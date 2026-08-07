@@ -9,7 +9,7 @@
 
 ## 1. 現況（CR-0058 盤點）
 
-- Android `android/app/build.gradle.kts`：`buildTypes.release` 目前 **`signingConfig = signingConfigs.getByName("debug")`**（用 debug key 簽 release，僅供 `flutter run --release` 測試）。⛔ **上架前必須換成正式 keystore**。
+- Android `android/app/build.gradle.kts`：CR-0096S Batch 4 已改為讀取 `android/key.properties` 的 release signing config。真正跑 release / appbundle 時若缺正式 keystore 設定會 fail-fast，不再用 debug key 假裝可上架。
 - iOS：未設定正式 signing（需 Apple Developer 帳號 + 憑證 / provisioning profile，於 Xcode / App Store Connect 設定）。
 - 兩者皆 **owner action**（需 Apple Developer 帳號、Google Play Console 帳號、產生 keystore）。
 
@@ -29,7 +29,7 @@
    keyAlias=upload
    storeFile=<keystore 絕對路徑，不入 git>
    ```
-3. `build.gradle.kts` 改為讀 `key.properties` 動態組 `signingConfigs.release`，`buildTypes.release.signingConfig` 指向它（取代現行 debug key）。此程式改動可進 git（**只讀外部檔，不含值**）。
+3. `build.gradle.kts` 已讀 `key.properties` 動態組 `signingConfigs.release`，`buildTypes.release.signingConfig` 指向它。此程式改動可進 git（**只讀外部檔，不含值**）。
 4. **Google Play App Signing**：建議啟用——上傳 upload key 簽的 AAB，Google 用 app signing key 重簽。upload key 遺失可重設，app signing key 由 Google 保管。
 5. 產物：`flutter build appbundle --release`（Play 偏好 AAB 而非 APK）。
 
@@ -66,5 +66,6 @@
 - [ ] Apple Developer Program 帳號 + iOS 憑證 / provisioning。
 - [ ] Google Play Console 帳號 + Android upload keystore（本機產生、不進 git）+ App Signing 啟用。
 - [ ] Bundle ID / applicationId 正式化（不可逆，見 `APP_STORE_METADATA §7`）。
-- [ ] `build.gradle.kts` release signingConfig 由 debug key 換成正式 keystore（讀 `key.properties`）。
+- [x] `build.gradle.kts` release signingConfig 由 debug key 換成正式 keystore（讀 `key.properties`）。
+- [ ] 本機 / CI 提供實際 `android/key.properties` 與 upload keystore（不得提交）。
 - [ ] 決定第三方登入策略（含 Sign in with Apple）。

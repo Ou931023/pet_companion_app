@@ -16,9 +16,9 @@
 | 主分類 | Health & Fitness 或 Medical（建議 Health & Fitness，避免醫療宣稱） | Care Alert 為「照護提醒」非醫療診斷 |
 | 次分類 | Lifestyle | |
 | 年齡分級 | 建議 4+（iOS）/ Everyone（Google）；最終依問卷 | 無暴力/成人內容；含使用者生成語音對話 |
-| 隱私政策 URL | ⛔ 待定（`legal_config.dart` TODO 佔位） | **必填、需真實可存取** |
-| 支援 URL | ⛔ 待定 | |
-| 行銷 / 客服 Email | ⛔ 待定 | |
+| 隱私政策 URL | ⛔ 待部署（`store_legal_site/privacy.html` 草稿已建立） | GitHub Pages 預期：`https://ou931023.github.io/pet_companion_app/privacy.html`；**必填、需真實可存取 HTTPS URL** |
+| 支援 URL | ⛔ 待部署（`store_legal_site/support.html` 草稿已建立） | GitHub Pages 預期：`https://ou931023.github.io/pet_companion_app/support.html`；**必填或強烈建議，需公開 HTTPS** |
+| 行銷 / 客服 Email | ✅ `aicompanion.support@gmail.com` | App 內設定頁可透過 `CONTACT_EMAIL` 顯示客服信箱入口；商店後台與 production build 應使用同一信箱 |
 | 版本 | 1.0.0（pubspec `1.0.0+1`） | |
 
 ---
@@ -42,7 +42,9 @@
 - **What's New（首版）**：草稿「首次推出：即時語音陪伴、長期記憶、關懷提醒。」
 - **審查備註 Review notes**：⛔ 待定——需說明：(1) 需麥克風做即時語音；(2) Care Alert 為照護提醒非醫療；(3) 後端需正式 URL/金鑰；(4) 若需審查用測試帳號，提供 demo 帳號策略（見下）。
 - **Demo / 測試帳號策略（審查用）**：⛔ 待定——建議提供一組「審查專用」Firebase 帳號 + 預先指派的住民資料，讓審查員能走完登入→語音→Care Alert；**不可用 production super_admin token、不可 hardcode**。
-- **Sign in with Apple**：若上架時提供第三方登入（Google），Apple 規範要求同時提供 Sign in with Apple。⛔ 目前 Apple 登入為「即將推出」佔位 → 上架前需決策是否啟用或移除第三方登入入口。
+- **Sign in with Apple**：若上架時提供第三方登入（Google），Apple 規範要求同時提供 Sign in with Apple。✅ CR-0101A 決策：Apple Sign in 完成前，production build 隱藏 Google / Apple 第三方登入入口，只保留 Email login / Email register；未完成入口不得出現在送審截圖或審查流程。
+- **App Privacy 補充（CR-0097）**：隱私問卷需申報 App 活動 / 使用分析（App 開啟與使用時間、語音/打字互動、寵物互動、提醒/任務、照片驗證、小遊戲等）。用途限 App Functionality / Analytics / Product Personalization（若後台選項適用），不得填成 tracking 或 advertising。
+- **帳號刪除 / 支援備註（CR-0101A）**：設定頁提供「刪除帳號」入口與二次確認，文案說明會刪除伺服器帳號資料與本機 App 紀錄。審查備註可指出：登入後進入設定 → 帳號 → 刪除帳號。正式支援 URL / 客服信箱需由 `SUPPORT_URL` / `CONTACT_EMAIL` 注入並與商店後台一致。
 
 ---
 

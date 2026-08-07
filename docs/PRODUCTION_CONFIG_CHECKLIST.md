@@ -6,7 +6,8 @@
 > 治理依據：`PROJECT_ARCHITECTURE.md` §7.1 / §7.1.1 / §5.3.1、CR-0034。
 >
 > 紅線：不要把 `.env` 或任何 token / API key 進版控；本文件只列名稱，不含真實值。
-> 啟動 / build 操作步驟見 `docs/ENVIRONMENT_SETUP.md`。
+> 啟動 / build 操作步驟見 `docs/ENVIRONMENT_SETUP.md`。正式送審前 smoke 執行入口見
+> `docs/STORE_SUBMISSION_RUNBOOK.md`。
 
 ---
 
@@ -91,6 +92,7 @@
 - [ ] `--dart-define=SHOW_DEV_PANELS=false`
 - [ ] `--dart-define=SHOW_DEMO_LOGIN=false`
 - [ ] `--dart-define=ALLOW_MOCK_SERVICES=false`
+- [ ] 不帶 `--dart-define=SHOW_SOCIAL_SIGN_IN=true`（Apple Sign in 完成前，production 強制隱藏 Google / Apple 入口）
 - [ ] 驗收：production build 開啟不會出現開發面板 / Demo 登入；
       若 `API_BASE_URL` 不安全會顯示長者友善守門畫面（不進主流程）。
 
@@ -107,25 +109,65 @@
 
 ## 8. 待辦（上架前必須處理）
 
-### 8.1 LegalConfig 4 個 hosted URL / Email（`lib/config/legal_config.dart`，現為 TODO 佔位）
+### 8.1 LegalConfig 4 個 hosted URL / Email（`lib/config/legal_config.dart`，由 dart-define 注入）
 
 - [ ] `privacyPolicyUrl`（隱私權政策正式 hosted 頁面）
 - [ ] `termsOfServiceUrl`（服務條款正式 hosted 頁面）
 - [ ] `supportUrl`（技術支援 / 客服說明頁）
-- [ ] `contactEmail`（正式客服信箱）
+- [x] `contactEmail`（正式客服信箱）：`aicompanion.support@gmail.com`
 
 > 在填入正式值前，UI 以 `LegalConfig.isPlaceholder` 判斷不顯示外部連結入口
+
+靜態頁草稿已在 `store_legal_site/`：
+
+- `store_legal_site/privacy.html`
+- `store_legal_site/terms.html`
+- `store_legal_site/support.html`
+- GitHub Pages workflow：`.github/workflows/legal-site-pages.yml`
+
+GitHub Pages 預期 URL（需 repo Settings → Pages → Source: GitHub Actions，且 workflow 已成功跑完）：
+
+- `https://ou931023.github.io/pet_companion_app/privacy.html`
+- `https://ou931023.github.io/pet_companion_app/terms.html`
+- `https://ou931023.github.io/pet_companion_app/support.html`
+
+部署到公開 HTTPS 後，對應 URL 應填入下列 dart-define。客服信箱已定為 `aicompanion.support@gmail.com`，仍需確認 GitHub Pages URL 已可公開開啟。
+
+Production build 應帶：
+
+```bash
+--dart-define=PRIVACY_POLICY_URL=https://...
+--dart-define=TERMS_OF_SERVICE_URL=https://...
+--dart-define=SUPPORT_URL=https://...
+--dart-define=CONTACT_EMAIL=aicompanion.support@gmail.com
+```
 > （避免長者點到不存在的頁面）。
+
+驗收：
+
+- [ ] App 內設定頁顯示支援說明，且不顯示 `TODO_*` / placeholder 字樣。
+- [ ] 注入 `SUPPORT_URL` 後，設定頁顯示「聯絡支援」入口。
+- [ ] 注入 `CONTACT_EMAIL` 後，設定頁顯示「寫信給客服」入口。
+- [ ] App Store Connect / Google Play Console 的 support URL / email 與 dart-define 一致。
 
 ### 8.2 Migrations 實跑（`backend/stt_proxy/db/migrations/`）
 
 - [ ] `010_create_consent_records.sql`
 - [ ] `011_create_care_alerts.sql`（`care_alerts` / `care_alert_status_events`）
 - [ ] `012_create_notification_audit_logs.sql`（`notification_logs` / `audit_logs`）
+- [ ] `017_create_app_usage_events.sql`（CR-0097；App 使用時間、語音/打字互動、寵物互動、提醒/任務、照片驗證、小遊戲事件）
 
 > production 啟用 PG 後需於正式 DB 實跑（`db/migrate.js`），確認上述表存在。
 
-### 8.3 iOS / Android 上架身份正式化
+### 8.3 Usage tracking privacy disclosure（CR-0097）
+
+- [x] App 內同意畫面 / 隱私政策已揭露 `app_usage_events` 對應的使用紀錄。
+- [ ] Hosted 隱私政策正式頁面同步 App 內文。
+- [ ] Google Play Data Safety 申報 App 活動 / 使用分析資料。
+- [ ] App Store Privacy Nutrition Labels 申報 App 活動 / 使用分析資料。
+- [ ] 後台 / 管理端只顯示彙整後使用狀況，不顯示不必要的完整對話或敏感原文。
+
+### 8.4 iOS / Android 上架身份正式化
 
 - [x] iOS Bundle ID：✅ `tw.edu.ncyu.im.aicompanion`（CR-0061 owner 拍板）
 - [x] Android applicationId：✅ `tw.edu.ncyu.im.aicompanion`（CR-0061，對齊 iOS）
@@ -139,6 +181,7 @@
 
 ## 9. 相關文件
 
+- `docs/STORE_SUBMISSION_RUNBOOK.md` — App Store / Google Play 送審前單一 smoke Runbook。
 - `docs/ENVIRONMENT_SETUP.md` — 三環境啟動步驟與排查。
 - `PROJECT_ARCHITECTURE.md` §7.1 / §7.1.1 / §5.3.1。
 - `backend/stt_proxy/.env.example` — 後端環境變數分區範本。

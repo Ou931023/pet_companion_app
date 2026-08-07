@@ -60,6 +60,37 @@
 
 ## 提案紀錄（Change Requests）
 
+### CR-0101A：App Store Readiness Foundation — 登入與 production 入口收斂 — ✅ 完成（2026-08-07）
+- 提出 agent：architecture-agent / frontend-ux-agent
+- 日期：2026-08-07
+- 動機 / 問題：正式送審前，登入頁不得出現未完成的 Apple placeholder；若 Google 第三方登入可見，App Store 也會要求 Sign in with Apple。另 CR-0096S 後仍有幾個 production 例外旗標可顯式開啟 demo / marketplace / daily-care 入口，與 Store checklist「production 完全隱藏」不一致。
+- 影響範圍（檔案）：`lib/config/app_config.dart`、`lib/screens/login_screen.dart`、`lib/screens/register_screen.dart`、`test/config/app_config_test.dart`、`test/screens/login_screen_test.dart`、`test/screens/register_screen_test.dart`、`docs/RELEASE_BUILD_SIGNING_CHECK.md`、`docs/APP_STORE_METADATA.md`、`docs/STORE_RELEASE_CHECKLIST.md`、`docs/PRODUCTION_CONFIG_CHECKLIST.md`。
+- 觸及 🔒？：否（未改 API 契約、DB schema、Realtime 主流程或依賴；僅 Flutter 上架入口 gating、文案與文件）。
+- 牽涉哪些 agent：architecture-agent（上架風險 / 文件）、frontend-ux-agent（登入 / 註冊 UI）。
+- 風險等級：medium-low（正式版隱藏未完成入口；dev/test 仍保留 Google / Apple UI 測試能力。若產品決定正式啟用 Google，必須先完成 Apple Sign in 並另開 CR）。
+- 變更摘要：
+  - production 強制隱藏 Demo 登入、marketplace、daily-care，不再提供 `ALLOW_*_IN_PROD` 例外路徑。
+  - 新增 `AppConfig.socialSignInVisible`：Apple Sign in 完成前，production 隱藏 Google / Apple 第三方登入入口，只保留 Email login / register。
+  - 註冊頁移除「想用 Google 或 Apple」誤導文案。
+  - 設定頁補支援說明；正式 `SUPPORT_URL` / `CONTACT_EMAIL` 有注入時才顯示外部聯絡按鈕，未注入時不露 TODO。
+  - 刪除帳號確認文案補清楚：會刪除伺服器帳號資料與本機寵物 / 記憶 / 提醒 / 使用紀錄。
+  - release build 文件改為真正送審用 dart-define，不再把展示用 Render URL 或入口例外旗標列為 canonical。
+- 測試計畫：`dart format`；`flutter test test/config/app_config_test.dart test/screens/login_screen_test.dart test/screens/register_screen_test.dart test/home_screen_layout_test.dart`；production dart-define 反向測試；`flutter analyze`；`flutter test`。
+- architecture-agent 裁決：✅ 核准
+- 完成狀態：✅ 完成
+
+### CR-0097 Addendum：Usage Tracking 隱私揭露補強 — ✅ 完成（2026-08-07）
+- 提出 agent：architecture-agent / frontend-ux-agent
+- 日期：2026-08-07
+- 動機 / 問題：CR-0097 已新增 `app_usage_events` 與管理者 / 照護者使用統計，但正式上架前必須讓同意畫面、App 內隱私政策、Google Play Data Safety 與 App Store Privacy 申報基礎一致，避免「後台有收數據、商店/政策未揭露」。
+- 影響範圍（檔案）：`lib/config/legal_content.dart`、`lib/config/legal_config.dart`、`test/consent_gate_test.dart`、`docs/GOOGLE_PLAY_DATA_SAFETY.md`、`docs/STORE_RELEASE_CHECKLIST.md`、`docs/APP_STORE_METADATA.md`、`docs/PRODUCTION_CONFIG_CHECKLIST.md`。
+- 觸及 🔒？：否（未改 API 契約、DB schema、Realtime 主流程或依賴；僅 App 內法遵文案版本與 release 文件）。
+- 牽涉哪些 agent：architecture-agent（上架風險 / 文件）、frontend-ux-agent（同意畫面文案）。
+- 風險等級：low（文案與測試補強；`LegalConfig.consentVersion` 更新會要求舊版同意者重新同意，屬隱私變更必要行為）。
+- 測試計畫：`flutter test test/consent_gate_test.dart test/config/legal_config_test.dart`；`flutter analyze`。
+- architecture-agent 裁決：✅ 核准
+- 完成狀態：✅ 完成
+
 ### CR-0001：建立 Team Agents 治理文件
 - 提出 agent：architecture-agent（初始化）
 - 動機：導入 Team Agents 分工，建立治理基準文件。
@@ -4186,3 +4217,203 @@ CR-0090 已改後端語音 persona，但 `realtime_voice_service.dart` 內供 `s
 
 ### 裁決
 雪貂下架乾淨（程式 / 素材 / 入口 / 文案皆無殘留，僅保留 fallback 防呆與下架測試）；投資免責以「後端決定性附加」+「persona 指示」雙保險覆蓋 typed / Realtime / 台語；未碰受保護主流程與 API 契約；三端測試全綠。併入主線。**下一個可用 CR 編號：CR-0098。**
+
+---
+
+## CR-0096S — Store Blocking Issues Cleanup Batch 1
+
+### 模式
+**production / store readiness 小批次**（Flutter config + app wiring + 測試）。先清掉明確不適合正式上架的 Demo-only 行為：App 啟動時硬把 `PetController.freeAllSkins` 設為 `true`，導致所有寵物外觀在正式版也會預設解鎖。此批次不碰 Realtime 主流程、後端 API 契約、DB schema、Care Alert 資料結構、依賴或 `.env`。
+
+### 變更
+- `AppConfig` 新增 `FREE_ALL_PET_SKINS` 原始旗標與 `freeAllPetSkinsEnabled` 實際守門。
+- `freeAllPetSkinsEnabled` 在 production 一律 false，避免正式上架版因 Demo 設定外洩而繞過寵物解鎖 / 養成流程。
+- `PetCompanionApp` 建立 `PetController` 時改讀 `AppConfig.freeAllPetSkinsEnabled`，移除硬編 `freeAllSkins: true` 與 Demo-only 註解。
+
+### 測試
+- `flutter test test/config/app_config_test.dart test/controllers/pet_controller_skin_test.dart`：**27 passed / 0 failed**。
+- `flutter test --dart-define=APP_ENV=production --dart-define=FREE_ALL_PET_SKINS=true test/config/app_config_test.dart`：**10 passed / 0 failed**，確認 production 即使誤開 `FREE_ALL_PET_SKINS=true` 也仍強制關閉。
+
+### 裁決
+此批次屬 Store Blocking cleanup 的第一個低風險落點：保留內部展示旗標，但正式版強制關閉 Demo 全寵物免費。下一批應繼續清查登入 / debug 文案 / placeholder / privacy URL / release signing / cleartext traffic 等 store blockers。
+
+---
+
+## CR-0096S — Store Blocking Issues Cleanup Batch 2
+
+### 模式
+**Android transport security 小批次**（Android manifest/resource + Flutter config test）。清掉 Play Store production 風險：主 manifest 原本 `android:usesCleartextTraffic="true"`，會讓 release 也全域允許明文 HTTP。此批次不碰 Flutter API base URL、Realtime 主流程、後端 API 契約、DB schema、依賴或 `.env`。
+
+### 變更
+- `android/app/src/main/AndroidManifest.xml`：移除 `android:usesCleartextTraffic="true"`，改掛 `android:networkSecurityConfig="@xml/network_security_config"`。
+- `android/app/src/main/res/xml/network_security_config.xml`：release/main 預設 `cleartextTrafficPermitted="false"`，正式版只允許 HTTPS。
+- `android/app/src/debug/res/xml/network_security_config.xml` 與 `android/app/src/profile/res/xml/network_security_config.xml`：保留 `cleartextTrafficPermitted="true"`，避免本機 / LAN 開發流程被打斷。
+- 新增 `test/config/android_transport_security_test.dart` 鎖住 release 不可回到全域明文。
+
+### 測試
+- `dart format test/config/android_transport_security_test.dart`：完成格式化。
+- `flutter test test/config/android_transport_security_test.dart test/config/app_config_test.dart`：**13 passed / 0 failed**。
+- `flutter analyze`：No issues found。
+- `flutter build apk --debug`：成功產出 `build/app/outputs/flutter-apk/app-debug.apk`（Gradle 有既有 Java 8 / deprecated API warnings，非此批次錯誤）。
+
+### 裁決
+此批次把 Android release cleartext blocker 收斂為 production 禁明文、debug/profile 可開發的正式產品化設定。iOS ATS、Android release signing、正式 privacy/support URL 仍屬後續 store blocker。
+
+---
+
+## CR-0096S — Store Blocking Issues Cleanup Batch 3
+
+### 模式
+**iOS ATS 小批次**（iOS `Info.plist` + Flutter config test）。清掉 App Store production 風險：`NSAllowsArbitraryLoads=true` 會全域允許明文 HTTP。此批次不碰 Realtime WebRTC 主流程、Flutter API base URL、後端 API 契約、DB schema、簽章、依賴或 `.env`。
+
+### 變更
+- `ios/Runner/Info.plist`：`NSAllowsArbitraryLoads` 由 `true` 改為 `false`。
+- `ios/Runner/Info.plist`：新增 `NSAllowsLocalNetworking=true`，保留 dev / 實機同網段 HTTP 後端能力；正式公網 API 仍必須走 HTTPS。
+- 新增 `test/config/ios_transport_security_test.dart` 鎖住 ATS 不可回到全域 arbitrary loads，並檢查 iOS 權限文案不含 demo/debug/test/mock 工程字樣。
+
+### 測試
+- `dart format test/config/ios_transport_security_test.dart`：完成格式化。
+- `plutil -lint ios/Runner/Info.plist`：OK。
+- `flutter test test/config/ios_transport_security_test.dart test/config/android_transport_security_test.dart test/config/app_config_test.dart`：**16 passed / 0 failed**。
+- `flutter analyze`：No issues found。
+- `flutter build ios --release --no-codesign`：成功產出 `build/ios/iphoneos/Runner.app`（75.2MB）。
+
+### 裁決
+此批次把 iOS 全域 ATS 明文 blocker 收斂為「正式對外 HTTPS + local networking dev 例外」。仍需 owner 以正式 HTTPS 後端與 iOS 實機跑 Realtime / REST smoke；Android release signing、正式 privacy/support URL、正式 icon 仍屬後續 store blocker。
+
+---
+
+## CR-0096S — Store Blocking Issues Cleanup Batch 4
+
+### 模式
+**release signing / legal config readiness 小批次**（Android Gradle + Flutter config + 測試）。清掉兩個會讓正式上架流程假成功的風險：Android release 永遠用 debug key、法務 / 支援連結需改 code 才能填真值。此批次不提交任何 keystore、secret、`.env`、正式 URL 或客服信箱。
+
+### 變更
+- `.gitignore`：加入 `android/key.properties`、keystore / provisioning / 憑證副檔名，避免正式簽章資料被提交。
+- `android/app/build.gradle.kts`：新增 release signing config，讀取 `android/key.properties`；真正跑 release / appbundle 時若缺 `storeFile` / `storePassword` / `keyAlias` / `keyPassword` 會 fail-fast，不再用 debug key 假裝可上架。debug/profile build 不需 keystore。
+- `LegalConfig`：privacy / terms / support URL 與 contact email 改為 `--dart-define` 注入，預設仍是 TODO placeholder；新增 `areStoreLegalLinksConfigured` 集中判斷。
+- 新增 `test/config/android_release_signing_test.dart`、`test/config/legal_config_test.dart` 鎖住 release 不可回 debug signing、法務連結可被 placeholder gate 辨識。
+
+### 測試
+- `dart format test/config/android_release_signing_test.dart test/config/legal_config_test.dart`：完成格式化。
+- `flutter test test/config/android_release_signing_test.dart test/config/legal_config_test.dart test/config/app_config_test.dart`：**14 passed / 0 failed**。
+- `flutter test --dart-define=PRIVACY_POLICY_URL=https://example.com/privacy --dart-define=TERMS_OF_SERVICE_URL=https://example.com/terms --dart-define=SUPPORT_URL=https://example.com/support --dart-define=CONTACT_EMAIL=support@example.com test/config/legal_config_test.dart`：**2 passed / 0 failed**。
+- `flutter analyze`：No issues found。
+- `flutter build apk --debug`：成功產出 `build/app/outputs/flutter-apk/app-debug.apk`。
+- `flutter build appbundle --release`（未提供 `android/key.properties`）：**預期失敗**，fail-fast 訊息列出缺 `storeFile` / `storePassword` / `keyAlias` / `keyPassword`；確認不再用 debug key 產出假 release。
+
+### 裁決
+此批次把 repo 端上架接線補齊：正式 Android 簽章改為外部 keystore / CI secret 驅動，法務連結改為 build define 驅動。仍需要 owner 提供真實 `android/key.properties` 對應值、正式隱私 / 條款 / 支援 URL、客服信箱與商店後台資料；不可用佔位值送審。
+
+---
+
+## CR-0097 — Data Tracking Foundation / Admin Analytics Real Data
+
+### 模式
+**Architecture-scope data foundation**（Flutter event tracking + backend usage event API / store + DB migration + caregiver analytics）。目的：讓管理者網頁能看到 App 真實操作數據，而不是只有形式上的分析頁；同時首頁朝 voice-first、長者低文字操作調整。此批次不讀取 / 修改 `.env`，不新增 secret，不把 Realtime 主流程改成 mock。
+
+### 變更
+- 新增 `app_usage_events` migration，事件由長者端 Bearer token 上報，後端以 `requireResidentCaller` 權威推導 `elder_id`。
+- 新增 `AppUsageEventStore`：production 走 Postgres；非 production 才允許 JSON fallback；事件 metadata 只保留 primitive 並截斷，避免把完整逐字稿或敏感資料寫入 analytics。
+- 新增 `POST /api/app-usage/events`，Invalid event type 回 400；production 無 DB / fallback 不可用回既有 not-enabled 形狀。
+- caregiver analytics 聚合加入 `usageStats`，寵物狀態改由真實 `app_usage_events` 產生；後台前端新增「App 使用狀況」區塊與 usage metrics。
+- Flutter 新增 `AppUsageTrackingService`，使用既有 Auth token；沒有 token / 網路失敗 / 後端錯誤都不阻塞長者操作。
+- 已接入事件：`app_open`、`app_background`、`voice_interaction_start/end`、`typed_chat_sent`、`pet_interaction`、`reminder_created`、`daily_task_completed`、`photo_verification_submitted`、`puzzle_started/completed`。
+- 首頁初步 voice-first：常駐打字框收合為鍵盤圖示，保留大麥克風、寵物與寵物狀態作為主要操作焦點。
+
+### 測試
+- `node --test backend/stt_proxy/db/migration017.test.js backend/stt_proxy/services/appUsageEventStore.test.js backend/stt_proxy/services/admin/caregiverAnalyticsService.test.js`：**16 passed / 0 failed**。
+- `node --test caregiver_web/analytics_dashboard.test.js`：**8 passed / 0 failed**。
+- `flutter test test/services/app_usage_tracking_service_test.dart`：**3 passed / 0 failed**。
+- `npm run check`（`backend/stt_proxy`）：通過。
+- `npm test`（`backend/stt_proxy`，升權重跑，因 endpoint tests 需 listen `127.0.0.1`）：**614 passed / 0 failed**。
+- `flutter analyze`：No issues found。
+- `flutter test`：**690 passed / 0 failed**（保留一則既有 widget-test hit-test warning，非 failure）。
+
+### 裁決
+管理者網頁已具備接收與呈現真實 App 使用數據的基礎，不再只依賴 Care Alert / 任務或 placeholder 文案。仍需後續補完整視覺化、正式隱私揭露（資料收集項目）、以及以 production HTTPS backend / 真帳號做端到端 smoke。
+
+---
+
+## CR-0101A — Store Submission Smoke Runbook / Store Readiness Test
+
+### 模式
+**store readiness 文件 + 自動檢查小批次**。把 App Store / Google Play 送審前 smoke 收斂為單一 Runbook，並讓 repo 可自動檢查目前能檢查的上架條件。此批次不碰 Realtime 主流程、後端 API 契約、DB schema、依賴、簽章檔、`.env` 或正式 secret。
+
+### 變更
+- 新增 `docs/STORE_SUBMISSION_RUNBOOK.md`：整合 owner 輸入、repo 自動檢查、iOS/Android release build、實機 App smoke、後端 / 管理者後台 smoke、商店素材 / hosted legal URL blocker、商店後台 smoke、Run 記錄模板與 Go/No-Go gate。
+- 新增 `test/config/store_readiness_test.dart`：檢查 Runbook 必備段落、store checklist 串接、production gating、hosted legal URL gate、ATS / Android cleartext release 預設、icon 現況與 Android adaptive icon blocker 文件化、store metadata 不宣稱 production 隱藏功能。
+- `docs/STORE_RELEASE_CHECKLIST.md`：補 `docs/STORE_SUBMISSION_RUNBOOK.md` 作為上架 smoke 單一入口，並記錄 store readiness test。
+- `docs/PRODUCTION_CONFIG_CHECKLIST.md`：補 Runbook 連結，讓 build/env checklist 導向同一 smoke 流程。
+- `docs/STORE_ASSET_CHECKLIST.md`：補 Runbook 對應素材落點，明確列 iOS icon、Android legacy/adaptive icon、launch screen 檔位。
+
+### Owner blockers（不可假完成）
+- 正式 hosted privacy / terms / support URL 與客服信箱。
+- Android adaptive icon、正式 icon、screenshots、feature graphic、launch screen 確認。
+- Android release keystore / iOS distribution signing。
+- 真 production HTTPS backend、Firebase、PostgreSQL migration、OpenAI Realtime、Telegram 與管理者 analytics smoke。
+
+### 測試
+- `dart format test/config/store_readiness_test.dart`：完成格式化（0 changed）。
+- `flutter test test/config/store_readiness_test.dart test/config/legal_config_test.dart test/config/app_config_test.dart`：**21 passed / 0 failed**。
+- `flutter test --dart-define=APP_ENV=production --dart-define=API_BASE_URL=https://api.example.com --dart-define=SHOW_DEMO_LOGIN=true --dart-define=SHOW_SOCIAL_SIGN_IN=true --dart-define=SHOW_MARKETPLACE=true --dart-define=SHOW_DAILY_CARE_TASKS=true test/config/app_config_test.dart test/config/legal_config_test.dart test/config/store_readiness_test.dart`：**21 passed / 0 failed**，確認 production 即使誤開 store-facing debug flags 仍強制關閉。
+- `flutter analyze`：No issues found。
+- `flutter test`：**700 passed / 0 failed**（保留一則既有 widget-test hit-test warning，非 failure）。
+
+### 裁決
+此批次讓上架 smoke 從「分散 checklist」變成可執行的單一 Runbook；repo 自動測試只能檢查程式與文件紅線，不能替代 owner 提供正式素材、URL、簽章與真環境實機 smoke。
+
+---
+
+## CR-0101A — Formal App Icon Output
+
+### 模式
+**store asset 小批次**。依 owner 指定的「老奶奶擁抱 AI 寵物、整體呈現愛心 / 陪伴感」方向，輸出正式候選 App icon 到 iOS / Android / Play listing 檔位。此批次不碰 Flutter 功能邏輯、後端 API、Realtime、DB schema、簽章或 `.env`。
+
+### 變更
+- iOS `AppIcon.appiconset` 全尺寸 icon 重新輸出，包含 App Store 1024×1024。
+- Android legacy launcher icon 重新輸出：`mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}/ic_launcher.png`。
+- Android adaptive icon 補齊：
+  - `android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml`
+  - `android/app/src/main/res/mipmap-*/ic_launcher_foreground.png`
+  - `android/app/src/main/res/values/colors.xml` 的 `ic_launcher_background`
+- Play Console listing icon 補：`store_assets/play_store_icon_512.png`。
+- `docs/STORE_ASSET_CHECKLIST.md` / `docs/STORE_RELEASE_CHECKLIST.md` 更新：icon / adaptive icon blocker 改為已輸出，screenshots、feature graphic、launch screen、hosted legal URL、簽章仍是 blocker。
+- `test/config/store_readiness_test.dart` 強化：檢查 adaptive icon XML、foreground PNG、iOS 1024 PNG 尺寸、Play listing 512 PNG 尺寸。
+
+### 測試
+- `flutter test test/config/store_readiness_test.dart test/config/android_transport_security_test.dart test/config/ios_transport_security_test.dart`：**14 passed / 0 failed**。
+- `flutter analyze`：No issues found。
+
+### 裁決
+正式候選 icon assets 已進 repo，可供 App Store / Google Play 預覽與實機檢查。仍需人工確認 Android launcher mask 裁切效果、launch screen、screenshots / feature graphic 與 hosted legal URL。
+
+---
+
+## CR-0101A — Hosted Legal Static Site Draft
+
+### 模式
+**store legal / support 靜態頁小批次**。依 owner 指示採純靜態網頁作為 App Store / Google Play 的隱私權政策、服務條款與支援頁來源。此批次不部署、不讀寫 `.env`、不填假網域；客服信箱由 owner 提供為 `aicompanion.support@gmail.com`。
+
+### 變更
+- 新增 `store_legal_site/`：
+  - `index.html`
+  - `privacy.html`
+  - `terms.html`
+  - `support.html`
+  - `styles.css`
+  - `assets/icon-512.png`
+  - `README.md`
+- 新增 `.github/workflows/legal-site-pages.yml`：push 到 `main` 或手動觸發時，把 `store_legal_site/` 部署到 GitHub Pages。部署不需要 `.env` 或 secret。
+- 靜態頁內容對齊 App 內 legal 文案與 CR-0097 usage tracking disclosure，包含使用紀錄、OpenAI 第三方 AI、Care Alert 非醫療診斷、資料刪除與支援說明。
+- 正式客服信箱已寫入 static legal site：`aicompanion.support@gmail.com`；App build / 商店後台需用同一值。
+- `docs/STORE_RELEASE_CHECKLIST.md`、`docs/PRODUCTION_CONFIG_CHECKLIST.md`、`docs/APP_STORE_METADATA.md`、`docs/STORE_SUBMISSION_RUNBOOK.md` 更新：legal static site 草稿已存在；GitHub Pages 預期 URL 已文件化；客服信箱已定值；仍需 owner 在 GitHub repo Settings 啟用 Pages / GitHub Actions 並確認部署 URL 可開。
+- `test/config/store_readiness_test.dart` 補檢查：靜態頁存在、icon 512×512、privacy/terms/support 必要內容存在、GitHub Pages workflow 存在且只部署 `store_legal_site/`，且正式客服 mailto 存在、不再顯示「上架前必填」客服信箱 blocker。
+
+### 測試
+- `dart format test/config/store_readiness_test.dart`：完成格式化（0 changed）。
+- `flutter test test/config/store_readiness_test.dart test/config/legal_config_test.dart`：**11 passed / 0 failed**。
+- `flutter analyze`：No issues found。
+
+### 裁決
+Legal/support 靜態頁已可透過 GitHub Pages Actions 部署，客服信箱 blocker 已解除。真正解除 hosted legal URL blocker 仍需要 owner 在 GitHub repo Settings 將 Pages Source 設成 GitHub Actions、確認 workflow 成功與三個 URL 可公開開啟，部署後再把 `PRIVACY_POLICY_URL` / `TERMS_OF_SERVICE_URL` / `SUPPORT_URL` / `CONTACT_EMAIL` 帶入 production build。

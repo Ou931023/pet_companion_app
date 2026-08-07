@@ -22,6 +22,17 @@ void main() {
       }
     });
 
+    test('freeAllPetSkinsEnabled 在 production 一律 false（CR-0096S）', () {
+      if (AppConfig.isProduction) {
+        expect(AppConfig.freeAllPetSkinsEnabled, isFalse);
+      } else {
+        expect(
+          AppConfig.freeAllPetSkinsEnabled,
+          AppConfig.freeAllPetSkins,
+        );
+      }
+    });
+
     test('devPanelsVisible 在 production 一律 false', () {
       if (AppConfig.isProduction) {
         expect(AppConfig.devPanelsVisible, isFalse);
@@ -35,6 +46,14 @@ void main() {
         expect(AppConfig.demoLoginVisible, isFalse);
       } else {
         expect(AppConfig.demoLoginVisible, AppConfig.showDemoLoginButton);
+      }
+    });
+
+    test('socialSignInVisible 在 production 一律 false（Apple 完成前）', () {
+      if (AppConfig.isProduction) {
+        expect(AppConfig.socialSignInVisible, isFalse);
+      } else {
+        expect(AppConfig.socialSignInVisible, AppConfig.showSocialSignIn);
       }
     });
 
@@ -68,7 +87,8 @@ void main() {
             uri.host.isEmpty ||
             AppConfig.legacyBackendHosts.contains(uri.host);
         // localhost / 空 → 不安全；正式網域 → 安全。
-        expect(AppConfig.isApiBaseUrlProductionSafe, isLocalish ? isFalse : isTrue);
+        expect(AppConfig.isApiBaseUrlProductionSafe,
+            isLocalish ? isFalse : isTrue);
       }
     });
 
@@ -78,6 +98,7 @@ void main() {
         expect(AppConfig.showDevPanels, isFalse);
         expect(AppConfig.showDemoLoginButton, isFalse);
         expect(AppConfig.allowMockServices, isFalse);
+        expect(AppConfig.freeAllPetSkins, isFalse);
       }
     });
   });

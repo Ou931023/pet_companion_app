@@ -8,18 +8,21 @@
 
 ## 1. 正式 production build 指令（canonical）
 
-iPhone 實機 / 正式展示（marketplace + 今日任務都要顯示）：
+App Store / Google Play 送審 build：
 
 ```bash
 flutter run --release \
   --dart-define=APP_ENV=production \
-  --dart-define=API_BASE_URL=https://ai-companion-app-7mb8.onrender.com \
-  --dart-define=ALLOW_MARKETPLACE_IN_PROD=true \
-  --dart-define=ALLOW_DAILY_CARE_TASKS_IN_PROD=true
+  --dart-define=API_BASE_URL=https://正式後端網域 \
+  --dart-define=PRIVACY_POLICY_URL=https://正式隱私權政策 \
+  --dart-define=TERMS_OF_SERVICE_URL=https://正式服務條款 \
+  --dart-define=SUPPORT_URL=https://正式支援頁 \
+  --dart-define=CONTACT_EMAIL=support@example.com
 ```
 
-- `API_BASE_URL` 不含 `/api`（client 自行接路徑）。後端 = `https://ai-companion-app-7mb8.onrender.com`、caregiver_web = `https://ai-companion-caregiver-web.onrender.com`。
-- ⚠️ **`ALLOW_DAILY_CARE_TASKS_IN_PROD=true` 必加**：CR-0068 後今日任務後端已 production-enabled，但 **Flutter 長者端入口在 production 預設隱藏**（`AppConfig.dailyCareTasksVisible`，`lib/config/app_config.dart:114-123`），不加此旗標則「今日任務」入口不顯示。同理 `ALLOW_MARKETPLACE_IN_PROD=true` 控制「照護商城」入口（`app_config.dart:87-95`）。
+- `API_BASE_URL` 不含 `/api`（client 自行接路徑），且必須是正式 HTTPS 網域。
+- 不要在送審 build 帶 `SHOW_DEMO_LOGIN`、`SHOW_DEV_PANELS`、`ALLOW_MOCK_SERVICES`、`SHOW_SOCIAL_SIGN_IN`、`SHOW_MARKETPLACE` 或 `SHOW_DAILY_CARE_TASKS` 等展示 / 開發旗標。
+- marketplace / 今日任務本版 production 入口強制隱藏；第三方登入待 Apple + Google 皆正式完成前，production 只保留 Email 登入 / 註冊。
 - 上架打包：iOS `flutter build ipa --release …`（同 dart-define）；Android `flutter build appbundle --release …`（Play 偏好 AAB）。打包前置（簽章）見 §4 / §5。
 
 ---
@@ -33,11 +36,12 @@ flutter run --release \
 | P3 | 無殘留舊 Render URL | `lib/` 執行碼無 `onrender.com` / `http://` 硬編（除 app_config localhost 預設，受 P1 守門） | grep 確認 | ✅ |
 | P4 | mock service 關閉 | `mockServicesEnabled = allowMockServices && !isProduction` → production 恆 false | app_config.dart:41 | ✅ |
 | P5 | dev panel 關閉 | `devPanelsVisible = showDevPanels && !isProduction` → production 恆 false（長者不會看到工程診斷） | app_config.dart:141 | ✅ |
-| P6 | Demo 登入按鈕 | production 預設隱藏，僅 `ALLOW_DEMO_LOGIN_IN_PROD=true` 才顯示（正式上架**不應**帶此旗標） | app_config.dart:60-68 | ✅ |
-| P7 | Marketplace 入口 | production 預設隱藏，`ALLOW_MARKETPLACE_IN_PROD=true` 才顯示 | app_config.dart:87-95 | ✅ |
-| P8 | 今日任務入口 | production 預設隱藏，`ALLOW_DAILY_CARE_TASKS_IN_PROD=true` 才顯示 | app_config.dart:114-123 | ✅ |
+| P6 | Demo 登入按鈕 | production 強制隱藏，即使誤帶 `SHOW_DEMO_LOGIN=true` 也不顯示 | app_config.dart | ✅ |
+| P7 | 第三方登入入口 | Apple Sign in 完成前，production 強制隱藏 Google / Apple，避免未完成入口與 Apple sign-in 規則風險 | app_config.dart / login_screen.dart | ✅ |
+| P8 | Marketplace 入口 | production 強制隱藏 | app_config.dart | ✅ |
+| P9 | 今日任務入口 | production 強制隱藏 | app_config.dart | ✅ |
 
-> 註：P6 的訪客「先進去陪伴」入口僅供真登入暫不可用時的備援；**正式商店送審 build 不要**帶 `ALLOW_DEMO_LOGIN_IN_PROD`，避免 App Store 2.x placeholder / 測試感風險。
+> 註：訪客「先進去陪伴」入口、商城、今日任務與第三方登入可在 development / staging 驗證；正式商店送審 build 不開這些入口，避免 App Store 2.x placeholder / 測試感與隱私申報不一致風險。
 
 ---
 
@@ -65,7 +69,7 @@ flutter run --release \
 | 權限 usage description | ✅ 相機 / 麥克風 / 相簿(2) / 本地網路 / 語音辨識皆齊全 | `Info.plist:48-59` |
 | GoogleService-Info.plist | ✅ 存在 | `ios/Runner/` |
 | Podfile platform | iOS 15.0 | `ios/Podfile:2` |
-| ⛔ ATS | `NSAllowsArbitraryLoads=true`（全域允許明文） | `Info.plist:45-46` |
+| 🔁 ATS | `NSAllowsArbitraryLoads=false` + `NSAllowsLocalNetworking=true`（CR-0096S Batch 3 已收斂；待 iOS 實機 smoke） | `Info.plist` |
 
 ---
 
@@ -79,22 +83,22 @@ flutter run --release \
 | minSdk | ✅ `max(flutter.minSdk, 23)`（Firebase / Google Sign-In 需 23+） | `build.gradle.kts:35` |
 | 權限 | ✅ INTERNET / RECORD_AUDIO / MODIFY_AUDIO_SETTINGS / POST_NOTIFICATIONS / ACCESS_NETWORK_STATE / READ_MEDIA_IMAGES | `AndroidManifest.xml` |
 | google-services.json | ✅ 存在 | `android/app/` |
-| ⛔ **release 簽章** | **`buildTypes.release.signingConfig = debug`**（用 debug key 簽 release，僅供 `flutter run --release` 測試） | `build.gradle.kts:45` |
-| ⛔ cleartext | `usesCleartextTraffic="true"`、無 `network_security_config.xml` | `AndroidManifest.xml:14` |
+| 🔁 **release 簽章** | CR-0096S Batch 4 已接 `android/key.properties`；缺正式 keystore 時 release / appbundle fail-fast，不再用 debug key | `build.gradle.kts` |
+| 🔁 cleartext | release/main `network_security_config` 禁明文；debug/profile 保留本機開發 HTTP（CR-0096S Batch 2；待 Android 實機 smoke） | `AndroidManifest.xml` / `res/xml/network_security_config.xml` |
 
 ---
 
 ## 6. Store readiness 結論
 
 **✅ 已就緒（本 CR 確認）**
-- Production flags（P1–P8）全數正確：正式 build 不會用 localhost / 舊 URL / dev panel / mock / demo fallback；marketplace 與今日任務入口由顯式旗標控制。
+- Production flags（P1–P9）全數正確：正式 build 不會用 localhost / 舊 URL / dev panel / mock / demo fallback；marketplace / 今日任務 / 未完成第三方登入入口皆強制隱藏。
 - iOS / Android 的 bundle id / applicationId / display name / 版本來源 / 權限 / Firebase 設定檔皆就緒。
 - 後端 / caregiver_web 正式 URL 在線（見 CR-0069 A1–A7）。
 
 **⛔ 上架前 owner blockers（非本 CR 範圍，how-to 已在既有文件）**
-1. **Android release 仍用 debug 簽章** → 須產生正式 upload keystore + `key.properties` + 改 `build.gradle.kts` 讀取（**`docs/RELEASE_SIGNING.md §2`**）。⚠️ 用 debug key 簽的 build **無法上 Play 商店**。
+1. **Android release keystore 尚待 owner / CI 提供** → `build.gradle.kts` 已接 `android/key.properties` 並 fail-fast；仍需產生正式 upload keystore + `key.properties`（**`docs/RELEASE_SIGNING.md §2`**）。⚠️ keystore / key.properties 不可提交。
 2. **iOS 無正式 distribution 簽章** → 需 Apple Developer 帳號 + App Store provisioning（**`docs/RELEASE_SIGNING.md §3`**）。實機展示用現行 dev 簽章可。
-3. **傳輸明文未收斂**：iOS ATS 全開 + Android cleartext 開、無 network security config → 收斂 patch 就緒於 **`docs/TRANSPORT_SECURITY.md §3`**，需在正式 HTTPS 後端（已具備 `-7mb8`）下套用並真機驗證後另開 CR。
+3. **傳輸安全實機 smoke 未結案**：iOS ATS / Android cleartext runtime 設定已於 CR-0096S Batch 2–3 收斂；仍需正式 HTTPS 後端 + iOS/Android 實機跑 Realtime / REST smoke 後，才能從送審 blocker 移除。
 4. 實機 E2E（S1–S9 / M1–M4 / D1–D5）仍 PENDING（**`docs/E2E_SMOKE_TEST_REPORT.md` Run #2 / CR-0069**）。
 
 > 本檢查未修改任何 build / 簽章 / 傳輸 runtime 設定；上述 ⛔ 項皆為既有 owner action，how-to 在所引文件，落地後各自更新對應 CR。

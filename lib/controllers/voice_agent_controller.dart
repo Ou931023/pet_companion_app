@@ -10,6 +10,7 @@ import '../models/language_route.dart';
 import '../models/pet_status.dart';
 import '../models/realtime_timeout.dart';
 import '../models/voice_agent_state.dart';
+import '../onboarding/coach_mark_controller.dart';
 import '../services/ai_navigation_service.dart';
 import '../services/care_alert_notification_service.dart';
 import '../services/companion_engine_service.dart';
@@ -44,6 +45,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     this.agentToolController,
     this.careAlertController,
     this.careAlertNotificationService,
+    this.coachMarkController,
     this.timeoutConfig = const RealtimeTimeoutConfig(),
     this.timeoutPolicy = const RealtimeTimeoutPolicy(),
   }) {
@@ -63,6 +65,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   final AgentToolController? agentToolController;
   final CareAlertController? careAlertController;
   final CareAlertNotificationService? careAlertNotificationService;
+  final CoachMarkController? coachMarkController;
   final RealtimeTimeoutConfig timeoutConfig;
   final RealtimeTimeoutPolicy timeoutPolicy;
   final TextEmotionService _textEmotionService = const TextEmotionService();
@@ -662,6 +665,9 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     if (navigationIntent != null) {
       if (!_isActiveTurn(turnId)) return;
       navigationController.navigateTo(navigationIntent.route);
+      if (navigationIntent.action == NavigationAction.replayOnboarding) {
+        coachMarkController?.requestReplay();
+      }
       petController.setMessage(navigationIntent.reply);
       conversationController.appendExternalTurn(
         ConversationTurn(

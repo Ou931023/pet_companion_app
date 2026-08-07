@@ -49,8 +49,7 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
   }
 
-  testWidgets('只做 Email 註冊：有欄位與建立帳號鈕，且不再有 Google/Apple 註冊鈕',
-      (tester) async {
+  testWidgets('只做 Email 註冊：有欄位與建立帳號鈕，且不再有 Google/Apple 註冊鈕', (tester) async {
     useTallView(tester);
     final controller = AuthController(authService: _FakeAuthService());
     await _pumpRegister(tester, controller);
@@ -58,10 +57,12 @@ void main() {
     expect(find.text('建立你的帳號，紀錄好好保存'), findsOneWidget);
     expect(find.text('建立帳號'), findsOneWidget);
     expect(find.byType(TextField), findsNWidgets(3)); // email + 密碼 + 確認密碼
-    // Google / Apple 註冊鈕已移除（綁定改在登入頁）。
+    // Google / Apple 註冊入口與未完成提示都不出現在註冊頁。
     expect(find.text('用 Google 註冊'), findsNothing);
     expect(find.text('用 Apple 註冊'), findsNothing);
-    expect(find.textContaining('回上一頁就能綁定'), findsOneWidget);
+    expect(find.textContaining('Google'), findsNothing);
+    expect(find.textContaining('Apple'), findsNothing);
+    expect(find.text('請使用常用的 Email，之後回來就能接著陪伴。'), findsOneWidget);
   });
 
   testWidgets('兩次密碼不一致 → 白話提醒，不送出', (tester) async {
@@ -135,7 +136,8 @@ void main() {
     useTallView(tester);
     final controller = AuthController(authService: _FakeAuthService());
     var backTapped = false;
-    await _pumpRegister(tester, controller, onBackToLogin: () => backTapped = true);
+    await _pumpRegister(tester, controller,
+        onBackToLogin: () => backTapped = true);
 
     await tester.tap(find.text('返回登入'));
     await tester.pump();

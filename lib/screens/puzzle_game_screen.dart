@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../controllers/pet_stats_controller.dart';
 import '../controllers/puzzle_game_controller.dart';
 import '../controllers/wallet_controller.dart';
+import '../services/app_usage_tracking_service.dart';
 import '../services/photo_picker_service.dart';
 import '../widgets/puzzle_board.dart';
 import '../widgets/puzzle_tile_widget.dart';
@@ -56,8 +58,7 @@ class _PuzzleGameScreenState extends State<PuzzleGameScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.image_outlined,
-                size: 72, color: Colors.grey.shade400),
+            Icon(Icons.image_outlined, size: 72, color: Colors.grey.shade400),
             const SizedBox(height: 16),
             const Text(
               '選一張照片，拼回屬於你的回憶。',
@@ -71,7 +72,8 @@ class _PuzzleGameScreenState extends State<PuzzleGameScreen> {
               label: const Text('從相簿選照片',
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
               style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
               ),
             ),
           ],
@@ -125,6 +127,12 @@ class _PuzzleGameScreenState extends State<PuzzleGameScreen> {
         onPressed: () {
           setState(() => _rewarded = false);
           controller.startGame(size);
+          unawaited(
+            context.read<AppUsageTrackingService>().track(
+              'puzzle_started',
+              metadata: {'size': size},
+            ),
+          );
         },
         style: FilledButton.styleFrom(
           padding: const EdgeInsets.symmetric(vertical: 16),
@@ -161,8 +169,8 @@ class _PuzzleGameScreenState extends State<PuzzleGameScreen> {
         Text(
           '把下面的小拼圖拖到上面正確的位置',
           textAlign: TextAlign.center,
-          style:
-              TextStyle(fontSize: 15, color: Colors.black.withValues(alpha: 0.6)),
+          style: TextStyle(
+              fontSize: 15, color: Colors.black.withValues(alpha: 0.6)),
         ),
         const SizedBox(height: 10),
         // 下方拼圖區（打亂、可換行）。
@@ -175,6 +183,15 @@ class _PuzzleGameScreenState extends State<PuzzleGameScreen> {
                 onPressed: () {
                   setState(() => _rewarded = false);
                   controller.startGame(controller.size);
+                  unawaited(
+                    context.read<AppUsageTrackingService>().track(
+                      'puzzle_started',
+                      metadata: {
+                        'size': controller.size,
+                        'source': 'restart',
+                      },
+                    ),
+                  );
                 },
                 icon: const Icon(Icons.refresh),
                 label: const Text('再玩一次'),
@@ -257,6 +274,14 @@ class _PuzzleGameScreenState extends State<PuzzleGameScreen> {
     }
   }
 
+  AppUsageTrackingService? _trackingServiceOrNull() {
+    try {
+      return context.read<AppUsageTrackingService>();
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
   Future<void> _onCompleted(PuzzleGameController controller) async {
     if (!controller.isComplete || _rewarded || !mounted) return;
     _rewarded = true;
@@ -264,9 +289,22 @@ class _PuzzleGameScreenState extends State<PuzzleGameScreen> {
     final result = controller.result;
     final wallet = context.read<WalletController>();
     final petStats = context.read<PetStatsController>();
+    final trackingService = _trackingServiceOrNull();
     final coins = controller.rewardCoins();
     if (coins > 0) await wallet.addCoins(coins);
     await petStats.markPuzzleCompleted();
+    unawaited(
+      trackingService?.track(
+            'puzzle_completed',
+            durationMs: result == null ? null : result.elapsedSeconds * 1000,
+            metadata: {
+              'size': controller.size,
+              'moveAttempts': result?.moveAttempts,
+              'rewardCoins': coins,
+            },
+          ) ??
+          Future<bool>.value(false),
+    );
 
     if (!mounted || result == null) return;
     await showDialog<void>(
@@ -287,6 +325,15 @@ class _PuzzleGameScreenState extends State<PuzzleGameScreen> {
               Navigator.of(dialogContext).pop();
               setState(() => _rewarded = false);
               controller.startGame(controller.size);
+              unawaited(
+                context.read<AppUsageTrackingService>().track(
+                  'puzzle_started',
+                  metadata: {
+                    'size': controller.size,
+                    'source': 'dialog_restart',
+                  },
+                ),
+              );
             },
             child: const Text('再玩一次', style: TextStyle(fontSize: 18)),
           ),

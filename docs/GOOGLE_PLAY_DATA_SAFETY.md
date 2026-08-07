@@ -1,8 +1,8 @@
 # Google Play Data Safety / App Store Privacy — AI Pet Companion（草稿）
 
-> 狀態：CR-0046 第一輪草稿；CR-0056/0057 確認 marketplace 停用→**不蒐集財務/購買資料**；CR-0058 確認與 production 功能一致。最終填寫前需與**實際資料蒐集行為**逐項核對，並由負責人/法務確認。
+> 狀態：CR-0046 第一輪草稿；CR-0056/0057 確認 marketplace 停用→**不蒐集財務/購買資料**；CR-0058 確認與 production 功能一致；CR-0097 補入 production usage tracking（`app_usage_events`）。最終填寫前需與**實際資料蒐集行為**逐項核對，並由負責人/法務確認。
 >
-> CR-0058 核對結論：帳號/語音/對話/健康相關推論/App 活動 = 蒐集（用途 = App 功能/照護輔助，傳輸加密，可刪除，第三方 = OpenAI/Telegram 已揭露）；財務/購買 = **否**（marketplace 停用）；位置/聯絡人 = 否。仍待 owner/送審前以實際程式核對的 ⛔ 項：notification token、裝置識別碼、crash/diagnostics（若採用第三方崩潰回報需申報；目前未確認啟用）。
+> CR-0058/0097 核對結論：帳號/語音/對話/健康相關推論/App 活動 / 使用分析 = 蒐集（用途 = App 功能/照護輔助/產品改善，傳輸加密，可刪除，第三方 = OpenAI/Telegram 已揭露）；財務/購買 = **否**（marketplace 停用）；位置/聯絡人 = 否。仍待 owner/送審前以實際程式核對的 ⛔ 項：notification token、裝置識別碼、crash/diagnostics（若採用第三方崩潰回報需申報；目前未確認啟用）。
 > 原則：**據實申報**。表單內容必須與 App 實際行為、隱私政策、知情同意流程一致。
 
 相關文件：`docs/STORE_RELEASE_CHECKLIST.md`、`docs/APP_STORE_METADATA.md`、`docs/AUTHORIZATION_MODEL.md`、`lib/config/legal_content.dart`（同意內文）。
@@ -14,6 +14,7 @@
 - **傳輸加密**：✅ production 要求 HTTPS（見 `STORE_RELEASE_CHECKLIST.md` §6 ATS/cleartext 收斂）。OpenAI Realtime 媒體為 WebRTC DTLS-SRTP 加密。
 - **可要求刪除**：✅ 提供帳號與資料刪除（`/api/auth/delete` + 前端入口）；記憶可查看 / 刪除 / 封存。
 - **知情同意**：✅ 首次使用 consent gate（須同意才進 App）。
+- **使用分析揭露**：✅ CR-0097 後 App 會送出 `app_usage_events`，同意畫面與 App 內隱私政策已揭露 App 使用時間、語音/打字互動、寵物互動、提醒、任務、照片驗證、小遊戲等使用紀錄。
 - **第三方資料流向**：語音 / 對話文字會傳送至 **OpenAI**（Realtime / 文字 / embedding）以產生回應與記憶；high/urgent Care Alert 摘要會經 **Telegram** 通知授權照護人員。⛔ 此資料流向須於隱私政策與同意內文明確揭露（核對 `legal_content.dart`）。
 - **資料是否販售**：否。
 - **是否用於廣告 / 追蹤**：否。
@@ -30,7 +31,7 @@
 | 語音 / 音訊 | 是 | OpenAI（即時語音處理） | App 核心功能（語音陪伴） | 是 | 視政策 | 媒體 DTLS-SRTP；⛔ 須揭露 OpenAI 處理 |
 | 訊息 / 對話內容 | 是 | OpenAI（生成回應 / 記憶） | App 功能 / 個人化記憶 | 是 | 是 | 長期記憶可查看/刪除/封存 |
 | 健康相關推論（Care Alert 情緒/生活訊號） | 是 | Telegram（high/urgent 通知授權照護者） | 照護輔助提醒（**非醫療診斷**） | 是 | 是 | 通知避免暴露完整原文；依授權關聯推送。來源含**語音對話與打字聊天**（CR-0051：打字 medium+ 亦記錄至 caregiver console，記錄頻率較前提高） |
-| App 活動（每日簽到、遊戲、提醒使用） | 是 | 否 | App 功能 / 照護分析 | 是 | 是 | |
+| App 活動與使用分析（App 開啟/背景、session 時長、語音/打字互動、寵物互動、提醒/任務、照片驗證、小遊戲） | 是 | 否 | App 功能 / 照護分析 / 產品改善 | 是 | 是 | CR-0097 `app_usage_events`；管理者/照護者後台用於彙整統計，不用於廣告追蹤 |
 | 通知 token | 視實作 | 否 | 推播通知 | 是 | 是 | ⛔ 核對是否已蒐集 notification token |
 | 裝置識別碼 | ⛔ 核對 | — | — | — | — | 若未蒐集則申報「否」；Firebase 可能含 install id，需核對 |
 | 相片 / 媒體 | 視使用 | 否 | 記憶拼圖 / 任務完成照 | 是 | 是 | 使用者主動選取；相簿權限有說明 |
@@ -46,16 +47,17 @@
 
 iOS「App 隱私」問卷需對應上表，重點：
 - **Data Used to Track You**：無（不做跨 App 追蹤）。
-- **Data Linked to You**：帳號資訊、住民資料、語音、對話、健康相關推論、App 活動、（視實作）相片。
-- **Data Not Linked to You**：⛔ 核對是否有去識別化的診斷/分析資料。
-- 每一類需勾選用途（App Functionality / 不含廣告或分析追蹤）。
+- **Data Linked to You**：帳號資訊、住民資料、語音、對話、健康相關推論、App 活動、使用分析、（視實作）相片。
+- **Data Not Linked to You**：⛔ 核對是否另有去識別化的 diagnostics / crash / performance data；CR-0097 usage events 目前以 `user_id` / `elder_id` 聚合給後台，應視為 linked data。
+- 每一類需勾選用途（App Functionality / Analytics / Product Personalization 視商店後台選項；不含廣告或跨 App 追蹤）。
 
 ---
 
 ## 4. 與隱私政策 / 同意內文一致性檢查（送審前）
 
-- [ ] 隱私政策（hosted URL，⛔ 待部署）涵蓋上表所有「是」項。
-- [ ] 同意內文（`legal_content.dart`）已揭露 OpenAI 與 Telegram 資料流向。
-- [ ] 帳號 / 資料刪除流程於政策中說明。
+- [ ] 隱私政策（hosted URL，⛔ 待部署）涵蓋上表所有「是」項，包含 CR-0097 usage tracking。
+- [x] App 內同意內文（`legal_content.dart`）已揭露 OpenAI、Telegram 與 CR-0097 usage tracking 資料流向 / 用途。
+- [x] App 內設定頁提供帳號刪除流程，且確認文案說明會刪除伺服器帳號資料與本機 App 紀錄。
+- [ ] Hosted 隱私政策正式頁面需同步帳號 / 資料刪除流程。
 - [ ] Care Alert 明確標示為「照護提醒、非醫療診斷」。
 - [ ] 麥克風 / 相機 / 相簿 / 通知權限用途與實際一致。

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -47,6 +49,7 @@ import 'screens/settings_screen.dart';
 import 'screens/shop_screen.dart';
 import 'services/ai_tool_router.dart';
 import 'services/agent_router_service.dart';
+import 'services/app_usage_tracking_service.dart';
 import 'services/auth/auth_service.dart';
 import 'services/ai_navigation_service.dart';
 import 'services/asr_strategy_service.dart';
@@ -120,6 +123,12 @@ class PetCompanionApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (_) => AuthController(authService: AuthService()),
         ),
+        Provider(
+          create: (context) => AppUsageTrackingService(
+            authTokenProvider: () =>
+                context.read<AuthController>().resolveNotifyAuthToken(),
+          ),
+        ),
         // CR-0045 B3：Care Alert 通知服務需帶 Authorization: Bearer <idToken>，
         // 由 AuthController 提供 token（firebase→新 idToken / mock→mock-id-token-<uid>）。
         // 置於 AuthController 之後，注入的 closure 於 notify() 時才讀取 AuthController。
@@ -164,13 +173,20 @@ class PetCompanionApp extends StatelessWidget {
           create: (context) => ReminderController(
             reminderService: context.read<ReminderService>(),
             notificationService: context.read<NotificationService>(),
+            trackingService: context.read<AppUsageTrackingService>(),
           ),
         ),
         // CR-0025 日常照護任務（與遊戲化 CareTask 不同功能）。
-        ChangeNotifierProvider(create: (_) => DailyCareTaskController()),
+        ChangeNotifierProvider(
+          create: (context) => DailyCareTaskController(
+            trackingService: context.read<AppUsageTrackingService>(),
+          ),
+        ),
         ChangeNotifierProxyProvider<ProfileController, TaskController>(
-          create: (context) =>
-              TaskController(context.read<ProfileController>()),
+          create: (context) => TaskController(
+            context.read<ProfileController>(),
+            trackingService: context.read<AppUsageTrackingService>(),
+          ),
           update: (_, profile, taskController) =>
               taskController ?? TaskController(profile),
         ),
@@ -181,12 +197,9 @@ class PetCompanionApp extends StatelessWidget {
               walletController ?? WalletController(profile),
         ),
         ChangeNotifierProvider(
-          // DEMO：成果發表期間所有寵物一律免費、直接可換。
-          // Demo 結束要恢復付費解鎖 → 把 freeAllSkins 改回 false（或移除這行）即可，
-          // 各寵物價格仍保留在 PetSkin.unlockCost。
           create: (context) => PetController(
             storageService: context.read<LocalStorageService>(),
-            freeAllSkins: true,
+            freeAllSkins: AppConfig.freeAllPetSkinsEnabled,
           ),
         ),
         // CR-0034：mock service 注入依環境決定。production（或未開
@@ -272,8 +285,7 @@ class PetCompanionApp extends StatelessWidget {
               final careAlertController = context.read<CareAlertController>();
               final notifyService =
                   context.read<CareAlertNotificationService>();
-              final sttProxyUrl =
-                  context.read<ProfileController>().sttProxyUrl;
+              final sttProxyUrl = context.read<ProfileController>().sttProxyUrl;
               final alert = CareAlert(
                 id: 'agent_notify_${DateTime.now().microsecondsSinceEpoch}',
                 createdAt: DateTime.now(),
@@ -347,6 +359,7 @@ class PetCompanionApp extends StatelessWidget {
                 context.read<CompanionReplyStrategyService>(),
             languageRoutingService: context.read<LanguageRoutingService>(),
             taigiAsrService: context.read<TaigiAsrService>(),
+            coachMarkController: context.read<CoachMarkController>(),
           ),
           update: (context, profile, pet, router, tts, search, controller) =>
               controller ??
@@ -373,6 +386,7 @@ class PetCompanionApp extends StatelessWidget {
                     context.read<CompanionReplyStrategyService>(),
                 languageRoutingService: context.read<LanguageRoutingService>(),
                 taigiAsrService: context.read<TaigiAsrService>(),
+                coachMarkController: context.read<CoachMarkController>(),
               ),
         ),
         ChangeNotifierProxyProvider6<
@@ -398,6 +412,7 @@ class PetCompanionApp extends StatelessWidget {
             careAlertController: context.read<CareAlertController>(),
             careAlertNotificationService:
                 context.read<CareAlertNotificationService>(),
+            coachMarkController: context.read<CoachMarkController>(),
           ),
           update: (context, profile, pet, petStats, conversation,
                   realtimeService, navigation, controller) =>
@@ -417,6 +432,7 @@ class PetCompanionApp extends StatelessWidget {
                 careAlertController: context.read<CareAlertController>(),
                 careAlertNotificationService:
                     context.read<CareAlertNotificationService>(),
+                coachMarkController: context.read<CoachMarkController>(),
               ),
         ),
       ],
@@ -613,6 +629,11 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
     // CR-0087：離開 App（背景）→ 依寵物與互動狀態排一則「之後才跳」的關心提醒；
     // 回到 App → 取消它（人已回來，不需再提醒）。每日 18:00/10:00 簽到提醒邏輯不變。
     if (state == AppLifecycleState.paused) {
+      if (mounted) {
+        unawaited(
+          context.read<AppUsageTrackingService>().track('app_background'),
+        );
+      }
       _schedulePetConcernReminderOnLeave();
       return;
     }
@@ -661,8 +682,8 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
     final hoursSince = lastInteraction == null
         ? null
         : now.difference(lastInteraction).inMinutes / 60.0;
-    final interactedToday = lastInteraction != null &&
-        _dateKeyOf(lastInteraction) == _dateKey();
+    final interactedToday =
+        lastInteraction != null && _dateKeyOf(lastInteraction) == _dateKey();
 
     final raw = await storage.loadConcernNotifyTimestamps();
     final lastByType = <PetConcernType, DateTime?>{

@@ -12,6 +12,7 @@ import '../models/language_route.dart';
 import '../models/pet_status.dart';
 import '../models/realtime_timeout.dart';
 import '../models/source_reference.dart';
+import '../onboarding/coach_mark_controller.dart';
 import '../services/ai_navigation_service.dart';
 import '../services/ai_tool_router.dart';
 import '../services/companion_reply_strategy_service.dart';
@@ -51,6 +52,7 @@ class ConversationController extends ChangeNotifier {
     required this.companionReplyStrategy,
     required this.languageRoutingService,
     required this.taigiAsrService,
+    this.coachMarkController,
     this.timeoutConfig = const RealtimeTimeoutConfig(),
     this.titleService = const ConversationTitleService(),
   });
@@ -75,6 +77,7 @@ class ConversationController extends ChangeNotifier {
   final CompanionReplyStrategyService companionReplyStrategy;
   final LanguageRoutingService languageRoutingService;
   final TaigiAsrService taigiAsrService;
+  final CoachMarkController? coachMarkController;
   final RealtimeTimeoutConfig timeoutConfig;
   final ConversationTitleService titleService;
 
@@ -865,6 +868,9 @@ class ConversationController extends ChangeNotifier {
       final navigationIntent = navigationService.detect(text);
       if (navigationIntent != null) {
         navigationController.navigateTo(navigationIntent.route);
+        if (navigationIntent.action == NavigationAction.replayOnboarding) {
+          coachMarkController?.requestReplay();
+        }
         final reply = _buildCompanionReply(
           userText: text,
           emotion: emotionFusionService.analyze(text: text),

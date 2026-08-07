@@ -87,6 +87,7 @@ void main() {
 
     expect(find.byType(ConsentScreen), findsOneWidget);
     expect(find.text('歡迎來到你的陪伴空間'), findsOneWidget);
+    expect(find.textContaining('使用紀錄'), findsOneWidget);
     expect(find.text('已進入主流程'), findsNothing);
     // 沒有工程字樣 / 英文錯誤。
     expect(find.textContaining('Exception'), findsNothing);
@@ -177,8 +178,7 @@ void main() {
     expect(find.byType(LegalDocumentScreen), findsOneWidget);
   });
 
-  testWidgets('隱私權政策 / 服務條款畫面可在 App 內捲動閱讀（設定頁與同意畫面共用入口）',
-      (tester) async {
+  testWidgets('隱私權政策 / 服務條款畫面可在 App 內捲動閱讀（設定頁與同意畫面共用入口）', (tester) async {
     useTallView(tester);
 
     await tester.pumpWidget(
@@ -188,6 +188,8 @@ void main() {
     expect(find.text('隱私權政策'), findsWidgets);
     expect(find.byType(ListView), findsOneWidget);
     expect(find.text('我們會收集哪些資料'), findsOneWidget);
+    expect(find.textContaining('App 開啟與使用時間'), findsOneWidget);
+    expect(find.textContaining('管理者能看到整體使用狀況'), findsOneWidget);
 
     await tester.pumpWidget(
       MaterialApp(home: LegalDocumentScreen.termsOfService()),
@@ -209,7 +211,8 @@ void main() {
     expect(controller.status, ConsentStatus.needsConsent);
 
     // 持久化也清掉了：新 controller 載入仍為 needsConsent。
-    final reloaded = ConsentController(consentService: _offlineConsentService());
+    final reloaded =
+        ConsentController(consentService: _offlineConsentService());
     await reloaded.load();
     expect(reloaded.status, ConsentStatus.needsConsent);
   });

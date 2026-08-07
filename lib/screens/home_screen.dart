@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -14,6 +16,7 @@ import '../controllers/pet_stats_controller.dart';
 import '../controllers/profile_controller.dart';
 import '../controllers/voice_agent_controller.dart';
 import '../controllers/wallet_controller.dart';
+import '../services/app_usage_tracking_service.dart';
 import '../services/notification_service.dart';
 import '../models/inventory_item.dart';
 import '../models/language_route.dart';
@@ -52,6 +55,8 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _showInventoryPanel = false;
   bool _inventoryTrayLowered = false;
   bool _didCheckTaigiAsrStatus = false;
+  bool _didTrackAppOpen = false;
+  bool _showTextInput = false;
   // CR-0088：對話結束後短暫顯示情緒狀態。記住已處理過的最新一則對話，避免重複觸發。
   ConversationController? _conversationForTransient;
   String? _lastTransientTurnKey;
@@ -94,6 +99,10 @@ class _HomeScreenState extends State<HomeScreen> {
       final voiceAgentController = context.read<VoiceAgentController>();
       final memoryController = context.read<MemoryController>();
       final petName = context.read<ProfileController>().petName;
+      if (!_didTrackAppOpen) {
+        _didTrackAppOpen = true;
+        _trackUsage('app_open');
+      }
       await petController.enterInitialRestThenListen();
       if (!mounted) return;
       if (voiceAgentController.state != VoiceAgentState.idle &&
@@ -145,9 +154,8 @@ class _HomeScreenState extends State<HomeScreen> {
     // 讓 happy / sad / caring / hungry / rest 等狀態都有機會出現）。純函式，
     // 只消費既有訊號，不改 Realtime 主流程。
     final displayPetMode = PetStateSelector.select(
-      isMicCapturing:
-          voiceAgentController.state == VoiceAgentState.listening ||
-              voiceAgentController.state == VoiceAgentState.transcribing,
+      isMicCapturing: voiceAgentController.state == VoiceAgentState.listening ||
+          voiceAgentController.state == VoiceAgentState.transcribing,
       isPetSpeaking: voiceAgentController.state == VoiceAgentState.speaking ||
           petController.mode == PetMode.talking,
       transientMode: petController.transientMode,
@@ -264,39 +272,56 @@ class _HomeScreenState extends State<HomeScreen> {
                                 child: KeyedSubtree(
                                   key: coachKeys.petKey,
                                   child: _PetStage(
-                                  isDead: isDead,
-                                  isPetDragHovering: _isPetDragHovering,
-                                  showVoiceAura: showVoiceAura,
-                                  petMode: displayPetMode,
-                                  skin: petController.currentSkin,
-                                  onChangeSkin: () => _openSkinPicker(context),
-                                  onPetTap: () {
-                                    if (isDead) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                          content: Text('寵物需要復活後才能一起玩'),
-                                        ),
+                                    isDead: isDead,
+                                    isPetDragHovering: _isPetDragHovering,
+                                    showVoiceAura: showVoiceAura,
+                                    petMode: displayPetMode,
+                                    skin: petController.currentSkin,
+                                    onChangeSkin: () =>
+                                        _openSkinPicker(context),
+                                    onPetTap: () {
+                                      if (isDead) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text('寵物需要復活後才能一起玩'),
+                                          ),
+                                        );
+                                        return;
+                                      }
+                                      _trackUsage(
+                                        'pet_interaction',
+                                        sessionId: conversationController
+                                            .activeSessionId,
+                                        metadata: {
+                                          'source': 'pet_tap',
+                                          'petType': petController
+                                              .currentSkin.storageId,
+                                          'mood': displayPetMode.name,
+                                          'satiety':
+                                              petStatsController.fullness,
+                                          'intimacy':
+                                              petStatsController.intimacy,
+                                        },
                                       );
-                                      return;
-                                    }
-                                    Navigator.of(context)
-                                        .pushNamed(AppRoute.puzzle);
-                                  },
-                                  onDragHoverChanged: (hovering) => setState(
-                                    () => _isPetDragHovering = hovering,
-                                  ),
-                                  onAcceptItem: (item) async {
-                                    setState(
-                                      () => _isPetDragHovering = false,
-                                    );
-                                    await _applyInventoryItem(
-                                      context: context,
-                                      item: item,
-                                      inventoryController: inventoryController,
-                                      petStatsController: petStatsController,
-                                    );
-                                  },
+                                      Navigator.of(context)
+                                          .pushNamed(AppRoute.puzzle);
+                                    },
+                                    onDragHoverChanged: (hovering) => setState(
+                                      () => _isPetDragHovering = hovering,
+                                    ),
+                                    onAcceptItem: (item) async {
+                                      setState(
+                                        () => _isPetDragHovering = false,
+                                      );
+                                      await _applyInventoryItem(
+                                        context: context,
+                                        item: item,
+                                        inventoryController:
+                                            inventoryController,
+                                        petStatsController: petStatsController,
+                                      );
+                                    },
                                   ),
                                 ),
                               ),
@@ -317,111 +342,170 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     SizedBox(height: compact ? 8 : 10),
-                    TextConversationBar(
-                      controller: _messageController,
-                      enabled: !isDead && !conversationController.isBusy,
-                      isBusy: conversationController.isBusy,
-                      onChanged: conversationController.updateDraftText,
-                      onSend: (text) => _sendTextMessage(
-                        text,
-                        conversationController,
+                    if (_showTextInput) ...[
+                      TextConversationBar(
+                        controller: _messageController,
+                        enabled: !isDead && !conversationController.isBusy,
+                        isBusy: conversationController.isBusy,
+                        onChanged: conversationController.updateDraftText,
+                        onSend: (text) => _sendTextMessage(
+                          text,
+                          conversationController,
+                        ),
                       ),
-                    ),
-                    SizedBox(height: compact ? 8 : 10),
-                    KeyedSubtree(
-                      key: coachKeys.voiceButtonKey,
-                      child: PrimaryActionButton(
-                        icon: voiceIcon,
-                        label: voiceLabel,
-                        active: showVoiceAura,
-                        onPressed: isDead
-                            ? null
-                            : () async {
-                                if (useTaigiShortRecording) {
-                                  if (voiceAgentController.state !=
-                                          VoiceAgentState.idle &&
-                                      voiceAgentController.state !=
-                                          VoiceAgentState.error) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('請先結束目前語音對話。'),
-                                      ),
-                                    );
-                                    return;
-                                  }
-                                  if (conversationController
-                                      .isTaigiAsrRecording) {
-                                    await conversationController
-                                        .stopTaigiShortRecordingAndTranscribe();
-                                  } else {
-                                    conversationController.startNewSession();
-                                    await conversationController
-                                        .startTaigiShortRecording(
-                                      realtimeBusy: voiceAgentController
-                                                  .state !=
-                                              VoiceAgentState.idle &&
-                                          voiceAgentController.state !=
-                                              VoiceAgentState.error,
-                                    );
-                                  }
-                                  return;
-                                }
-                                if (conversationController
-                                        .isTaigiAsrRecording ||
-                                    conversationController
-                                        .isTaigiAsrProcessing) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('請先完成台語短錄音。'),
-                                    ),
-                                  );
-                                  return;
-                                }
-                                // 連續 Realtime session 的語音輪次控制：
-                                // - idle / error：開始 / 重試一段新的語音對話。
-                                // - 寵物回覆中（thinking / speaking）：按鈕＝換我先講，
-                                //   打斷寵物、把話語權交回使用者（barge-in）。
-                                // - 待命聆聽中（ready / listening）：按鈕＝結束這段語音對話。
-                                // - connecting / transcribing / recovering：連線或辨識中，
-                                //   稍候，不重複觸發避免混亂。
-                                // Turn-based「一人一句」：
-                                // - idle/error 可開始：全新對話才開 session，
-                                //   同一條連線的下一句沿用既有 session、不重連。
-                                // - 寵物回覆中（thinking/speaking）：不打斷，
-                                //   提醒使用者先聽完。
-                                // - 正在聽這一句（listening/ready）：再按一次＝結束。
-                                if (voiceAgentController.canStartVoiceInput) {
-                                  if (!voiceAgentController
-                                      .hasOpenRealtimeSession) {
-                                    conversationController.startNewSession();
-                                  }
-                                  await voiceAgentController
-                                      .startRealtimeConversation();
-                                } else if (voiceAgentController
-                                    .isPetResponding) {
-                                  final name = profileController.petName
-                                          .trim()
-                                          .isEmpty
-                                      ? '咕咕'
-                                      : profileController.petName.trim();
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('先聽$name說完，再換你說～'),
-                                    ),
-                                  );
-                                } else if (voiceAgentController
-                                    .isCapturingUserSpeech) {
-                                  // CR-0096：聆聽 / 轉錄中按一下＝「停止收音並送出本輪語音」，
-                                  // 不是取消、不斷線（吵雜環境也能手動結束說話並得到回覆）。
-                                  await voiceAgentController
-                                      .stopListeningAndSubmit();
-                                }
-                              },
-                      ),
+                      SizedBox(height: compact ? 8 : 10),
+                    ],
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: KeyedSubtree(
+                            key: coachKeys.voiceButtonKey,
+                            child: PrimaryActionButton(
+                              icon: voiceIcon,
+                              label: voiceLabel,
+                              active: showVoiceAura,
+                              onPressed: isDead
+                                  ? null
+                                  : () async {
+                                      if (useTaigiShortRecording) {
+                                        if (voiceAgentController.state !=
+                                                VoiceAgentState.idle &&
+                                            voiceAgentController.state !=
+                                                VoiceAgentState.error) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            const SnackBar(
+                                              content: Text('請先結束目前語音對話。'),
+                                            ),
+                                          );
+                                          return;
+                                        }
+                                        if (conversationController
+                                            .isTaigiAsrRecording) {
+                                          _trackUsage(
+                                            'voice_interaction_end',
+                                            sessionId: conversationController
+                                                .activeSessionId,
+                                            metadata: const {
+                                              'mode': 'taigi_short'
+                                            },
+                                          );
+                                          await conversationController
+                                              .stopTaigiShortRecordingAndTranscribe();
+                                        } else {
+                                          conversationController
+                                              .startNewSession();
+                                          _trackUsage(
+                                            'voice_interaction_start',
+                                            sessionId: conversationController
+                                                .activeSessionId,
+                                            metadata: const {
+                                              'mode': 'taigi_short'
+                                            },
+                                          );
+                                          await conversationController
+                                              .startTaigiShortRecording(
+                                            realtimeBusy: voiceAgentController
+                                                        .state !=
+                                                    VoiceAgentState.idle &&
+                                                voiceAgentController.state !=
+                                                    VoiceAgentState.error,
+                                          );
+                                        }
+                                        return;
+                                      }
+                                      if (conversationController
+                                              .isTaigiAsrRecording ||
+                                          conversationController
+                                              .isTaigiAsrProcessing) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text('請先完成台語短錄音。'),
+                                          ),
+                                        );
+                                        return;
+                                      }
+                                      // 連續 Realtime session 的語音輪次控制：
+                                      // - idle / error：開始 / 重試一段新的語音對話。
+                                      // - 寵物回覆中（thinking / speaking）：按鈕＝換我先講，
+                                      //   打斷寵物、把話語權交回使用者（barge-in）。
+                                      // - 待命聆聽中（ready / listening）：按鈕＝結束這段語音對話。
+                                      // - connecting / transcribing / recovering：連線或辨識中，
+                                      //   稍候，不重複觸發避免混亂。
+                                      // Turn-based「一人一句」：
+                                      // - idle/error 可開始：全新對話才開 session，
+                                      //   同一條連線的下一句沿用既有 session、不重連。
+                                      // - 寵物回覆中（thinking/speaking）：不打斷，
+                                      //   提醒使用者先聽完。
+                                      // - 正在聽這一句（listening/ready）：再按一次＝結束。
+                                      if (voiceAgentController
+                                          .canStartVoiceInput) {
+                                        if (!voiceAgentController
+                                            .hasOpenRealtimeSession) {
+                                          conversationController
+                                              .startNewSession();
+                                        }
+                                        _trackUsage(
+                                          'voice_interaction_start',
+                                          sessionId: conversationController
+                                              .activeSessionId,
+                                          metadata: {
+                                            'mode': useTaigiRealtime
+                                                ? 'taigi_realtime'
+                                                : 'realtime',
+                                          },
+                                        );
+                                        await voiceAgentController
+                                            .startRealtimeConversation();
+                                      } else if (voiceAgentController
+                                          .isPetResponding) {
+                                        final name = profileController.petName
+                                                .trim()
+                                                .isEmpty
+                                            ? '咕咕'
+                                            : profileController.petName.trim();
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: Text('先聽$name說完，再換你說～'),
+                                          ),
+                                        );
+                                      } else if (voiceAgentController
+                                          .isCapturingUserSpeech) {
+                                        // CR-0096：聆聽 / 轉錄中按一下＝「停止收音並送出本輪語音」，
+                                        // 不是取消、不斷線（吵雜環境也能手動結束說話並得到回覆）。
+                                        _trackUsage(
+                                          'voice_interaction_end',
+                                          sessionId: conversationController
+                                              .activeSessionId,
+                                          metadata: {
+                                            'mode': useTaigiRealtime
+                                                ? 'taigi_realtime'
+                                                : 'realtime',
+                                          },
+                                        );
+                                        await voiceAgentController
+                                            .stopListeningAndSubmit();
+                                      }
+                                    },
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        _KeyboardToggleButton(
+                          expanded: _showTextInput,
+                          enabled: !isDead,
+                          onTap: () => setState(
+                            () => _showTextInput = !_showTextInput,
+                          ),
+                        ),
+                      ],
                     ),
                     if (useTaigiShortRecording &&
                         conversationController
-                        .taigiAsrStatusMessage.isNotEmpty) ...[
+                            .taigiAsrStatusMessage.isNotEmpty) ...[
                       const SizedBox(height: 6),
                       Text(
                         conversationController.taigiAsrStatusMessage,
@@ -530,6 +614,26 @@ class _HomeScreenState extends State<HomeScreen> {
         .toList(growable: false);
   }
 
+  void _trackUsage(
+    String eventType, {
+    String? sessionId,
+    int? durationMs,
+    Map<String, Object?> metadata = const {},
+  }) {
+    try {
+      unawaited(
+        context.read<AppUsageTrackingService>().track(
+              eventType,
+              sessionId: sessionId,
+              durationMs: durationMs,
+              metadata: metadata,
+            ),
+      );
+    } on ProviderNotFoundException {
+      // Isolated widget tests may omit analytics. The production app injects it.
+    }
+  }
+
   Future<void> _applyInventoryItem({
     required BuildContext context,
     required InventoryItem item,
@@ -563,6 +667,15 @@ class _HomeScreenState extends State<HomeScreen> {
           PetMode.happy,
           '謝謝你餵我，我覺得有精神多了！',
         );
+    _trackUsage(
+      'pet_interaction',
+      metadata: {
+        'source': 'inventory_item',
+        'itemId': item.itemId,
+        'satiety': petStatsController.fullness,
+        'intimacy': petStatsController.intimacy,
+      },
+    );
     _showItemUsedSnackBar(context, item);
   }
 
@@ -575,6 +688,11 @@ class _HomeScreenState extends State<HomeScreen> {
     FocusScope.of(context).unfocus();
     _messageController.clear();
     conversationController.clearDraftText();
+    _trackUsage(
+      'typed_chat_sent',
+      sessionId: conversationController.activeSessionId,
+      metadata: const {'source': 'home_text_bar'},
+    );
     // 若語音 Realtime 正在連線中，打字直接注入同一個 live 對話（寵物用語音回覆）；
     // 沒在語音中（回傳 false）才走原本的打字回覆路徑，兩者共用同一份對話紀錄。
     final voiceAgentController = context.read<VoiceAgentController>();
@@ -744,8 +862,7 @@ class _CheckInCalendarDialogState extends State<_CheckInCalendarDialog> {
                       return _CalendarDayCell(
                         day: day,
                         hasGift: reward?.hasGift ?? false,
-                        checked:
-                            controller.checkInDates.contains(_dayKey(day)),
+                        checked: controller.checkInDates.contains(_dayKey(day)),
                         isToday: day == _now.day,
                         isSelected: day == _selectedDay,
                         onTap: () => setState(() => _selectedDay = day),
@@ -977,67 +1094,67 @@ class _HomeHeader extends StatelessWidget {
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.0,
       child: Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                petName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w800,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  petName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ),
-        // 頂部工具列在窄螢幕（如 320 寬）要放得下 5 個控件，故用 compact
-        // IconButtonTheme 收斂點擊框（仍維持 40px 可點），並縮短間距。
-        IconButtonTheme(
-          data: IconButtonThemeData(
-            style: IconButton.styleFrom(
-              minimumSize: const Size(36, 40),
-              iconSize: 22,
-              padding: EdgeInsets.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ],
             ),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                key: reminderKey,
-                onPressed: onReminderTap,
-                icon: const Icon(Icons.alarm),
-                tooltip: '提醒',
+          // 頂部工具列在窄螢幕（如 320 寬）要放得下 5 個控件，故用 compact
+          // IconButtonTheme 收斂點擊框（仍維持 40px 可點），並縮短間距。
+          IconButtonTheme(
+            data: IconButtonThemeData(
+              style: IconButton.styleFrom(
+                minimumSize: const Size(36, 40),
+                iconSize: 22,
+                padding: EdgeInsets.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
-              _HelpIconButton(onTap: onHelpTap),
-              const SizedBox(width: 2),
-              BagIconButton(
-                totalItems: totalItems,
-                onTap: onBagTap,
-              ),
-              const SizedBox(width: 3),
-              KeyedSubtree(
-                key: coinKey,
-                child: CoinBadge(coins: coins),
-              ),
-              const SizedBox(width: 3),
-              KeyedSubtree(
-                key: dailyCheckInKey,
-                child: HomeDateCheckinCard(
-                  hasCheckedInToday: hasCheckedInToday,
-                  onOpenCalendarTap: onOpenCalendarTap,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  key: reminderKey,
+                  onPressed: onReminderTap,
+                  icon: const Icon(Icons.alarm),
+                  tooltip: '提醒',
                 ),
-              ),
-            ],
+                _HelpIconButton(onTap: onHelpTap),
+                const SizedBox(width: 2),
+                BagIconButton(
+                  totalItems: totalItems,
+                  onTap: onBagTap,
+                ),
+                const SizedBox(width: 3),
+                KeyedSubtree(
+                  key: coinKey,
+                  child: CoinBadge(coins: coins),
+                ),
+                const SizedBox(width: 3),
+                KeyedSubtree(
+                  key: dailyCheckInKey,
+                  child: HomeDateCheckinCard(
+                    hasCheckedInToday: hasCheckedInToday,
+                    onOpenCalendarTap: onOpenCalendarTap,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
       ),
     );
   }
@@ -1263,6 +1380,49 @@ class _LanguageContextChip extends StatelessWidget {
             color: Colors.black.withValues(alpha: 0.56),
             fontSize: 12,
             fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _KeyboardToggleButton extends StatelessWidget {
+  const _KeyboardToggleButton({
+    required this.expanded,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final bool expanded;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    return Semantics(
+      button: true,
+      label: expanded ? '收起打字' : '打字',
+      child: Tooltip(
+        message: expanded ? '收起打字' : '打字',
+        child: Material(
+          color: enabled
+              ? primary.withValues(alpha: expanded ? 0.18 : 0.10)
+              : Colors.black.withValues(alpha: 0.06),
+          shape: const CircleBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: enabled ? onTap : null,
+            child: SizedBox(
+              width: 58,
+              height: 58,
+              child: Icon(
+                expanded ? Icons.keyboard_hide : Icons.keyboard,
+                color: enabled ? primary : Colors.black.withValues(alpha: 0.28),
+                size: 28,
+              ),
+            ),
           ),
         ),
       ),

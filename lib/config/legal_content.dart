@@ -31,57 +31,53 @@ class LegalContent {
   const LegalContent._();
 
   /// 知情同意畫面最上方的開場說明。
-  static const String consentIntro =
-      '在開始使用之前，想先讓你了解這個 App 會怎麼陪伴你、會用到哪些功能，'
+  static const String consentIntro = '在開始使用之前，想先讓你了解這個 App 會怎麼陪伴你、會用到哪些功能，'
       '以及我們會怎麼保護你的資料。請放心慢慢看，看完覺得可以，再按下方的「我同意」。';
 
   /// 知情同意畫面的重點條列（涵蓋麥克風、通知、對話蒐集、第三方 AI 等）。
   static const List<ConsentHighlight> consentHighlights = [
     ConsentHighlight(
       title: '用聲音陪你聊天（麥克風）',
-      description:
-          '你可以對著手機說話，AI 寵物會聽你說、陪你聊。只有在你開始說話時才會用到麥克風，'
+      description: '你可以對著手機說話，AI 寵物會聽你說、陪你聊。只有在你開始說話時才會用到麥克風，'
           '沒有說話時不會錄音。',
     ),
     ConsentHighlight(
       title: '溫柔的提醒（通知）',
-      description:
-          '我們會用通知提醒你喝水、吃藥、簽到這些小事。如果你的狀況需要多一點關心，'
+      description: '我們會用通知提醒你喝水、吃藥、簽到這些小事。如果你的狀況需要多一點關心，'
           '也會通知你授權的家人或照護人員。',
     ),
     ConsentHighlight(
       title: '記得你說過的事（對話與記憶）',
-      description:
-          '為了像老朋友一樣記得你，App 會保存你和寵物的對話，並整理成長期記憶。'
+      description: '為了像老朋友一樣記得你，App 會保存你和寵物的對話，並整理成長期記憶。'
           '這些紀錄你都可以隨時查看或刪除。',
     ),
     ConsentHighlight(
+      title: '幫我們知道陪伴有沒有真的幫上忙（使用紀錄）',
+      description: 'App 會記錄你使用陪伴功能的次數和時間，例如開始聊天、和寵物互動、完成提醒或小遊戲。'
+          '這些紀錄會用來改善 App、整理照護人員看得懂的統計，不會拿去賣給別人或做廣告追蹤。',
+    ),
+    ConsentHighlight(
       title: '讓寵物更聰明（第三方 AI 服務）',
-      description:
-          '你的語音和文字會交給 OpenAI 這個 AI 服務幫忙理解與回覆。'
+      description: '你的語音和文字會交給 OpenAI 這個 AI 服務幫忙理解與回覆。'
           '我們只會傳送陪伴對話所需的內容，不會多傳不相關的資料。',
     ),
     ConsentHighlight(
       title: '溫和的關心提醒（Care Alert）',
-      description:
-          '如果系統發現你最近比較孤單、睡不好或不太舒服，會整理成提醒給照護人員參考。'
+      description: '如果系統發現你最近比較孤單、睡不好或不太舒服，會整理成提醒給照護人員參考。'
           '這只是「請多關心一下」的提醒，不是醫療診斷。',
     ),
     ConsentHighlight(
       title: '你的資料，你作主',
-      description:
-          '你隨時可以在設定裡查看或刪除記憶、申請刪除帳號。照護人員也只能看到'
+      description: '你隨時可以在設定裡查看或刪除記憶、申請刪除帳號。照護人員也只能看到'
           '你授權範圍內的資訊。',
     ),
   ];
 
   /// 同意按鈕旁的勾選說明（必須由使用者主動勾選，不預設）。
-  static const String consentCheckboxLabel =
-      '我已閱讀並了解上面的說明，也同意隱私權政策與服務條款。';
+  static const String consentCheckboxLabel = '我已閱讀並了解上面的說明，也同意隱私權政策與服務條款。';
 
   /// 不同意時的白話說明。
-  static const String consentDeclineNote =
-      '這些功能是陪伴你所必需的，如果暫時不想同意，可以先關閉 App，'
+  static const String consentDeclineNote = '這些功能是陪伴你所必需的，如果暫時不想同意，可以先關閉 App，'
       '等準備好了再隨時回來。';
 
   /// 隱私權政策內文。
@@ -103,6 +99,7 @@ class LegalContent {
         '對話內容：你和 AI 寵物說的話，以及整理出來的長期記憶。',
         '聲音：你說話時的語音，用來即時聽懂你的意思。',
         '狀態線索：例如你提到的心情、睡眠、食慾等，用來判斷是否需要多一點關心。',
+        '使用紀錄：例如 App 開啟與使用時間、語音或打字互動次數、寵物互動、提醒與任務完成、照片驗證、小遊戲開始與完成等。',
         '你主動填寫的資料：例如家人或照護人員的聯絡方式。',
       ],
     ),
@@ -112,6 +109,7 @@ class LegalContent {
         '讓 AI 寵物能即時聽懂你、自然地陪你聊天。',
         '記得你說過的重要事情，下次聊天時更貼心。',
         '在你狀況需要關心時，提醒你授權的家人或照護人員。',
+        '了解哪些陪伴功能常被使用、互動是否增加、提醒或小遊戲是否完成，讓照護人員與管理者能看到整體使用狀況。',
         '我們不會把你的資料拿去賣給別人，也不會用於和陪伴無關的廣告。',
       ],
     ),
