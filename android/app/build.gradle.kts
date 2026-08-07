@@ -20,7 +20,9 @@ val isReleaseSigningRequired =
 
 android {
     namespace = "com.example.pet_companion_app"
-    compileSdk = flutter.compileSdkVersion
+    // Google Play blocks new app/update submissions that miss the current
+    // target API requirement. Keep Flutter defaults when they move higher.
+    compileSdk = maxOf(flutter.compileSdkVersion, 36)
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -44,7 +46,7 @@ android {
         // CR-0006 Batch 4c-2：Firebase Auth / Google Sign-In 需 minSdk≥23；
         // 用 maxOf 確保不低於 23，又不會把 Flutter 預設往下調。
         minSdk = maxOf(flutter.minSdkVersion, 23)
-        targetSdk = flutter.targetSdkVersion
+        targetSdk = maxOf(flutter.targetSdkVersion, 36)
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }

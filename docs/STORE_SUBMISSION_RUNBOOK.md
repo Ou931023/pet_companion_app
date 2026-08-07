@@ -20,6 +20,7 @@
 - [x] GitHub Pages 已啟用 Source: GitHub Actions，且 `Deploy legal site to GitHub Pages` workflow 成功部署。
 - [ ] `BLOCKER` Android release upload keystore / key alias / CI secret；不得提交進 git。
 - [ ] `BLOCKER` iOS distribution certificate / provisioning profile / App Store Connect app record。
+- [x] Android target API gate：`android/app/build.gradle.kts` 明確要求 Android 16 / API 36 以上；本機 / CI 需安裝對應 Android SDK platform。
 - [ ] `BLOCKER` Firebase iOS / Android app config 已對應 `tw.edu.ncyu.im.aicompanion`。
 - [ ] `BLOCKER` production PostgreSQL migrations 已執行。
 - [ ] `BLOCKER` OpenAI / Firebase Admin / Telegram / DB / admin token 等後端正式 env 已由部署平台設定。
@@ -62,6 +63,7 @@ npm test
 - [ ] `flutter test` 通過。
 - [ ] production dart-define 反向測試通過：即使外部誤開 demo / social / marketplace / daily-care，production gating 仍強制關閉。
 - [ ] release signing readiness script 通過，且未讀取 / 輸出任何 secret 值。
+- [ ] Android SDK Platform 36 已安裝；AAB target Android 16 / API 36 以上。
 - [ ] backend `npm run check` / `npm test` 通過，或明確記錄未跑原因。
 
 ---
@@ -96,6 +98,7 @@ flutter build appbundle --release \
 
 - [ ] build 使用 production HTTPS API，不能使用 `127.0.0.1`、`localhost`、`10.0.2.2`、LAN IP、ngrok。
 - [ ] Android release signing 不是 debug key。
+- [ ] Android `targetSdkVersion` 為 36 以上，符合 2026-08-31 起 Google Play 新 App / 更新送審要求。
 - [ ] iOS archive 使用 distribution signing。
 - [ ] build artifact 對應正確 version / build number。
 
@@ -175,7 +178,7 @@ flutter build appbundle --release \
 - [ ] App Store Privacy Nutrition Labels 已申報帳號資料、語音 / 文字互動、App 使用紀錄與照護分析用途。
 - [ ] Google Play Console：Data Safety 依 `docs/GOOGLE_PLAY_DATA_SAFETY.md` 填寫。
 - [ ] Google Play Console：Health / medical 類聲明不宣稱診斷、治療或緊急救援。
-- [ ] Google Play Console：targetSdk / permission declaration 符合當期要求。
+- [ ] Google Play Console：targetSdk 為 Android 16 / API 36 以上，permission declaration 符合當期要求。
 - [ ] 外部連結只導向隱私、條款、支援，不導向未完成服務或付款頁。
 
 ---

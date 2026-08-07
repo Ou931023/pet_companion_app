@@ -24,6 +24,7 @@
 - [x] Production gating：demo / mock / debug panel / unfinished social sign-in / marketplace / daily-care production 入口關閉。
 - [x] Store readiness test：`flutter test test/config/store_readiness_test.dart`。
 - [x] Release signing readiness script：`bash scripts/check_release_signing_readiness.sh`。
+- [x] Android target API gate：`compileSdk` / `targetSdk` 皆至少 Android 16 / API 36。
 - [x] Internal testing smoke runbook：`docs/INTERNAL_TESTING_SMOKE_RUNBOOK.md`。
 - [x] Store review notes / app access template：`docs/STORE_REVIEW_NOTES_TEMPLATE.md`。
 
@@ -37,7 +38,7 @@
 | Backend env | 部署平台設定 `DATABASE_URL`、`OPENAI_API_KEY`、Firebase Admin、`ADMIN_API_TOKEN`、`CORS_ALLOWED_ORIGINS`、Telegram 測試通知設定 | 不可貼值到 repo / 文件 / chat |
 | PostgreSQL | production migration 已執行，含 `app_usage_events` | 不可用本機 DB 當正式依據 |
 | Firebase 測試帳號 | resident / caregiver / super_admin 三種測試帳號，供審查與 smoke；只填在商店後台受保護欄位 | 不可 hardcode 帳密到 App 或 repo |
-| Android signing | upload keystore、`android/key.properties` 本機/CI secret、Play App Signing | 不可 commit `.jks`、`.keystore`、`key.properties` |
+| Android signing | upload keystore、`android/key.properties` 本機/CI secret、Play App Signing、安裝 Android SDK Platform 36 | 不可 commit `.jks`、`.keystore`、`key.properties` |
 | iOS signing | Apple Developer、App Store Connect app record、distribution signing / provisioning | 不可 commit `.p8`、`.cer`、`.p12`、`.mobileprovision` |
 | iPhone pairing | Xcode Devices 完成 pairing，iPhone 信任這台 Mac | 不可把未配對狀態標 PASS |
 | Android device | Play Internal testing 可安裝的實機 | 不可只用 desktop/web 當手機驗收 |
@@ -82,7 +83,7 @@
 - [ ] Health / medical 聲明不宣稱診斷、治療、緊急救援。
 - [ ] Privacy Policy URL：`https://ou931023.github.io/pet_companion_app/privacy.html`。
 - [ ] Feature graphic / screenshots / icon 預覽無裁切、無 debug/demo/mock。
-- [ ] targetSdk / permission declaration 符合當期要求。
+- [ ] targetSdk 為 Android 16 / API 36 以上；permission declaration 符合當期要求。
 - [ ] Play App Signing 已啟用，AAB 使用 upload key 簽章。
 
 ---
@@ -93,18 +94,19 @@
 2. 跑 production migrations。
 3. 建立 Firebase resident / caregiver / super_admin 測試帳號與授權關聯。
 4. 完成 Android upload keystore / Play App Signing。
-5. 完成 Apple Developer / App Store Connect / iOS distribution signing。
-6. 跑 repo gate：
+5. 確認 Android SDK Platform 36 已安裝；本 repo 已把 compileSdk / targetSdk gate 固定為 Android 16 / API 36 以上。
+6. 完成 Apple Developer / App Store Connect / iOS distribution signing。
+7. 跑 repo gate：
    ```bash
    flutter analyze
    flutter test
    flutter test test/config/android_release_signing_test.dart test/config/store_readiness_test.dart
    bash scripts/check_release_signing_readiness.sh
    ```
-7. Build 並上傳 TestFlight / Play Internal testing。
-8. 跑 `docs/INTERNAL_TESTING_SMOKE_RUNBOOK.md`，結果寫入 `docs/E2E_SMOKE_TEST_REPORT.md`。
-9. 填 App Store Privacy / Google Play Data Safety / metadata。
-10. 所有 blocker 清零後送審。
+8. Build 並上傳 TestFlight / Play Internal testing。
+9. 跑 `docs/INTERNAL_TESTING_SMOKE_RUNBOOK.md`，結果寫入 `docs/E2E_SMOKE_TEST_REPORT.md`。
+10. 填 App Store Privacy / Google Play Data Safety / metadata。
+11. 所有 blocker 清零後送審。
 
 ---
 

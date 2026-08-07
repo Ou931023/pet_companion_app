@@ -57,6 +57,12 @@ if grep -q 'signingConfig = signingConfigs.getByName("debug")' android/app/build
 fi
 pass "Android release signing wiring is production-safe"
 
+grep -q 'compileSdk = maxOf(flutter.compileSdkVersion, 36)' android/app/build.gradle.kts ||
+  fail "Android compileSdk must be pinned to at least API 36 for current Google Play submissions"
+grep -q 'targetSdk = maxOf(flutter.targetSdkVersion, 36)' android/app/build.gradle.kts ||
+  fail "Android targetSdk must be pinned to at least API 36 for current Google Play submissions"
+pass "Android target API 36 gate is configured"
+
 grep -q 'PRODUCT_BUNDLE_IDENTIFIER = tw.edu.ncyu.im.aicompanion' ios/Runner.xcodeproj/project.pbxproj ||
   fail "iOS Bundle ID must be tw.edu.ncyu.im.aicompanion"
 grep -q 'CODE_SIGN_STYLE = Automatic' ios/Runner.xcodeproj/project.pbxproj ||
