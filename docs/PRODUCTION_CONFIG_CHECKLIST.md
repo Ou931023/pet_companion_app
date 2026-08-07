@@ -114,9 +114,24 @@
 - [ ] `privacyPolicyUrl`（隱私權政策正式 hosted 頁面）
 - [ ] `termsOfServiceUrl`（服務條款正式 hosted 頁面）
 - [ ] `supportUrl`（技術支援 / 客服說明頁）
-- [ ] `contactEmail`（正式客服信箱）
+- [x] `contactEmail`（正式客服信箱）：`aicompanion.support@gmail.com`
 
 > 在填入正式值前，UI 以 `LegalConfig.isPlaceholder` 判斷不顯示外部連結入口
+
+靜態頁草稿已在 `store_legal_site/`：
+
+- `store_legal_site/privacy.html`
+- `store_legal_site/terms.html`
+- `store_legal_site/support.html`
+- GitHub Pages workflow：`.github/workflows/legal-site-pages.yml`
+
+GitHub Pages 預期 URL（需 repo Settings → Pages → Source: GitHub Actions，且 workflow 已成功跑完）：
+
+- `https://ou931023.github.io/pet_companion_app/privacy.html`
+- `https://ou931023.github.io/pet_companion_app/terms.html`
+- `https://ou931023.github.io/pet_companion_app/support.html`
+
+部署到公開 HTTPS 後，對應 URL 應填入下列 dart-define。客服信箱已定為 `aicompanion.support@gmail.com`，仍需確認 GitHub Pages URL 已可公開開啟。
 
 Production build 應帶：
 
@@ -124,7 +139,7 @@ Production build 應帶：
 --dart-define=PRIVACY_POLICY_URL=https://...
 --dart-define=TERMS_OF_SERVICE_URL=https://...
 --dart-define=SUPPORT_URL=https://...
---dart-define=CONTACT_EMAIL=support@example.com
+--dart-define=CONTACT_EMAIL=aicompanion.support@gmail.com
 ```
 > （避免長者點到不存在的頁面）。
 

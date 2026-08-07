@@ -16,7 +16,8 @@
 - [ ] `BLOCKER` hosted 隱私權政策 URL：供 `PRIVACY_POLICY_URL=https://...` 與商店後台使用。
 - [ ] `BLOCKER` hosted 服務條款 URL：供 `TERMS_OF_SERVICE_URL=https://...` 使用。
 - [ ] `BLOCKER` hosted 支援頁 URL：供 `SUPPORT_URL=https://...` 與商店後台使用。
-- [ ] `BLOCKER` 正式客服信箱：供 `CONTACT_EMAIL=support@...` 與商店後台使用。
+- [x] 正式客服信箱：`aicompanion.support@gmail.com`，供 `CONTACT_EMAIL` 與商店後台使用。
+- [ ] GitHub Pages 已啟用 Source: GitHub Actions，且 `Deploy legal site to GitHub Pages` workflow 成功部署。
 - [ ] `BLOCKER` Android release upload keystore / key alias / CI secret；不得提交進 git。
 - [ ] `BLOCKER` iOS distribution certificate / provisioning profile / App Store Connect app record。
 - [ ] `BLOCKER` Firebase iOS / Android app config 已對應 `tw.edu.ncyu.im.aicompanion`。
@@ -72,7 +73,7 @@ flutter build ipa --release \
   --dart-define=PRIVACY_POLICY_URL=https://your-domain.example/privacy \
   --dart-define=TERMS_OF_SERVICE_URL=https://your-domain.example/terms \
   --dart-define=SUPPORT_URL=https://your-domain.example/support \
-  --dart-define=CONTACT_EMAIL=support@your-domain.example
+  --dart-define=CONTACT_EMAIL=aicompanion.support@gmail.com
 ```
 
 Android：
@@ -84,7 +85,7 @@ flutter build appbundle --release \
   --dart-define=PRIVACY_POLICY_URL=https://your-domain.example/privacy \
   --dart-define=TERMS_OF_SERVICE_URL=https://your-domain.example/terms \
   --dart-define=SUPPORT_URL=https://your-domain.example/support \
-  --dart-define=CONTACT_EMAIL=support@your-domain.example
+  --dart-define=CONTACT_EMAIL=aicompanion.support@gmail.com
 ```
 
 驗收：
@@ -150,6 +151,10 @@ flutter build appbundle --release \
 ### Hosted Legal URL
 
 - [ ] `BLOCKER` 隱私權政策、服務條款、支援頁皆為公開 HTTPS，手機瀏覽器可開。
+- [ ] GitHub Pages URL 可開：
+  - `https://ou931023.github.io/pet_companion_app/privacy.html`
+  - `https://ou931023.github.io/pet_companion_app/terms.html`
+  - `https://ou931023.github.io/pet_companion_app/support.html`
 - [ ] hosted 隱私權政策內容與 App 內同意內容、Google Play Data Safety、App Store Privacy Nutrition Labels 一致。
 - [ ] 商店後台 URL / email 與 dart-define 值一致。
 

@@ -1,14 +1,16 @@
 # STORE_ASSET_CHECKLIST — Icon / Screenshot / Launch Screen 素材檢查
 
-> 建立：CR-0058。狀態：**規格清單 + owner 素材 blocker**。素材多需 owner 提供正式美術，本檔列規格與紅線。
+> 建立：CR-0058。狀態：**icon 已輸出 + screenshots / launch owner blocker**。
 > 對照：`docs/STORE_SUBMISSION_RUNBOOK.md`、`docs/APP_STORE_METADATA.md`、`docs/STORE_RELEASE_CHECKLIST.md`。
 
 ---
 
-## 1. 現況（CR-0058 盤點）
+## 1. 現況（CR-0101A icon 輸出後）
 
-- iOS：`ios/Runner/Assets.xcassets/AppIcon.appiconset/` 有完整尺寸組（含 `Icon-App-1024x1024@1x.png`）。🟡 需 owner 確認非 Flutter 預設佔位、為正式寵物圖。
-- Android：`mipmap-{m,h,xh,xxh,xxxh}dpi/ic_launcher.png` 有 legacy launcher icon。⛔ **無 adaptive icon**（缺 `mipmap-anydpi-v26/ic_launcher.xml` + `foreground`/`background`）。
+- iOS：✅ `ios/Runner/Assets.xcassets/AppIcon.appiconset/` 已輸出正式候選 icon 全尺寸組（含 `Icon-App-1024x1024@1x.png`）。
+- Android：✅ `mipmap-{m,h,xh,xxh,xxxh}dpi/ic_launcher.png` 已輸出正式候選 legacy launcher icon。
+- Android adaptive icon：✅ 已補 `mipmap-anydpi-v26/ic_launcher.xml`、`mipmap-*/ic_launcher_foreground.png`、`values/colors.xml` 背景色。
+- Play Store listing icon：✅ `store_assets/play_store_icon_512.png` 已輸出。
 - launch screen：iOS `LaunchScreen.storyboard`（需確認非 Flutter 預設）；Android launch theme。
 - 無 `flutter_launcher_icons` 設定（icon 為手動放置）。
 - screenshots：⛔ 無（待素材）。
@@ -19,12 +21,12 @@
 
 ### iOS App Icon
 - 1024×1024（App Store，無透明、無圓角，sRGB）+ appiconset 各尺寸（20/29/40/60/76/83.5pt @1x/2x/3x）。
-- ⛔ owner：確認為正式寵物美術、非 Flutter 預設藍色佔位。
+- ✅ 使用正式候選美術：奶奶擁抱 AI 寵物、溫暖陪伴意象，非 Flutter 預設佔位。
 
 ### Android Launcher / Adaptive Icon
-- legacy：`ic_launcher.png` 各密度（已有）。
-- ⛔ **adaptive icon（必補）**：`mipmap-anydpi-v26/ic_launcher.xml` + `ic_launcher_foreground`（前景，安全區內）+ `ic_launcher_background`（背景純色或圖）。前景須留 66dp 安全區避免被各家 mask 裁切。
-- Play Store listing icon：512×512 32-bit PNG。
+- legacy：✅ `ic_launcher.png` 各密度已輸出。
+- adaptive icon：✅ `mipmap-anydpi-v26/ic_launcher.xml` + `ic_launcher_foreground` 各密度 + `ic_launcher_background` 色值已補。仍需真機檢查各家 launcher mask 裁切效果。
+- Play Store listing icon：✅ `store_assets/play_store_icon_512.png`（512×512 PNG）。
 
 ### 紅線
 - ⛔ 不含誤導醫療圖示（紅十字、聽診器、藥丸暗示診斷）— Care Alert 非醫療。
@@ -62,8 +64,8 @@
 ---
 
 ## 5. Owner action 摘要（blocker）
-- [ ] 正式 App icon 美術（iOS 1024 + Android adaptive 前景/背景 + Play 512）。
-- [ ] 補 Android adaptive icon 檔（anydpi-v26 xml + foreground/background）。
+- [x] 正式候選 App icon 美術（iOS 1024 + Android adaptive 前景/背景）。
+- [x] Play Store listing icon 512×512 PNG：`store_assets/play_store_icon_512.png`。
 - [ ] 5 組去識別化 screenshots（兩平台尺寸）+ Android feature graphic。
 - [ ] 確認 launch screen 非 Flutter 預設、品牌一致。
 
@@ -77,6 +79,7 @@
 - Android legacy icon：`android/app/src/main/res/mipmap-*/ic_launcher.png`
 - Android adaptive icon：`android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml`
 - Android adaptive foreground/background：建議放在 `android/app/src/main/res/drawable/` 或 `android/app/src/main/res/values/`，依實際素材型態決定。
+- Play Store listing icon：`store_assets/play_store_icon_512.png`
 - iOS launch：`ios/Runner/Base.lproj/LaunchScreen.storyboard`
 - Android launch：`android/app/src/main/res/drawable*/launch_background.xml` 與 theme 設定。
 

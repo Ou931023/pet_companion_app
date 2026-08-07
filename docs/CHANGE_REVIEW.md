@@ -4362,3 +4362,58 @@ CR-0090 已改後端語音 persona，但 `realtime_voice_service.dart` 內供 `s
 
 ### 裁決
 此批次讓上架 smoke 從「分散 checklist」變成可執行的單一 Runbook；repo 自動測試只能檢查程式與文件紅線，不能替代 owner 提供正式素材、URL、簽章與真環境實機 smoke。
+
+---
+
+## CR-0101A — Formal App Icon Output
+
+### 模式
+**store asset 小批次**。依 owner 指定的「老奶奶擁抱 AI 寵物、整體呈現愛心 / 陪伴感」方向，輸出正式候選 App icon 到 iOS / Android / Play listing 檔位。此批次不碰 Flutter 功能邏輯、後端 API、Realtime、DB schema、簽章或 `.env`。
+
+### 變更
+- iOS `AppIcon.appiconset` 全尺寸 icon 重新輸出，包含 App Store 1024×1024。
+- Android legacy launcher icon 重新輸出：`mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}/ic_launcher.png`。
+- Android adaptive icon 補齊：
+  - `android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml`
+  - `android/app/src/main/res/mipmap-*/ic_launcher_foreground.png`
+  - `android/app/src/main/res/values/colors.xml` 的 `ic_launcher_background`
+- Play Console listing icon 補：`store_assets/play_store_icon_512.png`。
+- `docs/STORE_ASSET_CHECKLIST.md` / `docs/STORE_RELEASE_CHECKLIST.md` 更新：icon / adaptive icon blocker 改為已輸出，screenshots、feature graphic、launch screen、hosted legal URL、簽章仍是 blocker。
+- `test/config/store_readiness_test.dart` 強化：檢查 adaptive icon XML、foreground PNG、iOS 1024 PNG 尺寸、Play listing 512 PNG 尺寸。
+
+### 測試
+- `flutter test test/config/store_readiness_test.dart test/config/android_transport_security_test.dart test/config/ios_transport_security_test.dart`：**14 passed / 0 failed**。
+- `flutter analyze`：No issues found。
+
+### 裁決
+正式候選 icon assets 已進 repo，可供 App Store / Google Play 預覽與實機檢查。仍需人工確認 Android launcher mask 裁切效果、launch screen、screenshots / feature graphic 與 hosted legal URL。
+
+---
+
+## CR-0101A — Hosted Legal Static Site Draft
+
+### 模式
+**store legal / support 靜態頁小批次**。依 owner 指示採純靜態網頁作為 App Store / Google Play 的隱私權政策、服務條款與支援頁來源。此批次不部署、不讀寫 `.env`、不填假網域；客服信箱由 owner 提供為 `aicompanion.support@gmail.com`。
+
+### 變更
+- 新增 `store_legal_site/`：
+  - `index.html`
+  - `privacy.html`
+  - `terms.html`
+  - `support.html`
+  - `styles.css`
+  - `assets/icon-512.png`
+  - `README.md`
+- 新增 `.github/workflows/legal-site-pages.yml`：push 到 `main` 或手動觸發時，把 `store_legal_site/` 部署到 GitHub Pages。部署不需要 `.env` 或 secret。
+- 靜態頁內容對齊 App 內 legal 文案與 CR-0097 usage tracking disclosure，包含使用紀錄、OpenAI 第三方 AI、Care Alert 非醫療診斷、資料刪除與支援說明。
+- 正式客服信箱已寫入 static legal site：`aicompanion.support@gmail.com`；App build / 商店後台需用同一值。
+- `docs/STORE_RELEASE_CHECKLIST.md`、`docs/PRODUCTION_CONFIG_CHECKLIST.md`、`docs/APP_STORE_METADATA.md`、`docs/STORE_SUBMISSION_RUNBOOK.md` 更新：legal static site 草稿已存在；GitHub Pages 預期 URL 已文件化；客服信箱已定值；仍需 owner 在 GitHub repo Settings 啟用 Pages / GitHub Actions 並確認部署 URL 可開。
+- `test/config/store_readiness_test.dart` 補檢查：靜態頁存在、icon 512×512、privacy/terms/support 必要內容存在、GitHub Pages workflow 存在且只部署 `store_legal_site/`，且正式客服 mailto 存在、不再顯示「上架前必填」客服信箱 blocker。
+
+### 測試
+- `dart format test/config/store_readiness_test.dart`：完成格式化（0 changed）。
+- `flutter test test/config/store_readiness_test.dart test/config/legal_config_test.dart`：**11 passed / 0 failed**。
+- `flutter analyze`：No issues found。
+
+### 裁決
+Legal/support 靜態頁已可透過 GitHub Pages Actions 部署，客服信箱 blocker 已解除。真正解除 hosted legal URL blocker 仍需要 owner 在 GitHub repo Settings 將 Pages Source 設成 GitHub Actions、確認 workflow 成功與三個 URL 可公開開啟，部署後再把 `PRIVACY_POLICY_URL` / `TERMS_OF_SERVICE_URL` / `SUPPORT_URL` / `CONTACT_EMAIL` 帶入 production build。

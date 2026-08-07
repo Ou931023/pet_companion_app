@@ -93,7 +93,7 @@ void main() {
       expect(infoPlist, contains('<false/>'));
     });
 
-    test('icon readiness distinguishes present assets from owner blockers', () {
+    test('icon readiness includes iOS and Android adaptive assets', () {
       final iosIconContents =
           _read('ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json');
       final assetChecklist = _read('docs/STORE_ASSET_CHECKLIST.md');
@@ -105,14 +105,37 @@ void main() {
             .existsSync(),
         isTrue,
       );
+      expect(
+        _pngSize(
+          'ios/Runner/Assets.xcassets/AppIcon.appiconset/'
+          'Icon-App-1024x1024@1x.png',
+        ),
+        const _ImageSize(1024, 1024),
+      );
 
-      final adaptiveIcon =
-          File('android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml');
-      if (!adaptiveIcon.existsSync()) {
-        expect(assetChecklist, contains('無 adaptive icon'));
-        expect(assetChecklist, contains('mipmap-anydpi-v26/ic_launcher.xml'));
-        expect(assetChecklist, contains('BLOCKER'));
-      }
+      const adaptiveIconPath =
+          'android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml';
+      final adaptiveIcon = File(adaptiveIconPath);
+      expect(adaptiveIcon.existsSync(), isTrue);
+      expect(
+          _read(adaptiveIconPath), contains('@mipmap/ic_launcher_foreground'));
+      expect(
+          _read(adaptiveIconPath), contains('@color/ic_launcher_background'));
+      expect(
+        File('android/app/src/main/res/mipmap-xxxhdpi/'
+                'ic_launcher_foreground.png')
+            .existsSync(),
+        isTrue,
+      );
+      expect(
+        File('store_assets/play_store_icon_512.png').existsSync(),
+        isTrue,
+      );
+      expect(
+        _pngSize('store_assets/play_store_icon_512.png'),
+        const _ImageSize(512, 512),
+      );
+      expect(assetChecklist, contains('Android adaptive icon：✅'));
     });
 
     test('store metadata does not advertise production-hidden features', () {
@@ -123,7 +146,97 @@ void main() {
       expect(metadata, contains('marketplace'));
       expect(metadata, contains('daily-care'));
     });
+
+    test('static legal site is present with official support contact', () {
+      final requiredPages = [
+        'store_legal_site/index.html',
+        'store_legal_site/privacy.html',
+        'store_legal_site/terms.html',
+        'store_legal_site/support.html',
+        'store_legal_site/styles.css',
+        'store_legal_site/assets/icon-512.png',
+        '.github/workflows/legal-site-pages.yml',
+      ];
+
+      for (final path in requiredPages) {
+        expect(File(path).existsSync(), isTrue, reason: '$path should exist');
+      }
+
+      expect(_pngSize('store_legal_site/assets/icon-512.png'),
+          const _ImageSize(512, 512));
+
+      final privacy = _read('store_legal_site/privacy.html');
+      final terms = _read('store_legal_site/terms.html');
+      final support = _read('store_legal_site/support.html');
+      final readme = _read('store_legal_site/README.md');
+      final workflow = _read('.github/workflows/legal-site-pages.yml');
+
+      expect(privacy, contains('使用紀錄'));
+      expect(privacy, contains('OpenAI'));
+      expect(privacy, contains('不是醫療診斷'));
+      expect(terms, contains('不能取代醫師'));
+      expect(support, contains('刪除帳號與資料'));
+      expect(
+        privacy,
+        contains('mailto:aicompanion.support@gmail.com'),
+      );
+      expect(
+        terms,
+        contains('mailto:aicompanion.support@gmail.com'),
+      );
+      expect(
+        support,
+        contains('mailto:aicompanion.support@gmail.com'),
+      );
+      expect(readme, contains('PRIVACY_POLICY_URL'));
+      expect(readme, contains('TERMS_OF_SERVICE_URL'));
+      expect(readme, contains('SUPPORT_URL'));
+      expect(
+        readme,
+        contains('--dart-define=CONTACT_EMAIL=aicompanion.support@gmail.com'),
+      );
+      expect(readme, contains('https://ou931023.github.io/pet_companion_app'));
+      expect(workflow, contains('Deploy legal site to GitHub Pages'));
+      expect(workflow, contains('pages: write'));
+      expect(workflow, contains('id-token: write'));
+      expect(workflow, contains('workflow_dispatch'));
+      expect(workflow, contains('path: store_legal_site'));
+      expect(workflow, contains('actions/deploy-pages@v4'));
+
+      expect(privacy, isNot(contains('上架前必填')));
+      expect(terms, isNot(contains('上架前必填')));
+      expect(support, isNot(contains('上架前必填')));
+    });
   });
 }
 
 String _read(String path) => File(path).readAsStringSync();
+
+_ImageSize _pngSize(String path) {
+  final bytes = File(path).readAsBytesSync();
+  expect(bytes.take(8).toList(), [137, 80, 78, 71, 13, 10, 26, 10]);
+  return _ImageSize(_readUint32(bytes, 16), _readUint32(bytes, 20));
+}
+
+int _readUint32(List<int> bytes, int offset) =>
+    (bytes[offset] << 24) |
+    (bytes[offset + 1] << 16) |
+    (bytes[offset + 2] << 8) |
+    bytes[offset + 3];
+
+class _ImageSize {
+  const _ImageSize(this.width, this.height);
+
+  final int width;
+  final int height;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _ImageSize && width == other.width && height == other.height;
+
+  @override
+  int get hashCode => Object.hash(width, height);
+
+  @override
+  String toString() => '${width}x$height';
+}

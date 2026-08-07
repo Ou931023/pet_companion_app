@@ -16,9 +16,9 @@
 | 主分類 | Health & Fitness 或 Medical（建議 Health & Fitness，避免醫療宣稱） | Care Alert 為「照護提醒」非醫療診斷 |
 | 次分類 | Lifestyle | |
 | 年齡分級 | 建議 4+（iOS）/ Everyone（Google）；最終依問卷 | 無暴力/成人內容；含使用者生成語音對話 |
-| 隱私政策 URL | ⛔ 待定（`legal_config.dart` TODO 佔位） | **必填、需真實可存取** |
-| 支援 URL | ⛔ 待定 | |
-| 行銷 / 客服 Email | ⛔ 待定 | App 內設定頁可透過 `CONTACT_EMAIL` 顯示客服信箱入口；未注入正式值時不顯示 TODO |
+| 隱私政策 URL | ⛔ 待部署（`store_legal_site/privacy.html` 草稿已建立） | GitHub Pages 預期：`https://ou931023.github.io/pet_companion_app/privacy.html`；**必填、需真實可存取 HTTPS URL** |
+| 支援 URL | ⛔ 待部署（`store_legal_site/support.html` 草稿已建立） | GitHub Pages 預期：`https://ou931023.github.io/pet_companion_app/support.html`；**必填或強烈建議，需公開 HTTPS** |
+| 行銷 / 客服 Email | ✅ `aicompanion.support@gmail.com` | App 內設定頁可透過 `CONTACT_EMAIL` 顯示客服信箱入口；商店後台與 production build 應使用同一信箱 |
 | 版本 | 1.0.0（pubspec `1.0.0+1`） | |
 
 ---
