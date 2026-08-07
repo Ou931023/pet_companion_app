@@ -55,9 +55,9 @@ iOS「App 隱私」問卷需對應上表，重點：
 
 ## 4. 與隱私政策 / 同意內文一致性檢查（送審前）
 
-- [ ] 隱私政策（hosted URL，⛔ 待部署）涵蓋上表所有「是」項，包含 CR-0097 usage tracking。
+- [x] 隱私政策 hosted URL 已部署：`https://ou931023.github.io/pet_companion_app/privacy.html`，內容涵蓋上表主要「是」項，包含 CR-0097 usage tracking。
 - [x] App 內同意內文（`legal_content.dart`）已揭露 OpenAI、Telegram 與 CR-0097 usage tracking 資料流向 / 用途。
 - [x] App 內設定頁提供帳號刪除流程，且確認文案說明會刪除伺服器帳號資料與本機 App 紀錄。
-- [ ] Hosted 隱私政策正式頁面需同步帳號 / 資料刪除流程。
-- [ ] Care Alert 明確標示為「照護提醒、非醫療診斷」。
-- [ ] 麥克風 / 相機 / 相簿 / 通知權限用途與實際一致。
+- [x] Hosted 隱私政策正式頁面同步帳號 / 資料刪除流程。
+- [x] Care Alert 明確標示為「照護提醒、非醫療診斷」。
+- [x] 麥克風 / 相機 / 相簿 / 通知權限用途與實際一致。

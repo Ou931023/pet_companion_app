@@ -6,8 +6,8 @@
 > 治理依據：`PROJECT_ARCHITECTURE.md` §7.1 / §7.1.1 / §5.3.1、CR-0034。
 >
 > 紅線：不要把 `.env` 或任何 token / API key 進版控；本文件只列名稱，不含真實值。
-> 啟動 / build 操作步驟見 `docs/ENVIRONMENT_SETUP.md`。正式送審前 smoke 執行入口見
-> `docs/STORE_SUBMISSION_RUNBOOK.md`。
+> 啟動 / build 操作步驟見 `docs/ENVIRONMENT_SETUP.md`。正式送審前最後 Go / No-Go 入口見
+> `docs/FINAL_STORE_BLOCKER_BOARD.md`，smoke 執行入口見 `docs/STORE_SUBMISSION_RUNBOOK.md`。
 
 ---
 
@@ -111,34 +111,30 @@
 
 ### 8.1 LegalConfig 4 個 hosted URL / Email（`lib/config/legal_config.dart`，由 dart-define 注入）
 
-- [ ] `privacyPolicyUrl`（隱私權政策正式 hosted 頁面）
-- [ ] `termsOfServiceUrl`（服務條款正式 hosted 頁面）
-- [ ] `supportUrl`（技術支援 / 客服說明頁）
+- [x] `privacyPolicyUrl`：`https://ou931023.github.io/pet_companion_app/privacy.html`
+- [x] `termsOfServiceUrl`：`https://ou931023.github.io/pet_companion_app/terms.html`
+- [x] `supportUrl`：`https://ou931023.github.io/pet_companion_app/support.html`
 - [x] `contactEmail`（正式客服信箱）：`aicompanion.support@gmail.com`
 
 > 在填入正式值前，UI 以 `LegalConfig.isPlaceholder` 判斷不顯示外部連結入口
 
-靜態頁草稿已在 `store_legal_site/`：
+靜態頁已在 `store_legal_site/`，並透過 GitHub Pages 提供公開 HTTPS：
 
 - `store_legal_site/privacy.html`
 - `store_legal_site/terms.html`
 - `store_legal_site/support.html`
 - GitHub Pages workflow：`.github/workflows/legal-site-pages.yml`
 
-GitHub Pages 預期 URL（需 repo Settings → Pages → Source: GitHub Actions，且 workflow 已成功跑完）：
-
 - `https://ou931023.github.io/pet_companion_app/privacy.html`
 - `https://ou931023.github.io/pet_companion_app/terms.html`
 - `https://ou931023.github.io/pet_companion_app/support.html`
 
-部署到公開 HTTPS 後，對應 URL 應填入下列 dart-define。客服信箱已定為 `aicompanion.support@gmail.com`，仍需確認 GitHub Pages URL 已可公開開啟。
-
 Production build 應帶：
 
 ```bash
---dart-define=PRIVACY_POLICY_URL=https://...
---dart-define=TERMS_OF_SERVICE_URL=https://...
---dart-define=SUPPORT_URL=https://...
+--dart-define=PRIVACY_POLICY_URL=https://ou931023.github.io/pet_companion_app/privacy.html
+--dart-define=TERMS_OF_SERVICE_URL=https://ou931023.github.io/pet_companion_app/terms.html
+--dart-define=SUPPORT_URL=https://ou931023.github.io/pet_companion_app/support.html
 --dart-define=CONTACT_EMAIL=aicompanion.support@gmail.com
 ```
 > （避免長者點到不存在的頁面）。
@@ -174,14 +170,15 @@ Production build 應帶：
       （namespace 維持 `com.example.pet_companion_app`，owner 指定不動）
 - [x] App 顯示名稱：✅ iOS `CFBundleDisplayName` / Android `android:label` = `AI Companion`
       （中文名 `AI陪伴`，CR-0061）
-- [ ] App icon / launch screen / 權限文案（麥克風、通知）正式化
-- [ ] 無 debug banner、無「Demo / 測試 / 開發中」字樣
+- [x] App icon / launch screen / 權限文案（麥克風、通知）正式化
+- [x] repo 自動檢查確保 production 無 debug banner、無「Demo / 測試 / 開發中」使用者可見入口
 
 ---
 
 ## 9. 相關文件
 
 - `docs/STORE_SUBMISSION_RUNBOOK.md` — App Store / Google Play 送審前單一 smoke Runbook。
+- `docs/FINAL_STORE_BLOCKER_BOARD.md` — 最後上架 Go / No-Go 作戰表。
 - `docs/ENVIRONMENT_SETUP.md` — 三環境啟動步驟與排查。
 - `PROJECT_ARCHITECTURE.md` §7.1 / §7.1.1 / §5.3.1。
 - `backend/stt_proxy/.env.example` — 後端環境變數分區範本。

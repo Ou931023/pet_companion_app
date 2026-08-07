@@ -4417,3 +4417,162 @@ CR-0090 已改後端語音 persona，但 `realtime_voice_service.dart` 內供 `s
 
 ### 裁決
 Legal/support 靜態頁已可透過 GitHub Pages Actions 部署，客服信箱 blocker 已解除。真正解除 hosted legal URL blocker 仍需要 owner 在 GitHub repo Settings 將 Pages Source 設成 GitHub Actions、確認 workflow 成功與三個 URL 可公開開啟，部署後再把 `PRIVACY_POLICY_URL` / `TERMS_OF_SERVICE_URL` / `SUPPORT_URL` / `CONTACT_EMAIL` 帶入 production build。
+
+---
+
+## CR-0101B — Google Play Feature Graphic Output
+
+### 模式
+**store asset 小批次**。從最簡單可離線處理的商店素材開始，先輸出 Google Play 1024×500 feature graphic。此批次不碰 release signing、`.env`、backend、Realtime 或 Flutter 功能行為。
+
+### 變更
+- 新增 `store_assets/play_feature_graphic_1024x500.png`（1024×500）：使用正式 icon、AI陪伴品牌字樣與非醫療陪伴文案。
+- `docs/STORE_ASSET_CHECKLIST.md`：feature graphic 狀態改為已輸出；screenshots 仍待處理。
+- `docs/STORE_RELEASE_CHECKLIST.md`：視覺素材狀態更新為 icon + feature graphic 已輸出，仍待 launch screen 確認與 screenshots。
+- `test/config/store_readiness_test.dart`：新增 feature graphic 存在與 1024×500 PNG 尺寸檢查。
+
+### 測試
+- `dart format test/config/store_readiness_test.dart`：完成格式化（0 changed）。
+- `flutter test test/config/store_readiness_test.dart`：**9 passed / 0 failed**。
+- `flutter analyze`：No issues found。
+
+### 裁決
+Google Play feature graphic blocker 已可視為解除。下一個簡單項目可處理 screenshots 規劃/輸出；release signing 需要 owner 提供 Apple Developer / Play Console / keystore 流程，不能用假簽章替代。
+
+---
+
+## CR-0101B — Store Screenshot Output
+
+### 模式
+**store asset 小批次**。補齊 App Store / Google Play 送審候選 screenshots，先採去識別化靜態商店素材，不依賴真使用者資料、真照護紀錄、demo account 或本機後端。此批次不碰 Realtime、backend、DB schema、release signing、`.env` 或正式 secret。
+
+### 變更
+- 新增 `scripts/generate_store_screenshots.sh`：用既有正式候選 icon 產出去識別化商店截圖。
+- 新增 Android phone screenshots：`store_assets/screenshots/android_phone/*.png`（5 張，1080×1920）。
+- 新增 iPhone 6.7" screenshots：`store_assets/screenshots/ios_6_7/*.png`（5 張，1290×2796）。
+- 截圖主題包含首頁語音入口、即時語音陪伴、長期記憶、Care Alert 非醫療診斷、隱私/支援/帳號刪除。
+- `docs/STORE_ASSET_CHECKLIST.md`、`docs/STORE_RELEASE_CHECKLIST.md`、`docs/APP_STORE_METADATA.md` 更新：screenshots 與 hosted legal URL 狀態對齊目前可上架素材。
+- `test/config/store_readiness_test.dart` 強化：檢查 screenshots 存在、PNG 尺寸正確，並確認產圖腳本未帶 `debug` / `demo` / `mock` 字樣且含非醫療診斷聲明。
+
+### 測試
+- `bash scripts/generate_store_screenshots.sh`：成功產出 10 張 PNG。
+- `sips -g pixelWidth -g pixelHeight ...`：Android phone 5 張皆 1080×1920；iPhone 6.7" 5 張皆 1290×2796。
+- `dart format test/config/store_readiness_test.dart`：完成格式化（0 changed）。
+- `flutter test test/config/store_readiness_test.dart`：**9 passed / 0 failed**。
+- `flutter analyze`：No issues found。
+
+### 裁決
+Screenshots 素材 blocker 可視為 repo 端解除；送審前仍需在 App Store Connect / Play Console 人工預覽裁切與可讀性。實機截圖目前因 iPhone 顯示 unpaired，需 owner 於 Xcode Devices 完成配對後再做真機補拍或確認。
+
+---
+
+## CR-0101B — Launch Screen Branding Output
+
+### 模式
+**store asset / launch readiness 小批次**。將 iOS / Android 啟動畫面從 Flutter 模板空白畫面收斂為正式品牌 icon + 溫暖底色。此批次不碰 Flutter runtime UI、Realtime、backend、DB schema、release signing、`.env` 或正式 secret。
+
+### 變更
+- iOS `LaunchImage.imageset` 由 1×1 空圖替換為正式候選 icon 圖資：
+  - `LaunchImage.png`（168×168）
+  - `LaunchImage@2x.png`（336×336）
+  - `LaunchImage@3x.png`（504×504）
+- Android 新增 `android/app/src/main/res/drawable-nodpi/launch_brand.png`（240×240）。
+- Android `drawable/launch_background.xml` 與 `drawable-v21/launch_background.xml` 改為 `@color/launch_background` 底色 + `@drawable/launch_brand` 置中，不再保留 Flutter 模板白底空畫面。
+- Android `values/colors.xml` 新增 `launch_background=#FFF8EA`。
+- `docs/STORE_ASSET_CHECKLIST.md` / `docs/STORE_RELEASE_CHECKLIST.md` 更新 launch screen 狀態。
+- `test/config/store_readiness_test.dart` 新增 launch screen / display name production branding 檢查。
+
+### 測試
+- `sips -g pixelWidth -g pixelHeight ...`：iOS launch images 為 168×168 / 336×336 / 504×504；Android launch brand 為 240×240。
+- `dart format test/config/store_readiness_test.dart`：完成格式化。
+- `flutter test test/config/store_readiness_test.dart`：**10 passed / 0 failed**。
+- `flutter analyze`：No issues found。
+- `git diff --check`：通過。
+
+### 裁決
+Launch screen repo 端 blocker 可視為解除；送審前仍需於 iOS / Android 實機確認啟動過場不閃白、不裁切、不出現舊圖。
+
+---
+
+## CR-0101B — Release Signing Runbook Executable Check
+
+### 模式
+**release signing 文件 / 自動檢查小批次**。把 Android upload keystore、iOS distribution signing、CI secret 命名與 No-Go 條件整理成可執行 runbook，並新增不讀 secret 內容的 readiness script。此批次不產生、不讀取、不提交任何 keystore、`android/key.properties`、Apple 憑證、`.p8`、`.mobileprovision`、`.env` 或正式 secret。
+
+### 變更
+- 新增 `scripts/check_release_signing_readiness.sh`：
+  - 檢查 `android/key.properties` 是否被 gitignore。
+  - 檢查 `.jks` / `.keystore` / `.p12` / `.p8` / `.cer` / `.mobileprovision` 未被 git 追蹤。
+  - 檢查 Android release signing wiring 不是 debug signing，缺 key 時會 fail-fast。
+  - 檢查 iOS Bundle ID / signing metadata 存在。
+  - 若本機有 `android/key.properties`，只顯示存在，**不讀內容**。
+- `docs/RELEASE_SIGNING.md`：升級成 iOS / Android 正式簽章 Runbook，包含 Android upload keystore、本機 `key.properties`、Play App Signing、iOS App Store Connect / Xcode Archive、CI secret 建議命名與 No-Go 條件。
+- `docs/STORE_SUBMISSION_RUNBOOK.md`：加入 `bash scripts/check_release_signing_readiness.sh`，並把已完成的 hosted legal URL / store assets / launch screen 狀態對齊。
+- `test/config/android_release_signing_test.dart`：新增 runbook / script regression checks，確保腳本不讀取 `android/key.properties` 內容、不含密碼範例值、且文件包含 release build 與 secret 邊界。
+
+### 測試
+- `bash scripts/check_release_signing_readiness.sh`：通過；提示本機尚無 `android/key.properties`，Android release build 會 fail-fast，符合預期。
+- `dart format test/config/android_release_signing_test.dart`：完成格式化。
+- `flutter test test/config/android_release_signing_test.dart test/config/store_readiness_test.dart`：**13 passed / 0 failed**。
+- `flutter build appbundle --release ...`（未提供 `android/key.properties`）：**預期失敗**，fail-fast 訊息列出缺 `storeFile` / `storePassword` / `keyAlias` / `keyPassword`；確認不會用 debug key 產出假 release。
+- `flutter analyze`：No issues found。
+- `git diff --check`：通過。
+
+### 裁決
+Release signing 的 repo 端文件與自動檢查已可執行；真正送審仍需要 owner 完成 Android upload keystore / Play App Signing，以及 iOS Apple Developer / App Store Connect distribution signing。此批次沒有也不應該解除 owner signing blocker。
+
+---
+
+## CR-0101B — Internal Testing Smoke Runbook
+
+### 模式
+**TestFlight / Play Internal testing smoke 文件 + 自動檢查小批次**。把內測上架後必跑項目整理成單一 runbook，特別鎖住真機 Realtime、Care Alert、usage tracking、管理者 analytics、法律/支援入口、帳號刪除、Store Console 隱私申報與去敏紅線。此批次不讀 `.env`、不跑真服務、不產生簽章、不提交 secret。
+
+### 變更
+- 新增 `docs/INTERNAL_TESTING_SMOKE_RUNBOOK.md`：
+  - Owner 需提供清單：production HTTPS API、Firebase 測試帳號、後端 env、Android upload keystore、Apple Developer / App Store Connect signing、iPhone pairing、Android 實機。
+  - Repo gate：Flutter / backend / caregiver_web 測試、store readiness、release signing readiness。
+  - iOS TestFlight 與 Google Play Internal testing build 指令。
+  - 真機 App Smoke：安裝、首開、隱私同意、Email login、首頁易用性、Realtime 語音、打字聊天、後端失敗、法律/支援入口、帳號刪除。
+  - Data / Admin Smoke：`app_usage_events`、voice start/end、typed chat、pet interaction、reminder、puzzle、管理者 analytics 真實彙整。
+  - Care Alert Smoke：medium 持久化不推 Telegram；high/urgent 持久化並推測試 chat；長者端不顯示監控感。
+  - Store Console Smoke：App Privacy / Data Safety / metadata / screenshots / legal URL 一致性。
+- `docs/STORE_SUBMISSION_RUNBOOK.md`：連到 internal testing runbook，將 §4 定位為摘要。
+- `test/config/store_readiness_test.dart`：新增 internal testing runbook regression checks，確保文件涵蓋 Realtime、Care Alert、usage tracking、管理者 analytics、帳號刪除、Data Safety、非醫療診斷、No-Go，且不建議 localhost / 127.0.0.1 / 10.0.2.2 / ngrok。
+
+### 測試
+- `dart format test/config/store_readiness_test.dart`：完成格式化。
+- `flutter test test/config/store_readiness_test.dart`：**11 passed / 0 failed**。
+- `flutter analyze`：No issues found。
+- `git diff --check`：通過。
+
+### 裁決
+內測 smoke 現在有獨立可執行 Runbook；真正 PASS 仍需 owner 提供 production HTTPS API、測試帳號、簽章、TestFlight / Play Internal testing build 與真機執行結果。未跑前不得把 smoke 標示為通過。
+
+---
+
+## CR-0101B — Final Store Blocker Board
+
+### 模式
+**最後上架 Go / No-Go 文件 + 自動檢查小批次**。把剩餘上架事項收斂成單一 blocker board，區分 repo 已完成、owner 必須提供、必須真機驗證、商店後台必填與 No-Go 條件。此批次不讀 `.env`、不碰 signing secret、不跑真服務、不假裝真機 smoke 通過。
+
+### 變更
+- 新增 `docs/FINAL_STORE_BLOCKER_BOARD.md`：
+  - 明列 repo 已完成：正式名稱、Bundle ID/applicationId、icon、screenshots、feature graphic、launch screen、GitHub Pages legal URL、support email、production gating、store readiness test、release signing readiness script、internal testing smoke runbook。
+  - 明列 owner 必須提供：production HTTPS API、後端 env、production migrations、Firebase 測試帳號、Android upload keystore、iOS signing、iPhone pairing、Android 實機。
+  - 明列必須真機驗證：TestFlight / Play Internal testing、Realtime、Care Alert、`app_usage_events`、caregiver_web analytics、法律/支援入口、帳號刪除。
+  - 明列商店後台必填：App Store Privacy、Google Play Data Safety、metadata、screenshots preview、Play App Signing。
+  - 明列最後執行順序與 No-Go 條件。
+- `docs/STORE_SUBMISSION_RUNBOOK.md`、`docs/STORE_RELEASE_CHECKLIST.md`、`docs/PRODUCTION_CONFIG_CHECKLIST.md`：加入 final blocker board 入口。
+- `docs/PRODUCTION_CONFIG_CHECKLIST.md`：把已部署 legal URL、正式 support email、icon / launch / 權限文案狀態對齊目前完成狀態。
+- `docs/GOOGLE_PLAY_DATA_SAFETY.md`：把 hosted privacy URL 與資料刪除 / Care Alert 非醫療 / 權限用途同步狀態改為已完成。
+- `test/config/store_readiness_test.dart`：新增 final blocker board regression checks，確保文件保留 owner-gated / device smoke / store console / Data Safety / Realtime / Care Alert / usage analytics / No-Go 關鍵項。
+
+### 測試
+- `dart format test/config/store_readiness_test.dart`：完成格式化（0 changed）。
+- `flutter test test/config/store_readiness_test.dart`：**12 passed / 0 failed**。
+- `flutter analyze`：No issues found。
+- `git diff --check`：通過。
+
+### 裁決
+最後上架 blocker 已集中到 `docs/FINAL_STORE_BLOCKER_BOARD.md`。repo 能補的 store readiness 文件、素材與自動檢查已收斂；剩餘不可假完成的項目是 production HTTPS API、正式簽章、production env、測試帳號、真機 smoke 與商店後台隱私/資料安全表單。

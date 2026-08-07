@@ -33,5 +33,46 @@ void main() {
         expect(gitignore, contains('**/*.keystore'));
       },
     );
+
+    test('release signing runbook and script are executable without secrets',
+        () {
+      final runbook = File('docs/RELEASE_SIGNING.md').readAsStringSync();
+      final storeRunbook =
+          File('docs/STORE_SUBMISSION_RUNBOOK.md').readAsStringSync();
+      final script =
+          File('scripts/check_release_signing_readiness.sh').readAsStringSync();
+
+      expect(
+          runbook, contains('bash scripts/check_release_signing_readiness.sh'));
+      expect(runbook, contains('flutter build appbundle --release'));
+      expect(runbook, contains('flutter build ipa --release'));
+      expect(runbook, contains('ANDROID_KEYSTORE_BASE64'));
+      expect(runbook, contains('APP_STORE_CONNECT_API_KEY_P8'));
+      expect(runbook, contains('No-Go'));
+      expect(runbook, contains('tw.edu.ncyu.im.aicompanion'));
+      expect(runbook, contains('aicompanion.support@gmail.com'));
+
+      expect(storeRunbook,
+          contains('bash scripts/check_release_signing_readiness.sh'));
+      expect(
+          storeRunbook,
+          contains(
+              'https://ou931023.github.io/pet_companion_app/privacy.html'));
+      expect(storeRunbook,
+          contains('https://ou931023.github.io/pet_companion_app/terms.html'));
+      expect(
+          storeRunbook,
+          contains(
+              'https://ou931023.github.io/pet_companion_app/support.html'));
+
+      expect(script, contains('git check-ignore -q android/key.properties'));
+      expect(script, contains('Release signing readiness checks completed'));
+      expect(script, contains('contents were not read'));
+      expect(script, contains('No tracked signing key or certificate files'));
+      expect(script, isNot(contains('cat android/key.properties')));
+      expect(script, isNot(contains('source android/key.properties')));
+      expect(script, isNot(contains('storePassword=')));
+      expect(script, isNot(contains('keyPassword=')));
+    });
   });
 }
