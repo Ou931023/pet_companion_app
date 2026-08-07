@@ -15,6 +15,26 @@ void main() {
       );
     });
 
+    test('Google Play target API requirement is enforced for release builds',
+        () {
+      final gradle = File('android/app/build.gradle.kts').readAsStringSync();
+      final runbook =
+          File('docs/STORE_SUBMISSION_RUNBOOK.md').readAsStringSync();
+      final blockerBoard =
+          File('docs/FINAL_STORE_BLOCKER_BOARD.md').readAsStringSync();
+      final script =
+          File('scripts/check_release_signing_readiness.sh').readAsStringSync();
+
+      expect(gradle,
+          contains('compileSdk = maxOf(flutter.compileSdkVersion, 36)'));
+      expect(
+          gradle, contains('targetSdk = maxOf(flutter.targetSdkVersion, 36)'));
+      expect(runbook, contains('Android 16 / API 36'));
+      expect(blockerBoard, contains('Android 16 / API 36'));
+      expect(
+          script, contains('targetSdk = maxOf(flutter.targetSdkVersion, 36)'));
+    });
+
     test(
       'release signing reads local key.properties without committing secrets',
       () {
