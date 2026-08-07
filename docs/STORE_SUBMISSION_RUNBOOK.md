@@ -4,7 +4,7 @@
 > 用途：每次送 TestFlight、Internal testing、App Store Connect 或 Google Play Console 前，都依本 Runbook 跑一次。
 > 紅線：任何標示 `BLOCKER` 的項目未完成，不得送審；不得以 localhost、假 URL、假素材、硬編帳號或 demo fallback 代替正式流程。
 
-相關文件：`docs/STORE_RELEASE_CHECKLIST.md`、`docs/PRODUCTION_CONFIG_CHECKLIST.md`、`docs/STORE_ASSET_CHECKLIST.md`、`docs/APP_STORE_METADATA.md`、`docs/GOOGLE_PLAY_DATA_SAFETY.md`、`docs/E2E_SMOKE_TEST_PLAN.md`。
+相關文件：`docs/FINAL_STORE_BLOCKER_BOARD.md`、`docs/INTERNAL_TESTING_SMOKE_RUNBOOK.md`、`docs/STORE_RELEASE_CHECKLIST.md`、`docs/PRODUCTION_CONFIG_CHECKLIST.md`、`docs/STORE_ASSET_CHECKLIST.md`、`docs/APP_STORE_METADATA.md`、`docs/GOOGLE_PLAY_DATA_SAFETY.md`、`docs/E2E_SMOKE_TEST_PLAN.md`。
 
 ---
 
@@ -13,17 +13,17 @@
 以下資料由 owner / 發行負責人提供，只記錄「名稱與狀態」，不可寫入 secret 值。
 
 - [ ] `BLOCKER` production HTTPS API 網域：供 `API_BASE_URL=https://...` 使用，不能是 localhost / LAN IP / ngrok。
-- [ ] `BLOCKER` hosted 隱私權政策 URL：供 `PRIVACY_POLICY_URL=https://...` 與商店後台使用。
-- [ ] `BLOCKER` hosted 服務條款 URL：供 `TERMS_OF_SERVICE_URL=https://...` 使用。
-- [ ] `BLOCKER` hosted 支援頁 URL：供 `SUPPORT_URL=https://...` 與商店後台使用。
+- [x] hosted 隱私權政策 URL：`https://ou931023.github.io/pet_companion_app/privacy.html`，供 `PRIVACY_POLICY_URL` 與商店後台使用。
+- [x] hosted 服務條款 URL：`https://ou931023.github.io/pet_companion_app/terms.html`，供 `TERMS_OF_SERVICE_URL` 使用。
+- [x] hosted 支援頁 URL：`https://ou931023.github.io/pet_companion_app/support.html`，供 `SUPPORT_URL` 與商店後台使用。
 - [x] 正式客服信箱：`aicompanion.support@gmail.com`，供 `CONTACT_EMAIL` 與商店後台使用。
-- [ ] GitHub Pages 已啟用 Source: GitHub Actions，且 `Deploy legal site to GitHub Pages` workflow 成功部署。
+- [x] GitHub Pages 已啟用 Source: GitHub Actions，且 `Deploy legal site to GitHub Pages` workflow 成功部署。
 - [ ] `BLOCKER` Android release upload keystore / key alias / CI secret；不得提交進 git。
 - [ ] `BLOCKER` iOS distribution certificate / provisioning profile / App Store Connect app record。
 - [ ] `BLOCKER` Firebase iOS / Android app config 已對應 `tw.edu.ncyu.im.aicompanion`。
 - [ ] `BLOCKER` production PostgreSQL migrations 已執行。
 - [ ] `BLOCKER` OpenAI / Firebase Admin / Telegram / DB / admin token 等後端正式 env 已由部署平台設定。
-- [ ] `BLOCKER` App icon、Android adaptive icon、screenshots、feature graphic 已提供正式素材。
+- [x] App icon、Android adaptive icon、screenshots、feature graphic、launch screen 已提供正式候選素材。
 - [ ] `BLOCKER` 審查用測試帳號已由 Firebase / 後端正式建立，不硬編在 App 或 repo。
 
 ---
@@ -43,6 +43,8 @@ flutter test \
   --dart-define=SHOW_MARKETPLACE=true \
   --dart-define=SHOW_DAILY_CARE_TASKS=true \
   test/config/app_config_test.dart test/config/legal_config_test.dart test/config/store_readiness_test.dart
+
+bash scripts/check_release_signing_readiness.sh
 ```
 
 後端 / caregiver web 若本次送審 commit 有相關變更，也必跑：
@@ -58,6 +60,7 @@ npm test
 - [ ] `flutter analyze` 通過，無 production-facing warning。
 - [ ] `flutter test` 通過。
 - [ ] production dart-define 反向測試通過：即使外部誤開 demo / social / marketplace / daily-care，production gating 仍強制關閉。
+- [ ] release signing readiness script 通過，且未讀取 / 輸出任何 secret 值。
 - [ ] backend `npm run check` / `npm test` 通過，或明確記錄未跑原因。
 
 ---
@@ -70,9 +73,9 @@ iOS：
 flutter build ipa --release \
   --dart-define=APP_ENV=production \
   --dart-define=API_BASE_URL=https://api.your-production-domain.example \
-  --dart-define=PRIVACY_POLICY_URL=https://your-domain.example/privacy \
-  --dart-define=TERMS_OF_SERVICE_URL=https://your-domain.example/terms \
-  --dart-define=SUPPORT_URL=https://your-domain.example/support \
+  --dart-define=PRIVACY_POLICY_URL=https://ou931023.github.io/pet_companion_app/privacy.html \
+  --dart-define=TERMS_OF_SERVICE_URL=https://ou931023.github.io/pet_companion_app/terms.html \
+  --dart-define=SUPPORT_URL=https://ou931023.github.io/pet_companion_app/support.html \
   --dart-define=CONTACT_EMAIL=aicompanion.support@gmail.com
 ```
 
@@ -82,9 +85,9 @@ Android：
 flutter build appbundle --release \
   --dart-define=APP_ENV=production \
   --dart-define=API_BASE_URL=https://api.your-production-domain.example \
-  --dart-define=PRIVACY_POLICY_URL=https://your-domain.example/privacy \
-  --dart-define=TERMS_OF_SERVICE_URL=https://your-domain.example/terms \
-  --dart-define=SUPPORT_URL=https://your-domain.example/support \
+  --dart-define=PRIVACY_POLICY_URL=https://ou931023.github.io/pet_companion_app/privacy.html \
+  --dart-define=TERMS_OF_SERVICE_URL=https://ou931023.github.io/pet_companion_app/terms.html \
+  --dart-define=SUPPORT_URL=https://ou931023.github.io/pet_companion_app/support.html \
   --dart-define=CONTACT_EMAIL=aicompanion.support@gmail.com
 ```
 
@@ -98,6 +101,8 @@ flutter build appbundle --release \
 ---
 
 ## 4. 實機 App Smoke
+
+完整逐項表請跑 `docs/INTERNAL_TESTING_SMOKE_RUNBOOK.md`。本節只列送審前最小摘要。
 
 每平台至少各一台實機。iOS 用 TestFlight 或 ad hoc；Android 用 Internal testing 或 release-signed AAB/APK。
 
@@ -135,23 +140,23 @@ flutter build appbundle --release \
 
 ### Icon / Launch
 
-- [ ] `BLOCKER` iOS `ios/Runner/Assets.xcassets/AppIcon.appiconset/` 已換成正式寵物 icon，含 1024x1024，非 Flutter 預設圖。
-- [ ] `BLOCKER` Android legacy `mipmap-*dpi/ic_launcher.png` 已換成正式 icon。
-- [ ] `BLOCKER` Android adaptive icon 已補：`mipmap-anydpi-v26/ic_launcher.xml` + foreground / background。
-- [ ] `BLOCKER` launch screen 品牌一致，無 Flutter 預設感、無 demo / debug 字樣。
+- [x] iOS `ios/Runner/Assets.xcassets/AppIcon.appiconset/` 已換成正式寵物 icon，含 1024x1024，非 Flutter 預設圖。
+- [x] Android legacy `mipmap-*dpi/ic_launcher.png` 已換成正式 icon。
+- [x] Android adaptive icon 已補：`mipmap-anydpi-v26/ic_launcher.xml` + foreground / background。
+- [x] launch screen 品牌一致，無 Flutter 預設感、無 demo / debug 字樣。
 
 ### Screenshots / Store Graphics
 
-- [ ] `BLOCKER` iOS 6.7" / 6.5" screenshots 已輸出。
-- [ ] `BLOCKER` Android phone screenshots 至少 2 張，建議 5 張。
-- [ ] `BLOCKER` Android feature graphic 1024x500 已輸出。
+- [x] iOS 6.7" screenshots 已輸出；6.5" 可由 6.7" 素材於 App Store Connect 預覽裁切或後續補尺寸。
+- [x] Android phone screenshots 5 張已輸出。
+- [x] Android feature graphic 1024x500 已輸出。
 - [ ] screenshots 不含真實長者個資、真 email、真電話、真對話原文。
 - [ ] screenshots 不截 production 隱藏功能：marketplace / daily-care。
 
 ### Hosted Legal URL
 
-- [ ] `BLOCKER` 隱私權政策、服務條款、支援頁皆為公開 HTTPS，手機瀏覽器可開。
-- [ ] GitHub Pages URL 可開：
+- [x] 隱私權政策、服務條款、支援頁皆為公開 HTTPS。
+- [x] GitHub Pages URL 可開：
   - `https://ou931023.github.io/pet_companion_app/privacy.html`
   - `https://ou931023.github.io/pet_companion_app/terms.html`
   - `https://ou931023.github.io/pet_companion_app/support.html`

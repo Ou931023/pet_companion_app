@@ -39,6 +39,22 @@ void main() {
         _read('docs/STORE_ASSET_CHECKLIST.md'),
         contains('docs/STORE_SUBMISSION_RUNBOOK.md'),
       );
+      expect(
+        _read('docs/STORE_SUBMISSION_RUNBOOK.md'),
+        contains('docs/INTERNAL_TESTING_SMOKE_RUNBOOK.md'),
+      );
+      expect(
+        _read('docs/STORE_SUBMISSION_RUNBOOK.md'),
+        contains('docs/FINAL_STORE_BLOCKER_BOARD.md'),
+      );
+      expect(
+        _read('docs/STORE_RELEASE_CHECKLIST.md'),
+        contains('docs/FINAL_STORE_BLOCKER_BOARD.md'),
+      );
+      expect(
+        _read('docs/PRODUCTION_CONFIG_CHECKLIST.md'),
+        contains('docs/FINAL_STORE_BLOCKER_BOARD.md'),
+      );
     });
 
     test('production gates ignore accidental store-facing debug flags', () {
@@ -135,7 +151,89 @@ void main() {
         _pngSize('store_assets/play_store_icon_512.png'),
         const _ImageSize(512, 512),
       );
+      expect(
+        File('store_assets/play_feature_graphic_1024x500.png').existsSync(),
+        isTrue,
+      );
+      expect(
+        _pngSize('store_assets/play_feature_graphic_1024x500.png'),
+        const _ImageSize(1024, 500),
+      );
+      final androidScreenshots = [
+        'store_assets/screenshots/android_phone/01_home_voice.png',
+        'store_assets/screenshots/android_phone/02_voice_conversation.png',
+        'store_assets/screenshots/android_phone/03_memory.png',
+        'store_assets/screenshots/android_phone/04_care_alert.png',
+        'store_assets/screenshots/android_phone/05_privacy_support.png',
+      ];
+      final iosScreenshots = [
+        'store_assets/screenshots/ios_6_7/01_home_voice.png',
+        'store_assets/screenshots/ios_6_7/02_voice_conversation.png',
+        'store_assets/screenshots/ios_6_7/03_memory.png',
+        'store_assets/screenshots/ios_6_7/04_care_alert.png',
+        'store_assets/screenshots/ios_6_7/05_privacy_support.png',
+      ];
+
+      for (final path in androidScreenshots) {
+        expect(File(path).existsSync(), isTrue, reason: '$path should exist');
+        expect(_pngSize(path), const _ImageSize(1080, 1920));
+      }
+
+      for (final path in iosScreenshots) {
+        expect(File(path).existsSync(), isTrue, reason: '$path should exist');
+        expect(_pngSize(path), const _ImageSize(1290, 2796));
+      }
+
+      final screenshotScript = _read('scripts/generate_store_screenshots.sh');
+      expect(screenshotScript, contains('非醫療診斷'));
+      expect(screenshotScript, isNot(contains('debug')));
+      expect(screenshotScript, isNot(contains('demo')));
+      expect(screenshotScript, isNot(contains('mock')));
       expect(assetChecklist, contains('Android adaptive icon：✅'));
+      expect(assetChecklist, contains('screenshots：✅'));
+    });
+
+    test('launch screen and display names use production branding', () {
+      final infoPlist = _read('ios/Runner/Info.plist');
+      final androidManifest = _read('android/app/src/main/AndroidManifest.xml');
+      final iosLaunchStoryboard =
+          _read('ios/Runner/Base.lproj/LaunchScreen.storyboard');
+      final androidLaunch =
+          _read('android/app/src/main/res/drawable/launch_background.xml');
+      final androidLaunchV21 =
+          _read('android/app/src/main/res/drawable-v21/launch_background.xml');
+      final colors = _read('android/app/src/main/res/values/colors.xml');
+      final assetChecklist = _read('docs/STORE_ASSET_CHECKLIST.md');
+
+      expect(infoPlist, contains('<string>AI Companion</string>'));
+      expect(androidManifest, contains('android:label="AI Companion"'));
+      expect(iosLaunchStoryboard, contains('LaunchImage'));
+
+      for (final path in [
+        'ios/Runner/Assets.xcassets/LaunchImage.imageset/LaunchImage.png',
+        'ios/Runner/Assets.xcassets/LaunchImage.imageset/LaunchImage@2x.png',
+        'ios/Runner/Assets.xcassets/LaunchImage.imageset/LaunchImage@3x.png',
+      ]) {
+        final size = _pngSize(path);
+        expect(size.width, greaterThanOrEqualTo(168));
+        expect(size.height, greaterThanOrEqualTo(168));
+      }
+
+      expect(androidLaunch, contains('@color/launch_background'));
+      expect(androidLaunch, contains('@drawable/launch_brand'));
+      expect(androidLaunch, isNot(contains('@android:color/white')));
+      expect(androidLaunch, isNot(contains('launch_image')));
+      expect(androidLaunchV21, contains('@color/launch_background'));
+      expect(androidLaunchV21, contains('@drawable/launch_brand'));
+      expect(androidLaunchV21, isNot(contains('?android:colorBackground')));
+      expect(androidLaunchV21, isNot(contains('launch_image')));
+      expect(
+          colors, contains('<color name="launch_background">#FFF8EA</color>'));
+      expect(
+        _pngSize('android/app/src/main/res/drawable-nodpi/launch_brand.png'),
+        const _ImageSize(240, 240),
+      );
+      expect(assetChecklist, contains('launch screen：✅'));
     });
 
     test('store metadata does not advertise production-hidden features', () {
@@ -206,6 +304,102 @@ void main() {
       expect(privacy, isNot(contains('上架前必填')));
       expect(terms, isNot(contains('上架前必填')));
       expect(support, isNot(contains('上架前必填')));
+    });
+
+    test('internal testing smoke runbook covers app, data, and store gates',
+        () {
+      final runbook = _read('docs/INTERNAL_TESTING_SMOKE_RUNBOOK.md');
+
+      expect(runbook,
+          contains('TestFlight / Play Internal Testing Smoke Runbook'));
+      expect(runbook, contains('API_BASE_URL=https://'));
+      expect(
+          runbook,
+          contains(
+              'https://ou931023.github.io/pet_companion_app/privacy.html'));
+      expect(runbook,
+          contains('https://ou931023.github.io/pet_companion_app/terms.html'));
+      expect(
+          runbook,
+          contains(
+              'https://ou931023.github.io/pet_companion_app/support.html'));
+      expect(runbook, contains('aicompanion.support@gmail.com'));
+      expect(runbook, contains('flutter analyze'));
+      expect(runbook, contains('flutter test'));
+      expect(
+          runbook, contains('bash scripts/check_release_signing_readiness.sh'));
+      expect(runbook, contains('flutter build ipa --release'));
+      expect(runbook, contains('flutter build appbundle --release'));
+      expect(runbook, contains('Realtime 語音'));
+      expect(runbook, contains('Care Alert Smoke'));
+      expect(runbook, contains('app_usage_events'));
+      expect(runbook, contains('voice_interaction_start'));
+      expect(runbook, contains('voice_interaction_end'));
+      expect(runbook, contains('typed_chat_sent'));
+      expect(runbook, contains('pet_interaction'));
+      expect(runbook, contains('reminder_created'));
+      expect(runbook, contains('puzzle_started'));
+      expect(runbook, contains('puzzle_completed'));
+      expect(runbook, contains('管理者 analytics'));
+      expect(runbook, contains('caregiver_web 顯示真實彙整'));
+      expect(runbook, contains('帳號刪除'));
+      expect(runbook, contains('Data Safety'));
+      expect(runbook, contains('非醫療診斷'));
+      expect(runbook, contains('No-Go'));
+
+      for (final forbidden in [
+        'localhost',
+        '127.0.0.1',
+        '10.0.2.2',
+        'ngrok',
+      ]) {
+        expect(runbook, isNot(contains(forbidden)));
+      }
+    });
+
+    test('final store blocker board separates completed and owner-gated work',
+        () {
+      final board = _read('docs/FINAL_STORE_BLOCKER_BOARD.md');
+
+      expect(board, contains('Final Store Blocker Board'));
+      expect(board, contains('已由 repo 端完成'));
+      expect(board, contains('Owner 必須提供'));
+      expect(board, contains('必須真機驗證'));
+      expect(board, contains('商店後台必填'));
+      expect(board, contains('最後執行順序'));
+      expect(board, contains('No-Go'));
+      expect(board, contains('AI陪伴'));
+      expect(board, contains('tw.edu.ncyu.im.aicompanion'));
+      expect(
+          board,
+          contains(
+              'https://ou931023.github.io/pet_companion_app/privacy.html'));
+      expect(board,
+          contains('https://ou931023.github.io/pet_companion_app/terms.html'));
+      expect(
+          board,
+          contains(
+              'https://ou931023.github.io/pet_companion_app/support.html'));
+      expect(board, contains('aicompanion.support@gmail.com'));
+      expect(board, contains('Production API'));
+      expect(board, contains('Android signing'));
+      expect(board, contains('iOS signing'));
+      expect(board, contains('iPhone pairing'));
+      expect(board, contains('Realtime 語音'));
+      expect(board, contains('Care Alert'));
+      expect(board, contains('app_usage_events'));
+      expect(board, contains('caregiver_web analytics'));
+      expect(board, contains('Data Safety'));
+      expect(board, contains('非醫療診斷'));
+      expect(
+          board, contains('bash scripts/check_release_signing_readiness.sh'));
+
+      for (final forbidden in [
+        'API_BASE_URL=http://',
+        'debug key 送審',
+      ]) {
+        expect(board, isNot(contains(forbidden)));
+      }
     });
   });
 }

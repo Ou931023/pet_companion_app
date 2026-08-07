@@ -16,8 +16,9 @@
 | 主分類 | Health & Fitness 或 Medical（建議 Health & Fitness，避免醫療宣稱） | Care Alert 為「照護提醒」非醫療診斷 |
 | 次分類 | Lifestyle | |
 | 年齡分級 | 建議 4+（iOS）/ Everyone（Google）；最終依問卷 | 無暴力/成人內容；含使用者生成語音對話 |
-| 隱私政策 URL | ⛔ 待部署（`store_legal_site/privacy.html` 草稿已建立） | GitHub Pages 預期：`https://ou931023.github.io/pet_companion_app/privacy.html`；**必填、需真實可存取 HTTPS URL** |
-| 支援 URL | ⛔ 待部署（`store_legal_site/support.html` 草稿已建立） | GitHub Pages 預期：`https://ou931023.github.io/pet_companion_app/support.html`；**必填或強烈建議，需公開 HTTPS** |
+| 隱私政策 URL | ✅ `https://ou931023.github.io/pet_companion_app/privacy.html` | GitHub Pages 公開 HTTPS URL；production build / 商店後台需使用同一值 |
+| 服務條款 URL | ✅ `https://ou931023.github.io/pet_companion_app/terms.html` | GitHub Pages 公開 HTTPS URL；production build / 商店後台需使用同一值 |
+| 支援 URL | ✅ `https://ou931023.github.io/pet_companion_app/support.html` | GitHub Pages 公開 HTTPS URL；production build / 商店後台需使用同一值 |
 | 行銷 / 客服 Email | ✅ `aicompanion.support@gmail.com` | App 內設定頁可透過 `CONTACT_EMAIL` 顯示客服信箱入口；商店後台與 production build 應使用同一信箱 |
 | 版本 | 1.0.0（pubspec `1.0.0+1`） | |
 
@@ -57,18 +58,23 @@
 - **內容分級問卷**：⛔ 待定（依 IARC 問卷，含使用者語音對話）
 - **Data Safety 表單**：見 `docs/GOOGLE_PLAY_DATA_SAFETY.md`（⛔ 需於後台逐項填寫）
 - **目標客群 / 兒童政策**：本 App 面向成人（長者），非兒童導向。
-- **Feature graphic / screenshots**：⛔ 待定（素材）
+- **Feature graphic / screenshots**：✅ feature graphic 與兩平台候選 screenshots 已輸出於 `store_assets/`；送審前仍需商店後台人工預覽裁切。
 
 ---
 
 ## 4. Screenshots（兩平台共用規劃）
 
-⛔ 待素材。建議涵蓋：
-1. 首頁寵物 + 大麥克風按鈕（「一眼看得出能不能說話」）。
-2. 語音對話中（partial transcript 顯示）。
-3. 長期記憶頁。
-4. 「今日關心紀錄」（長者端，溫暖呈現、不顯風險等級）。
-5. caregiver_web 管理端（Care Alert 列表）—— 若作為產品截圖需去識別化。
+✅ 已輸出去識別化候選截圖：
+1. 首頁語音陪伴入口。
+2. 即時語音陪伴。
+3. 長期記憶。
+4. Care Alert 照護輔助提醒（明確標示非醫療診斷）。
+5. 隱私、支援與帳號刪除。
+
+檔案位置：
+- Android phone：`store_assets/screenshots/android_phone/*.png`（1080×1920）。
+- iPhone 6.7"：`store_assets/screenshots/ios_6_7/*.png`（1290×2796）。
+- 產出腳本：`scripts/generate_store_screenshots.sh`。
 
 > 截圖不得出現真實長者個資、不得出現 debug/demo 字樣。
 

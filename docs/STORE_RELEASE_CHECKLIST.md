@@ -4,7 +4,7 @@
 > 本檔列出 iOS / Android 正式上架前的待辦、已完成項，以及**必須由負責人決策或提供素材的 blocker**。
 > 規則：凡標 ⛔ **BLOCKER** 者，未完成前不得送審；不得以假值/假完成充數。
 
-相關文件：`docs/STORE_SUBMISSION_RUNBOOK.md`（上架前單一 smoke 入口）、`docs/APP_STORE_METADATA.md`、`docs/GOOGLE_PLAY_DATA_SAFETY.md`、`docs/ENVIRONMENT_SETUP.md`、`docs/PRODUCTION_CONFIG_CHECKLIST.md`、`docs/AUTHORIZATION_MODEL.md`。
+相關文件：`docs/FINAL_STORE_BLOCKER_BOARD.md`（最後 Go / No-Go 入口）、`docs/STORE_SUBMISSION_RUNBOOK.md`（上架前單一 smoke 入口）、`docs/APP_STORE_METADATA.md`、`docs/GOOGLE_PLAY_DATA_SAFETY.md`、`docs/ENVIRONMENT_SETUP.md`、`docs/PRODUCTION_CONFIG_CHECKLIST.md`、`docs/AUTHORIZATION_MODEL.md`。
 
 ---
 
@@ -40,7 +40,7 @@
 | Display name（CFBundleDisplayName） | ✅ （CR-0061） | `AI Companion`（owner 拍板定值），已寫入 `Info.plist` |
 | Bundle ID | ✅ （CR-0061） | `tw.edu.ncyu.im.aicompanion`（嘉義大學反向網域，owner 拍板）。已寫入 pbxproj（app + RunnerTests）。後續 Apple 憑證 / Firebase iOS App / Sign in with Apple 須對應此 ID（上架後不可改） |
 | App icon（全尺寸） | ✅ | CR-0101A 已輸出正式候選 icon 全尺寸組；送審前仍需實機 / 商店後台預覽確認 |
-| Launch screen | 🟡 | 需確認正式化、無 debug banner |
+| Launch screen | ✅ | 已使用正式候選 icon + 品牌底色；送審前仍需實機確認無閃白/裁切 |
 | Release build（`flutter build ios --release --no-codesign`） | 🔁 | 見 §7，需在 macOS + CocoaPods 環境嘗試 |
 
 ---
@@ -54,7 +54,7 @@
 | `applicationId` | ✅ （CR-0061） | `tw.edu.ncyu.im.aicompanion`（對齊 iOS，owner 拍板）。已寫入 `build.gradle.kts`。**上架後不可再改**。namespace 維持 `com.example.pet_companion_app`（owner 指定不動，與 applicationId 獨立） |
 | `android:label` | ✅ （CR-0061） | `AI Companion`（owner 拍板定值，與 iOS CFBundleDisplayName 一致），已寫入 `AndroidManifest.xml` |
 | Adaptive icon / launcher icon | ✅ | CR-0101A 已輸出 legacy launcher icon + Android adaptive icon XML / foreground / background；送審前仍需真機 mask 預覽 |
-| Release signing config | ⛔ **BLOCKER** | 需正式 keystore（**禁止提交 keystore / signing key 進版控**） |
+| Release signing config | ⛔ **BLOCKER** | 需正式 upload keystore（**禁止提交 keystore / signing key 進版控**） |
 | targetSdk | 🟡 | 用 flutter 預設，送審前確認符合 Play 當期最低 targetSdk |
 | ProGuard / R8 | 🟡 | 視需要啟用，確認不破壞 reflection（Firebase 等） |
 
@@ -73,8 +73,8 @@
 
 1. ✅ **正式品牌 display name**（CR-0061 已定值）：iOS CFBundleDisplayName = Android `android:label` = 商店 App 名稱 = `AI Companion`（中文 `AI陪伴`）。發行者：國立嘉義大學資訊管理學系專題第四組。
 2. ✅ **App 識別碼正式化**（CR-0061 已定值）：iOS Bundle ID = Android `applicationId` = `tw.edu.ncyu.im.aicompanion`（**一旦上架不可更改**；後續 Apple/Google/Firebase 憑證與 Sign in with Apple 設定須對應此 ID）。
-3. ⛔ **Hosted 法務/支援 URL** / ✅ **客服信箱**：`privacyPolicyUrl` / `termsOfServiceUrl` / `supportUrl` / `contactEmail` 已支援透過 `--dart-define` 注入；`store_legal_site/` 已提供靜態 legal/support 網站草稿，客服信箱已定為 `aicompanion.support@gmail.com`。仍需部署到公開 HTTPS 網域，**禁止偽造已部署 URL**。
-4. 🟡 **視覺素材**：App icon（iOS 全尺寸 + Android adaptive/launcher）已輸出正式候選；仍需 launch screen 確認、商店 screenshots、feature graphic。
+3. ✅ **Hosted 法務/支援 URL** / ✅ **客服信箱**：`privacyPolicyUrl` / `termsOfServiceUrl` / `supportUrl` / `contactEmail` 已支援透過 `--dart-define` 注入；GitHub Pages 已提供公開 HTTPS URL：`https://ou931023.github.io/pet_companion_app/privacy.html`、`https://ou931023.github.io/pet_companion_app/terms.html`、`https://ou931023.github.io/pet_companion_app/support.html`；客服信箱已定為 `aicompanion.support@gmail.com`。
+4. ✅ / 🔁 **視覺素材**：App icon（iOS 全尺寸 + Android adaptive/launcher）、Google Play feature graphic、兩平台 store screenshots 與 launch screen 已輸出正式候選；送審前仍需商店後台與實機人工預覽。
 5. ⛔ **Release signing**：Android Gradle 已接 `android/key.properties` 並不再使用 debug key；仍需正式 upload keystore / CI secret。iOS 仍需簽章憑證 / provisioning profile（**禁止提交進版控**）。
 6. 🟡 **Production 環境**（部分完成）：
    - Firebase：✅ iOS/Android App 已以正式 Bundle ID `tw.edu.ncyu.im.aicompanion` 註冊，`GoogleService-Info.plist`（BUNDLE_ID 對齊）/ `google-services.json`（含對應 client）已落地，**兩檔 gitignored 不進版控**（CR-0062）。🟡 待真機 Firebase Auth smoke。
@@ -167,8 +167,9 @@ android:networkSecurityConfig="@xml/network_security_config"
 - ⛔ **BLOCKER** Google Play Data Safety 表單填寫（依 `docs/GOOGLE_PLAY_DATA_SAFETY.md`）
 - ⛔ **BLOCKER** App Store 隱私問卷 / metadata（依 `docs/APP_STORE_METADATA.md`）
 - 🟡 **Hosted legal/support 靜態頁草稿**：`store_legal_site/` 已建立 `privacy.html` / `terms.html` / `support.html`，可部署到 GitHub Pages / Vercel / Netlify / Firebase Hosting。
-- ⛔ **BLOCKER** 對外可存取的隱私政策 URL（Apple/Google 皆要求；需由 `store_legal_site/privacy.html` 部署後取得）
-- ⛔ **BLOCKER** 對外可存取的支援 URL；✅ 客服信箱已定為 `aicompanion.support@gmail.com`（store metadata 必填或強烈建議；App 內外部按鈕只有正式值注入後才顯示）
+- ✅ 對外可存取的隱私政策 URL：`https://ou931023.github.io/pet_companion_app/privacy.html`（Apple/Google 皆要求）。
+- ✅ 對外可存取的服務條款 URL：`https://ou931023.github.io/pet_companion_app/terms.html`。
+- ✅ 對外可存取的支援 URL：`https://ou931023.github.io/pet_companion_app/support.html`；✅ 客服信箱已定為 `aicompanion.support@gmail.com`（store metadata 必填或強烈建議；App 內外部按鈕只有正式值注入後才顯示）
 - ✅ **CR-0097 usage tracking in-app disclosure**：同意畫面與 App 內隱私政策已揭露 App 使用時間、語音/打字互動、寵物互動、提醒、任務、照片驗證、小遊戲等使用紀錄；`LegalConfig.consentVersion` 已更新，舊版同意者會被要求重新同意。
 - ⛔ **BLOCKER** Hosted 隱私政策 / 商店後台需同步 CR-0097：正式 hosted 隱私政策、Google Play Data Safety、App Store Privacy Nutrition Labels 必須申報 `app_usage_events` 對應的 App 活動 / 使用分析資料，且用途限 App 功能、照護分析、產品改善，不可填成未收集。
 
