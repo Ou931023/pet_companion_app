@@ -136,6 +136,12 @@ const {
 } = require("./services/compliance/investmentDisclaimer");
 
 const app = express();
+const parsedTrustProxyHops = Number.parseInt(process.env.TRUST_PROXY_HOPS || "1", 10);
+const trustProxyHops =
+  Number.isFinite(parsedTrustProxyHops) && parsedTrustProxyHops >= 0
+    ? parsedTrustProxyHops
+    : 1;
+app.set("trust proxy", trustProxyHops);
 const port = process.env.PORT || 3001;
 const upload = multer({ dest: "uploads/" });
 const taigiAsrUploadDir = path.join(os.tmpdir(), "pet_companion_taigi_asr");
