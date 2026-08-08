@@ -277,14 +277,42 @@ class NativeToolExecutorService {
     final query =
         _stringArg(intent, 'query', fallback: intent.userFacingMessage);
     final result = await searchService.search(query);
+    final message = _conciseSearchMessage(
+      query: query,
+      summary: result.summary,
+      answer: result.answer,
+    );
     return AgentToolExecutionResult.succeeded(
       toolName: intent.toolName,
-      message: result.summary.isNotEmpty ? result.summary : result.answer,
+      message: message,
       data: {
         'answer': result.answer,
         'sources': result.sources.map((source) => source.toJson()).toList(),
       },
     );
+  }
+
+  static String _conciseSearchMessage({
+    required String query,
+    required String summary,
+    required String answer,
+  }) {
+    final raw = (summary.trim().isNotEmpty ? summary : answer).trim();
+    if (raw.isEmpty) return '我查到的資料不多，晚點再幫你確認一次。';
+    final normalized = raw.replaceAll(RegExp(r'\s+'), ' ');
+    final maxLength = _isNewsQuery(query) ? 120 : 180;
+    final clipped = normalized.length > maxLength
+        ? '${normalized.substring(0, maxLength)}...'
+        : normalized;
+    if (!_isNewsQuery(query)) return clipped;
+    if (clipped.contains('要不要') || clipped.contains('想聽')) {
+      return clipped;
+    }
+    return '$clipped 要不要聽其中一則詳細一點？';
+  }
+
+  static bool _isNewsQuery(String text) {
+    return RegExp(r'新聞|消息|防詐|詐騙').hasMatch(text);
   }
 
   Future<AgentToolExecutionResult> _openAppRoute(
