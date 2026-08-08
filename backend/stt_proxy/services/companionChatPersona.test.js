@@ -5,8 +5,8 @@ const { test } = require("node:test");
 
 process.env.NODE_ENV = "test";
 // require server 會載入 .env；此測試只驗證 prompt 字串組裝，完全不打 OpenAI。
-// 清掉金鑰避免任何外呼或誤發通知的可能。
-delete process.env.OPENAI_API_KEY;
+// 使用 dummy key 只讓 OpenAI client 初始化；本測試只驗證 prompt 字串，不做外呼。
+process.env.OPENAI_API_KEY = "test-key-for-prompt-unit-test";
 delete process.env.TELEGRAM_BOT_TOKEN;
 delete process.env.TELEGRAM_CARE_CHAT_ID;
 
@@ -182,6 +182,26 @@ test("CR-0090 自然陪伴（打字）：抗重複 + 不硬轉任務 + 先陪伴
   );
 });
 
+test("CR-0101 companion prompt：安全但有彈性，允許真正陪伴與小互動", () => {
+  const prompt = buildCompanionChatInstructions("小白", "", {});
+  assert.ok(
+    prompt.includes("【真正陪伴 / 降低孤單】"),
+    "typed persona 應明確包含降低孤單的陪伴策略",
+  );
+  assert.ok(
+    prompt.includes("可以陪他回憶以前的生活"),
+    "應允許懷舊與生活話題延展",
+  );
+  assert.ok(
+    prompt.includes("聽故事、聽歌、看照片、玩拼圖"),
+    "應允許自然提議小互動",
+  );
+  assert.ok(
+    prompt.includes("當成後續陪伴線索"),
+    "應把偏好當成後續陪伴線索",
+  );
+});
+
 test("CR-0090 語音 persona：陪伴優先 + 抗重複 + 工具表只在明確需求時套用 + 安全保留", () => {
   const voice = buildRealtimeInstructions("小白", [], "", "", {});
   // 陪伴優先 / 不硬轉功能。
@@ -213,6 +233,30 @@ test("CR-0090 語音 persona：陪伴優先 + 抗重複 + 工具表只在明確�
   assert.ok(
     voice.includes("胸痛、呼吸困難、跌倒、嚴重不適、自傷意念"),
     "高風險安全提醒需保留",
+  );
+});
+
+test("CR-0101 語音 persona：工具確認短，陪伴聊天可自然延展且不假裝完成", () => {
+  const voice = buildRealtimeInstructions("小白", [], "", "", {});
+  assert.ok(
+    voice.includes("工具確認可以短，陪伴聊天可以 1~3 句"),
+    "語音 persona 不應把所有陪伴都硬壓成一句",
+  );
+  assert.ok(
+    voice.includes("每次最多自然問一個問題；不要盤問"),
+    "允許自然追問，但不可盤問",
+  );
+  assert.ok(
+    voice.includes("【真正陪伴 / 降低孤單】"),
+    "語音 persona 應包含真正陪伴段落",
+  );
+  assert.ok(
+    voice.includes("不能確認完成的事不要假裝已完成"),
+    "正式版不可指示模型假裝完成未確認的外部行為",
+  );
+  assert.ok(
+    !voice.includes("即使你不確定 App 能不能執行，也要先給肯定回應"),
+    "不應保留不確定也假裝肯定的 demo 風險指示",
   );
 });
 
