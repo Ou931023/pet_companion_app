@@ -137,6 +137,10 @@ function inferTopic(text) {
   return "general";
 }
 
+function isNewsQuery(text) {
+  return inferTopic(text) === "news" || /(新聞|消息|防詐|詐騙)/.test(text || "");
+}
+
 function isWeatherQuery(text) {
   return (text || "").includes("天氣") || (text || "").includes("氣溫");
 }
@@ -268,7 +272,7 @@ async function searchWithTavily(query) {
         search_depth: "basic",
         include_answer: "basic",
         include_raw_content: false,
-        max_results: 5,
+        max_results: isNewsQuery(query) ? 3 : 5,
       }),
       signal: controller.signal,
     });
@@ -302,13 +306,14 @@ async function searchWithTavily(query) {
 
 async function summarizeForElderly({ query, tavilyData }) {
   const highRisk = isHighRiskQuery(query);
+  const newsQuery = isNewsQuery(query);
   const sources = (tavilyData.results || [])
-    .slice(0, 4)
+    .slice(0, newsQuery ? 2 : 4)
     .map((result, index) => ({
       index: index + 1,
       title: result.title || "",
       url: result.url || "",
-      content: (result.content || "").toString().slice(0, 500),
+      content: (result.content || "").toString().slice(0, newsQuery ? 240 : 500),
     }));
 
   if (!process.env.OPENAI_API_KEY) {
@@ -326,8 +331,9 @@ async function summarizeForElderly({ query, tavilyData }) {
     messages: [
       {
         role: "system",
-        content:
-          "你是一隻陪伴長者的 AI 寵物。請把搜尋結果整理成繁體中文，2 到 4 句，白話、溫柔、不要嚇人。不要逐字貼來源。醫療、法律、金融問題要提醒仍需詢問專業人員。",
+        content: newsQuery
+          ? "你是一隻陪伴長者的 AI 寵物。使用者是在語音中聽新聞，請只講最多 2 個重點，每個重點一句話，總長不超過 80 個中文字。不要連續播報很多新聞、不要逐字貼來源、不要條列編號。最後用一句短句問要不要聽其中一則更詳細。"
+          : "你是一隻陪伴長者的 AI 寵物。請把搜尋結果整理成繁體中文，2 到 3 句，白話、溫柔、不要嚇人。不要逐字貼來源。醫療、法律、金融問題要提醒仍需詢問專業人員。",
       },
       {
         role: "user",
@@ -342,15 +348,19 @@ async function summarizeForElderly({ query, tavilyData }) {
   });
 
   return {
-    answer: trimAnswer(response.choices?.[0]?.message?.content || tavilyData.answer || "", highRisk),
+    answer: trimAnswer(
+      response.choices?.[0]?.message?.content || tavilyData.answer || "",
+      highRisk,
+      { maxLength: newsQuery ? 140 : 220 },
+    ),
     sources,
     highRisk,
   };
 }
 
-function trimAnswer(text, highRisk) {
+function trimAnswer(text, highRisk, { maxLength = 220 } = {}) {
   const normalized = (text || "").replace(/\s+/g, " ").trim();
-  const base = normalized.length > 220 ? `${normalized.slice(0, 220)}...` : normalized;
+  const base = normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
   if (!highRisk) return base || "我查到的資料不多，晚點再幫你確認一次。";
   if (base.includes("專業")) return base;
   return `${base || "我查到的資料不多。"} 這類事情還是要再問醫師、律師或專業人員，比較安心。`;

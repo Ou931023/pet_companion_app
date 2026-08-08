@@ -4,6 +4,7 @@ import 'package:pet_companion_app/controllers/memory_controller.dart';
 import 'package:pet_companion_app/controllers/reminder_controller.dart';
 import 'package:pet_companion_app/models/agent_tool_intent.dart';
 import 'package:pet_companion_app/models/reminder.dart';
+import 'package:pet_companion_app/models/search_response.dart';
 import 'package:pet_companion_app/routes/app_routes.dart';
 import 'package:pet_companion_app/services/memory_service.dart';
 import 'package:pet_companion_app/services/native_tool_executor_service.dart';
@@ -128,6 +129,40 @@ void main() {
 
     expect(result.success, isTrue, reason: result.message);
     expect(reminderController.createdText, '提醒我晚上八點吃藥');
+  });
+
+  test('search_trusted_info：新聞語音結果會壓短，不連續念一大串', () async {
+    final service = NativeToolExecutorService(launch: (_, __) async => true);
+    final longNews = List.filled(
+      8,
+      '今天有一則很長的新聞內容，包含許多細節與延伸背景，長者不適合一次全部聽完。',
+    ).join();
+
+    final result = await service.execute(
+      intent: _intent(
+        'search_trusted_info',
+        arguments: {'query': '健康新聞'},
+      ),
+      reminderController: _FakeReminderController(),
+      searchService: _FakeSearchService(
+        SearchResponse(
+          answer: longNews,
+          summary: longNews,
+          sources: const [],
+          mode: 'news',
+          provider: 'test',
+          toolUsed: 'web',
+          confidence: 'medium',
+          shouldShowSources: true,
+        ),
+      ),
+      navigationController: AppNavigationController(),
+      memoryController: _memoryController(),
+    );
+
+    expect(result.success, isTrue, reason: result.message);
+    expect(result.message.length, lessThanOrEqualTo(140));
+    expect(result.message, contains('要不要聽其中一則詳細一點'));
   });
 
   test('工具丟例外時回白話訊息，不洩漏 exception / 原始錯誤', () async {
@@ -341,6 +376,20 @@ AgentToolIntent _intent(
 MemoryController _memoryController() {
   SharedPreferences.setMockInitialValues({});
   return MemoryController(MemoryService());
+}
+
+class _FakeSearchService extends SearchService {
+  _FakeSearchService(this.response);
+
+  final SearchResponse response;
+
+  @override
+  Future<SearchResponse> search(
+    String query, {
+    String userId = 'default_user',
+  }) async {
+    return response;
+  }
 }
 
 class _ThrowingReminderController extends ReminderController {
