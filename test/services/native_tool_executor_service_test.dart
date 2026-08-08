@@ -174,6 +174,25 @@ void main() {
     expect(navigation.currentShellRoute, AppRoute.shop);
   });
 
+  test('open app route can navigate to puzzle from voice agent intent',
+      () async {
+    final navigation = _SpyNavigationController();
+    final service = NativeToolExecutorService(launch: (_, __) async => true);
+    final result = await service.execute(
+      intent: _intent(
+        'open_app_route',
+        arguments: {'route': AppRoute.puzzle},
+      ),
+      reminderController: _FakeReminderController(),
+      searchService: SearchService(),
+      navigationController: navigation,
+      memoryController: _memoryController(),
+    );
+
+    expect(result.success, isTrue, reason: result.message);
+    expect(navigation.lastRoute, AppRoute.puzzle);
+  });
+
   test('send_message opens sms scheme with body, does not auto-send', () async {
     Uri? launched;
     final service = NativeToolExecutorService(
@@ -282,7 +301,8 @@ void main() {
     expect(result.message, contains('小狗'));
   });
 
-  test('purchase_pet_skin without wiring returns honest shop message (no fake success)',
+  test(
+      'purchase_pet_skin without wiring returns honest shop message (no fake success)',
       () async {
     final service = NativeToolExecutorService(launch: (_, __) async => true);
     final result = await service.execute(
@@ -344,6 +364,15 @@ class _SpyMemoryController extends MemoryController {
   @override
   Future<void> forgetRecentMemory() async {
     forgetCalled = true;
+  }
+}
+
+class _SpyNavigationController extends AppNavigationController {
+  String? lastRoute;
+
+  @override
+  void navigateTo(String route) {
+    lastRoute = route;
   }
 }
 

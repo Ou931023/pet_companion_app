@@ -52,7 +52,8 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({'ttsEnabled': false}));
 
-  test('講完一句 → 交給 Agent Router；高影響工具保留 pending（需確認、不自動執行），語音進 thinking 且不能重複開始', () async {
+  test('講完一句 → 交給 Agent Router；高影響工具保留 pending（需確認、不自動執行），語音進 thinking 且不能重複開始',
+      () async {
     final harness = await _Harness.create(
       _intent('open_phone_dialer',
           riskLevel: AgentToolRiskLevel.high, requiresConfirmation: true),
@@ -99,6 +100,63 @@ void main() {
     harness.dispose();
   });
 
+  test('高影響工具可用語音確認後執行，不必只靠畫面按鈕', () async {
+    final harness = await _Harness.create(
+      _intent('open_phone_dialer',
+          riskLevel: AgentToolRiskLevel.high, requiresConfirmation: true),
+    );
+    await harness.connect();
+
+    harness.realtime.handleDataChannelEventForTest(
+      '{"type":"conversation.item.input_audio_transcription.completed","transcript":"幫我打給女兒"}',
+    );
+    await pumpEventQueue();
+    await pumpEventQueue();
+    expect(harness.agent.pendingIntent, isNotNull);
+    expect(harness.executor.executedCount, 0);
+
+    harness.realtime.handleDataChannelEventForTest(
+      '{"type":"conversation.item.input_audio_transcription.completed","transcript":"好，確認"}',
+    );
+    await pumpEventQueue();
+    await pumpEventQueue();
+    await pumpEventQueue();
+
+    expect(harness.executor.executedCount, 1);
+    expect(harness.agent.pendingIntent, isNull);
+    expect(harness.router.routedTexts, isNot(contains('好，確認')),
+        reason: '確認語句應處理 pending 工具，不應再送後端重新判斷成其他工具。');
+
+    harness.dispose();
+  });
+
+  test('高影響工具可用語音取消，取消語句不會送去後端亂 route', () async {
+    final harness = await _Harness.create(
+      _intent('send_message',
+          riskLevel: AgentToolRiskLevel.high, requiresConfirmation: true),
+    );
+    await harness.connect();
+
+    harness.realtime.handleDataChannelEventForTest(
+      '{"type":"conversation.item.input_audio_transcription.completed","transcript":"共兒子講我今仔日很好"}',
+    );
+    await pumpEventQueue();
+    await pumpEventQueue();
+    expect(harness.agent.pendingIntent, isNotNull);
+
+    harness.realtime.handleDataChannelEventForTest(
+      '{"type":"conversation.item.input_audio_transcription.completed","transcript":"先不用"}',
+    );
+    await pumpEventQueue();
+    await pumpEventQueue();
+
+    expect(harness.executor.executedCount, 0);
+    expect(harness.agent.pendingIntent, isNull);
+    expect(harness.router.routedTexts, isNot(contains('先不用')));
+
+    harness.dispose();
+  });
+
   test('Turn-based：寵物說話完成後保留連線但回到 idle（非 listening）；speaking 時不能重複開始',
       () async {
     final harness = await _Harness.create(_intent('play_music'));
@@ -107,8 +165,8 @@ void main() {
     harness.realtime
         .handleDataChannelEventForTest('{"type":"response.created"}');
     await pumpEventQueue();
-    harness.realtime
-        .handleDataChannelEventForTest('{"type":"response.output_audio.delta"}');
+    harness.realtime.handleDataChannelEventForTest(
+        '{"type":"response.output_audio.delta"}');
     await pumpEventQueue();
     expect(harness.controller.state, VoiceAgentState.speaking);
     expect(harness.controller.canStartVoiceInput, isFalse);
@@ -119,8 +177,8 @@ void main() {
     expect(harness.controller.state, VoiceAgentState.speaking);
 
     // 語音真的播完 → 一人一句：回到 idle，等使用者再按一次才開始下一句。
-    harness.realtime
-        .handleDataChannelEventForTest('{"type":"output_audio_buffer.stopped"}');
+    harness.realtime.handleDataChannelEventForTest(
+        '{"type":"output_audio_buffer.stopped"}');
     await pumpEventQueue();
     expect(harness.controller.state, VoiceAgentState.idle);
     expect(harness.controller.canStartVoiceInput, isTrue);

@@ -20,6 +20,14 @@ test("「我想聽老歌」→ play_music", () => {
   assert.equal(r.needsConfirmation, false);
 });
 
+test("泛用音樂請求先交給寵物追問偏好", () => {
+  for (const text of ["我想聽音樂", "放歌予我聽"]) {
+    const r = intentOf(text);
+    assert.equal(r.intent, "small_talk", `「${text}」不應直接播放`);
+    assert.equal(r.toolName, null);
+  }
+});
+
 test("「幫我打給女兒」→ make_call（需確認）", () => {
   const r = intentOf("幫我打給女兒");
   assert.equal(r.intent, "make_call");
@@ -83,6 +91,32 @@ test("健康 / 情緒危機優先於工具（同句含工具字也走安全）",
 test("tell_story / search_info 也被涵蓋", () => {
   assert.equal(intentOf("說一個故事給我聽").intent, "tell_story");
   assert.equal(intentOf("幫我查今天的防詐騙新聞").intent, "search_info");
+});
+
+test("泛用新聞請求先交給寵物追問類型", () => {
+  for (const text of ["今天有什麼新聞", "今仔日有啥新聞", "新聞予我聽"]) {
+    const r = intentOf(text);
+    assert.equal(r.intent, "small_talk", `「${text}」不應直接搜尋`);
+    assert.equal(r.toolName, null);
+  }
+  assert.equal(intentOf("幫我查嘉義地方新聞").intent, "search_info");
+});
+
+test("國語 / 台語混合語句也能判斷成可執行意圖", () => {
+  const cases = [
+    ["放台語老歌予我聽", "play_music", false],
+    ["八點記咧提醒我食藥", "create_reminder", false],
+    ["共兒子講我今仔日很好", "send_message", true],
+    ["講古給我聽", "tell_story", false],
+    ["你愛記得我喜歡散步", "save_memory", false],
+    ["你有記得我女兒啥時欲回來嗎", "recall_memory", false],
+  ];
+
+  for (const [text, expectedIntent, needsConfirmation] of cases) {
+    const r = intentOf(text);
+    assert.equal(r.intent, expectedIntent, `「${text}」應為 ${expectedIntent}`);
+    assert.equal(r.needsConfirmation, needsConfirmation);
+  }
 });
 
 test("AgentToolResult 結構固定，且 message 不含工程字", () => {

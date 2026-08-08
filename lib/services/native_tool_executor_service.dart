@@ -99,7 +99,8 @@ class NativeToolExecutorService {
       };
     } catch (error, stackTrace) {
       // 原始錯誤只留給開發者除錯，絕不顯示給長者。
-      debugPrint('[NativeToolExecutorService] ${intent.toolName} failed: $error\n$stackTrace');
+      debugPrint(
+          '[NativeToolExecutorService] ${intent.toolName} failed: $error\n$stackTrace');
       return AgentToolExecutionResult.failed(
         toolName: intent.toolName,
         message: '這個動作暫時沒辦法完成，待會再試一次好嗎？',
@@ -175,9 +176,8 @@ class NativeToolExecutorService {
     return ok
         ? AgentToolExecutionResult.succeeded(
             toolName: intent.toolName,
-            message: phoneNumber.isEmpty
-                ? '已開啟撥號畫面，請輸入號碼。'
-                : '已撥號到 $phoneNumber。',
+            message:
+                phoneNumber.isEmpty ? '已開啟撥號畫面，請輸入號碼。' : '已撥號到 $phoneNumber。',
           )
         : AgentToolExecutionResult.failed(
             toolName: intent.toolName,
@@ -242,9 +242,8 @@ class NativeToolExecutorService {
     return ok
         ? AgentToolExecutionResult.succeeded(
             toolName: intent.toolName,
-            message: to.contains('@')
-                ? '已建立 Email 草稿，收件人 $to。'
-                : '已開啟郵件，請輸入收件人。',
+            message:
+                to.contains('@') ? '已建立 Email 草稿，收件人 $to。' : '已開啟郵件，請輸入收件人。',
           )
         : AgentToolExecutionResult.failed(
             toolName: intent.toolName,
@@ -442,10 +441,16 @@ class NativeToolExecutorService {
   String _normalizeRoute(String route) {
     return switch (route) {
       AppRoute.shop => AppRoute.shop,
+      AppRoute.marketplace => AppRoute.marketplace,
       AppRoute.history => AppRoute.history,
       AppRoute.settings => AppRoute.settings,
       AppRoute.reminders => AppRoute.reminders,
+      AppRoute.dailyCareTasks => AppRoute.dailyCareTasks,
       AppRoute.memories => AppRoute.memories,
+      AppRoute.album => AppRoute.album,
+      AppRoute.notification => AppRoute.notification,
+      AppRoute.puzzle => AppRoute.puzzle,
+      AppRoute.careAlerts => AppRoute.careAlerts,
       _ => AppRoute.home,
     };
   }
