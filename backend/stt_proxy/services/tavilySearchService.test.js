@@ -9,7 +9,7 @@ const {
 } = require("./tavilySearchService");
 
 test("needsWebSearch detects real-time information queries", () => {
-  assert.equal(needsWebSearch("今天有什麼新聞？"), true);
+  assert.equal(needsWebSearch("今天有什麼防詐新聞？"), true);
   assert.equal(needsWebSearch("幫我查天氣"), true);
   assert.equal(needsWebSearch("附近有什麼活動？"), true);
   assert.equal(needsWebSearch("最近詐騙新聞有哪些？"), true);
@@ -20,10 +20,18 @@ test("needsWebSearch detects real-time information queries", () => {
 test("needsWebSearch detects subsidies, policy, prices and weather variants", () => {
   assert.equal(needsWebSearch("今天嘉義天氣如何？"), true);
   assert.equal(needsWebSearch("最近有什麼長照補助？"), true);
-  assert.equal(needsWebSearch("現在有什麼重要新聞？"), true);
+  assert.equal(needsWebSearch("現在有什麼股市新聞？"), true);
   assert.equal(needsWebSearch("敬老津貼怎麼申請？"), true);
   assert.equal(needsWebSearch("今天油價多少？"), true);
   assert.equal(needsWebSearch("這個颱風會不會放假？"), true);
+});
+
+test("needsWebSearch asks preference for broad news instead of searching", () => {
+  assert.equal(needsWebSearch("今天有什麼新聞？"), false);
+  assert.equal(needsWebSearch("今仔日有啥新聞？"), false);
+  assert.equal(needsWebSearch("有啥物新聞？"), false);
+  assert.equal(needsWebSearch("新聞予我聽"), false);
+  assert.equal(needsWebSearch("現在有什麼重要新聞？"), false);
 });
 
 test("needsWebSearch ignores ordinary companionship chat", () => {

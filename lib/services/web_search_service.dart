@@ -36,6 +36,14 @@ class WebSearchService {
     // 新聞 / 防詐
     '今天有什麼新聞',
     '新聞',
+    '看新聞',
+    '啥物新聞',
+    '啥新聞',
+    '什麼新聞',
+    '有啥新聞',
+    '有什麼新聞',
+    '今仔日新聞',
+    '新聞予我聽',
     '最新消息',
     '防詐',
     '詐騙新聞',
@@ -92,7 +100,17 @@ class WebSearchService {
   static bool shouldSearch(String text) {
     final normalized = text.trim();
     if (normalized.isEmpty) return false;
+    if (isBroadNewsRequest(normalized)) return false;
     return realtimeInfoKeywords.any(normalized.contains);
+  }
+
+  static bool isBroadNewsRequest(String text) {
+    final normalized = text.replaceAll(RegExp(r'[\s，。！？!?、,.]'), '');
+    if (normalized.isEmpty || !normalized.contains(RegExp(r'新聞|消息'))) {
+      return false;
+    }
+    if (_newsTopicPattern.hasMatch(normalized)) return false;
+    return _broadNewsPattern.hasMatch(normalized);
   }
 
   Future<WebSearchResult> search(String query) async {
@@ -153,4 +171,12 @@ class WebSearchService {
   }
 
   static const String _failedMessage = '搜尋暫時失敗了，我晚點再幫你查。';
+
+  static final RegExp _newsTopicPattern = RegExp(
+    r'防詐|詐騙|健康|長照|醫療|天氣|政治|運動|股票|股市|財經|社會|地方|嘉義|台灣|國際|娛樂|棒球|政策|補助|高齡|照護|食安|交通|颱風|地震',
+  );
+
+  static final RegExp _broadNewsPattern = RegExp(
+    r'^(幫我|請|想|我要|我想|欲|我欲)?(查|搜尋|搜|看|聽|聽看)?(一下|一下子)?(今天|今仔日|今日|現在|最近)?(有)?(什麼|啥物|啥|啥米)?(重要)?(新聞|消息)(予我聽|給我聽|給我看|一下|嗎|呢|啦|喔)?$',
+  );
 }

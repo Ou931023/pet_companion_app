@@ -148,13 +148,11 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   /// 寵物正在回覆中：thinking（思考 / 工具處理）或 speaking（播放語音）。
   /// 此時使用者要說話，必須先「打斷」（barge-in），不可悄悄插入新的一輪。
   bool get isPetResponding =>
-      _state == VoiceAgentState.thinking ||
-      _state == VoiceAgentState.speaking;
+      _state == VoiceAgentState.thinking || _state == VoiceAgentState.speaking;
 
   /// 連續 session 待命中：寵物已準備好聽使用者說話，可直接開口（server VAD 接住）。
   bool get isAwaitingUserSpeech =>
-      _state == VoiceAgentState.ready ||
-      _state == VoiceAgentState.listening;
+      _state == VoiceAgentState.ready || _state == VoiceAgentState.listening;
 
   /// CR-0096：正在收使用者這一輪語音（待命聆聽 ready/listening，或已在串流 partial
   /// transcript 的 transcribing）。這些狀態下按一下按鈕＝「停止收音並送出本輪語音」。
@@ -397,7 +395,8 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   ///
   /// 保留此方法只為相容既有呼叫點與測試；不再從 UI 觸發打斷。
   Future<bool> interruptPetForUserTurn() async {
-    debugPrint('[VOICE_TURN] barge-in disabled (turn-based); pet finishes first');
+    debugPrint(
+        '[VOICE_TURN] barge-in disabled (turn-based); pet finishes first');
     return false;
   }
 
@@ -604,7 +603,8 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _handleFinalTranscript(String realtimeTranscript) async {
     // Realtime 轉錄常回簡體；顯示與送後端前先統一轉台灣繁體。
-    final normalizedRealtimeTranscript = toTraditional(realtimeTranscript.trim());
+    final normalizedRealtimeTranscript =
+        toTraditional(realtimeTranscript.trim());
     if (normalizedRealtimeTranscript.isEmpty) {
       _partialTranscript = '';
       conversationController.clearRealtimeTranscriptState();
@@ -726,7 +726,8 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   LanguageRouteResult _realtimeStartRoute() {
-    if (profileController.voiceLanguageMode == VoiceLanguageMode.taigiRealtime) {
+    if (profileController.voiceLanguageMode ==
+        VoiceLanguageMode.taigiRealtime) {
       return const LanguageRouteResult(
         strategyName: 'openai-realtime',
         languageHint: TranscriptLanguageHint.taigi,
@@ -814,6 +815,9 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   /// - 本地指令路由（簽到 / 設定 / 找新聞 / 查資訊…）→ 需要時用語音念出結果。
   /// 主流程與「寵物回覆中擷取」路徑共用，確保不管何時說指令都會被理解與執行。
   void _routeToolsForTranscript(String transcript, String turnId) {
+    if (_tryHandlePendingToolVoiceDecision(transcript)) {
+      return;
+    }
     // 本地能處理（簽到 / 設定 / 找新聞 / 查資訊…）就走本地，並念出結果；走本地就不再
     // 交給後端 agent，避免同一個指令被執行兩次（重複查 / 重複念）。
     if (conversationController.shouldHandleAsLocalCommand(transcript)) {
@@ -846,6 +850,44 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     if (routing != null) {
       unawaited(routing.then((_) => _maybeSpeakToolOutcome()));
     }
+  }
+
+  bool _tryHandlePendingToolVoiceDecision(String transcript) {
+    final controller = agentToolController;
+    final pending = controller?.pendingIntent;
+    if (controller == null ||
+        pending == null ||
+        !pending.requiresConfirmation) {
+      return false;
+    }
+    final text = transcript.trim();
+    if (_isVoiceToolCancel(text)) {
+      controller.cancelIntent();
+      unawaited(realtimeVoiceService.speakToolOutcome('好，這個動作先取消。'));
+      return true;
+    }
+    if (_isVoiceToolConfirm(text)) {
+      unawaited(
+        controller.confirmAndExecute().then((_) => _maybeSpeakToolOutcome()),
+      );
+      return true;
+    }
+    return false;
+  }
+
+  bool _isVoiceToolConfirm(String text) {
+    final compact = text.replaceAll(RegExp(r'[\s，,。.!！?？~～]'), '');
+    if (compact.isEmpty) return false;
+    return RegExp(
+            r'^(好|好啊|好喔|好確認|好確定|可以|對|是|嗯|嗯嗯|確認|確定|執行|幫我|麻煩你|好麻煩你|好幫我|可以幫我|著|賀|好啦)$')
+        .hasMatch(compact);
+  }
+
+  bool _isVoiceToolCancel(String text) {
+    final compact = text.replaceAll(RegExp(r'[\s，,。.!！?？~～]'), '');
+    if (compact.isEmpty) return false;
+    return RegExp(r'^(不要|不用|免|先不要|先不用|取消|算了|毋免|袂使|不用了|不要了|先免)$')
+        .hasMatch(compact);
   }
 
   Future<void> _analyzeCompanionTranscript(
@@ -968,8 +1010,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       createdAt: DateTime.now(),
       riskLevel: riskLevel,
       category: CareAlertCategory.other,
-      triggerSummary:
-          summary.isEmpty ? '對話中偵測到需要關心的狀況' : summary,
+      triggerSummary: summary.isEmpty ? '對話中偵測到需要關心的狀況' : summary,
       transcriptSnippet: transcript.trim(),
       source: 'companion_analysis',
       isRead: false,

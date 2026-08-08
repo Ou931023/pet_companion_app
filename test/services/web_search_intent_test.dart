@@ -3,9 +3,11 @@ import 'package:pet_companion_app/services/web_search_service.dart';
 
 void main() {
   group('WebSearchService.shouldSearch 即時資訊 intent (CR-0080)', () {
-    test('天氣 / 新聞 / 活動 / 詐騙等原有 intent 仍會進搜尋', () {
+    test('天氣 / 明確新聞主題 / 活動 / 詐騙等 intent 仍會進搜尋', () {
       for (final query in const [
-        '今天有什麼新聞？',
+        '今天有什麼防詐新聞？',
+        '今仔日有啥健康新聞？',
+        '嘉義地方新聞予我聽',
         '幫我查天氣',
         '附近有什麼活動？',
         '最近詐騙新聞有哪些？',
@@ -19,13 +21,26 @@ void main() {
       for (final query in const [
         '今天嘉義天氣如何？',
         '最近有什麼長照補助？',
-        '現在有什麼重要新聞？',
+        '現在有什麼股市新聞？',
         '敬老津貼怎麼申請？',
         '今天油價多少？',
         '這個颱風會不會放假？',
         '健保的規定有改嗎？',
       ]) {
         expect(WebSearchService.shouldSearch(query), isTrue, reason: query);
+      }
+    });
+
+    test('泛用新聞請求先追問偏好，不直接搜尋', () {
+      for (final query in const [
+        '今天有什麼新聞？',
+        '今仔日有啥新聞？',
+        '有啥物新聞？',
+        '新聞予我聽',
+        '現在有什麼重要新聞？',
+      ]) {
+        expect(WebSearchService.shouldSearch(query), isFalse, reason: query);
+        expect(WebSearchService.isBroadNewsRequest(query), isTrue, reason: query);
       }
     });
 

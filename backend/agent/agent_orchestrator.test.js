@@ -25,6 +25,13 @@ test("music routes to low risk play music", () => {
   assert.equal(result.intent.requiresConfirmation, false);
 });
 
+test("broad music requests ask preference instead of auto-playing", () => {
+  for (const text of ["我想聽音樂", "放歌予我聽", "播歌", "幫我播放音樂"]) {
+    const result = routeAgentTool({ userText: text });
+    assert.equal(result.hasToolIntent, false, `「${text}」應交給寵物先追問偏好`);
+  }
+});
+
 test("reminder routes to low risk reminder, executes directly (no confirmation)", () => {
   const result = routeAgentTool({ userText: "提醒我晚上八點吃藥" });
   assert.equal(result.intent.toolName, "create_reminder");
@@ -94,6 +101,92 @@ test("fraud news routes to trusted search", () => {
   const result = routeAgentTool({ userText: "幫我查今天的防詐騙新聞" });
   assert.equal(result.intent.toolName, "search_trusted_info");
   assert.equal(result.intent.riskLevel, "low");
+});
+
+test("mixed Mandarin/Taigi voice commands route to real tools", () => {
+  const cases = [
+    {
+      text: "放台語老歌予我聽",
+      toolName: "play_music",
+      argument: ["query", "台語老歌 放鬆"],
+    },
+    {
+      text: "八點記咧提醒我食藥",
+      toolName: "create_reminder",
+      argument: ["text", "八點記咧提醒我食藥"],
+    },
+    {
+      text: "共兒子講我今仔日很好",
+      toolName: "send_message",
+      argument: ["recipient", "兒子"],
+    },
+    {
+      text: "講古給我聽",
+      toolName: "tell_story",
+    },
+    {
+      text: "你愛記得我喜歡散步",
+      toolName: "save_memory",
+    },
+    {
+      text: "你有記得我女兒啥時欲回來嗎",
+      toolName: "retrieve_memory",
+    },
+  ];
+
+  for (const c of cases) {
+    const result = routeAgentTool({ userText: c.text });
+    assert.equal(result.hasToolIntent, true, `「${c.text}」應觸發工具`);
+    assert.equal(result.intent.toolName, c.toolName, `「${c.text}」工具不符`);
+    if (c.argument) {
+      const [key, expected] = c.argument;
+      assert.equal(result.intent.arguments[key], expected);
+    }
+  }
+});
+
+test("broad Taigi news requests ask preference instead of searching", () => {
+  for (const text of ["今仔日有啥新聞", "有啥物新聞", "新聞予我聽"]) {
+    const result = routeAgentTool({ userText: text });
+    assert.equal(result.hasToolIntent, false, `「${text}」應交給寵物先追問新聞類型`);
+  }
+});
+
+test("specific Taigi news requests route to trusted search", () => {
+  for (const text of ["今仔日有啥防詐新聞", "嘉義地方新聞予我聽", "健康新聞有啥物"]) {
+    const result = routeAgentTool({ userText: text });
+    assert.equal(result.hasToolIntent, true, `「${text}」應觸發搜尋`);
+    assert.equal(result.intent.toolName, "search_trusted_info");
+    assert.equal(result.intent.arguments.query, text);
+  }
+});
+
+test("Taigi caregiver notification is not confused with family message", () => {
+  const notify = routeAgentTool({ userText: "共照護員講我今仔日不太舒服" });
+  assert.equal(notify.intent.toolName, "notify_caregiver");
+  assert.equal(notify.intent.requiresConfirmation, true);
+
+  const message = routeAgentTool({ userText: "共家人講我今仔日很好" });
+  assert.equal(message.intent.toolName, "send_message");
+  assert.equal(message.intent.arguments.recipient, "家人");
+  assert.equal(message.intent.arguments.body, "我今仔日很好");
+});
+
+test("assistant navigation covers care tasks, photo album, alerts, and puzzle", () => {
+  const cases = [
+    ["帶我去看今天的照護任務", "/daily-care-tasks"],
+    ["我要做拍照驗證", "/daily-care-tasks"],
+    ["打開相簿看照片", "/album"],
+    ["我要看關心紀錄", "/care-alerts"],
+    ["帶我去玩拼圖", "/puzzle"],
+  ];
+
+  for (const [text, route] of cases) {
+    const result = routeAgentTool({ userText: text });
+    assert.equal(result.intent.toolName, "open_app_route", `「${text}」應導頁`);
+    assert.equal(result.intent.arguments.route, route);
+    assert.equal(result.intent.requiresConfirmation, false);
+  }
 });
 
 test("unknown tools are rejected by policy", () => {
