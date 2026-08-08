@@ -83,7 +83,24 @@ void main() {
     harness.dispose();
   });
 
-  test('低風險工具（play_music）在同一輪直接執行，且不改變語音狀態（仍 thinking）', () async {
+  test('指定音樂類型（play_music）在同一輪直接執行，且不改變語音狀態（仍 thinking）', () async {
+    final harness = await _Harness.create(_intent('play_music'));
+    await harness.connect();
+
+    harness.realtime.handleDataChannelEventForTest(
+      '{"type":"conversation.item.input_audio_transcription.completed","transcript":"幫我播放放鬆音樂"}',
+    );
+    await pumpEventQueue();
+    await pumpEventQueue();
+
+    expect(harness.router.routedTexts, contains('幫我播放放鬆音樂'));
+    expect(harness.executor.executedCount, 1); // 低風險直接執行
+    expect(harness.controller.state, VoiceAgentState.thinking); // 工具執行不搶語音狀態
+
+    harness.dispose();
+  });
+
+  test('泛用音樂請求先追問偏好，不送後端 router、不開 YouTube', () async {
     final harness = await _Harness.create(_intent('play_music'));
     await harness.connect();
 
@@ -93,9 +110,9 @@ void main() {
     await pumpEventQueue();
     await pumpEventQueue();
 
-    expect(harness.router.routedTexts, contains('我想聽音樂'));
-    expect(harness.executor.executedCount, 1); // 低風險直接執行
-    expect(harness.controller.state, VoiceAgentState.thinking); // 工具執行不搶語音狀態
+    expect(harness.router.routedTexts, isNot(contains('我想聽音樂')));
+    expect(harness.executor.executedCount, 0);
+    expect(harness.controller.state, VoiceAgentState.thinking);
 
     harness.dispose();
   });

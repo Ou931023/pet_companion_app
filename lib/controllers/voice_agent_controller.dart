@@ -818,6 +818,12 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     if (_tryHandlePendingToolVoiceDecision(transcript)) {
       return;
     }
+    if (_isBroadMusicRequest(transcript)) {
+      unawaited(
+        realtimeVoiceService.speakToolOutcome('想聽誰的歌，還是想聽什麼類型呢？'),
+      );
+      return;
+    }
     // 本地能處理（簽到 / 設定 / 找新聞 / 查資訊…）就走本地，並念出結果；走本地就不再
     // 交給後端 agent，避免同一個指令被執行兩次（重複查 / 重複念）。
     if (conversationController.shouldHandleAsLocalCommand(transcript)) {
@@ -850,6 +856,20 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     if (routing != null) {
       unawaited(routing.then((_) => _maybeSpeakToolOutcome()));
     }
+  }
+
+  static bool _isBroadMusicRequest(String text) {
+    final normalized =
+        text.replaceAll(RegExp(r'[\s，。！？!?、,.]'), '').trim();
+    if (normalized.isEmpty) return false;
+    if (RegExp(
+      r'台語|老歌|放鬆|白噪音|輕音樂|雨聲|助眠|懷舊|自然音|歌手|周杰倫|江蕙|鄧麗君|費玉清|蔡琴|五月天|鳳飛飛|望春風|雨夜花|月亮代表我的心',
+    ).hasMatch(normalized)) {
+      return false;
+    }
+    return RegExp(
+      r'^(幫我|我想|我欲|想|欲|請)?(播放|放|播|聽)?(一點|一些)?(音樂|歌|歌曲)(予我聽|給我聽|來聽|一下)?[吧嗎呢啦喔]*$',
+    ).hasMatch(normalized);
   }
 
   bool _tryHandlePendingToolVoiceDecision(String transcript) {
