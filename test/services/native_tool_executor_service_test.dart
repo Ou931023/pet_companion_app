@@ -111,6 +111,29 @@ void main() {
     expect(launched?.queryParameters['search_query'], '周杰倫');
   });
 
+  test('play_music：泛用音樂請求只追問偏好，不直接開 YouTube', () async {
+    Uri? launched;
+    final service = NativeToolExecutorService(
+      launch: (uri, mode) async {
+        launched = uri;
+        return true;
+      },
+    );
+
+    for (final query in const ['我想聽音樂', '放歌予我聽', '播歌', '音樂']) {
+      final result = await service.execute(
+        intent: _intent('play_music', arguments: {'query': query}),
+        reminderController: _FakeReminderController(),
+        searchService: SearchService(),
+        navigationController: AppNavigationController(),
+        memoryController: _memoryController(),
+      );
+      expect(result.success, isTrue, reason: query);
+      expect(result.message, contains('想聽'));
+      expect(launched, isNull, reason: '「$query」不可直接開 YouTube');
+    }
+  });
+
   test('create reminder delegates to reminder controller', () async {
     final reminderController = _FakeReminderController();
     final service = NativeToolExecutorService(launch: (_, __) async => true);

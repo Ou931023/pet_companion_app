@@ -140,7 +140,14 @@ class NativeToolExecutorService {
   }
 
   Future<AgentToolExecutionResult> _playMusic(AgentToolIntent intent) async {
-    final query = _stringArg(intent, 'query', fallback: '放鬆音樂');
+    final rawQuery = _stringArg(intent, 'query');
+    final query = rawQuery.isEmpty ? _stringArg(intent, 'text') : rawQuery;
+    if (_isBroadMusicQuery(query) || (query.isEmpty && intent.arguments.isEmpty)) {
+      return AgentToolExecutionResult.succeeded(
+        toolName: intent.toolName,
+        message: '想聽誰的歌，還是想聽什麼類型呢？',
+      );
+    }
     final videoId = _curatedMusicVideoIdFor(query);
     final isPlayback = videoId != null;
     final uri = isPlayback
@@ -156,6 +163,18 @@ class NativeToolExecutorService {
             toolName: intent.toolName,
             message: '目前無法開啟音樂。',
           );
+  }
+
+  static bool _isBroadMusicQuery(String text) {
+    final normalized = text.replaceAll(RegExp(r'[\s，。！？!?、,.]'), '');
+    if (normalized.isEmpty) return true;
+    if (RegExp(r'台語|老歌|放鬆|白噪音|輕音樂|雨聲|助眠|懷舊|自然音|歌手|周杰倫|江蕙|鄧麗君|費玉清|蔡琴|五月天|鳳飛飛|望春風|雨夜花|月亮代表我的心')
+        .hasMatch(normalized)) {
+      return false;
+    }
+    return RegExp(
+      r'^(幫我|我想|我欲|想|欲|請)?(播放|放|播|聽)?(一點|一些)?(音樂|歌|歌曲)(予我聽|給我聽|來聽|一下)?[吧嗎呢啦喔]*$',
+    ).hasMatch(normalized);
   }
 
   Future<AgentToolExecutionResult> _openPhoneDialer(
