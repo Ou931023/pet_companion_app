@@ -12,17 +12,17 @@
 
 以下資料由 owner / 發行負責人提供，只記錄「名稱與狀態」，不可寫入 secret 值。
 
-- [ ] `BLOCKER` production HTTPS API 網域：依 `docs/BACKEND_DEPLOYMENT_GUIDE.md` 部署 Render + Neon 後取得，供 `API_BASE_URL=https://...` 使用，不能是 localhost / LAN IP / ngrok。
+- [x] production HTTPS API 網域：Render + Neon production backend 已部署於 `https://ai-companion-api-rdjv.onrender.com`，供 `API_BASE_URL` 使用；不能是 localhost / LAN IP / ngrok。
 - [x] hosted 隱私權政策 URL：`https://ou931023.github.io/pet_companion_app/privacy.html`，供 `PRIVACY_POLICY_URL` 與商店後台使用。
 - [x] hosted 服務條款 URL：`https://ou931023.github.io/pet_companion_app/terms.html`，供 `TERMS_OF_SERVICE_URL` 使用。
-- [x] hosted 支援頁 URL：`https://ou931023.github.io/pet_companion_app/support.html`，供 `SUPPORT_URL` 與商店後台使用。
+- [x] hosted 支援 / 帳號資料刪除 URL：`https://ou931023.github.io/pet_companion_app/support.html`，供 `SUPPORT_URL`、Google Play account deletion web resource 與商店後台使用。
 - [x] 正式客服信箱：`aicompanion.support@gmail.com`，供 `CONTACT_EMAIL` 與商店後台使用。
 - [x] GitHub Pages 已啟用 Source: GitHub Actions，且 `Deploy legal site to GitHub Pages` workflow 成功部署。
 - [ ] `BLOCKER` Android release upload keystore / key alias / CI secret；不得提交進 git。
 - [ ] `BLOCKER` iOS distribution certificate / provisioning profile / App Store Connect app record。
 - [x] Android target API gate：`android/app/build.gradle.kts` 明確要求 Android 16 / API 36 以上；本機 / CI 需安裝對應 Android SDK platform。
 - [ ] `BLOCKER` Firebase iOS / Android app config 已對應 `tw.edu.ncyu.im.aicompanion`。
-- [ ] `BLOCKER` Neon / production PostgreSQL migrations 已執行，含 `app_usage_events`。
+- [x] Neon / production PostgreSQL migrations 已由 owner 執行並回報完成，含 `app_usage_events`。
 - [ ] `BLOCKER` OpenAI / Firebase Admin / Telegram / DB / admin token 等後端正式 env 已由部署平台設定。
 - [x] App icon、Android adaptive icon、screenshots、feature graphic、launch screen 已提供正式候選素材。
 - [ ] `BLOCKER` 審查用測試帳號已由 Firebase / 後端正式建立，不硬編在 App 或 repo。

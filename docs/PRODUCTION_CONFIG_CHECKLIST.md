@@ -168,8 +168,8 @@ Production build 應帶：
 - [x] iOS Bundle ID：✅ `tw.edu.ncyu.im.aicompanion`（CR-0061 owner 拍板）
 - [x] Android applicationId：✅ `tw.edu.ncyu.im.aicompanion`（CR-0061，對齊 iOS）
       （namespace 維持 `com.example.pet_companion_app`，owner 指定不動）
-- [x] App 顯示名稱：✅ iOS `CFBundleDisplayName` / Android `android:label` = `AI Companion`
-      （中文名 `AI陪伴`，CR-0061）
+- [x] App 顯示名稱：✅ iOS `CFBundleDisplayName` / Android `android:label` = `AI陪伴`
+      （英文品牌 `AI Companion` 可放商店描述 / 關鍵字，CR-0101B）
 - [x] App icon / launch screen / 權限文案（麥克風、通知）正式化
 - [x] repo 自動檢查確保 production 無 debug banner、無「Demo / 測試 / 開發中」使用者可見入口
 

@@ -62,7 +62,7 @@ flutter run --release \
 | 項目 | 值 / 狀態 | 位置 |
 |---|---|---|
 | Bundle ID | ✅ `tw.edu.ncyu.im.aicompanion`（非預設、CR-0061 定值） | `project.pbxproj` |
-| Display name | ✅ `AI Companion` | `Info.plist:10` |
+| Display name | ✅ `AI陪伴` | `Info.plist:10` |
 | DEVELOPMENT_TEAM | ✅ 已設（`WAH25TW6U4`）、CODE_SIGN_STYLE Automatic | `project.pbxproj` |
 | CODE_SIGN_IDENTITY | `iPhone Developer`（開發憑證）→ 實機展示可；**App Store 送審需 Apple Distribution / App Store provisioning profile**（Xcode 自動或 App Store Connect） | `project.pbxproj` |
 | Google URL scheme | ✅ 與 `GoogleService-Info.plist` REVERSED_CLIENT_ID 對齊（CR-0056 修正） | `Info.plist:30` |
@@ -79,7 +79,7 @@ flutter run --release \
 |---|---|---|
 | applicationId | ✅ `tw.edu.ncyu.im.aicompanion`（非預設、CR-0061 定值） | `build.gradle.kts:30` |
 | namespace | `com.example.pet_companion_app`（僅 R class 套件，非使用者可見；不影響上架，建議日後對齊） | `build.gradle.kts:11` |
-| label | ✅ `AI Companion` | `AndroidManifest.xml:11` |
+| label | ✅ `AI陪伴` | `AndroidManifest.xml:11` |
 | minSdk | ✅ `max(flutter.minSdk, 23)`（Firebase / Google Sign-In 需 23+） | `build.gradle.kts:35` |
 | 權限 | ✅ INTERNET / RECORD_AUDIO / MODIFY_AUDIO_SETTINGS / POST_NOTIFICATIONS / ACCESS_NETWORK_STATE / READ_MEDIA_IMAGES | `AndroidManifest.xml` |
 | google-services.json | ✅ 存在 | `android/app/` |

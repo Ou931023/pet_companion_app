@@ -213,8 +213,8 @@ void main() {
       final colors = _read('android/app/src/main/res/values/colors.xml');
       final assetChecklist = _read('docs/STORE_ASSET_CHECKLIST.md');
 
-      expect(infoPlist, contains('<string>AI Companion</string>'));
-      expect(androidManifest, contains('android:label="AI Companion"'));
+      expect(infoPlist, contains('<string>AI陪伴</string>'));
+      expect(androidManifest, contains('android:label="AI陪伴"'));
       expect(iosLaunchStoryboard, contains('LaunchImage'));
 
       for (final path in [
@@ -281,7 +281,10 @@ void main() {
       expect(privacy, contains('OpenAI'));
       expect(privacy, contains('不是醫療診斷'));
       expect(terms, contains('不能取代醫師'));
-      expect(support, contains('刪除帳號與資料'));
+      expect(support, contains('帳號與資料刪除申請'));
+      expect(support, contains('AI陪伴帳號刪除申請'));
+      expect(support, contains('使用分析紀錄'));
+      expect(support, contains('不要在信件中提供密碼'));
       expect(
         privacy,
         contains('mailto:aicompanion.support@gmail.com'),

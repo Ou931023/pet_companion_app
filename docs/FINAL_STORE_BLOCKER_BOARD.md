@@ -21,6 +21,9 @@
   - `https://ou931023.github.io/pet_companion_app/terms.html`
   - `https://ou931023.github.io/pet_companion_app/support.html`
 - [x] Support email：`aicompanion.support@gmail.com`。
+- [x] Production API HTTPS URL：`https://ai-companion-api-rdjv.onrender.com`。
+- [x] Production PostgreSQL migrations：owner 已回報完成，含 usage tracking schema。
+- [x] Hosted support page includes account / data deletion instructions.
 - [x] Production gating：demo / mock / debug panel / unfinished social sign-in / marketplace / daily-care production 入口關閉。
 - [x] Store readiness test：`flutter test test/config/store_readiness_test.dart`。
 - [x] Release signing readiness script：`bash scripts/check_release_signing_readiness.sh`。
@@ -34,9 +37,8 @@
 
 | Blocker | 需要提供 / 完成 | 不可做 |
 |---|---|---|
-| Production API | 正式 HTTPS `API_BASE_URL`，不能是 local / LAN / temporary tunnel | 不可用 localhost、127.0.0.1、10.0.2.2、ngrok 送審 |
 | Backend env | 部署平台設定 `DATABASE_URL`、`OPENAI_API_KEY`、Firebase Admin、`ADMIN_API_TOKEN`、`CORS_ALLOWED_ORIGINS`、Telegram 測試通知設定 | 不可貼值到 repo / 文件 / chat |
-| PostgreSQL | production migration 已執行，含 `app_usage_events` | 不可用本機 DB 當正式依據 |
+| Backend uptime | Render Free 可送內測，但正式公開建議升級，避免 idle 冷啟動造成長者語音等待過久 | 不可把免費方案冷啟動當成正式 SLA |
 | Firebase 測試帳號 | resident / caregiver / super_admin 三種測試帳號，供審查與 smoke；只填在商店後台受保護欄位 | 不可 hardcode 帳密到 App 或 repo |
 | Android signing | upload keystore、`android/key.properties` 本機/CI secret、Play App Signing、安裝 Android SDK Platform 36 | 不可 commit `.jks`、`.keystore`、`key.properties` |
 | iOS signing | Apple Developer、App Store Connect app record、distribution signing / provisioning | 不可 commit `.p8`、`.cer`、`.p12`、`.mobileprovision` |
@@ -90,8 +92,8 @@
 
 ## 5. 最後執行順序
 
-1. Owner 提供 production HTTPS API 與後端 env，部署 backend / caregiver_web。
-2. 跑 production migrations。
+1. Owner 確認後端 env、Render instance plan、caregiver_web deployment。
+2. 以正式後端跑一次 health / Realtime / app_usage_events / Care Alert smoke。
 3. 建立 Firebase resident / caregiver / super_admin 測試帳號與授權關聯。
 4. 完成 Android upload keystore / Play App Signing。
 5. 確認 Android SDK Platform 36 已安裝；本 repo 已把 compileSdk / targetSdk gate 固定為 Android 16 / API 36 以上。
