@@ -9,11 +9,13 @@ class DailyCareTaskCard extends StatelessWidget {
     required this.task,
     required this.isSubmitting,
     required this.onComplete,
+    this.isHighlighted = false,
   });
 
   final DailyCareTask task;
   final bool isSubmitting;
   final VoidCallback onComplete;
+  final bool isHighlighted;
 
   IconData get _typeIcon {
     switch (task.type) {
@@ -59,6 +61,12 @@ class DailyCareTaskCard extends StatelessWidget {
     final statusColor = _statusColor(context);
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: isHighlighted
+            ? const BorderSide(color: Color(0xFF2563EB), width: 3)
+            : BorderSide.none,
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(

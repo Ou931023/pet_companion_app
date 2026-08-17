@@ -668,7 +668,10 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     final navigationIntent = navigationService.detect(transcript);
     if (navigationIntent != null) {
       if (!_isActiveTurn(turnId)) return;
-      navigationController.navigateTo(navigationIntent.route);
+      navigationController.navigateTo(
+        navigationIntent.route,
+        arguments: navigationIntent.arguments,
+      );
       if (navigationIntent.action == NavigationAction.replayOnboarding) {
         coachMarkController?.requestReplay();
       }

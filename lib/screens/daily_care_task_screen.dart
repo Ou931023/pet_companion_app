@@ -5,8 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../controllers/daily_care_task_controller.dart';
+import '../controllers/pet_controller.dart';
+import '../controllers/profile_controller.dart';
 import '../models/daily_care_task.dart';
+import '../models/pet_status.dart';
+import '../routes/app_routes.dart';
 import '../services/photo_picker_service.dart';
+import '../services/text_to_speech_service.dart';
 import '../widgets/daily_care_task_card.dart';
 
 /// CR-0025 長者端「今日任務」頁：吃藥 / 喝水 / 運動，拍照完成 → AI 確認 → 更新狀態。
@@ -23,6 +28,8 @@ class DailyCareTaskScreen extends StatefulWidget {
 class _DailyCareTaskScreenState extends State<DailyCareTaskScreen> {
   late final PhotoPickerService _picker =
       widget.photoPicker ?? PhotoPickerService();
+  DailyCareTaskRouteArgs? _voiceArgs;
+  bool _routeArgsLoaded = false;
 
   @override
   void initState() {
@@ -30,6 +37,17 @@ class _DailyCareTaskScreenState extends State<DailyCareTaskScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) context.read<DailyCareTaskController>().load();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_routeArgsLoaded) return;
+    _routeArgsLoaded = true;
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is DailyCareTaskRouteArgs && args.launchedFromVoice) {
+      _voiceArgs = args;
+    }
   }
 
   @override
@@ -62,6 +80,12 @@ class _DailyCareTaskScreenState extends State<DailyCareTaskScreen> {
           style: TextStyle(fontSize: 17, height: 1.4),
         ),
         const SizedBox(height: 12),
+        if (_voiceArgs != null) ...[
+          _VoiceGuidanceBanner(
+            taskLabel: _voiceArgs!.requestedTaskLabel,
+          ),
+          const SizedBox(height: 12),
+        ],
         if (controller.errorMessage != null)
           _ErrorBanner(
             message: controller.errorMessage!,
@@ -81,10 +105,17 @@ class _DailyCareTaskScreenState extends State<DailyCareTaskScreen> {
           DailyCareTaskCard(
             task: task,
             isSubmitting: controller.isSubmitting(task.id),
+            isHighlighted: _isVoiceTarget(task),
             onComplete: () => _handleComplete(task),
           ),
       ],
     );
+  }
+
+  bool _isVoiceTarget(DailyCareTask task) {
+    final requestedType = _voiceArgs?.requestedTaskType;
+    if (requestedType == null || requestedType.isEmpty) return false;
+    return dailyCareTaskTypeToString(task.type) == requestedType;
   }
 
   /// 使用 State 自身的 `context`（不接收 context 參數），讓 `mounted` 能正確守衛
@@ -120,7 +151,69 @@ class _DailyCareTaskScreenState extends State<DailyCareTaskScreen> {
       _showSnack(controller.errorMessage ?? '照片上傳沒成功，待會再試一次好嗎？');
       return;
     }
+    await _deliverSubmissionVoiceFeedback(task, submission);
+    if (!mounted) return;
     await _showAiResult(context, submission);
+  }
+
+  Future<void> _deliverSubmissionVoiceFeedback(
+    DailyCareTask task,
+    DailyCareTaskSubmission submission,
+  ) async {
+    final message = _submissionVoiceMessage(task, submission);
+    final petMode = _petModeForSubmission(submission);
+    final petController = _maybeRead<PetController>();
+    final profileController = _maybeRead<ProfileController>();
+    final ttsService = _maybeRead<TextToSpeechService>();
+    petController?.setModeAndMessage(petMode, message);
+    if (profileController == null || ttsService == null) return;
+
+    await ttsService.speak(
+      message,
+      enabled: profileController.ttsEnabled,
+      volume: profileController.petVolume,
+      speechStyle: profileController.speechStyle,
+      onStart: () async {
+        petController?.setMode(PetMode.talking, isSpeaking: true);
+      },
+      onComplete: () async {
+        petController?.setMode(petMode, isSpeaking: false);
+      },
+      onError: () async {
+        petController?.setMode(petMode, isSpeaking: false);
+      },
+    );
+  }
+
+  String _submissionVoiceMessage(
+    DailyCareTask task,
+    DailyCareTaskSubmission submission,
+  ) {
+    final taskLabel = task.title.isEmpty ? task.typeLabel : task.title;
+    final status = submission.verification?.status;
+    return switch (status) {
+      DailyCareVerificationStatus.passed =>
+        '$taskLabel 的照片已經送出，也確認完成了。做得很好，我幫你記錄下來。',
+      DailyCareVerificationStatus.failed =>
+        '$taskLabel 的照片已經送出，但看起來不太清楚。我們再拍一次，或請照護人員幫你確認。',
+      _ => '$taskLabel 的照片已經送出。我先幫你交給照護人員確認，你不用擔心。',
+    };
+  }
+
+  PetMode _petModeForSubmission(DailyCareTaskSubmission submission) {
+    return switch (submission.verification?.status) {
+      DailyCareVerificationStatus.passed => PetMode.happy,
+      DailyCareVerificationStatus.failed => PetMode.caring,
+      _ => PetMode.listening,
+    };
+  }
+
+  T? _maybeRead<T>() {
+    try {
+      return context.read<T>();
+    } on ProviderNotFoundException {
+      return null;
+    }
   }
 
   Future<_PickSource?> _chooseSource(BuildContext context) {
@@ -134,15 +227,14 @@ class _DailyCareTaskScreenState extends State<DailyCareTaskScreen> {
               const Padding(
                 padding: EdgeInsets.all(16),
                 child: Text(
-                  '要怎麼上傳完成照片？',
+                  '要怎麼上傳這項任務的照片？',
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
                 ),
               ),
               ListTile(
                 leading: const Icon(Icons.photo_camera, size: 30),
                 title: const Text('拍照', style: TextStyle(fontSize: 20)),
-                onTap: () =>
-                    Navigator.of(sheetContext).pop(_PickSource.camera),
+                onTap: () => Navigator.of(sheetContext).pop(_PickSource.camera),
               ),
               ListTile(
                 leading: const Icon(Icons.photo_library, size: 30),
@@ -231,7 +323,8 @@ class _DailyCareTaskScreenState extends State<DailyCareTaskScreen> {
             title,
             style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
           ),
-          content: Text(message, style: const TextStyle(fontSize: 18, height: 1.4)),
+          content:
+              Text(message, style: const TextStyle(fontSize: 18, height: 1.4)),
           actions: [
             FilledButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
@@ -251,6 +344,47 @@ class _DailyCareTaskScreenState extends State<DailyCareTaskScreen> {
 }
 
 enum _PickSource { camera, gallery }
+
+class _VoiceGuidanceBanner extends StatelessWidget {
+  const _VoiceGuidanceBanner({this.taskLabel});
+
+  final String? taskLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = taskLabel == null || taskLabel!.isEmpty ? '這項任務' : taskLabel!;
+    return Semantics(
+      label: '語音任務引導',
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFDBEAFE),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFF2563EB), width: 2),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.record_voice_over,
+                color: Color(0xFF1D4ED8), size: 30),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                '我聽到你完成$label。請按下方「$label」的拍照完成，再拍一張照片，我會幫你送出確認。',
+                style: const TextStyle(
+                  fontSize: 19,
+                  height: 1.35,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1E3A8A),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _ErrorBanner extends StatelessWidget {
   const _ErrorBanner({required this.message, required this.onRetry});

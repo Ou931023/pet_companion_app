@@ -15,7 +15,7 @@ class AppNavigationController extends ChangeNotifier {
     navigateTo(AppRoute.shellRoutes[index]);
   }
 
-  void navigateTo(String route) {
+  void navigateTo(String route, {Object? arguments}) {
     if (AppRoute.shellRoutes.contains(route)) {
       navigatorKey.currentState?.popUntil((route) => route.isFirst);
       if (_currentShellRoute != route) {
@@ -25,6 +25,6 @@ class AppNavigationController extends ChangeNotifier {
       return;
     }
 
-    navigatorKey.currentState?.pushNamed(route);
+    navigatorKey.currentState?.pushNamed(route, arguments: arguments);
   }
 }
