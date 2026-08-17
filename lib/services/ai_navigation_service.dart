@@ -19,7 +19,7 @@ class AiNavigationService {
   const AiNavigationService();
 
   AiNavigationIntent? detect(String text) {
-    final normalized = text.trim();
+    final normalized = _toTraditional(text.trim());
     if (normalized.isEmpty) return null;
 
     if (_containsAny(normalized, const ['回首頁', '回到首頁', '帶我回首頁'])) {
@@ -87,6 +87,35 @@ class AiNavigationService {
 
   bool _containsAny(String text, List<String> keywords) {
     return keywords.any(text.contains);
+  }
+
+  static const Map<String, String> _s2tMap = {
+    '药': '藥',
+    '设': '設',
+    '关': '關',
+    '开': '開',
+    '页': '頁',
+    '首': '首',
+    '导': '導',
+    '览': '覽',
+    '护': '護',
+    '务': '務',
+    '认': '認',
+    '传': '傳',
+    '过': '過',
+    '经': '經',
+    '运': '運',
+    '动': '動',
+    '写': '寫',
+    '儿': '兒',
+  };
+
+  static String _toTraditional(String input) {
+    final buffer = StringBuffer();
+    for (final ch in input.split('')) {
+      buffer.write(_s2tMap[ch] ?? ch);
+    }
+    return buffer.toString();
   }
 
   bool _isDailyCareTaskIntent(String text) {

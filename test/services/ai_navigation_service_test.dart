@@ -26,5 +26,25 @@ void main() {
       expect(intent!.route, AppRoute.dailyCareTasks);
       expect(intent.route, isNot(AppRoute.album));
     });
+
+    test('簡體 transcript 也能辨識吃藥完成語句', () {
+      const service = AiNavigationService();
+
+      final intent = service.detect('我吃药了');
+
+      expect(intent, isNotNull);
+      expect(intent!.route, AppRoute.dailyCareTasks);
+    });
+  });
+
+  group('AiNavigationService transcript normalization', () {
+    test('簡體首頁指令仍會回首頁', () {
+      const service = AiNavigationService();
+
+      final intent = service.detect('回首页');
+
+      expect(intent, isNotNull);
+      expect(intent!.route, AppRoute.home);
+    });
   });
 }
