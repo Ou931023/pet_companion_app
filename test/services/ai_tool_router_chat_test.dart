@@ -22,7 +22,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// 後端聊天 stub：可回傳固定 reply，或丟出 [CompanionChatException]。
 class _StubChatService extends CompanionChatService {
-  _StubChatService({this.replyValue = 'BACKEND_REPLY', this.shouldThrow = false});
+  _StubChatService(
+      {this.replyValue = 'BACKEND_REPLY', this.shouldThrow = false});
 
   final String replyValue;
   final bool shouldThrow;
@@ -209,7 +210,7 @@ void main() {
   });
 
   group('AiToolRouter reminder branch (B4)', () {
-    test('建立提醒指令：實際建立提醒且 shouldSpeak == false', () async {
+    test('建立提醒指令：實際建立提醒且語音回報真實結果', () async {
       final reminderController = ReminderController(
         reminderService: ReminderService(),
         notificationService: _FakeNotificationService(),
@@ -223,12 +224,14 @@ void main() {
 
       expect(result.toolName, 'createReminder');
       expect(result.success, isTrue);
-      expect(result.shouldSpeak, isFalse);
+      expect(result.shouldSpeak, isTrue);
+      expect(result.message, contains('晚上8點'));
+      expect(result.message, contains('吃藥'));
       expect(reminderController.reminders, hasLength(1));
       expect(reminderController.reminders.first.title, '吃藥');
     });
 
-    test('查詢提醒指令：shouldSpeak == false', () async {
+    test('查詢提醒指令：語音回報真實提醒清單', () async {
       final reminderController = ReminderController(
         reminderService: ReminderService(),
         notificationService: _FakeNotificationService(),
@@ -241,7 +244,8 @@ void main() {
       final result = await router.route('我的提醒');
 
       expect(result.toolName, 'listReminders');
-      expect(result.shouldSpeak, isFalse);
+      expect(result.shouldSpeak, isTrue);
+      expect(result.message, contains('目前還沒有提醒'));
     });
 
     test('模糊提醒指令：不建立提醒，會用語音追問時間', () async {
