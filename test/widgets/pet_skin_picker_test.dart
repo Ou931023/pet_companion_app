@@ -121,6 +121,39 @@ void main() {
     expect(selected, [PetSkin.fox]);
   });
 
+  testWidgets('狗狗顯示 Q版 / 真實版選項，切換真實版會觸發追蹤 callback', (tester) async {
+    final pet = PetController();
+    final selected = <PetSkin>[];
+    await _pump(
+      tester,
+      pet: pet,
+      wallet: _FakeWallet(0),
+      onSkinApplied: selected.add,
+    );
+
+    expect(find.text('狗狗樣子'), findsOneWidget);
+    expect(find.text('Q版'), findsOneWidget);
+    expect(find.text('真實版'), findsOneWidget);
+
+    await tester.tap(find.text('真實版'));
+    await tester.pumpAndSettle();
+
+    expect(selected, [PetSkin.dog]);
+    expect(find.text('已換成真實版狗狗。'), findsOneWidget);
+  });
+
+  testWidgets('非狗狗不顯示真實版入口，避免正式版出現未完成選項', (tester) async {
+    final pet = PetController(freeAllSkins: true);
+    await _pump(tester, pet: pet, wallet: _FakeWallet(0));
+
+    await tester.tap(find.text('狐狸'));
+    await tester.pumpAndSettle();
+
+    expect(pet.currentSkin, PetSkin.fox);
+    expect(find.text('狗狗樣子'), findsNothing);
+    expect(find.text('真實版'), findsNothing);
+  });
+
   testWidgets('點數不足 → 白話提醒、不扣點、不解鎖', (tester) async {
     final pet = PetController();
     await _pump(tester, pet: pet, wallet: _FakeWallet(10));

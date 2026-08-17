@@ -22,6 +22,7 @@ import '../models/inventory_item.dart';
 import '../models/language_route.dart';
 import '../models/pet_skin.dart';
 import '../models/pet_status.dart';
+import '../models/pet_visual_profile.dart';
 import '../utils/pet_state_selector.dart';
 import '../models/pet_stats.dart';
 import '../models/source_reference.dart';
@@ -308,6 +309,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                     showVoiceAura: showVoiceAura,
                                     petMode: displayPetMode,
                                     skin: petController.currentSkin,
+                                    visualStyle:
+                                        petController.currentVisualStyle,
+                                    growthStage:
+                                        petController.currentGrowthStage,
                                     onPetTap: () => openPetPlay('pet_tap'),
                                     onDragHoverChanged: (hovering) => setState(
                                       () => _isPetDragHovering = hovering,
@@ -1732,6 +1737,8 @@ class _PetStage extends StatelessWidget {
     required this.showVoiceAura,
     required this.petMode,
     required this.skin,
+    required this.visualStyle,
+    required this.growthStage,
     required this.onPetTap,
     required this.onDragHoverChanged,
     required this.onAcceptItem,
@@ -1742,6 +1749,8 @@ class _PetStage extends StatelessWidget {
   final bool showVoiceAura;
   final PetMode petMode;
   final PetSkin skin;
+  final PetVisualStyle visualStyle;
+  final PetGrowthStage growthStage;
   final VoidCallback onPetTap;
   final ValueChanged<bool> onDragHoverChanged;
   final ValueChanged<InventoryItem> onAcceptItem;
@@ -1808,6 +1817,8 @@ class _PetStage extends StatelessWidget {
                             PetAvatar(
                               mode: petMode,
                               skin: skin,
+                              visualStyle: visualStyle,
+                              growthStage: growthStage,
                               size: avatarSize,
                             ),
                           ],

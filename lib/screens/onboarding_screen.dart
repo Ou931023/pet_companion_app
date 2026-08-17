@@ -118,7 +118,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   /// 第一步：選擇陪伴夥伴（同時代表選寵物與外觀，不再拆成兩步）。
   /// 放大顯示目前選到的夥伴，下方三選一，讓「選誰」與「長什麼樣子」一次完成。
   Widget _buildChoosePartnerStep(BuildContext context) {
-    final skin = context.watch<PetController>().currentSkin;
+    final petController = context.watch<PetController>();
+    final skin = petController.currentSkin;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -129,7 +130,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         const SizedBox(height: 12),
         Center(
           child: AuthPetHero(
-            imagePath: AssetPaths.stateImage(skin, PetMode.happy),
+            imagePath: AssetPaths.stateImageForStyle(
+              skin,
+              PetMode.happy,
+              visualStyle: petController.currentVisualStyle,
+              growthStage: petController.currentGrowthStage,
+            ),
             size: 180,
           ),
         ),

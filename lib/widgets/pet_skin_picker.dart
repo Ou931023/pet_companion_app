@@ -5,6 +5,7 @@ import '../controllers/pet_controller.dart';
 import '../controllers/wallet_controller.dart';
 import '../models/pet_skin.dart';
 import '../models/pet_status.dart';
+import '../models/pet_visual_profile.dart';
 import '../utils/asset_paths.dart';
 
 /// 長者友善的寵物外觀選擇器：每個選項一張預覽圖 + 中文名稱。
@@ -89,6 +90,24 @@ class PetSkinPicker extends StatelessWidget {
     messenger.showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<void> _handleStyleTap(
+    BuildContext context,
+    PetVisualStyle visualStyle,
+  ) async {
+    final pet = context.read<PetController>();
+    final previousStyle = pet.currentVisualStyle;
+    final changed = await pet.changeVisualStyle(visualStyle);
+    if (!context.mounted ||
+        !changed ||
+        previousStyle == pet.currentVisualStyle) {
+      return;
+    }
+    onSkinApplied?.call(pet.currentSkin);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已換成${visualStyle.label}狗狗。')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final petController = context.watch<PetController>();
@@ -102,9 +121,20 @@ class PetSkinPicker extends StatelessWidget {
             selected: skin == current,
             owned: !purchasable || petController.isOwned(skin),
             purchasable: purchasable,
+            visualStyle:
+                skin == current ? petController.currentVisualStyle : null,
             compact: compact,
             onTap: () => _handleTap(context, skin),
           ),
+          if (skin == current &&
+              AssetPaths.availableVisualStyles(skin).length > 1) ...[
+            SizedBox(height: compact ? 8 : 10),
+            _VisualStyleSelector(
+              selected: petController.currentVisualStyle,
+              compact: compact,
+              onSelected: (style) => _handleStyleTap(context, style),
+            ),
+          ],
           if (skin != PetSkin.values.last) SizedBox(height: compact ? 8 : 10),
         ],
       ],
@@ -119,6 +149,7 @@ class _SkinOptionTile extends StatelessWidget {
     required this.owned,
     required this.purchasable,
     required this.onTap,
+    this.visualStyle,
     this.compact = false,
   });
 
@@ -127,6 +158,7 @@ class _SkinOptionTile extends StatelessWidget {
   final bool owned;
   final bool purchasable;
   final VoidCallback onTap;
+  final PetVisualStyle? visualStyle;
   final bool compact;
 
   @override
@@ -158,7 +190,12 @@ class _SkinOptionTile extends StatelessWidget {
             ),
             child: Row(
               children: [
-                _SkinPreview(skin: skin, selected: selected, compact: compact),
+                _SkinPreview(
+                  skin: skin,
+                  selected: selected,
+                  visualStyle: visualStyle,
+                  compact: compact,
+                ),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
@@ -192,6 +229,92 @@ class _SkinOptionTile extends StatelessWidget {
                   primary: primary,
                 ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _VisualStyleSelector extends StatelessWidget {
+  const _VisualStyleSelector({
+    required this.selected,
+    required this.onSelected,
+    this.compact = false,
+  });
+
+  final PetVisualStyle selected;
+  final ValueChanged<PetVisualStyle> onSelected;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    return Container(
+      padding: EdgeInsets.all(compact ? 8 : 10),
+      decoration: BoxDecoration(
+        color: primary.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: primary.withValues(alpha: 0.16)),
+      ),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Text(
+              '狗狗樣子',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+          ),
+          for (final style in AssetPaths.availableVisualStyles(PetSkin.dog))
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: _StyleChoiceButton(
+                style: style,
+                selected: style == selected,
+                onTap: () => onSelected(style),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StyleChoiceButton extends StatelessWidget {
+  const _StyleChoiceButton({
+    required this.style,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final PetVisualStyle style;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '${style.label}${selected ? '，使用中' : ''}',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          decoration: BoxDecoration(
+            color: selected ? primary : Colors.white,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: selected ? primary : Colors.black12),
+          ),
+          child: Text(
+            style.label,
+            style: TextStyle(
+              color: selected ? Colors.white : Colors.black87,
+              fontSize: 17,
+              fontWeight: FontWeight.w900,
             ),
           ),
         ),
@@ -246,11 +369,13 @@ class _SkinPreview extends StatelessWidget {
   const _SkinPreview({
     required this.skin,
     this.selected = false,
+    this.visualStyle,
     this.compact = false,
   });
 
   final PetSkin skin;
   final bool selected;
+  final PetVisualStyle? visualStyle;
   final bool compact;
 
   @override
@@ -268,7 +393,11 @@ class _SkinPreview extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
       ),
       child: Image.asset(
-        AssetPaths.stateImage(skin, PetMode.normal),
+        AssetPaths.stateImageForStyle(
+          skin,
+          PetMode.normal,
+          visualStyle: visualStyle ?? PetVisualStyle.cute,
+        ),
         fit: BoxFit.contain,
         errorBuilder: (_, __, ___) => Image.asset(
           AssetPaths.skinRestPrimary(skin),

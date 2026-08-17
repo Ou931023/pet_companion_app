@@ -40,6 +40,8 @@ class PetController extends ChangeNotifier {
   String _expression = 'normal';
   String _action = 'idle';
   PetSkin _currentSkin = PetSkin.dog;
+  PetVisualStyle _currentVisualStyle = PetVisualStyle.cute;
+  final PetGrowthStage _currentGrowthStage = PetGrowthStage.adult;
   Set<PetSkin> _ownedSkins;
 
   PetState get state => _state;
@@ -52,9 +54,24 @@ class PetController extends ChangeNotifier {
   /// 目前寵物外觀，預設狗狗。
   PetSkin get currentSkin => _currentSkin;
 
+  /// 目前寵物視覺風格，預設 Q版。只有已支援的 pet/style 會被保存與套用。
+  PetVisualStyle get currentVisualStyle => _currentVisualStyle;
+
+  /// 目前成長階段。CR-0100C 先維持成年，後續 CR-0100E 再接成長資料。
+  PetGrowthStage get currentGrowthStage => _currentGrowthStage;
+
   /// 目前寵物素材能力，用於 UI 呈現與 data tracking。
-  PetVisualProfile get currentVisualProfile =>
-      AssetPaths.visualProfile(_currentSkin);
+  PetVisualProfile get currentVisualProfile {
+    final base = AssetPaths.visualProfile(_currentSkin);
+    return PetVisualProfile(
+      skin: _currentSkin,
+      visualStyle: _currentVisualStyle,
+      growthStage: _currentGrowthStage,
+      talkFrameCount: base.talkFrameCount,
+      restFrameCount: base.restFrameCount,
+      stateSuffixes: base.stateSuffixes,
+    );
+  }
 
   /// 已擁有 / 已解鎖的外觀（狗狗永遠在內）。未擁有的需購買 / 解鎖才能套用。
   Set<PetSkin> get ownedSkins => Set.unmodifiable(_ownedSkins);
@@ -88,14 +105,27 @@ class PetController extends ChangeNotifier {
     if (storage == null) return;
     final owned = await storage.loadOwnedPetSkins();
     final skin = await storage.loadPetSkin();
+    final visualStyle = await storage.loadPetVisualStyle();
     _ownedSkins = {
       PetSkin.dog,
       ...owned,
       if (_freeAllSkins) ...PetSkin.values,
     };
     final resolved = _ownedSkins.contains(skin) ? skin : PetSkin.dog;
-    if (resolved == _currentSkin && _ownedSkins.length == 1) return;
+    final resolvedStyle = AssetPaths.supportsVisualStyle(
+      resolved,
+      visualStyle,
+      growthStage: _currentGrowthStage,
+    )
+        ? visualStyle
+        : PetVisualStyle.cute;
+    if (resolved == _currentSkin &&
+        resolvedStyle == _currentVisualStyle &&
+        _ownedSkins.length == 1) {
+      return;
+    }
     _currentSkin = resolved;
+    _currentVisualStyle = resolvedStyle;
     notifyListeners();
   }
 
@@ -103,10 +133,34 @@ class PetController extends ChangeNotifier {
   /// 未擁有時回傳 false、不做任何事（未擁有要走 [purchaseAndApplySkin]）。
   Future<bool> changeSkin(PetSkin skin) async {
     if (!isOwned(skin)) return false;
-    if (skin == _currentSkin) return true;
+    final nextStyle = AssetPaths.supportsVisualStyle(
+      skin,
+      _currentVisualStyle,
+      growthStage: _currentGrowthStage,
+    )
+        ? _currentVisualStyle
+        : PetVisualStyle.cute;
+    if (skin == _currentSkin && nextStyle == _currentVisualStyle) return true;
     _currentSkin = skin;
+    _currentVisualStyle = nextStyle;
     notifyListeners();
     await saveSkin();
+    return true;
+  }
+
+  /// 切換 Q版 / 真實版偏好。尚未支援的組合不套用，避免正式 UI 出現破圖。
+  Future<bool> changeVisualStyle(PetVisualStyle visualStyle) async {
+    if (!AssetPaths.supportsVisualStyle(
+      _currentSkin,
+      visualStyle,
+      growthStage: _currentGrowthStage,
+    )) {
+      return false;
+    }
+    if (visualStyle == _currentVisualStyle) return true;
+    _currentVisualStyle = visualStyle;
+    notifyListeners();
+    await _storageService?.savePetVisualStyle(_currentVisualStyle);
     return true;
   }
 
@@ -147,6 +201,7 @@ class PetController extends ChangeNotifier {
   /// 把目前外觀寫回目前帳號的本機資料。
   Future<void> saveSkin() async {
     await _storageService?.savePetSkin(_currentSkin);
+    await _storageService?.savePetVisualStyle(_currentVisualStyle);
   }
 
   void setMessage(String message) {

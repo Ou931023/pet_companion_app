@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../models/pet_skin.dart';
 import '../models/pet_status.dart';
+import '../models/pet_visual_profile.dart';
 import '../utils/asset_paths.dart';
 
 /// CR-0093：rest 待機動畫的 ping-pong（來回）影格索引，通用支援 1～4 張 frame。
@@ -29,11 +30,15 @@ class PetAvatar extends StatefulWidget {
     super.key,
     required this.mode,
     this.skin = PetSkin.dog,
+    this.visualStyle = PetVisualStyle.cute,
+    this.growthStage = PetGrowthStage.adult,
     this.size = 220,
   });
 
   final PetMode mode;
   final PetSkin skin;
+  final PetVisualStyle visualStyle;
+  final PetGrowthStage growthStage;
   final double size;
 
   @override
@@ -54,7 +59,10 @@ class _PetAvatarState extends State<PetAvatar> {
   void didUpdateWidget(covariant PetAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
     // 換外觀或換狀態都要從第一張重新播，避免沿用上一隻寵物的 frame index。
-    if (widget.mode != oldWidget.mode || widget.skin != oldWidget.skin) {
+    if (widget.mode != oldWidget.mode ||
+        widget.skin != oldWidget.skin ||
+        widget.visualStyle != oldWidget.visualStyle ||
+        widget.growthStage != oldWidget.growthStage) {
       _frameIndex = 0;
       _setupAnimationTimer();
     }
@@ -89,7 +97,12 @@ class _PetAvatarState extends State<PetAvatar> {
     if (widget.mode == PetMode.listening) {
       return AssetPaths.listening(widget.skin);
     }
-    return AssetPaths.stateImage(widget.skin, widget.mode);
+    return AssetPaths.stateImageForStyle(
+      widget.skin,
+      widget.mode,
+      visualStyle: widget.visualStyle,
+      growthStage: widget.growthStage,
+    );
   }
 
   @override

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pet_companion_app/controllers/pet_controller.dart';
 import 'package:pet_companion_app/models/pet_skin.dart';
+import 'package:pet_companion_app/models/pet_visual_profile.dart';
 import 'package:pet_companion_app/services/local_storage_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -95,6 +96,32 @@ void main() {
           'adult');
     });
 
+    test('visualStyle 可切換 dog realistic，並更新 tracking metadata', () async {
+      final controller = PetController();
+      final ok = await controller.changeVisualStyle(PetVisualStyle.realistic);
+
+      expect(ok, isTrue);
+      expect(controller.currentVisualStyle, PetVisualStyle.realistic);
+      expect(
+        controller.currentVisualProfile.toTrackingMetadata()['visualStyle'],
+        'realistic',
+      );
+    });
+
+    test('visualStyle 不支援的寵物不可套用，切換寵物時自動回 Q版', () async {
+      final controller = PetController(freeAllSkins: true);
+      await controller.changeVisualStyle(PetVisualStyle.realistic);
+
+      await controller.changeSkin(PetSkin.fox);
+
+      expect(controller.currentSkin, PetSkin.fox);
+      expect(controller.currentVisualStyle, PetVisualStyle.cute);
+      expect(
+        await controller.changeVisualStyle(PetVisualStyle.realistic),
+        isFalse,
+      );
+    });
+
     test('purchaseAndApplySkin：點數足夠 → 扣點、解鎖、套用', () async {
       final controller = PetController();
       int? charged;
@@ -142,6 +169,7 @@ void main() {
     test('套用 / 解鎖後持久化：重新載入仍保留已擁有與目前外觀', () async {
       final storage = LocalStorageService();
       final controller = PetController(storageService: storage);
+      await controller.changeVisualStyle(PetVisualStyle.realistic);
       await controller.purchaseAndApplySkin(
         PetSkin.guineaPig,
         spendCoins: (_) async => true,
@@ -151,8 +179,26 @@ void main() {
       final reloaded = PetController(storageService: storage);
       await reloaded.loadSkin();
       expect(reloaded.currentSkin, PetSkin.guineaPig);
+      expect(reloaded.currentVisualStyle, PetVisualStyle.cute);
       expect(reloaded.isOwned(PetSkin.guineaPig), isTrue);
       expect(reloaded.isOwned(PetSkin.dog), isTrue);
+    });
+
+    test('dog realistic 偏好可持久化並依 elderId 隔離', () async {
+      final storage = LocalStorageService();
+      final controller = PetController(storageService: storage);
+
+      storage.setUserId('elder-A');
+      await controller.changeVisualStyle(PetVisualStyle.realistic);
+
+      storage.setUserId('elder-B');
+      await controller.loadSkin();
+      expect(controller.currentVisualStyle, PetVisualStyle.cute);
+
+      storage.setUserId('elder-A');
+      await controller.loadSkin();
+      expect(controller.currentSkin, PetSkin.dog);
+      expect(controller.currentVisualStyle, PetVisualStyle.realistic);
     });
 
     test('loadSkin 依 elderId 載入各自的外觀與擁有狀態', () async {
