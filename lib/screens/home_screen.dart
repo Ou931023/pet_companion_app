@@ -244,8 +244,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       // 已在首頁，requestReplay 後 CoachMarkHost 會立即開始導覽。
                       onHelpTap: () =>
                           context.read<CoachMarkController>().requestReplay(),
+                      moreButtonKey: coachKeys.moreButtonKey,
                       reminderKey: coachKeys.reminderKey,
-                      // 導覽 Step 8 / 9 高亮用：簽到日曆 icon 與金幣區。
+                      // 更多功能 sheet 內仍保留 key，供未來分段導覽或測試使用。
                       dailyCheckInKey: coachKeys.dailyCheckInKey,
                       coinKey: coachKeys.coinKey,
                       onReminderTap: () =>
@@ -1059,6 +1060,7 @@ class _HomeHeader extends StatelessWidget {
     required this.onPlayTap,
     required this.onChangeSkinTap,
     required this.onHelpTap,
+    required this.moreButtonKey,
     required this.reminderKey,
     required this.dailyCheckInKey,
     required this.coinKey,
@@ -1074,6 +1076,7 @@ class _HomeHeader extends StatelessWidget {
   final VoidCallback onPlayTap;
   final VoidCallback onChangeSkinTap;
   final VoidCallback onHelpTap;
+  final Key moreButtonKey;
   final Key reminderKey;
   final Key dailyCheckInKey;
   final Key coinKey;
@@ -1089,6 +1092,7 @@ class _HomeHeader extends StatelessWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (sheetContext) => _HomeQuickActionsSheet(
+        petName: petName,
         totalItems: totalItems,
         coins: coins,
         hasCheckedInToday: hasCheckedInToday,
@@ -1147,18 +1151,21 @@ class _HomeHeader extends StatelessWidget {
               ],
             ),
           ),
-          Tooltip(
-            message: '更多功能',
-            child: Semantics(
-              button: true,
-              label: '更多功能',
-              child: IconButton.filledTonal(
-                onPressed: () => _openQuickActions(context),
-                icon: const Icon(Icons.more_horiz),
-                iconSize: 30,
-                style: IconButton.styleFrom(
-                  minimumSize: const Size(56, 56),
-                  tapTargetSize: MaterialTapTargetSize.padded,
+          KeyedSubtree(
+            key: moreButtonKey,
+            child: Tooltip(
+              message: '更多功能',
+              child: Semantics(
+                button: true,
+                label: '更多功能',
+                child: IconButton.filledTonal(
+                  onPressed: () => _openQuickActions(context),
+                  icon: const Icon(Icons.more_horiz),
+                  iconSize: 30,
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size(56, 56),
+                    tapTargetSize: MaterialTapTargetSize.padded,
+                  ),
                 ),
               ),
             ),
@@ -1171,6 +1178,7 @@ class _HomeHeader extends StatelessWidget {
 
 class _HomeQuickActionsSheet extends StatelessWidget {
   const _HomeQuickActionsSheet({
+    required this.petName,
     required this.totalItems,
     required this.coins,
     required this.hasCheckedInToday,
@@ -1185,6 +1193,7 @@ class _HomeQuickActionsSheet extends StatelessWidget {
     required this.onHelpTap,
   });
 
+  final String petName;
   final int totalItems;
   final int coins;
   final bool hasCheckedInToday;
@@ -1213,65 +1222,145 @@ class _HomeQuickActionsSheet extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                '更多功能',
+                '還想幫$petName做什麼？',
                 style: textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              const SizedBox(height: 12),
-              KeyedSubtree(
-                key: dailyCheckInKey,
-                child: _HomeQuickActionTile(
-                  icon: Icons.calendar_month,
-                  title: '每日簽到',
-                  subtitle: hasCheckedInToday ? '今天已經簽到了' : '今天還可以領取獎勵',
-                  onTap: onOpenCalendarTap,
+              const SizedBox(height: 6),
+              Text(
+                '平常只要按麥克風跟寵物說話，其他功能都先放在這裡。',
+                style: textTheme.bodyMedium?.copyWith(
+                  color: Colors.black.withValues(alpha: 0.58),
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-              KeyedSubtree(
-                key: reminderKey,
-                child: _HomeQuickActionTile(
-                  icon: Icons.alarm,
-                  title: '提醒',
-                  subtitle: '查看或新增喝水、吃藥、回診提醒',
-                  onTap: onReminderTap,
-                ),
+              const SizedBox(height: 18),
+              const _HomeQuickActionSectionTitle('常用功能'),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: KeyedSubtree(
+                      key: dailyCheckInKey,
+                      child: _HomeQuickActionTile(
+                        icon: Icons.calendar_month,
+                        title: '每日簽到',
+                        subtitle: hasCheckedInToday ? '今天已完成' : '今天可領獎勵',
+                        onTap: onOpenCalendarTap,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: KeyedSubtree(
+                      key: reminderKey,
+                      child: _HomeQuickActionTile(
+                        icon: Icons.alarm,
+                        title: '提醒',
+                        subtitle: '喝水、吃藥、回診',
+                        onTap: onReminderTap,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              _HomeQuickActionTile(
-                icon: Icons.extension_outlined,
-                title: '陪寵物玩',
-                subtitle: '玩拼圖，讓寵物更有活力',
-                onTap: onPlayTap,
+              const SizedBox(height: 14),
+              const _HomeQuickActionSectionTitle('照顧寵物'),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: _HomeQuickActionTile(
+                      icon: Icons.extension_outlined,
+                      title: '陪寵物玩',
+                      subtitle: '玩拼圖動動腦',
+                      onTap: onPlayTap,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _HomeQuickActionTile(
+                      icon: Icons.pets,
+                      title: '更換外觀',
+                      subtitle: '選喜歡的樣子',
+                      onTap: onChangeSkinTap,
+                    ),
+                  ),
+                ],
               ),
-              _HomeQuickActionTile(
-                icon: Icons.pets,
-                title: '更換寵物外觀',
-                subtitle: '選一個你喜歡的寵物樣子',
-                onTap: onChangeSkinTap,
+              const SizedBox(height: 14),
+              const _HomeQuickActionSectionTitle('其他'),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: _HomeQuickActionTile(
+                      icon: Icons.inventory_2_outlined,
+                      title: '背包',
+                      subtitle: totalItems > 0 ? '$totalItems 件物品' : '寵物的小物品',
+                      onTap: onBagTap,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _HomeQuickActionTile(
+                      icon: Icons.help_outline,
+                      title: '使用教學',
+                      subtitle: '再看一次導覽',
+                      onTap: onHelpTap,
+                    ),
+                  ),
+                ],
               ),
-              _HomeQuickActionTile(
-                icon: Icons.inventory_2_outlined,
-                title: '背包',
-                subtitle: totalItems > 0 ? '目前有 $totalItems 件物品' : '看看寵物的小物品',
-                onTap: onBagTap,
-              ),
-              _HomeQuickActionTile(
-                icon: Icons.help_outline,
-                title: '使用教學',
-                subtitle: '重新看一次怎麼和寵物說話',
-                onTap: onHelpTap,
-              ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 14),
               KeyedSubtree(
                 key: coinKey,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: CoinBadge(coins: coins),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '目前金幣',
+                          style: textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      CoinBadge(coins: coins),
+                    ],
+                  ),
                 ),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _HomeQuickActionSectionTitle extends StatelessWidget {
+  const _HomeQuickActionSectionTitle(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: 16,
+        fontWeight: FontWeight.w900,
+        color: Colors.black.withValues(alpha: 0.62),
       ),
     );
   }
@@ -1293,35 +1382,48 @@ class _HomeQuickActionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Material(
-        color: colorScheme.primary.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(8),
-        clipBehavior: Clip.antiAlias,
-        child: ListTile(
-          minVerticalPadding: 16,
-          leading: Icon(
-            icon,
-            size: 32,
-            color: colorScheme.primary,
-          ),
-          title: Text(
-            title,
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
+    return Material(
+      color: colorScheme.primary.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(8),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 118),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  icon,
+                  size: 32,
+                  color: colorScheme.primary,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.25,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
           ),
-          subtitle: Text(
-            subtitle,
-            style: TextStyle(
-              fontSize: 15,
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: onTap,
         ),
       ),
     );
@@ -1551,7 +1653,9 @@ class _KeyboardToggleButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
+    final colorScheme = Theme.of(context).colorScheme;
+    final primary = colorScheme.primary;
+    final label = expanded ? '收起' : '打字';
     return Semantics(
       button: true,
       label: expanded ? '收起打字' : '打字',
@@ -1561,17 +1665,39 @@ class _KeyboardToggleButton extends StatelessWidget {
           color: enabled
               ? primary.withValues(alpha: expanded ? 0.18 : 0.10)
               : Colors.black.withValues(alpha: 0.06),
-          shape: const CircleBorder(),
+          borderRadius: BorderRadius.circular(29),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: enabled ? onTap : null,
             child: SizedBox(
-              width: 58,
+              width: 88,
               height: 58,
-              child: Icon(
-                expanded ? Icons.keyboard_hide : Icons.keyboard,
-                color: enabled ? primary : Colors.black.withValues(alpha: 0.28),
-                size: 28,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    expanded ? Icons.keyboard_hide : Icons.keyboard,
+                    color: enabled
+                        ? primary
+                        : Colors.black.withValues(alpha: 0.28),
+                    size: 25,
+                  ),
+                  const SizedBox(width: 5),
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: enabled
+                            ? primary
+                            : colorScheme.onSurface.withValues(alpha: 0.32),
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

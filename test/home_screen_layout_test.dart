@@ -82,6 +82,30 @@ void main() {
     harness.dispose();
   });
 
+  testWidgets('HomeScreen text fallback is discoverable and opens input',
+      (tester) async {
+    await binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => binding.setSurfaceSize(null));
+    final harness = await _HomeHarness.create();
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(_homeHost(harness));
+    await tester.pump();
+
+    expect(find.text('打字'), findsOneWidget);
+    expect(find.text('跟寵物說一句話'), findsNothing);
+
+    await tester.tap(find.text('打字'));
+    await tester.pump();
+
+    expect(find.text('收起'), findsOneWidget);
+    expect(find.text('跟寵物說一句話'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpWidget(const SizedBox.shrink());
+    harness.dispose();
+  });
+
   testWidgets('HomeScreen keeps pet stage simple and moves secondary actions',
       (tester) async {
     await binding.setSurfaceSize(const Size(390, 844));
@@ -100,10 +124,15 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
+    expect(find.text('還想幫小伴做什麼？'), findsOneWidget);
+    expect(find.text('平常只要按麥克風跟寵物說話，其他功能都先放在這裡。'), findsOneWidget);
+    expect(find.text('常用功能'), findsOneWidget);
+    expect(find.text('照顧寵物'), findsOneWidget);
+    expect(find.text('其他'), findsOneWidget);
     expect(find.text('每日簽到'), findsOneWidget);
     expect(find.text('提醒'), findsOneWidget);
     expect(find.text('陪寵物玩'), findsOneWidget);
-    expect(find.text('更換寵物外觀'), findsOneWidget);
+    expect(find.text('更換外觀'), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 1));
     await tester.pumpWidget(const SizedBox.shrink());
@@ -164,12 +193,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     // 點簽到入口開啟彈窗（有界 pump，不用 pumpAndSettle 以免卡在寵物動畫）。
-    await tester.tap(
-      find.ancestor(
-        of: find.text('每日簽到'),
-        matching: find.byType(ListTile),
-      ),
-    );
+    await tester.tap(find.text('每日簽到'));
     await tester.pump();
     // pump 滿 1 秒：完成彈窗開啟動畫，並觸發首頁寵物的 1 秒 rest→listen 計時器，
     // 避免測試結束時殘留 pending timer（沿用 _pumpHomeScreen 慣例）。
@@ -378,12 +402,7 @@ void main() {
       120,
       scrollable: find.byType(Scrollable).last,
     );
-    await tester.tap(
-      find.ancestor(
-        of: find.text('使用教學'),
-        matching: find.byType(ListTile),
-      ),
-    );
+    await tester.tap(find.text('使用教學'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(coach.replayRequested, isTrue);
