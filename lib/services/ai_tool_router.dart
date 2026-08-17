@@ -64,6 +64,9 @@ class AiToolRouter {
     List<Map<String, String>> history = const [],
   }) async {
     final normalized = _toTraditional(userText.trim());
+    if (_isCapabilityHelpRequest(normalized)) {
+      return _capabilityHelp();
+    }
     // B4：提醒指令在 router 層接住並實際建立提醒。回 shouldSpeak:false → Realtime
     // 不念罐頭、交由寵物語音自然回應；typed 路徑在 conversation_controller 先 return，
     // 不會走到此分支，故零重複建立。
@@ -112,7 +115,8 @@ class AiToolRouter {
 
   bool shouldHandleLocally(String text) {
     final normalized = _toTraditional(text.trim());
-    return reminderController.isCreateReminderCommand(normalized) ||
+    return _isCapabilityHelpRequest(normalized) ||
+        reminderController.isCreateReminderCommand(normalized) ||
         reminderController.isListReminderCommand(normalized) ||
         _isVoiceLanguageSwitch(normalized) ||
         _isConcernReminderToggle(normalized) ||
@@ -140,6 +144,7 @@ class AiToolRouter {
     '处': '處', '会': '會', '后': '後', '从': '從', '们': '們', '为': '為',
         '东': '東', '车': '車', '电': '電', '简': '簡',
         '语': '語', '换': '換', '观': '觀', '导': '導',
+        '么': '麼',
   };
 
   static String _toTraditional(String input) {
@@ -161,6 +166,36 @@ class AiToolRouter {
     // a check-in.
     final phoneticMisreads = ['停到', '添到', '添道', '籤到', '簽道', '簽倒', '僉到', '前到'];
     return phoneticMisreads.any(text.contains);
+  }
+
+  bool _isCapabilityHelpRequest(String text) {
+    final asksAbility = text.contains('你會做什麼') ||
+        text.contains('你可以做什麼') ||
+        text.contains('你會幫我什麼') ||
+        text.contains('你可以幫我什麼') ||
+        text.contains('你會啥物') ||
+        text.contains('會做啥物') ||
+        text.contains('會當做啥物') ||
+        text.contains('有什麼功能') ||
+        text.contains('功能有哪些');
+    final asksHowToUse = text.contains('我可以說什麼') ||
+        text.contains('我要怎麼說') ||
+        text.contains('怎麼用') ||
+        text.contains('不會用') ||
+        text.contains('教我用') ||
+        text.contains('怎麼跟你說');
+    return asksAbility || asksHowToUse;
+  }
+
+  AiToolResult _capabilityHelp() {
+    return const AiToolResult(
+      toolName: 'capabilityHelp',
+      success: true,
+      message:
+          '你可以直接跟我說：提醒我晚上八點吃藥、我今天心情不好、想聽放鬆音樂，或問我健康、防詐、地方新聞。',
+      petMode: PetMode.listening,
+      shouldSpeak: true,
+    );
   }
 
   /// CR-0101：語音切換台語 / 中文語音模式。

@@ -179,6 +179,35 @@ void main() {
     });
   });
 
+  group('AiToolRouter capability help', () {
+    test('長者問可以說什麼時，本地回覆簡短可用範例，不呼叫後端', () async {
+      final chat = _StubChatService(replyValue: 'BACKEND_REPLY');
+      final router = await _buildRouter(useMockChat: false, chatService: chat);
+
+      final result = await router.route('我可以說什麼');
+
+      expect(result.toolName, 'capabilityHelp');
+      expect(result.success, isTrue);
+      expect(result.shouldSpeak, isTrue);
+      expect(result.message, contains('提醒我晚上八點吃藥'));
+      expect(result.message, contains('我今天心情不好'));
+      expect(result.message, contains('地方新聞'));
+      expect(chat.callCount, 0);
+      expect(router.shouldHandleLocally('我可以說什麼'), isTrue);
+    });
+
+    test('台語口吻問能力時，也能被辨識', () async {
+      final chat = _StubChatService(replyValue: 'BACKEND_REPLY');
+      final router = await _buildRouter(useMockChat: false, chatService: chat);
+
+      final result = await router.route('你會做啥物');
+
+      expect(result.toolName, 'capabilityHelp');
+      expect(result.shouldSpeak, isTrue);
+      expect(chat.callCount, 0);
+    });
+  });
+
   group('AiToolRouter reminder branch (B4)', () {
     test('建立提醒指令：實際建立提醒且 shouldSpeak == false', () async {
       final reminderController = ReminderController(
