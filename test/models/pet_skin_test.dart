@@ -108,6 +108,68 @@ void main() {
           'assets/pets/states/fox_happy.png');
     });
 
+    test('v2 resolver：dog realistic adult 已有四個透明 state', () {
+      expect(
+        AssetPaths.availableVisualStyles(PetSkin.dog),
+        [PetVisualStyle.cute, PetVisualStyle.realistic],
+      );
+      expect(
+        AssetPaths.stateImageForStyle(
+          PetSkin.dog,
+          PetMode.normal,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        'assets/pets/v2/realistic/adult/dog/states/normal.png',
+      );
+      expect(
+        AssetPaths.stateImageForStyle(
+          PetSkin.dog,
+          PetMode.happy,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        'assets/pets/v2/realistic/adult/dog/states/happy.png',
+      );
+      expect(
+        AssetPaths.stateImageForStyle(
+          PetSkin.dog,
+          PetMode.caring,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        'assets/pets/v2/realistic/adult/dog/states/caring.png',
+      );
+      expect(
+        AssetPaths.stateImageForStyle(
+          PetSkin.dog,
+          PetMode.sad,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        'assets/pets/v2/realistic/adult/dog/states/sad.png',
+      );
+    });
+
+    test('v2 resolver：缺素材或非 dog realistic 時回 v1，不顯示破圖', () {
+      expect(
+        AssetPaths.stateImageForStyle(
+          PetSkin.dog,
+          PetMode.excited,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        'assets/pets/states/dog_excited.png',
+      );
+      expect(
+        AssetPaths.availableVisualStyles(PetSkin.fox),
+        [PetVisualStyle.cute],
+      );
+      expect(
+        AssetPaths.stateImageForStyle(
+          PetSkin.fox,
+          PetMode.happy,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        'assets/pets/states/fox_happy.png',
+      );
+    });
+
     test('保底圖與第一層 fallback', () {
       expect(AssetPaths.defaultRestImage, 'assets/pets/rest/dog_rest_01.png');
       expect(AssetPaths.skinRestPrimary(PetSkin.guineaPig),

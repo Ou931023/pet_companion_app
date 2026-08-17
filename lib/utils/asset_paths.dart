@@ -29,6 +29,20 @@ class AssetPaths {
     PetMode.sad: 'sad',
   };
 
+  /// v2 半寫實狗狗目前已通過候選 QA 的 state 子集。
+  ///
+  /// 只宣告已實際存在且可被 Flutter asset bundle 打包的檔案；其餘狀態
+  /// 會 fallback 到既有 v1 Q 版素材，避免正式版顯示不存在的圖片。
+  static const Map<PetMode, String> _realisticDogStateSuffix = {
+    PetMode.normal: 'normal',
+    PetMode.thinking: 'normal',
+    PetMode.caring: 'caring',
+    PetMode.concerned: 'caring',
+    PetMode.happy: 'happy',
+    PetMode.smile: 'happy',
+    PetMode.sad: 'sad',
+  };
+
   /// 現有 production 圖包的素材能力宣告。
   ///
   /// 目前全部是 Q 版、成年素材；未來真實版 / 幼年素材進來時，優先擴充這裡，
@@ -82,6 +96,35 @@ class AssetPaths {
   static List<PetVisualProfile> get productionProfiles =>
       [for (final skin in PetSkin.values) visualProfile(skin)];
 
+  /// 目前已可提供 v2 半寫實靜態狀態素材的寵物。
+  ///
+  /// 注意：這不是完整 production profile，因為 talk/rest/listening 尚未補齊。
+  /// UI 若要開放切換，需要用此方法判斷是否能顯示「真實版」選項。
+  static bool supportsVisualStyle(
+    PetSkin skin,
+    PetVisualStyle visualStyle, {
+    PetGrowthStage growthStage = PetGrowthStage.adult,
+  }) {
+    if (visualStyle == PetVisualStyle.cute) return true;
+    return skin == PetSkin.dog &&
+        visualStyle == PetVisualStyle.realistic &&
+        growthStage == PetGrowthStage.adult;
+  }
+
+  static List<PetVisualStyle> availableVisualStyles(
+    PetSkin skin, {
+    PetGrowthStage growthStage = PetGrowthStage.adult,
+  }) =>
+      [
+        PetVisualStyle.cute,
+        if (supportsVisualStyle(
+          skin,
+          PetVisualStyle.realistic,
+          growthStage: growthStage,
+        ))
+          PetVisualStyle.realistic,
+      ];
+
   /// 說話動畫每一張（張數依 [skin]，guineaPig 只有 3 張）。
   static List<String> talkingFrames(PetSkin skin) {
     final count = visualProfile(skin).talkFrameCount;
@@ -108,6 +151,28 @@ class AssetPaths {
   static String stateImage(PetSkin skin, PetMode mode) {
     final suffix = visualProfile(skin).stateSuffixFor(mode);
     return 'assets/pets/states/${skin.assetPrefix}_$suffix.png';
+  }
+
+  /// v2 visual-style-aware 靜態圖 resolver。
+  ///
+  /// - Q 版：維持既有 v1 路徑。
+  /// - 真實版：目前僅 dog / adult / normal-happy-caring-sad 子集走 v2。
+  /// - 缺素材：立即 fallback 到 v1，正式版不顯示破圖。
+  static String stateImageForStyle(
+    PetSkin skin,
+    PetMode mode, {
+    PetVisualStyle visualStyle = PetVisualStyle.cute,
+    PetGrowthStage growthStage = PetGrowthStage.adult,
+  }) {
+    if (skin == PetSkin.dog &&
+        visualStyle == PetVisualStyle.realistic &&
+        growthStage == PetGrowthStage.adult) {
+      final suffix = _realisticDogStateSuffix[mode];
+      if (suffix != null) {
+        return 'assets/pets/v2/realistic/adult/dog/states/$suffix.png';
+      }
+    }
+    return stateImage(skin, mode);
   }
 
   /// 該外觀的第一層 fallback：自己的 rest_01。
