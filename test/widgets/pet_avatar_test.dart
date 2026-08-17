@@ -31,7 +31,31 @@ void main() {
     expect(_firstAssetName(tester), 'assets/pets/states/fox_normal.png');
   });
 
-  testWidgets('dog realistic 狀態圖使用 v2 asset，缺素材狀態回 v1', (tester) async {
+  testWidgets('dog realistic 狀態圖與 listening 使用 v2 asset', (tester) async {
+    await tester.pumpWidget(
+      wrap(const PetAvatar(
+        mode: PetMode.talking,
+        skin: PetSkin.dog,
+        visualStyle: PetVisualStyle.realistic,
+      )),
+    );
+    expect(
+      _firstAssetName(tester),
+      startsWith('assets/pets/v2/realistic/adult/dog/talk/talk_'),
+    );
+
+    await tester.pumpWidget(
+      wrap(const PetAvatar(
+        mode: PetMode.rest,
+        skin: PetSkin.dog,
+        visualStyle: PetVisualStyle.realistic,
+      )),
+    );
+    expect(
+      _firstAssetName(tester),
+      'assets/pets/v2/realistic/adult/dog/rest/rest_01.png',
+    );
+
     await tester.pumpWidget(
       wrap(const PetAvatar(
         mode: PetMode.happy,
@@ -51,7 +75,22 @@ void main() {
         visualStyle: PetVisualStyle.realistic,
       )),
     );
-    expect(_firstAssetName(tester), 'assets/pets/states/dog_excited.png');
+    expect(
+      _firstAssetName(tester),
+      'assets/pets/v2/realistic/adult/dog/states/excited.png',
+    );
+
+    await tester.pumpWidget(
+      wrap(const PetAvatar(
+        mode: PetMode.listening,
+        skin: PetSkin.dog,
+        visualStyle: PetVisualStyle.realistic,
+      )),
+    );
+    expect(
+      _firstAssetName(tester),
+      'assets/pets/v2/realistic/adult/dog/listening/listening.png',
+    );
   });
 
   testWidgets('guineaPig talking 只有 3 frame，連續動畫超過 3 張不會 crash',

@@ -40,3 +40,6 @@ flutter:
     - assets/pets/rest/
     - assets/pets/states/
     - assets/pets/v2/realistic/adult/dog/states/
+    - assets/pets/v2/realistic/adult/dog/listening/
+    - assets/pets/v2/realistic/adult/dog/rest/
+    - assets/pets/v2/realistic/adult/dog/talk/

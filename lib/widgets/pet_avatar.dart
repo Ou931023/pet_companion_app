@@ -85,17 +85,29 @@ class _PetAvatarState extends State<PetAvatar> {
 
   String _imagePath() {
     if (widget.mode == PetMode.talking) {
-      final frames = AssetPaths.talkingFrames(widget.skin);
+      final frames = AssetPaths.talkingFramesForStyle(
+        widget.skin,
+        visualStyle: widget.visualStyle,
+        growthStage: widget.growthStage,
+      );
       // 用取餘數，guineaPig 只有 3 張也能安全循環，不會越界。
       return frames[_frameIndex % frames.length];
     }
     if (widget.mode == PetMode.rest) {
-      final frames = AssetPaths.restFrames(widget.skin);
+      final frames = AssetPaths.restFramesForStyle(
+        widget.skin,
+        visualStyle: widget.visualStyle,
+        growthStage: widget.growthStage,
+      );
       // CR-0093：ping-pong 來回播放（不讓最後一張直接跳回第一張）。
       return frames[pingPongFrameIndex(_frameIndex, frames.length)];
     }
     if (widget.mode == PetMode.listening) {
-      return AssetPaths.listening(widget.skin);
+      return AssetPaths.listeningForStyle(
+        widget.skin,
+        visualStyle: widget.visualStyle,
+        growthStage: widget.growthStage,
+      );
     }
     return AssetPaths.stateImageForStyle(
       widget.skin,

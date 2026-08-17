@@ -108,7 +108,7 @@ void main() {
           'assets/pets/states/fox_happy.png');
     });
 
-    test('v2 resolver：dog realistic adult 已有四個透明 state', () {
+    test('v2 resolver：dog realistic adult 已有完整八個透明 state', () {
       expect(
         AssetPaths.availableVisualStyles(PetSkin.dog),
         [PetVisualStyle.cute, PetVisualStyle.realistic],
@@ -145,21 +145,73 @@ void main() {
         ),
         'assets/pets/v2/realistic/adult/dog/states/sad.png',
       );
-    });
-
-    test('v2 resolver：缺素材或非 dog realistic 時回 v1，不顯示破圖', () {
       expect(
         AssetPaths.stateImageForStyle(
           PetSkin.dog,
           PetMode.excited,
           visualStyle: PetVisualStyle.realistic,
         ),
-        'assets/pets/states/dog_excited.png',
+        'assets/pets/v2/realistic/adult/dog/states/excited.png',
       );
       expect(
-        AssetPaths.availableVisualStyles(PetSkin.fox),
-        [PetVisualStyle.cute],
+        AssetPaths.stateImageForStyle(
+          PetSkin.dog,
+          PetMode.hungry,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        'assets/pets/v2/realistic/adult/dog/states/hungry.png',
       );
+      expect(
+        AssetPaths.stateImageForStyle(
+          PetSkin.dog,
+          PetMode.thirsty,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        'assets/pets/v2/realistic/adult/dog/states/thirsty.png',
+      );
+      expect(
+        AssetPaths.stateImageForStyle(
+          PetSkin.dog,
+          PetMode.sleepy,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        'assets/pets/v2/realistic/adult/dog/states/sleepy.png',
+      );
+      expect(
+        AssetPaths.listeningForStyle(
+          PetSkin.dog,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        'assets/pets/v2/realistic/adult/dog/listening/listening.png',
+      );
+      expect(
+        AssetPaths.restFramesForStyle(
+          PetSkin.dog,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        [
+          'assets/pets/v2/realistic/adult/dog/rest/rest_01.png',
+          'assets/pets/v2/realistic/adult/dog/rest/rest_02.png',
+          'assets/pets/v2/realistic/adult/dog/rest/rest_03.png',
+        ],
+      );
+      expect(
+        AssetPaths.talkingFramesForStyle(
+          PetSkin.dog,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        [
+          'assets/pets/v2/realistic/adult/dog/talk/talk_01.png',
+          'assets/pets/v2/realistic/adult/dog/talk/talk_02.png',
+          'assets/pets/v2/realistic/adult/dog/talk/talk_03.png',
+          'assets/pets/v2/realistic/adult/dog/talk/talk_04.png',
+          'assets/pets/v2/realistic/adult/dog/talk/talk_05.png',
+          'assets/pets/v2/realistic/adult/dog/talk/talk_06.png',
+        ],
+      );
+    });
+
+    test('v2 resolver：非 dog realistic 時回 v1，不顯示破圖', () {
       expect(
         AssetPaths.stateImageForStyle(
           PetSkin.fox,
@@ -167,6 +219,31 @@ void main() {
           visualStyle: PetVisualStyle.realistic,
         ),
         'assets/pets/states/fox_happy.png',
+      );
+      expect(
+        AssetPaths.availableVisualStyles(PetSkin.fox),
+        [PetVisualStyle.cute],
+      );
+      expect(
+        AssetPaths.listeningForStyle(
+          PetSkin.fox,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        'assets/pets/listening/fox_listening.png',
+      );
+      expect(
+        AssetPaths.restFramesForStyle(
+          PetSkin.fox,
+          visualStyle: PetVisualStyle.realistic,
+        ).first,
+        'assets/pets/rest/fox_rest_01.png',
+      );
+      expect(
+        AssetPaths.talkingFramesForStyle(
+          PetSkin.fox,
+          visualStyle: PetVisualStyle.realistic,
+        ).first,
+        'assets/pets/talk/fox_talk_01.png',
       );
     });
 

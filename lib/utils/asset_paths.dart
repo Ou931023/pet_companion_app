@@ -40,6 +40,10 @@ class AssetPaths {
     PetMode.concerned: 'caring',
     PetMode.happy: 'happy',
     PetMode.smile: 'happy',
+    PetMode.excited: 'excited',
+    PetMode.thirsty: 'thirsty',
+    PetMode.sleepy: 'sleepy',
+    PetMode.hungry: 'hungry',
     PetMode.sad: 'sad',
   };
 
@@ -134,6 +138,25 @@ class AssetPaths {
     ];
   }
 
+  /// v2 visual-style-aware talking frame resolver.
+  ///
+  /// 目前僅 dog / realistic / adult 有 6 張基本 talking frames；其他組合回 v1。
+  static List<String> talkingFramesForStyle(
+    PetSkin skin, {
+    PetVisualStyle visualStyle = PetVisualStyle.cute,
+    PetGrowthStage growthStage = PetGrowthStage.adult,
+  }) {
+    if (skin == PetSkin.dog &&
+        visualStyle == PetVisualStyle.realistic &&
+        growthStage == PetGrowthStage.adult) {
+      return [
+        for (var i = 1; i <= 6; i++)
+          'assets/pets/v2/realistic/adult/dog/talk/talk_${_padded(i)}.png',
+      ];
+    }
+    return talkingFrames(skin);
+  }
+
   /// 休息（待機）動畫每一張。
   static List<String> restFrames(PetSkin skin) {
     final count = visualProfile(skin).restFrameCount;
@@ -143,9 +166,44 @@ class AssetPaths {
     ];
   }
 
+  /// v2 visual-style-aware rest frame resolver.
+  ///
+  /// 目前僅 dog / realistic / adult 有 3 張基本 rest frames；其他組合回 v1。
+  static List<String> restFramesForStyle(
+    PetSkin skin, {
+    PetVisualStyle visualStyle = PetVisualStyle.cute,
+    PetGrowthStage growthStage = PetGrowthStage.adult,
+  }) {
+    if (skin == PetSkin.dog &&
+        visualStyle == PetVisualStyle.realistic &&
+        growthStage == PetGrowthStage.adult) {
+      return [
+        for (var i = 1; i <= 3; i++)
+          'assets/pets/v2/realistic/adult/dog/rest/rest_${_padded(i)}.png',
+      ];
+    }
+    return restFrames(skin);
+  }
+
   /// 正在聆聽（單張）。
   static String listening(PetSkin skin) =>
       'assets/pets/listening/${skin.assetPrefix}_listening.png';
+
+  /// v2 visual-style-aware listening resolver.
+  ///
+  /// 目前僅 dog / realistic / adult 有 listening 圖；其他組合回 v1。
+  static String listeningForStyle(
+    PetSkin skin, {
+    PetVisualStyle visualStyle = PetVisualStyle.cute,
+    PetGrowthStage growthStage = PetGrowthStage.adult,
+  }) {
+    if (skin == PetSkin.dog &&
+        visualStyle == PetVisualStyle.realistic &&
+        growthStage == PetGrowthStage.adult) {
+      return 'assets/pets/v2/realistic/adult/dog/listening/listening.png';
+    }
+    return listening(skin);
+  }
 
   /// 依情緒狀態取靜態圖。
   static String stateImage(PetSkin skin, PetMode mode) {

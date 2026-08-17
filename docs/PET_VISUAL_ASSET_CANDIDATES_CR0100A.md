@@ -72,9 +72,25 @@ The reviewed transparent candidates have been converted to 1024 x 1024 PNGs and 
 Current app integration status:
 
 - `AssetPaths.stateImageForStyle(...)` can resolve these v2 dog realistic adult state assets.
-- Missing v2 states, such as `excited`, `hungry`, `thirsty`, and `sleepy`, fallback to the existing v1 dog assets.
-- `talk`, `rest`, and `listening` are not replaced yet. They should stay on v1 until a complete realistic animation set is produced.
+- The realistic dog now has all eight static states: `normal`, `happy`, `caring`, `sad`, `excited`, `hungry`, `thirsty`, and `sleepy`.
+- `AssetPaths.listeningForStyle(...)` can resolve the v2 dog realistic adult listening asset.
+- `talk` and `rest` now have a minimal v2 animation set so realistic dog no longer falls back to Q版 during speaking or idle states.
 - Do not expose a broad realistic-style UI toggle for every pet. Only dog / realistic / adult currently has reviewed v2 state assets.
+
+Extended state QA:
+
+| Check | File | Result |
+| --- | --- | --- |
+| Eight states + listening contrast | `docs/asset_candidates/cr0100_realistic_dog_extended/qa/dog_realistic_extended_state_qa_sheet_v1.png` | Pass with notes |
+| Minimal rest/talk animation | `docs/asset_candidates/cr0100_realistic_dog_extended/qa/dog_realistic_animation_minimal_qa_sheet_v1.png` | Pass with notes |
+
+Notes:
+
+- The green-background candidates were converted with local chroma-key removal. A first pass left visible green fringing on dark backgrounds, so the alpha extraction was tightened before writing the final app assets.
+- Current app assets are suitable on the warm/light home background. Very dark backgrounds may still reveal a very thin edge on some green-screen-derived states.
+- `excited` has a larger pose change than the other static states, so it is best used for reward/celebration moments rather than idle state switching.
+- `rest` currently uses a safe 3-frame blink loop: `normal`, `sleepy`, `normal`.
+- `talk` currently uses a safe 6-frame open/closed-mouth loop based on `normal` and `happy`. This prevents Q版 fallback during voice playback, but a future polish pass should replace it with true mouth-shape frames.
 
 ## Production Direction
 
