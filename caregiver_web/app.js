@@ -1867,6 +1867,7 @@
       html += metricCard("建立提醒", String(us.remindersCreated || 0), null);
       html += metricCard("任務完成", String(us.dailyTasksCompleted || 0), null);
       html += metricCard("拼圖完成", String(us.puzzleCompletions || 0), null);
+      html += metricCard("設定調整", String(us.settingsChanges || 0), null);
       html += metricCard("最近使用", formatTime(us.lastEventAt), null);
       html += "</div>";
     }

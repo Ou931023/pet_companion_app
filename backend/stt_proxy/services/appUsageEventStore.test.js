@@ -99,6 +99,15 @@ test("JSON fallback：recordEvent 寫入，getUsageStats 聚合後台可用數�
     caller,
     { pg, eventsFilePath },
   );
+  await store.recordEvent(
+    {
+      eventType: "settings_changed",
+      eventAt: "2026-06-15T09:08:00.000Z",
+      metadata: { setting: "speech_style", value: "calm", source: "ai_tool_router" },
+    },
+    caller,
+    { pg, eventsFilePath },
+  );
 
   const stats = await store.getUsageStats("elder-1", {
     pg,
@@ -108,13 +117,14 @@ test("JSON fallback：recordEvent 寫入，getUsageStats 聚合後台可用數�
   });
 
   assert.equal(stats.available, true);
-  assert.equal(stats.totalEvents, 5);
+  assert.equal(stats.totalEvents, 6);
   assert.equal(stats.activeDays, 1);
   assert.equal(stats.voiceInteractions, 1);
   assert.equal(stats.voiceNavigations, 1);
   assert.equal(stats.petInteractions, 1);
+  assert.equal(stats.settingsChanges, 1);
   assert.equal(stats.totalDurationMs, 60000);
-  assert.equal(stats.lastEventAt, "2026-06-15T09:07:00.000Z");
+  assert.equal(stats.lastEventAt, "2026-06-15T09:08:00.000Z");
   assert.deepEqual(stats.latestPetMetadata, {
     petType: "dog",
     mood: "happy",

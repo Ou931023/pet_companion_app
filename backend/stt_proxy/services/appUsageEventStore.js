@@ -27,6 +27,7 @@ const VALID_EVENT_TYPES = new Set([
   "puzzle_started",
   "puzzle_completed",
   "font_size_changed",
+  "settings_changed",
   "pet_style_changed",
 ]);
 
@@ -253,6 +254,7 @@ async function getUsageStats(elderId, options = {}) {
     remindersCreated: byType.reminder_created || 0,
     dailyTasksCompleted: byType.daily_task_completed || 0,
     puzzleCompletions: byType.puzzle_completed || 0,
+    settingsChanges: (byType.settings_changed || 0) + (byType.font_size_changed || 0),
     latestPetMetadata: latestPetEvent ? latestPetEvent.metadata || {} : {},
   };
 }

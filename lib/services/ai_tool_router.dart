@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../config/app_config.dart';
 import '../controllers/check_in_controller.dart';
 import '../controllers/inventory_controller.dart';
@@ -12,6 +14,7 @@ import '../models/pet_status.dart';
 import '../models/reminder.dart';
 import 'companion_chat_service.dart';
 import 'companion_content_service.dart';
+import 'app_usage_tracking_service.dart';
 import 'mock_ai_service.dart';
 import 'shop_service.dart';
 import 'web_search_service.dart';
@@ -30,6 +33,7 @@ class AiToolRouter {
     required this.companionContentService,
     required this.companionChatService,
     required this.reminderController,
+    this.trackingService,
     bool? useMockChat,
   }) : useMockChat = useMockChat ?? AppConfig.mockServicesEnabled;
 
@@ -53,6 +57,7 @@ class AiToolRouter {
 
   /// 提醒建立 / 查詢來源（B4：route() 提醒分支用）。
   final ReminderController reminderController;
+  final AppUsageTrackingService? trackingService;
 
   /// 聊天回覆是否走 mock：dev/test 走 [mockAiService]，production 走
   /// [companionChatService]。預設取 [AppConfig.mockServicesEnabled]，
@@ -463,6 +468,7 @@ class AiToolRouter {
 
     if (_requestsTtsOff(text)) {
       await profileController.setTtsEnabled(false);
+      _trackSettingChanged('tts_enabled', false);
       return const AiToolResult(
         toolName: 'changeSettings',
         success: true,
@@ -473,6 +479,7 @@ class AiToolRouter {
     }
     if (_requestsTtsOn(text)) {
       await profileController.setTtsEnabled(true);
+      _trackSettingChanged('tts_enabled', true);
       return const AiToolResult(
         toolName: 'changeSettings',
         success: true,
@@ -486,6 +493,7 @@ class AiToolRouter {
     if (volume != null) {
       await profileController.setPetVolume(volume);
       final percent = (profileController.petVolume * 100).round();
+      _trackSettingChanged('pet_volume', percent);
       return AiToolResult(
         toolName: 'changeSettings',
         success: true,
@@ -498,6 +506,11 @@ class AiToolRouter {
     final fontScale = _fontScaleFromText(text);
     if (fontScale != null) {
       await profileController.setFontScale(fontScale);
+      _trackSettingChanged(
+        'font_scale',
+        profileController.fontScale,
+        eventType: 'font_size_changed',
+      );
       return AiToolResult(
         toolName: 'changeSettings',
         success: true,
@@ -510,6 +523,7 @@ class AiToolRouter {
     final speechStyle = _speechStyleFromText(text);
     if (speechStyle != null) {
       await profileController.setSpeechStyle(speechStyle);
+      _trackSettingChanged('speech_style', profileController.speechStyle);
       return AiToolResult(
         toolName: 'changeSettings',
         success: true,
@@ -524,6 +538,7 @@ class AiToolRouter {
     if (preference != null) {
       final enabled = !text.contains('不要') && !text.contains('不想');
       await profileController.setContentPreference(preference.key, enabled);
+      _trackSettingChanged('content_${preference.key}', enabled);
       return AiToolResult(
         toolName: 'changeSettings',
         success: true,
@@ -541,6 +556,24 @@ class AiToolRouter {
       message: '這個設定我還不太確定怎麼調，你可以試試「聲音關掉」、「音量調大」或「文字調大」。',
       petMode: PetMode.listening,
       shouldSpeak: true,
+    );
+  }
+
+  void _trackSettingChanged(
+    String setting,
+    Object value, {
+    String eventType = 'settings_changed',
+  }) {
+    unawaited(
+      trackingService?.track(
+            eventType,
+            metadata: {
+              'setting': setting,
+              'value': value,
+              'source': 'ai_tool_router',
+            },
+          ) ??
+          Future<bool>.value(false),
     );
   }
 

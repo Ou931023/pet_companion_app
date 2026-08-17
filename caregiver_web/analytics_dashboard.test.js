@@ -61,6 +61,7 @@ test("分析頁會渲染真實 usageStats，不只顯示 Care Alert 與任務", 
   assert.ok(appJs.includes("petInteractions"), "應顯示寵物互動數");
   assert.ok(appJs.includes("remindersCreated"), "應顯示提醒建立數");
   assert.ok(appJs.includes("puzzleCompletions"), "應顯示拼圖完成數");
+  assert.ok(appJs.includes("settingsChanges"), "應顯示設定調整數");
   assert.ok(appJs.includes("usageStats"), "應讀取後端 usageStats");
 });
 

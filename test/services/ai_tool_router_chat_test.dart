@@ -17,6 +17,7 @@ import 'package:pet_companion_app/services/pet_stats_storage_service.dart';
 import 'package:pet_companion_app/services/reminder_service.dart';
 import 'package:pet_companion_app/services/shop_service.dart';
 import 'package:pet_companion_app/services/ai_tool_router.dart';
+import 'package:pet_companion_app/services/app_usage_tracking_service.dart';
 import 'package:pet_companion_app/services/web_search_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -85,11 +86,34 @@ class _SpyMockAiService extends MockAiService {
   }
 }
 
+class _RecordedUsageEvent {
+  const _RecordedUsageEvent(this.eventType, this.metadata);
+
+  final String eventType;
+  final Map<String, Object?> metadata;
+}
+
+class _RecordingUsageTrackingService extends AppUsageTrackingService {
+  final List<_RecordedUsageEvent> events = [];
+
+  @override
+  Future<bool> track(
+    String eventType, {
+    String? sessionId,
+    int? durationMs,
+    Map<String, Object?> metadata = const {},
+  }) async {
+    events.add(_RecordedUsageEvent(eventType, metadata));
+    return true;
+  }
+}
+
 Future<AiToolRouter> _buildRouter({
   required bool useMockChat,
   CompanionChatService? chatService,
   MockAiService? mockAiService,
   ReminderController? reminderController,
+  AppUsageTrackingService? trackingService,
 }) async {
   final localStorage = LocalStorageService();
   final profile = ProfileController(localStorage);
@@ -112,6 +136,7 @@ Future<AiToolRouter> _buildRouter({
           reminderService: ReminderService(),
           notificationService: NotificationService(),
         ),
+    trackingService: trackingService,
     useMockChat: useMockChat,
   );
 }
@@ -288,6 +313,43 @@ void main() {
       expect(reminderController.reminders, hasLength(2));
       expect(reminderController.reminders.map((r) => r.title), contains('吃藥'));
       expect(reminderController.reminders.map((r) => r.title), contains('喝水'));
+    });
+  });
+
+  group('AiToolRouter settings tracking', () {
+    test('語音調大文字會更新設定並上報 font_size_changed', () async {
+      final tracking = _RecordingUsageTrackingService();
+      final router = await _buildRouter(
+        useMockChat: false,
+        trackingService: tracking,
+      );
+
+      final result = await router.route('文字調大');
+
+      expect(result.toolName, 'changeSettings');
+      expect(result.success, isTrue);
+      expect(result.shouldSpeak, isTrue);
+      expect(tracking.events, hasLength(1));
+      expect(tracking.events.first.eventType, 'font_size_changed');
+      expect(tracking.events.first.metadata['setting'], 'font_scale');
+      expect(tracking.events.first.metadata['source'], 'ai_tool_router');
+    });
+
+    test('語音改成慢慢說會上報 settings_changed', () async {
+      final tracking = _RecordingUsageTrackingService();
+      final router = await _buildRouter(
+        useMockChat: false,
+        trackingService: tracking,
+      );
+
+      final result = await router.route('說話慢一點');
+
+      expect(result.toolName, 'changeSettings');
+      expect(result.success, isTrue);
+      expect(tracking.events, hasLength(1));
+      expect(tracking.events.first.eventType, 'settings_changed');
+      expect(tracking.events.first.metadata['setting'], 'speech_style');
+      expect(tracking.events.first.metadata['value'], 'calm');
     });
   });
 }
