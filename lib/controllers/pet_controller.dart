@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import '../models/pet_skin.dart';
 import '../models/pet_state.dart';
 import '../models/pet_status.dart';
+import '../models/pet_visual_profile.dart';
 import '../services/local_storage_service.dart';
 import '../utils/app_log.dart';
+import '../utils/asset_paths.dart';
 import '../utils/pet_state_selector.dart';
 
 class PetController extends ChangeNotifier {
@@ -49,6 +51,10 @@ class PetController extends ChangeNotifier {
 
   /// 目前寵物外觀，預設狗狗。
   PetSkin get currentSkin => _currentSkin;
+
+  /// 目前寵物素材能力，用於 UI 呈現與 data tracking。
+  PetVisualProfile get currentVisualProfile =>
+      AssetPaths.visualProfile(_currentSkin);
 
   /// 已擁有 / 已解鎖的外觀（狗狗永遠在內）。未擁有的需購買 / 解鎖才能套用。
   Set<PetSkin> get ownedSkins => Set.unmodifiable(_ownedSkins);

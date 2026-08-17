@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pet_companion_app/models/pet_skin.dart';
 import 'package:pet_companion_app/models/pet_status.dart';
+import 'package:pet_companion_app/models/pet_visual_profile.dart';
 import 'package:pet_companion_app/utils/asset_paths.dart';
 
 void main() {
@@ -37,6 +38,28 @@ void main() {
   });
 
   group('AssetPaths 依 skin 產生路徑', () {
+    test('productionProfiles 宣告現有素材皆為 Q版 / 成年 / 可上線素材', () {
+      expect(AssetPaths.productionProfiles.length, PetSkin.values.length);
+      for (final profile in AssetPaths.productionProfiles) {
+        expect(profile.visualStyle, PetVisualStyle.cute);
+        expect(profile.growthStage, PetGrowthStage.adult);
+        expect(profile.isProductionReady, isTrue);
+        expect(profile.talkFrameCount, greaterThan(0));
+        expect(profile.restFrameCount, greaterThan(0));
+      }
+    });
+
+    test('visualProfile 可輸出後台 tracking 需要的偏好欄位', () {
+      final metadata =
+          AssetPaths.visualProfile(PetSkin.fox).toTrackingMetadata();
+
+      expect(metadata['petType'], 'fox');
+      expect(metadata['visualStyle'], 'cute');
+      expect(metadata['growthStage'], 'adult');
+      expect(metadata['talkFrameCount'], 6);
+      expect(metadata['restFrameCount'], 3);
+    });
+
     test('dog：talk 6 / rest 3 / states 原檔名', () {
       expect(AssetPaths.talkingFrames(PetSkin.dog), [
         'assets/pets/talk/dog_talk_01.png',

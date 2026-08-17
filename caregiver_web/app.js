@@ -171,6 +171,45 @@
     return STATUS_LABELS[status] || status || "—";
   }
 
+  function petTypeLabel(value) {
+    switch (value) {
+      case "dog":
+        return "狗狗";
+      case "guinea_pig":
+        return "天竺鼠";
+      case "fox":
+        return "狐狸";
+      case "mochi":
+        return "麻吉";
+      default:
+        return value || "—";
+    }
+  }
+
+  function petVisualStyleLabel(value) {
+    switch (value) {
+      case "cute":
+        return "Q版";
+      case "realistic":
+        return "真實版";
+      default:
+        return value || "—";
+    }
+  }
+
+  function petGrowthStageLabel(value) {
+    switch (value) {
+      case "baby":
+        return "幼年";
+      case "young":
+        return "成長中";
+      case "adult":
+        return "成年";
+      default:
+        return value || "—";
+    }
+  }
+
   function riskClass(riskLevel) {
     switch (riskLevel) {
       // 權威四級
@@ -1967,6 +2006,9 @@
         "。</p>";
     } else {
       html += '<div class="metric-grid">';
+      html += metricCard("寵物類型", petTypeLabel(pet.selectedPetType || pet.petType), null);
+      html += metricCard("視覺風格", petVisualStyleLabel(pet.visualStyle), null);
+      html += metricCard("成長階段", petGrowthStageLabel(pet.growthStage), null);
       html += metricCard("心情", pet.mood || "—", null);
       html += metricCard("飽足度", pet.satiety == null ? "—" : String(pet.satiety), null);
       html += metricCard("親密度", pet.intimacy == null ? "—" : String(pet.intimacy), null);

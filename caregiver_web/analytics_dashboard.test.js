@@ -65,6 +65,15 @@ test("分析頁會渲染真實 usageStats，不只顯示 Care Alert 與任務", 
   assert.ok(appJs.includes("usageStats"), "應讀取後端 usageStats");
 });
 
+test("寵物照護狀態會顯示寵物類型、視覺風格與成長階段偏好", () => {
+  assert.ok(appJs.includes("petTypeLabel"), "應將寵物類型轉成中文");
+  assert.ok(appJs.includes("petVisualStyleLabel"), "應將 visualStyle 轉成中文");
+  assert.ok(appJs.includes("petGrowthStageLabel"), "應將 growthStage 轉成中文");
+  assert.ok(appJs.includes("寵物類型"), "應顯示寵物類型");
+  assert.ok(appJs.includes("視覺風格"), "應顯示視覺風格");
+  assert.ok(appJs.includes("成長階段"), "應顯示成長階段");
+});
+
 test("不捏造：前端不出現工程 / 敏感字樣", () => {
   const banned = [
     "password",

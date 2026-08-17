@@ -44,11 +44,13 @@ void main() {
     });
 
     test('外觀清單包含 dog / guineaPig / fox', () {
-      expect(PetSkin.values, containsAll(<PetSkin>[
-        PetSkin.dog,
-        PetSkin.guineaPig,
-        PetSkin.fox,
-      ]));
+      expect(
+          PetSkin.values,
+          containsAll(<PetSkin>[
+            PetSkin.dog,
+            PetSkin.guineaPig,
+            PetSkin.fox,
+          ]));
     });
 
     test('已擁有的外觀可以套用（dog）', () async {
@@ -73,6 +75,24 @@ void main() {
       await controller.selectStarterSkin(PetSkin.guineaPig);
       expect(controller.currentSkin, PetSkin.guineaPig);
       expect(controller.isOwned(PetSkin.guineaPig), isTrue);
+    });
+
+    test('currentVisualProfile 會跟著目前外觀更新，供 tracking 使用', () async {
+      final controller = PetController();
+      expect(controller.currentVisualProfile.skin, PetSkin.dog);
+      expect(controller.currentVisualProfile.toTrackingMetadata()['petType'],
+          'dog');
+
+      await controller.selectStarterSkin(PetSkin.mochi);
+      expect(controller.currentVisualProfile.skin, PetSkin.mochi);
+      expect(controller.currentVisualProfile.toTrackingMetadata()['petType'],
+          'mochi');
+      expect(
+          controller.currentVisualProfile.toTrackingMetadata()['visualStyle'],
+          'cute');
+      expect(
+          controller.currentVisualProfile.toTrackingMetadata()['growthStage'],
+          'adult');
     });
 
     test('purchaseAndApplySkin：點數足夠 → 扣點、解鎖、套用', () async {
@@ -179,8 +199,7 @@ void main() {
       expect(PetSkinX.fromStorageId('ferret'), PetSkin.dog);
     });
 
-    test('本機存到 ferret（目前外觀 + 已擁有清單）→ loadSkin 顯示狗狗、不丟例外',
-        () async {
+    test('本機存到 ferret（目前外觀 + 已擁有清單）→ loadSkin 顯示狗狗、不丟例外', () async {
       // 模擬升級前長者已把外觀設成雪貂、且解鎖清單含 ferret 的舊存檔。
       SharedPreferences.setMockInitialValues({
         'petSkin': 'ferret',

@@ -20,6 +20,7 @@ class PetSkinPicker extends StatelessWidget {
     super.key,
     this.compact = false,
     this.purchasable = true,
+    this.onSkinApplied,
   });
 
   /// 緊湊模式：略縮預覽圖與卡片內距，給空間有限的場合（如首頁 bottom sheet）。
@@ -28,18 +29,24 @@ class PetSkinPicker extends StatelessWidget {
   /// 是否走「購買 / 解鎖」流程。false → 免費挑起始夥伴（新手導覽用）。
   final bool purchasable;
 
+  /// 成功換上新外觀後呼叫。重複點目前使用中的外觀不會觸發。
+  final ValueChanged<PetSkin>? onSkinApplied;
+
   Future<void> _handleTap(BuildContext context, PetSkin skin) async {
     final pet = context.read<PetController>();
+    final previous = pet.currentSkin;
 
     // 新手導覽：免費挑起始夥伴，不走購買。
     if (!purchasable) {
       await pet.selectStarterSkin(skin);
+      if (pet.currentSkin != previous) onSkinApplied?.call(pet.currentSkin);
       return;
     }
 
     // 已擁有：點一下立即套用。
     if (pet.isOwned(skin)) {
       await pet.changeSkin(skin);
+      if (pet.currentSkin != previous) onSkinApplied?.call(pet.currentSkin);
       return;
     }
 
@@ -70,9 +77,12 @@ class PetSkinPicker extends StatelessWidget {
       spendCoins: wallet.spendCoins,
     );
     if (!context.mounted) return;
+    if (pet.currentSkin != previous &&
+        result != SkinPurchaseResult.insufficientCoins) {
+      onSkinApplied?.call(pet.currentSkin);
+    }
     final message = switch (result) {
-      SkinPurchaseResult.insufficientCoins =>
-        '點數還不夠喔，可以先完成每日任務再來解鎖。',
+      SkinPurchaseResult.insufficientCoins => '點數還不夠喔，可以先完成每日任務再來解鎖。',
       SkinPurchaseResult.purchasedAndApplied => '已經幫你換上${skin.label}了。',
       SkinPurchaseResult.applied => '已換上${skin.label}。',
     };
@@ -95,8 +105,7 @@ class PetSkinPicker extends StatelessWidget {
             compact: compact,
             onTap: () => _handleTap(context, skin),
           ),
-          if (skin != PetSkin.values.last)
-            SizedBox(height: compact ? 8 : 10),
+          if (skin != PetSkin.values.last) SizedBox(height: compact ? 8 : 10),
         ],
       ],
     );

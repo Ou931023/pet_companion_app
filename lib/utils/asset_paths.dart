@@ -1,5 +1,6 @@
 import '../models/pet_skin.dart';
 import '../models/pet_status.dart';
+import '../models/pet_visual_profile.dart';
 
 /// 寵物圖片路徑組裝。CR-0011：改為依 [PetSkin] 動態組路徑，
 /// 讓狗狗 / 天竺鼠 / 狐狸共用同一套狀態邏輯，只換檔名前綴。
@@ -11,22 +12,6 @@ import '../models/pet_status.dart';
 /// - mochi：talk 6 / rest 3 / listening 1 / states 8
 class AssetPaths {
   const AssetPaths._();
-
-  /// 每個外觀實際擁有的 talk 動畫張數（依素材，不可亂猜，否則會抓到不存在的檔）。
-  static const Map<PetSkin, int> _talkFrameCount = {
-    PetSkin.dog: 6,
-    PetSkin.guineaPig: 3,
-    PetSkin.fox: 6,
-    PetSkin.mochi: 6,
-  };
-
-  /// 每個外觀實際擁有的 rest 動畫張數。
-  static const Map<PetSkin, int> _restFrameCount = {
-    PetSkin.dog: 3,
-    PetSkin.guineaPig: 3,
-    PetSkin.fox: 3,
-    PetSkin.mochi: 3,
-  };
 
   /// PetMode → states 檔名尾碼。多個情緒共用同一張（thinking→normal、
   /// concerned→caring、smile→happy），與既有 dog 行為一致。
@@ -44,15 +29,62 @@ class AssetPaths {
     PetMode.sad: 'sad',
   };
 
+  /// 現有 production 圖包的素材能力宣告。
+  ///
+  /// 目前全部是 Q 版、成年素材；未來真實版 / 幼年素材進來時，優先擴充這裡，
+  /// 不要讓 frame 數與 fallback 規則散落在 UI。
+  static const Map<PetSkin, PetVisualProfile> _profiles = {
+    PetSkin.dog: PetVisualProfile(
+      skin: PetSkin.dog,
+      visualStyle: PetVisualStyle.cute,
+      growthStage: PetGrowthStage.adult,
+      talkFrameCount: 6,
+      restFrameCount: 3,
+      stateSuffixes: _stateSuffix,
+    ),
+    PetSkin.guineaPig: PetVisualProfile(
+      skin: PetSkin.guineaPig,
+      visualStyle: PetVisualStyle.cute,
+      growthStage: PetGrowthStage.adult,
+      talkFrameCount: 3,
+      restFrameCount: 3,
+      stateSuffixes: _stateSuffix,
+    ),
+    PetSkin.fox: PetVisualProfile(
+      skin: PetSkin.fox,
+      visualStyle: PetVisualStyle.cute,
+      growthStage: PetGrowthStage.adult,
+      talkFrameCount: 6,
+      restFrameCount: 3,
+      stateSuffixes: _stateSuffix,
+    ),
+    PetSkin.mochi: PetVisualProfile(
+      skin: PetSkin.mochi,
+      visualStyle: PetVisualStyle.cute,
+      growthStage: PetGrowthStage.adult,
+      talkFrameCount: 6,
+      restFrameCount: 3,
+      stateSuffixes: _stateSuffix,
+    ),
+  };
+
   /// 最終保底圖（第二層 fallback）：永遠存在的狗狗 rest_01。
   /// 也供登入頁 / 新手導覽頁當預設寵物圖，避免硬寫路徑字串。
   static const String defaultRestImage = 'assets/pets/rest/dog_rest_01.png';
 
   static String _padded(int i) => i.toString().padLeft(2, '0');
 
+  /// 取得單一外觀目前的素材能力。認不得時保底狗狗規格。
+  static PetVisualProfile visualProfile(PetSkin skin) =>
+      _profiles[skin] ?? _profiles[PetSkin.dog]!;
+
+  /// 取得所有 production-ready 寵物素材規格，供測試與未來後台偏好追蹤使用。
+  static List<PetVisualProfile> get productionProfiles =>
+      [for (final skin in PetSkin.values) visualProfile(skin)];
+
   /// 說話動畫每一張（張數依 [skin]，guineaPig 只有 3 張）。
   static List<String> talkingFrames(PetSkin skin) {
-    final count = _talkFrameCount[skin] ?? 1;
+    final count = visualProfile(skin).talkFrameCount;
     return [
       for (var i = 1; i <= count; i++)
         'assets/pets/talk/${skin.assetPrefix}_talk_${_padded(i)}.png',
@@ -61,7 +93,7 @@ class AssetPaths {
 
   /// 休息（待機）動畫每一張。
   static List<String> restFrames(PetSkin skin) {
-    final count = _restFrameCount[skin] ?? 1;
+    final count = visualProfile(skin).restFrameCount;
     return [
       for (var i = 1; i <= count; i++)
         'assets/pets/rest/${skin.assetPrefix}_rest_${_padded(i)}.png',
@@ -74,7 +106,7 @@ class AssetPaths {
 
   /// 依情緒狀態取靜態圖。
   static String stateImage(PetSkin skin, PetMode mode) {
-    final suffix = _stateSuffix[mode] ?? 'normal';
+    final suffix = visualProfile(skin).stateSuffixFor(mode);
     return 'assets/pets/states/${skin.assetPrefix}_$suffix.png';
   }
 

@@ -206,7 +206,7 @@ class _HomeScreenState extends State<HomeScreen> {
         sessionId: conversationController.activeSessionId,
         metadata: {
           'source': source,
-          'petType': petController.currentSkin.storageId,
+          ...petController.currentVisualProfile.toTrackingMetadata(),
           'mood': displayPetMode.name,
           'satiety': petStatsController.fullness,
           'intimacy': petStatsController.intimacy,
@@ -588,7 +588,21 @@ class _HomeScreenState extends State<HomeScreen> {
             value: walletController,
           ),
         ],
-        child: const _SkinPickerSheet(),
+        child: _SkinPickerSheet(
+          onSkinApplied: (skin) {
+            final profile = petController.currentVisualProfile;
+            _trackUsage(
+              'pet_style_changed',
+              metadata: {
+                'source': 'home_skin_picker',
+                'selectedPetType': skin.storageId,
+                ...profile.toTrackingMetadata(),
+                'satiety': context.read<PetStatsController>().fullness,
+                'intimacy': context.read<PetStatsController>().intimacy,
+              },
+            );
+          },
+        ),
       ),
     );
   }
@@ -661,6 +675,10 @@ class _HomeScreenState extends State<HomeScreen> {
       metadata: {
         'source': 'inventory_item',
         'itemId': item.itemId,
+        ...context
+            .read<PetController>()
+            .currentVisualProfile
+            .toTrackingMetadata(),
         'satiety': petStatsController.fullness,
         'intimacy': petStatsController.intimacy,
       },
@@ -1809,7 +1827,9 @@ class _PetStage extends StatelessWidget {
 
 /// 首頁「更換外觀」彈出視窗內容（標題 + 外觀選擇器 + 完成）。
 class _SkinPickerSheet extends StatelessWidget {
-  const _SkinPickerSheet();
+  const _SkinPickerSheet({required this.onSkinApplied});
+
+  final ValueChanged<PetSkin> onSkinApplied;
 
   @override
   Widget build(BuildContext context) {
@@ -1847,10 +1867,13 @@ class _SkinPickerSheet extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           // 卡片列表（可捲動）：內容過高時在這裡捲，不會把完成按鈕擠出畫面。
-          const Flexible(
+          Flexible(
             child: SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(20, 0, 20, 4),
-              child: PetSkinPicker(compact: true),
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+              child: PetSkinPicker(
+                compact: true,
+                onSkinApplied: onSkinApplied,
+              ),
             ),
           ),
           // 完成按鈕（固定在底部，並避開 home indicator）。

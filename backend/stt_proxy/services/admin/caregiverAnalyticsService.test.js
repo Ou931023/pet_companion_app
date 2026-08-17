@@ -182,6 +182,9 @@ test("App usage events 進入 summary / usageStats / petStatus，後台顯示真
       durationMs: null,
       metadata: {
         petType: "dog",
+        selectedPetType: "dog",
+        visualStyle: "cute",
+        growthStage: "adult",
         mood: "happy",
         satiety: 88,
         intimacy: 42,
@@ -205,6 +208,9 @@ test("App usage events 進入 summary / usageStats / petStatus，後台顯示真
   assert.equal(out.usageStats.settingsChanges, 1);
   assert.equal(out.petStatus.available, true);
   assert.equal(out.petStatus.petType, "dog");
+  assert.equal(out.petStatus.selectedPetType, "dog");
+  assert.equal(out.petStatus.visualStyle, "cute");
+  assert.equal(out.petStatus.growthStage, "adult");
   assert.equal(out.petStatus.mood, "happy");
   assert.equal(out.petStatus.satiety, 88);
   assert.equal(out.petStatus.intimacy, 42);

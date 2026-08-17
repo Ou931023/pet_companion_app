@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../controllers/pet_controller.dart';
 import '../controllers/profile_controller.dart';
 import '../models/pet_status.dart';
+import '../models/pet_skin.dart';
+import '../services/app_usage_tracking_service.dart';
 import '../utils/asset_paths.dart';
 import '../widgets/auth/auth_visuals.dart';
 import '../widgets/pet_skin_picker.dart';
@@ -131,9 +135,30 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         ),
         const SizedBox(height: 12),
         // 新手導覽「選夥伴」：免費挑一隻起始夥伴（不走購買 / 解鎖）。
-        const PetSkinPicker(purchasable: false),
+        PetSkinPicker(
+          purchasable: false,
+          onSkinApplied: _trackStarterSkinSelected,
+        ),
       ],
     );
+  }
+
+  void _trackStarterSkinSelected(PetSkin skin) {
+    try {
+      final profile = context.read<PetController>().currentVisualProfile;
+      unawaited(
+        context.read<AppUsageTrackingService>().track(
+          'pet_style_changed',
+          metadata: {
+            'source': 'onboarding_starter',
+            'selectedPetType': skin.storageId,
+            ...profile.toTrackingMetadata(),
+          },
+        ),
+      );
+    } on ProviderNotFoundException {
+      // Isolated widget tests may omit analytics. The production app injects it.
+    }
   }
 
   /// 第二步：幫牠取一個名字。
@@ -207,9 +232,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           if (_step > 0) ...[
             Expanded(
               child: OutlinedButton(
-                onPressed: _isSubmitting
-                    ? null
-                    : () => setState(() => _step -= 1),
+                onPressed:
+                    _isSubmitting ? null : () => setState(() => _step -= 1),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
@@ -308,9 +332,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final primary = Theme.of(context).colorScheme.primary;
     final skin = context.watch<PetController>().currentSkin;
     final hasName = _confirmedName.isNotEmpty;
-    final subtitle = hasName
-        ? '$_confirmedName 準備好陪你開始生活了。'
-        : '你的 AI 寵物準備好陪你開始生活了。';
+    final subtitle =
+        hasName ? '$_confirmedName 準備好陪你開始生活了。' : '你的 AI 寵物準備好陪你開始生活了。';
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -449,9 +472,8 @@ class _StepProgressBar extends StatelessWidget {
                   duration: const Duration(milliseconds: 250),
                   height: 8,
                   decoration: BoxDecoration(
-                    color: i <= step
-                        ? primary
-                        : primary.withValues(alpha: 0.14),
+                    color:
+                        i <= step ? primary : primary.withValues(alpha: 0.14),
                     borderRadius: BorderRadius.circular(999),
                   ),
                 ),
