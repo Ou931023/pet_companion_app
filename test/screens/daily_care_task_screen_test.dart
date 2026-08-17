@@ -7,6 +7,7 @@ import 'package:pet_companion_app/models/daily_care_task.dart';
 import 'package:pet_companion_app/screens/daily_care_task_screen.dart';
 import 'package:pet_companion_app/services/daily_care_task_api_service.dart';
 import 'package:pet_companion_app/services/photo_picker_service.dart';
+import 'package:pet_companion_app/widgets/daily_care_task_card.dart';
 import 'package:provider/provider.dart';
 
 DailyCareTask _task(
@@ -137,6 +138,35 @@ void main() {
     // 相機被呼叫、回 null（取消）→ 不 crash，仍在任務頁。
     expect(picker.cameraCalled, isTrue);
     expect(find.text('今日任務'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('任務卡片在窄螢幕不因長狀態文字和按鈕溢出', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(300, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Padding(
+            padding: const EdgeInsets.all(8),
+            child: DailyCareTaskCard(
+              task: _task(
+                't3',
+                '下午散步',
+                type: DailyCareTaskType.exercise,
+                status: DailyCareTaskStatus.needsReview,
+              ),
+              isSubmitting: false,
+              onComplete: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('等待照護人員查看'), findsOneWidget);
+    expect(find.text('重新拍照'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
