@@ -8,25 +8,25 @@ void main() {
     String label(VoiceAgentState state, {bool taigi = false}) =>
         realtimeVoiceButtonLabel(state, petName: '咕咕', taigiRealtime: taigi);
 
-    test('idle：按住說話', () {
-      expect(label(VoiceAgentState.idle), '按住說話');
+    test('idle：按一下說話', () {
+      expect(label(VoiceAgentState.idle), '按一下說話');
     });
 
     test('idle 台語模式：顯示台語邀請', () {
-      expect(label(VoiceAgentState.idle, taigi: true), '用台語按住說話');
+      expect(label(VoiceAgentState.idle, taigi: true), '台語說話');
     });
 
     test('connecting：連線中提示', () {
-      expect(label(VoiceAgentState.connecting), '正在連線，馬上就好');
+      expect(label(VoiceAgentState.connecting), '正在連線');
     });
 
     test('listening：正在聽你說、提示說完再按一下送出（CR-0096）', () {
-      expect(label(VoiceAgentState.listening), '正在聽你說，說完再按一下');
-      expect(label(VoiceAgentState.ready), '正在聽你說，說完再按一下');
+      expect(label(VoiceAgentState.listening), '說完再按一下');
+      expect(label(VoiceAgentState.ready), '說完再按一下');
     });
 
     test('transcribing：正在把使用者的話轉文字（CR-0096 仍可按一下送出）', () {
-      expect(label(VoiceAgentState.transcribing), '正在聽你說，說完再按一下');
+      expect(label(VoiceAgentState.transcribing), '說完再按一下');
     });
 
     test('thinking：寵物正在想（帶寵物名字）', () {
@@ -34,7 +34,7 @@ void main() {
     });
 
     test('speaking：寵物正在說話（不可打斷，先聽完）', () {
-      expect(label(VoiceAgentState.speaking), '咕咕正在說話');
+      expect(label(VoiceAgentState.speaking), '咕咕說話中');
     });
 
     test('recovering：重新連線中', () {
@@ -70,7 +70,7 @@ void main() {
         petName: '   ',
         taigiRealtime: false,
       );
-      expect(text, '咕咕正在說話');
+      expect(text, '咕咕說話中');
     });
   });
 }

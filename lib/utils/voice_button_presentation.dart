@@ -22,19 +22,19 @@ String realtimeVoiceButtonLabel(
   final name = petName.trim().isEmpty ? '咕咕' : petName.trim();
   switch (state) {
     case VoiceAgentState.idle:
-      return taigiRealtime ? '用台語按住說話' : '按住說話';
+      return taigiRealtime ? '台語說話' : '按一下說話';
     case VoiceAgentState.connecting:
-      return '正在連線，馬上就好';
+      return '正在連線';
     case VoiceAgentState.ready:
     case VoiceAgentState.listening:
     case VoiceAgentState.transcribing:
       // CR-0096：聆聽中按一下＝停止收音並送出本輪語音，文案明說「說完再按一下」，
       // 讓長者知道吵雜環境也能自己決定何時結束說話。
-      return '正在聽你說，說完再按一下';
+      return '說完再按一下';
     case VoiceAgentState.thinking:
       return '$name想一下';
     case VoiceAgentState.speaking:
-      return '$name正在說話';
+      return '$name說話中';
     case VoiceAgentState.recovering:
       return '正在重新連線';
     case VoiceAgentState.error:

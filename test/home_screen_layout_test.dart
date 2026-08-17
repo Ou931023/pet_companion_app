@@ -62,6 +62,54 @@ void main() {
     await _pumpHomeScreen(tester, harness);
   });
 
+  testWidgets('HomeScreen idle state keeps conversation detail hidden',
+      (tester) async {
+    await binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => binding.setSurfaceSize(null));
+    final harness = await _HomeHarness.create();
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(_homeHost(harness));
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('home-conversation-detail-scroll')),
+      findsNothing,
+    );
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpWidget(const SizedBox.shrink());
+    harness.dispose();
+  });
+
+  testWidgets('HomeScreen keeps pet stage simple and moves secondary actions',
+      (tester) async {
+    await binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => binding.setSurfaceSize(null));
+    final harness = await _HomeHarness.create();
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(_homeHost(harness));
+    await tester.pump();
+
+    expect(find.text('更換外觀'), findsNothing);
+    expect(find.text('陪寵物玩'), findsNothing);
+    expect(find.byTooltip('更多功能'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('更多功能'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('每日簽到'), findsOneWidget);
+    expect(find.text('提醒'), findsOneWidget);
+    expect(find.text('陪寵物玩'), findsOneWidget);
+    expect(find.text('更換寵物外觀'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpWidget(const SizedBox.shrink());
+    harness.dispose();
+  });
+
   testWidgets('HomeScreen handles long AI reply and sources without overflow',
       (tester) async {
     await binding.setSurfaceSize(const Size(320, 568));
@@ -110,8 +158,18 @@ void main() {
     await tester.pumpWidget(_homeHost(harness));
     await tester.pump();
 
-    // 點首頁的簽到月曆入口開啟彈窗（有界 pump，不用 pumpAndSettle 以免卡在寵物動畫）。
-    await tester.tap(find.byTooltip('簽到月曆'));
+    // 次要功能收在「更多功能」裡，首頁保持寵物與語音為主。
+    await tester.tap(find.byTooltip('更多功能'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // 點簽到入口開啟彈窗（有界 pump，不用 pumpAndSettle 以免卡在寵物動畫）。
+    await tester.tap(
+      find.ancestor(
+        of: find.text('每日簽到'),
+        matching: find.byType(ListTile),
+      ),
+    );
     await tester.pump();
     // pump 滿 1 秒：完成彈窗開啟動畫，並觸發首頁寵物的 1 秒 rest→listen 計時器，
     // 避免測試結束時殘留 pending timer（沿用 _pumpHomeScreen 慣例）。
@@ -129,7 +187,7 @@ void main() {
     expect(find.textContaining('天獎勵：金幣'), findsOneWidget);
 
     // 點第 4 天（禮物日）→ 下方獎勵摘要切換到第 4 天。
-    await tester.tap(find.text('4'));
+    await tester.tap(find.byKey(const ValueKey('calendar-day-4')));
     await tester.pump();
     expect(find.textContaining('第 4 天獎勵'), findsOneWidget);
 
@@ -307,14 +365,27 @@ void main() {
     await tester.pumpWidget(_homeHost(harness, coach: coach));
     await tester.pump();
 
-    // 教學入口仍在（淡色小圓 help_outline），且沒有浮起的白色圓鈕陰影。
-    final help = find.byIcon(Icons.help_outline);
-    expect(help, findsOneWidget);
+    // 教學入口收在更多功能裡，首頁不再塞一排小工具按鈕。
+    expect(find.byTooltip('更多功能'), findsOneWidget);
     expect(coach.replayRequested, isFalse);
 
     // 點擊後仍觸發重新觀看新手導覽。
-    await tester.tap(help);
+    await tester.tap(find.byTooltip('更多功能'));
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.scrollUntilVisible(
+      find.text('使用教學'),
+      120,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.tap(
+      find.ancestor(
+        of: find.text('使用教學'),
+        matching: find.byType(ListTile),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     expect(coach.replayRequested, isTrue);
 
     // 讓首頁寵物的 1 秒 rest→listen 計時器跑完，避免殘留 pending timer。
