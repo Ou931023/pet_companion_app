@@ -1272,6 +1272,34 @@
     }
   }
 
+  function dailyTaskVerificationClass(status) {
+    if (status === "passed") return "ok";
+    if (status === "failed") return "danger";
+    return "review";
+  }
+
+  function dailyTaskReviewLabel(verification) {
+    if (!verification) return "尚未送出照片";
+    return verification.reviewRequired ? "需要照護者確認" : "暫不需人工確認";
+  }
+
+  function dailyTaskDetectedObjectsLabel(verification) {
+    if (
+      !verification ||
+      !Array.isArray(verification.detectedObjects) ||
+      verification.detectedObjects.length === 0
+    ) {
+      return "沒有可明確辨識的物件";
+    }
+    return verification.detectedObjects
+      .slice(0, 5)
+      .map(function (item) {
+        return String(item || "").trim();
+      })
+      .filter(Boolean)
+      .join("、") || "沒有可明確辨識的物件";
+  }
+
   function summarizeDailyTasks(tasks) {
     var s = { total: tasks.length, completed: 0, pending: 0, review: 0, missed: 0 };
     tasks.forEach(function (t) {
@@ -1300,6 +1328,11 @@
         ? Math.round(Math.max(0, Math.min(1, v.confidence)) * 100) + "%"
         : "—";
     var aiReason = v && v.reason ? escapeHtml(v.reason) : "—";
+    var aiObjects = escapeHtml(dailyTaskDetectedObjectsLabel(v));
+    var reviewLabel = escapeHtml(dailyTaskReviewLabel(v));
+    var verificationClass = dailyTaskVerificationClass(
+      v ? v.verificationStatus : "",
+    );
     var completedAt = task.status === "completed" && sub ? formatTime(sub.submittedAt) : "—";
     var proof =
       sub && sub.id
@@ -1330,18 +1363,33 @@
       "<span>完成時間：" +
       escapeHtml(completedAt) +
       "</span>" +
-      "<span>AI 判斷：" +
+      "</div>" +
+      '<div class="task-verification-card task-verification-' +
+      escapeHtml(verificationClass) +
+      '">' +
+      '<div class="task-verification-head">' +
+      '<span class="task-verification-title">照片驗證摘要</span>' +
+      '<span class="task-review-badge">' +
+      reviewLabel +
+      "</span>" +
+      "</div>" +
+      '<div class="task-verification-grid">' +
+      "<span><b>AI 判斷</b>" +
       escapeHtml(aiStatus) +
       "</span>" +
-      "<span>信心：" +
+      "<span><b>信心</b>" +
       escapeHtml(aiConfidence) +
       "</span>" +
-      "<span>原因：" +
-      aiReason +
+      "<span><b>辨識內容</b>" +
+      aiObjects +
       "</span>" +
-      "<span>照片：" +
+      "<span><b>照片</b>" +
       proof +
       "</span>" +
+      "</div>" +
+      '<p class="task-verification-reason"><b>AI 原因：</b>' +
+      aiReason +
+      "</p>" +
       "</div>" +
       "</div>"
     );
