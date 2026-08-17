@@ -12,6 +12,7 @@ import '../models/realtime_timeout.dart';
 import '../models/voice_agent_state.dart';
 import '../onboarding/coach_mark_controller.dart';
 import '../services/ai_navigation_service.dart';
+import '../services/app_usage_tracking_service.dart';
 import '../services/care_alert_notification_service.dart';
 import '../services/companion_engine_service.dart';
 import '../services/emotion_services.dart';
@@ -43,6 +44,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     required this.memoryController,
     required this.navigationService,
     required this.navigationController,
+    this.trackingService,
     this.agentToolController,
     this.careAlertController,
     this.careAlertNotificationService,
@@ -63,6 +65,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   final MemoryController memoryController;
   final AiNavigationService navigationService;
   final AppNavigationController navigationController;
+  final AppUsageTrackingService? trackingService;
   final AgentToolController? agentToolController;
   final CareAlertController? careAlertController;
   final CareAlertNotificationService? careAlertNotificationService;
@@ -669,6 +672,18 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       if (navigationIntent.action == NavigationAction.replayOnboarding) {
         coachMarkController?.requestReplay();
       }
+      unawaited(
+        trackingService?.track(
+              'voice_navigation',
+              sessionId: conversationController.activeSessionId,
+              metadata: {
+                'route': navigationIntent.route,
+                'source': 'realtime_voice',
+                'languageHint': _currentLanguageRoute.languageHint.value,
+              },
+            ) ??
+            Future<bool>.value(false),
+      );
       petController.setMessage(navigationIntent.reply);
       conversationController.appendExternalTurn(
         ConversationTurn(
@@ -866,8 +881,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   static bool _isBroadMusicRequest(String text) {
-    final normalized =
-        text.replaceAll(RegExp(r'[\s，。！？!?、,.]'), '').trim();
+    final normalized = text.replaceAll(RegExp(r'[\s，。！？!?、,.]'), '').trim();
     if (normalized.isEmpty) return false;
     if (RegExp(
       r'台語|老歌|放鬆|白噪音|輕音樂|雨聲|助眠|懷舊|自然音|歌手|周杰倫|江蕙|鄧麗君|費玉清|蔡琴|五月天|鳳飛飛|望春風|雨夜花|月亮代表我的心',

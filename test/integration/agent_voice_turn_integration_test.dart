@@ -22,6 +22,7 @@ import 'package:pet_companion_app/services/ai_navigation_service.dart';
 import 'package:pet_companion_app/services/ai_tool_router.dart';
 import 'package:pet_companion_app/services/agent_router_service.dart';
 import 'package:pet_companion_app/services/asr_strategy_service.dart';
+import 'package:pet_companion_app/services/app_usage_tracking_service.dart';
 import 'package:pet_companion_app/services/check_in_storage_service.dart';
 import 'package:pet_companion_app/services/companion_chat_service.dart';
 import 'package:pet_companion_app/services/companion_content_service.dart';
@@ -130,6 +131,28 @@ void main() {
     expect(harness.router.routedTexts, isNot(contains('今天有什麼新聞')));
     expect(harness.executor.executedCount, 0);
     expect(harness.controller.state, VoiceAgentState.thinking);
+
+    harness.dispose();
+  });
+
+  test('語音說已完成吃藥會導到今日任務，並上報 voice_navigation 給後台分析', () async {
+    final harness = await _Harness.create(_intent('open_app_route'));
+    await harness.connect();
+
+    harness.realtime.handleDataChannelEventForTest(
+      '{"type":"conversation.item.input_audio_transcription.completed","transcript":"我吃藥了"}',
+    );
+    await pumpEventQueue();
+    await pumpEventQueue();
+
+    expect(harness.navigationController.currentShellRoute,
+        isNot('/daily-care-tasks'));
+    expect(harness.tracking.events, hasLength(1));
+    expect(harness.tracking.events.first.eventType, 'voice_navigation');
+    expect(
+        harness.tracking.events.first.metadata['route'], '/daily-care-tasks');
+    expect(harness.tracking.events.first.metadata['source'], 'realtime_voice');
+    expect(harness.router.routedTexts, isNot(contains('我吃藥了')));
 
     harness.dispose();
   });
@@ -280,6 +303,39 @@ class _RecordingExecutor extends NativeToolExecutorService {
   }
 }
 
+class _RecordedUsageEvent {
+  const _RecordedUsageEvent({
+    required this.eventType,
+    required this.sessionId,
+    required this.metadata,
+  });
+
+  final String eventType;
+  final String? sessionId;
+  final Map<String, Object?> metadata;
+}
+
+class _RecordingUsageTrackingService extends AppUsageTrackingService {
+  final List<_RecordedUsageEvent> events = [];
+
+  @override
+  Future<bool> track(
+    String eventType, {
+    String? sessionId,
+    int? durationMs,
+    Map<String, Object?> metadata = const {},
+  }) async {
+    events.add(
+      _RecordedUsageEvent(
+        eventType: eventType,
+        sessionId: sessionId,
+        metadata: metadata,
+      ),
+    );
+    return true;
+  }
+}
+
 class _Harness {
   _Harness({
     required this.controller,
@@ -287,6 +343,8 @@ class _Harness {
     required this.router,
     required this.executor,
     required this.realtime,
+    required this.navigationController,
+    required this.tracking,
     required this.attemptsRef,
     required this.disposeAll,
   });
@@ -296,6 +354,8 @@ class _Harness {
   final _RecordingRouter router;
   final _RecordingExecutor executor;
   final RealtimeVoiceService realtime;
+  final AppNavigationController navigationController;
+  final _RecordingUsageTrackingService tracking;
   final Map<String, int> attemptsRef;
   final void Function() disposeAll;
 
@@ -386,6 +446,7 @@ class _Harness {
     );
     final router = _RecordingRouter(intent);
     final executor = _RecordingExecutor();
+    final tracking = _RecordingUsageTrackingService();
     final agent = AgentToolController(
       profileController: profile,
       routerService: router,
@@ -406,6 +467,7 @@ class _Harness {
       memoryController: memoryController,
       navigationService: navigationService,
       navigationController: navigationController,
+      trackingService: tracking,
       agentToolController: agent,
     );
 
@@ -415,6 +477,8 @@ class _Harness {
       router: router,
       executor: executor,
       realtime: realtime,
+      navigationController: navigationController,
+      tracking: tracking,
       attemptsRef: harnessRef,
       disposeAll: () {
         controller.dispose();

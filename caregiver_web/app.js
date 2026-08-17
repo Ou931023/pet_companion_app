@@ -1861,6 +1861,7 @@
       html += '<div class="metric-grid">';
       html += metricCard("使用天數", String(us.activeDays || 0), "區間內");
       html += metricCard("語音互動", String(us.voiceInteractions || 0), null);
+      html += metricCard("語音導覽", String(us.voiceNavigations || 0), null);
       html += metricCard("打字訊息", String(us.typedChats || 0), null);
       html += metricCard("寵物互動", String(us.petInteractions || 0), null);
       html += metricCard("建立提醒", String(us.remindersCreated || 0), null);

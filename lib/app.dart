@@ -408,6 +408,7 @@ class PetCompanionApp extends StatelessWidget {
             memoryController: context.read<MemoryController>(),
             navigationService: context.read<AiNavigationService>(),
             navigationController: context.read<AppNavigationController>(),
+            trackingService: context.read<AppUsageTrackingService>(),
             agentToolController: context.read<AgentToolController>(),
             careAlertController: context.read<CareAlertController>(),
             careAlertNotificationService:
@@ -428,6 +429,7 @@ class PetCompanionApp extends StatelessWidget {
                 memoryController: context.read<MemoryController>(),
                 navigationService: context.read<AiNavigationService>(),
                 navigationController: navigation,
+                trackingService: context.read<AppUsageTrackingService>(),
                 agentToolController: context.read<AgentToolController>(),
                 careAlertController: context.read<CareAlertController>(),
                 careAlertNotificationService:

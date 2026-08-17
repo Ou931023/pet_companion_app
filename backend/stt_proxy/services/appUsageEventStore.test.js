@@ -82,6 +82,16 @@ test("JSON fallback：recordEvent 寫入，getUsageStats 聚合後台可用數�
   );
   await store.recordEvent(
     {
+      eventType: "voice_navigation",
+      eventAt: "2026-06-15T09:06:30.000Z",
+      sessionId: "session-1",
+      metadata: { route: "/daily-care-tasks", source: "realtime_voice" },
+    },
+    caller,
+    { pg, eventsFilePath },
+  );
+  await store.recordEvent(
+    {
       eventType: "pet_interaction",
       eventAt: "2026-06-15T09:07:00.000Z",
       metadata: { petType: "dog", mood: "happy", satiety: 88, intimacy: 42 },
@@ -98,9 +108,10 @@ test("JSON fallback：recordEvent 寫入，getUsageStats 聚合後台可用數�
   });
 
   assert.equal(stats.available, true);
-  assert.equal(stats.totalEvents, 4);
+  assert.equal(stats.totalEvents, 5);
   assert.equal(stats.activeDays, 1);
   assert.equal(stats.voiceInteractions, 1);
+  assert.equal(stats.voiceNavigations, 1);
   assert.equal(stats.petInteractions, 1);
   assert.equal(stats.totalDurationMs, 60000);
   assert.equal(stats.lastEventAt, "2026-06-15T09:07:00.000Z");

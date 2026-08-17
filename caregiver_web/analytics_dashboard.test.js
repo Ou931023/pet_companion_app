@@ -56,6 +56,7 @@ test("空狀態 / 401 / 403 友善提示（不顯示工程字串）", () => {
 test("分析頁會渲染真實 usageStats，不只顯示 Care Alert 與任務", () => {
   assert.ok(appJs.includes("App 使用狀況"), "應有 App 使用狀況區塊");
   assert.ok(appJs.includes("voiceInteractions"), "應顯示語音互動數");
+  assert.ok(appJs.includes("voiceNavigations"), "應顯示語音導覽數");
   assert.ok(appJs.includes("typedChats"), "應顯示打字訊息數");
   assert.ok(appJs.includes("petInteractions"), "應顯示寵物互動數");
   assert.ok(appJs.includes("remindersCreated"), "應顯示提醒建立數");

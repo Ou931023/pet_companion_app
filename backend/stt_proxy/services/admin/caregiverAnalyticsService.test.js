@@ -153,6 +153,12 @@ test("App usage events 進入 summary / usageStats / petStatus，後台顯示真
       metadata: {},
     },
     {
+      eventType: "voice_navigation",
+      eventAt: "2026-06-15T09:01:00.000Z",
+      durationMs: null,
+      metadata: { route: "/daily-care-tasks", source: "realtime_voice" },
+    },
+    {
       eventType: "typed_chat_sent",
       eventAt: "2026-06-15T09:02:00.000Z",
       durationMs: null,
@@ -185,8 +191,9 @@ test("App usage events 進入 summary / usageStats / petStatus，後台顯示真
   });
 
   assert.equal(out.usageStats.available, true);
-  assert.equal(out.usageStats.totalEvents, 5);
+  assert.equal(out.usageStats.totalEvents, 6);
   assert.equal(out.usageStats.voiceInteractions, 1);
+  assert.equal(out.usageStats.voiceNavigations, 1);
   assert.equal(out.usageStats.typedChats, 1);
   assert.equal(out.usageStats.remindersCreated, 1);
   assert.equal(out.petStatus.available, true);

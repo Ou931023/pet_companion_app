@@ -18,6 +18,7 @@ const VALID_EVENT_TYPES = new Set([
   "session_end",
   "voice_interaction_start",
   "voice_interaction_end",
+  "voice_navigation",
   "typed_chat_sent",
   "pet_interaction",
   "reminder_created",
@@ -246,6 +247,7 @@ async function getUsageStats(elderId, options = {}) {
     byType,
     voiceInteractions:
       byType.voice_interaction_end || byType.voice_interaction_start || 0,
+    voiceNavigations: byType.voice_navigation || 0,
     typedChats: byType.typed_chat_sent || 0,
     petInteractions: byType.pet_interaction || 0,
     remindersCreated: byType.reminder_created || 0,
