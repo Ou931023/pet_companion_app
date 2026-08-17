@@ -195,6 +195,9 @@ class AiToolRouter {
     '观': '觀',
     '导': '導',
     '么': '麼',
+    '饭': '飯',
+    '饱': '飽',
+    '报': '報',
   };
 
   static String _toTraditional(String input) {
@@ -320,11 +323,7 @@ class AiToolRouter {
       text.contains('任務清單') ||
       text.contains('還有什麼任務');
 
-  bool _isCompleteTask(String text) =>
-      text.contains('我喝水了') ||
-      text.contains('我吃飯了') ||
-      text.contains('我休息了') ||
-      text.contains('我完成任務');
+  bool _isCompleteTask(String text) => _taskCompletionIds(text).isNotEmpty;
 
   Future<AiToolResult> _dailyCheckIn() async {
     if (checkInController.hasCheckedInToday) {
@@ -653,16 +652,19 @@ class AiToolRouter {
   }
 
   Future<AiToolResult> _completeCareTask(String text) async {
-    String taskId = 'moodReport';
-    if (text.contains('喝水')) taskId = 'drinkWater';
-    if (text.contains('吃飯')) taskId = 'eatMeal';
-    if (text.contains('休息')) taskId = 'restReminder';
-    final completed = await taskController.completeTaskById(taskId);
-    if (!completed) {
+    final taskIds = _taskCompletionIds(text);
+    final completedLabels = <String>[];
+    for (final taskId in taskIds) {
+      final completed = await taskController.completeTaskById(taskId);
+      if (completed) {
+        completedLabels.add(_taskLabel(taskId));
+      }
+    }
+    if (completedLabels.isEmpty) {
       return AiToolResult(
         toolName: 'completeCareTask',
         success: true,
-        message: '這個任務今天已經完成囉，${profileController.petName} 幫你記住了。',
+        message: '這些任務今天已經完成囉，${profileController.petName} 幫你記住了。',
         petMode: PetMode.happy,
         shouldSpeak: true,
       );
@@ -670,10 +672,47 @@ class AiToolRouter {
     return AiToolResult(
       toolName: 'completeCareTask',
       success: true,
-      message: '太好了，已幫你更新任務進度，金幣與親密度都增加了，${profileController.petName} 為你加油！',
+      message:
+          '太好了，已幫你完成${completedLabels.join('、')}，金幣與親密度都增加了，${profileController.petName} 為你加油！',
       petMode: PetMode.excited,
       shouldSpeak: true,
     );
+  }
+
+  List<String> _taskCompletionIds(String text) {
+    if (text.contains('吃藥') || text.contains('散步') || text.contains('拍照')) {
+      return const [];
+    }
+    final ids = <String>[];
+    if (_containsAny(text, const ['喝水', '飲水', '水喝了'])) {
+      ids.add('drinkWater');
+    }
+    if (_containsAny(text, const ['吃飯', '用餐', '食飽', '吃飽', '飯吃了'])) {
+      ids.add('eatMeal');
+    }
+    if (_containsAny(text, const ['休息', '睡一下', '躺一下', '睏一下'])) {
+      ids.add('restReminder');
+    }
+    if (_containsAny(text, const ['心情回報', '心情記錄', '心情說了', '回報心情'])) {
+      ids.add('moodReport');
+    }
+    if (_containsAny(text, const ['完成任務', '任務做完', '任務都做完', '全部任務'])) {
+      return const ['drinkWater', 'eatMeal', 'moodReport', 'restReminder'];
+    }
+    return ids;
+  }
+
+  bool _containsAny(String text, List<String> keywords) =>
+      keywords.any(text.contains);
+
+  String _taskLabel(String taskId) {
+    return switch (taskId) {
+      'drinkWater' => '喝水任務',
+      'eatMeal' => '吃飯任務',
+      'moodReport' => '心情回報',
+      'restReminder' => '休息提醒',
+      _ => '任務',
+    };
   }
 
   // B4：建立提醒。Realtime 語音路徑需要把「真實建立結果」念給長者聽，

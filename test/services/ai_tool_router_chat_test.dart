@@ -352,4 +352,53 @@ void main() {
       expect(tracking.events.first.metadata['value'], 'calm');
     });
   });
+
+  group('AiToolRouter daily task voice completion', () {
+    test('自然說「我吃飯了」會完成吃飯任務並語音回報', () async {
+      final router = await _buildRouter(useMockChat: false);
+
+      final result = await router.route('我吃飯了');
+
+      expect(result.toolName, 'completeCareTask');
+      expect(result.success, isTrue);
+      expect(result.shouldSpeak, isTrue);
+      expect(result.message, contains('吃飯任務'));
+      expect(result.message, contains('金幣'));
+    });
+
+    test('台語口吻「食飽」也能完成吃飯任務', () async {
+      final router = await _buildRouter(useMockChat: false);
+
+      final result = await router.route('我食飽矣');
+
+      expect(result.toolName, 'completeCareTask');
+      expect(result.success, isTrue);
+      expect(result.message, contains('吃飯任務'));
+    });
+
+    test('全部任務做完只完成低風險自我回報任務', () async {
+      final router = await _buildRouter(useMockChat: false);
+
+      final result = await router.route('我今天任務都做完了');
+
+      expect(result.toolName, 'completeCareTask');
+      expect(result.success, isTrue);
+      expect(result.message, contains('喝水任務'));
+      expect(result.message, contains('吃飯任務'));
+      expect(result.message, contains('心情回報'));
+      expect(result.message, contains('休息提醒'));
+      expect(result.message, isNot(contains('每日簽到')));
+    });
+
+    test('吃藥完成不在遊戲化任務誤判，保留給今日任務照片驗證流程', () async {
+      final chat = _StubChatService(replyValue: '我陪你一起去今日任務確認。');
+      final router = await _buildRouter(useMockChat: false, chatService: chat);
+
+      final result = await router.route('我吃藥了');
+
+      expect(result.toolName, 'chat');
+      expect(router.shouldHandleLocally('我吃藥了'), isFalse);
+      expect(result.message, '我陪你一起去今日任務確認。');
+    });
+  });
 }
