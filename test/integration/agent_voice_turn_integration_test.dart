@@ -117,6 +117,23 @@ void main() {
     harness.dispose();
   });
 
+  test('泛用新聞請求先追問類型，不送後端 router、不開始搜尋', () async {
+    final harness = await _Harness.create(_intent('search_trusted_info'));
+    await harness.connect();
+
+    harness.realtime.handleDataChannelEventForTest(
+      '{"type":"conversation.item.input_audio_transcription.completed","transcript":"今天有什麼新聞"}',
+    );
+    await pumpEventQueue();
+    await pumpEventQueue();
+
+    expect(harness.router.routedTexts, isNot(contains('今天有什麼新聞')));
+    expect(harness.executor.executedCount, 0);
+    expect(harness.controller.state, VoiceAgentState.thinking);
+
+    harness.dispose();
+  });
+
   test('高影響工具可用語音確認後執行，不必只靠畫面按鈕', () async {
     final harness = await _Harness.create(
       _intent('open_phone_dialer',

@@ -58,8 +58,8 @@ class ConversationBubbleStack extends StatelessWidget {
       bodyText = '';
       waitingState = true;
     } else {
-      speakerLabel = petName;
-      bodyText = '';
+      speakerLabel = '可以這樣說';
+      bodyText = '按下面麥克風，跟我說「提醒我吃藥」或「今天心情不好」。';
       waitingState = false;
     }
 

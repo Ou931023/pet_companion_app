@@ -19,6 +19,7 @@ import '../services/language_routing_service.dart';
 import '../services/realtime_timeout_registry.dart';
 import '../services/realtime_turn_coordinator.dart';
 import '../services/realtime_voice_service.dart';
+import '../services/web_search_service.dart';
 import '../utils/app_log.dart';
 import '../utils/zh_convert.dart';
 import 'app_navigation_controller.dart';
@@ -821,6 +822,12 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     if (_isBroadMusicRequest(transcript)) {
       unawaited(
         realtimeVoiceService.speakToolOutcome('想聽誰的歌，還是想聽什麼類型呢？'),
+      );
+      return;
+    }
+    if (WebSearchService.isBroadNewsRequest(transcript)) {
+      unawaited(
+        realtimeVoiceService.speakToolOutcome('你想聽哪一類新聞呢？像是健康、防詐、地方，還是國際新聞？'),
       );
       return;
     }

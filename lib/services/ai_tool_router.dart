@@ -112,7 +112,9 @@ class AiToolRouter {
 
   bool shouldHandleLocally(String text) {
     final normalized = _toTraditional(text.trim());
-    return _isVoiceLanguageSwitch(normalized) ||
+    return reminderController.isCreateReminderCommand(normalized) ||
+        reminderController.isListReminderCommand(normalized) ||
+        _isVoiceLanguageSwitch(normalized) ||
         _isConcernReminderToggle(normalized) ||
         _isDailyCheckIn(normalized) ||
         _isBuyRequest(normalized) ||
@@ -569,9 +571,9 @@ class AiToolRouter {
       return const AiToolResult(
         toolName: 'createReminder',
         success: false,
-        message: '我還沒聽清楚提醒時間，可以說「提醒我晚上八點吃藥」。',
+        message: '我還沒聽清楚要什麼時候提醒你，可以說「提醒我晚上八點吃藥」。',
         petMode: PetMode.listening,
-        shouldSpeak: false,
+        shouldSpeak: true,
       );
     }
     return AiToolResult(

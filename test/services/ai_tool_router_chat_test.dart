@@ -214,5 +214,47 @@ void main() {
       expect(result.toolName, 'listReminders');
       expect(result.shouldSpeak, isFalse);
     });
+
+    test('模糊提醒指令：不建立提醒，會用語音追問時間', () async {
+      final reminderController = ReminderController(
+        reminderService: ReminderService(),
+        notificationService: _FakeNotificationService(),
+      );
+      final router = await _buildRouter(
+        useMockChat: false,
+        reminderController: reminderController,
+      );
+
+      final result = await router.route('提醒我吃藥');
+
+      expect(result.toolName, 'createReminder');
+      expect(result.success, isFalse);
+      expect(result.shouldSpeak, isTrue);
+      expect(result.message, contains('什麼時候'));
+      expect(result.message, contains('提醒我晚上八點吃藥'));
+      expect(reminderController.reminders, isEmpty);
+    });
+
+    test('口語提醒變體：叫我 / 幫我記得 也會建立提醒', () async {
+      final reminderController = ReminderController(
+        reminderService: ReminderService(),
+        notificationService: _FakeNotificationService(),
+      );
+      final router = await _buildRouter(
+        useMockChat: false,
+        reminderController: reminderController,
+      );
+
+      final first = await router.route('晚上八點叫我吃藥');
+      final second = await router.route('幫我記得明天九點喝水');
+
+      expect(first.toolName, 'createReminder');
+      expect(first.success, isTrue);
+      expect(second.toolName, 'createReminder');
+      expect(second.success, isTrue);
+      expect(reminderController.reminders, hasLength(2));
+      expect(reminderController.reminders.map((r) => r.title), contains('吃藥'));
+      expect(reminderController.reminders.map((r) => r.title), contains('喝水'));
+    });
   });
 }

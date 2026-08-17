@@ -79,13 +79,24 @@ class ReminderController extends ChangeNotifier {
   }
 
   bool isCreateReminderCommand(String text) {
-    return text.contains('提醒我') || text.contains('記得提醒');
+    return text.contains('提醒我') ||
+        text.contains('記得提醒') ||
+        text.contains('記得叫我') ||
+        text.contains('叫我') ||
+        text.contains('幫我記得') ||
+        text.contains('幫我設') ||
+        text.contains('設定提醒') ||
+        text.contains('設提醒') ||
+        text.contains('鬧鐘');
   }
 
   bool isListReminderCommand(String text) {
     return text.contains('有哪些提醒') ||
         text.contains('提醒清單') ||
-        text.contains('我的提醒');
+        text.contains('我的提醒') ||
+        text.contains('看提醒') ||
+        text.contains('查提醒') ||
+        text.contains('提醒有哪些');
   }
 
   String listSummary() {
