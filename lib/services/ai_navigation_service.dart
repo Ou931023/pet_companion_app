@@ -40,6 +40,12 @@ class AiNavigationService {
         reply: '好，我帶你去通知中心。',
       );
     }
+    if (_isDailyCareTaskIntent(normalized)) {
+      return const AiNavigationIntent(
+        route: AppRoute.dailyCareTasks,
+        reply: '好，我帶你去今日任務，拍一張照片我幫你送出確認。',
+      );
+    }
     if (_containsAny(
         normalized, const ['打開相簿', '我想看照片', '我要看照片', '看照片', '相簿'])) {
       return const AiNavigationIntent(
@@ -81,5 +87,30 @@ class AiNavigationService {
 
   bool _containsAny(String text, List<String> keywords) {
     return keywords.any(text.contains);
+  }
+
+  bool _isDailyCareTaskIntent(String text) {
+    if (_containsAny(text, const [
+      '今日任務',
+      '照護任務',
+      '打開任務',
+      '去任務',
+      '我要拍照',
+      '拍照確認',
+      '照片確認',
+      '上傳照片',
+    ])) {
+      return true;
+    }
+    return _containsAny(text, const [
+      '我吃藥了',
+      '藥吃了',
+      '吃過藥了',
+      '已經吃藥',
+      '我運動了',
+      '我散步了',
+      '散步回來',
+      '走路回來',
+    ]);
   }
 }
