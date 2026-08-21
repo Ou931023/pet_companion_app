@@ -76,6 +76,9 @@ Render Environment Variables：
 `app.js?v=20260821-cr0103`，且不再指向舊的 `ai-companion-app-7mb8` 後端。
 正式部署產生的公開設定檔為 `app-config.generated.js` 與 `runtime-config.js`；
 `config.js` 保留為本機 / 手動部署備援。
+若 Static Site 不發布 build-time 生成檔，Render build 仍會把相同設定直接注入
+`index.html` 的 `window.APP_CONFIG`，所以公開頁面原始碼也應帶有 Firebase Web
+config 欄位。
 Render Static Site 的發布目錄是 `caregiver_web_dist`，由
 `node caregiver_web/build_config_from_env.js` 在部署時產生；請不要手動上傳本機
 `caregiver_web/config.js`。

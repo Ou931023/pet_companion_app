@@ -166,8 +166,11 @@ test("CR-0103：Render build 可由 env 產生 caregiver_web_dist/config.js", ()
       configBuilder.includes("config.js") &&
       configBuilder.includes("caregiver_web_dist") &&
       configBuilder.includes("generatedSourceOutputPath") &&
+      configBuilder.includes("injectConfigIntoIndex") &&
+      configBuilder.includes("sourceIndexPath") &&
+      configBuilder.includes("distIndexPath") &&
       configBuilder.includes("excludedPublishFiles") &&
       configBuilder.includes("mode=0644"),
-    "config builder 應產生可公開的 source/dist runtime config，並排除本機 config 後保留相容輸出"
+    "config builder 應產生可公開的 source/dist runtime config，並把 APP_CONFIG 注入 index.html"
   );
 });
