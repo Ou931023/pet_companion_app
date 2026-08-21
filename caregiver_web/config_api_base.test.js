@@ -52,6 +52,23 @@ test("getApiBase 會讀取 window.APP_CONFIG.apiBaseUrl 作為部署設定來源
   );
 });
 
+test("caregiver_web 會從正式後端讀取 runtime config，而不是依賴 static build 注入", () => {
+  assert.ok(
+    appJs.includes("function loadRuntimeConfig") &&
+      appJs.includes("/caregiver-web/config") &&
+      appJs.includes("mergeAppConfig"),
+    "app.js 應啟動時從後端讀取 caregiver_web runtime config"
+  );
+});
+
+test("caregiver_web 提供照護人員 Firebase Email / Google 登入入口", () => {
+  assert.ok(indexHtml.includes("firebase-email-login"), "應有 Email 登入按鈕");
+  assert.ok(indexHtml.includes("firebase-google-login"), "應有 Google 登入按鈕");
+  assert.ok(appJs.includes("signInWithEmailAndPassword"), "應支援 Firebase Email 登入");
+  assert.ok(appJs.includes("signInWithPopup"), "應支援 Firebase Google 登入");
+  assert.ok(appJs.includes("getIdToken"), "登入後應取得 Firebase ID token");
+});
+
 test("index.html 提供 APP_CONFIG 注入點，且不以 localhost 為正式預設", () => {
   assert.ok(
     indexHtml.includes("window.APP_CONFIG"),

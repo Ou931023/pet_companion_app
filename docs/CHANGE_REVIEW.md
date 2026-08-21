@@ -4603,3 +4603,34 @@ Release signing 的 repo 端文件與自動檢查已可執行；真正送審仍�
 
 ### 裁決
 商店審查文案 repo 端已可貼用；真正送審前仍需 owner 在 App Store Connect / Play Console 的受保護欄位填入審查專用帳號與正式 production HTTPS API 資訊，不能寫入 repo。
+
+---
+
+## CR-0098 — Caregiver Web Firebase Login Runtime Config
+
+### 模式
+**跨邊界 production blocker 修正**（backend-agent + frontend-ux-agent）：Render Static Site build log 顯示 `CAREGIVER_WEB_FIREBASE_*` 已進 build，但公開頁面仍維持 `firebase: null`，代表 Static Site 發布內容沒有可靠採用 build-time 注入結果。改為由正式後端提供 public runtime config endpoint，caregiver_web 啟動時讀取設定，再初始化 Firebase Email / Google 登入。
+
+### 根因
+- Static Site build command 成功不代表 build-time 修改後的 `index.html` / generated JS 一定會成為公開產物。
+- 前端需要以真 Firebase Email / Google 登入取得 ID token，不能讓照護人員長期依賴手動貼 token。
+- 結果是 Render 顯示 live，但照護人員登入仍容易落回舊 token 流程並出現「登入已失效」。
+
+### 變更
+- `backend/stt_proxy/server.js`：新增 `GET /api/caregiver-web/config`，回傳 public Firebase Web config shape、production API base URL 與 feature flags；缺欄位回 `503 caregiver_web_config_missing`；`Cache-Control: no-store`；不回傳 Firebase Admin service account、private key 或 admin token。
+- `caregiver_web/app.js`：啟動時先 fetch `/caregiver-web/config` 並 merge 到 `window.APP_CONFIG`；沿用 main 既有 Firebase Email / Google panel 與狀態機；登入成功後取 Firebase ID token，走既有 caregiver bearer token 授權 API。
+- `caregiver_web/index.html` / `styles.css`：保留照護人員 Email / 密碼 / Google 登入入口與手動權杖備援；正式 API fallback 指向 `https://ai-companion-api-rdjv.onrender.com/api`。
+
+### 風險與邊界
+- 不改 DB schema。
+- 不改既有 caregiver / admin protected API response shape。
+- 新 endpoint 僅提供 Firebase Web config（瀏覽器端 public config），不得放 Admin private key。
+- 後端正式環境需設定與 Static Site 相同的 `CAREGIVER_WEB_FIREBASE_API_KEY` / `CAREGIVER_WEB_FIREBASE_AUTH_DOMAIN` / `CAREGIVER_WEB_FIREBASE_PROJECT_ID` / `CAREGIVER_WEB_FIREBASE_APP_ID`。
+
+### 測試
+- `node --check caregiver_web/app.js && node --check backend/stt_proxy/server.js`
+- `node --test caregiver_web/config_api_base.test.js`
+- `node --test backend/stt_proxy/services/caregiverWebConfigEndpoint.test.js`
+
+### 裁決
+此為正式 caregiver_web 登入 blocker 修正：將不穩定的 Static Site build-time config 注入改為後端 runtime config，並讓照護人員可真正以 Firebase Email / Google 登入。跨邊界但範圍受控，測試守住 public config shape 與前端登入入口；併入主線後需同步部署 backend 與 caregiver_web，並在 backend Render Environment 補齊 `CAREGIVER_WEB_FIREBASE_*` 四個 Web config 變數。**下一個可用 CR 編號：CR-0099。**

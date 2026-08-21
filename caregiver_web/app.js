@@ -106,6 +106,36 @@
     return normalizeBase(cfg.apiBaseUrl);
   }
 
+  function mergeAppConfig(nextConfig) {
+    if (!nextConfig || typeof nextConfig !== "object") return;
+    var current = (typeof window !== "undefined" && window.APP_CONFIG) || {};
+    window.APP_CONFIG = Object.assign({}, current, nextConfig, {
+      firebase: Object.assign({}, current.firebase || {}, nextConfig.firebase || {}),
+      featureFlags: Object.assign(
+        {},
+        current.featureFlags || {},
+        nextConfig.featureFlags || {}
+      ),
+    });
+  }
+
+  function loadRuntimeConfig() {
+    var url = getApiBase() + "/caregiver-web/config";
+    return fetch(url)
+      .then(function (r) {
+        if (!r.ok) throw new Error("config_unavailable");
+        return r.json();
+      })
+      .then(function (body) {
+        if (body && body.ok === true && body.config) {
+          mergeAppConfig(body.config);
+        }
+      })
+      .catch(function () {
+        // 靜默退回 index.html 內的 APP_CONFIG；登入區會用白話提示設定尚未完成。
+      });
+  }
+
   // 功能旗標（CR-0056）：marketplace（商品 / 訂單）與 dailyCareTasks（今日任務）
   // 分頁能力保留，但「正式版預設隱藏入口」。未提供 featureFlags 或對應旗標時，
   // 一律視為關閉（隱藏）；只有明確設成 true 才顯示。純前端隱藏分頁，
@@ -4306,5 +4336,5 @@
     loadAlerts();
   }
 
-  init();
+  loadRuntimeConfig().then(init, init);
 })();

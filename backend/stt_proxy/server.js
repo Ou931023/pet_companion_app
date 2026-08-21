@@ -640,6 +640,51 @@ app.get("/health", (_, res) => {
   });
 });
 
+function caregiverWebConfigFromEnv(env = process.env) {
+  const firebase = {
+    apiKey: env.CAREGIVER_WEB_FIREBASE_API_KEY || env.FIREBASE_WEB_API_KEY || null,
+    authDomain:
+      env.CAREGIVER_WEB_FIREBASE_AUTH_DOMAIN ||
+      env.FIREBASE_WEB_AUTH_DOMAIN ||
+      null,
+    projectId:
+      env.CAREGIVER_WEB_FIREBASE_PROJECT_ID ||
+      env.FIREBASE_WEB_PROJECT_ID ||
+      null,
+    appId: env.CAREGIVER_WEB_FIREBASE_APP_ID || env.FIREBASE_WEB_APP_ID || null,
+  };
+  const missing = Object.entries(firebase)
+    .filter(([, value]) => !value)
+    .map(([key]) => `firebase.${key}`);
+  return {
+    missing,
+    config: {
+      apiBaseUrl:
+        env.CAREGIVER_WEB_API_BASE_URL ||
+        env.API_BASE_URL ||
+        "https://ai-companion-api-rdjv.onrender.com/api",
+      firebase,
+      featureFlags: {
+        marketplace: env.CAREGIVER_WEB_MARKETPLACE_ENABLED !== "false",
+        dailyCareTasks: env.CAREGIVER_WEB_DAILY_CARE_TASKS_ENABLED !== "false",
+      },
+    },
+  };
+}
+
+app.get("/api/caregiver-web/config", (_req, res) => {
+  const { missing, config } = caregiverWebConfigFromEnv();
+  res.setHeader("Cache-Control", "no-store");
+  if (missing.length) {
+    return res.status(503).json({
+      ok: false,
+      error: "caregiver_web_config_missing",
+      missing,
+    });
+  }
+  return res.json({ ok: true, config });
+});
+
 app.get("/api/agent/tools", (_, res) => {
   res.json({
     tools: listAgentTools(),
