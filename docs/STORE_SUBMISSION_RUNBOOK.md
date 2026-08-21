@@ -47,6 +47,7 @@ flutter test \
   test/config/app_config_test.dart test/config/legal_config_test.dart test/config/store_readiness_test.dart
 
 bash scripts/check_release_signing_readiness.sh
+node scripts/check_caregiver_web_config.js caregiver_web/config.js
 ```
 
 後端 / caregiver web 若本次送審 commit 有相關變更，也必跑：
@@ -63,6 +64,8 @@ npm test
 - [ ] `flutter test` 通過。
 - [ ] production dart-define 反向測試通過：即使外部誤開 demo / social / marketplace / daily-care，production gating 仍強制關閉。
 - [ ] release signing readiness script 通過，且未讀取 / 輸出任何 secret 值。
+- [ ] caregiver_web config guard 通過；若本次不交付 caregiver_web，需在 release note 明確列為未開放功能。
+- [ ] caregiver_web production deployment 已更新到 `app.js?v=20260821-cr0103`，且 API 指向 `https://ai-companion-api-rdjv.onrender.com/api`。
 - [ ] Android SDK Platform 36 已安裝；AAB target Android 16 / API 36 以上。
 - [ ] backend `npm run check` / `npm test` 通過，或明確記錄未跑原因。
 

@@ -76,7 +76,6 @@ test("寵物照護狀態會顯示寵物類型、視覺風格與成長階段偏�
 
 test("不捏造：前端不出現工程 / 敏感字樣", () => {
   const banned = [
-    "password",
     "password_hash",
     "provider_user_id",
     "access_token",

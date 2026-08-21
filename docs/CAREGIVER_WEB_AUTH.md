@@ -1,6 +1,7 @@
 # Caregiver Web 身分與授權（前端）
 
-對應 CR-0042（接 CR-0041 後端正餐：identity + middleware + scope）。
+對應 CR-0042（接 CR-0041 後端正餐：identity + middleware + scope）與
+CR-0103（caregiver_web Firebase Email / Google login）。
 後端身分模型見 `docs/AUTHORIZATION_MODEL.md`；本文件只說明 **caregiver_web 前端**
 如何選身分、帶 header、處理 401 / 403 / 空狀態，以及正式環境的 token 風險界線。
 
@@ -24,7 +25,7 @@ authState = {
 | authMode | 可見範圍 | 登入方式 |
 | --- | --- | --- |
 | `super_admin` | 全部住民（最高權限） | 在登入列選「管理者」並貼上 `ADMIN_API_TOKEN`；或在使用者 / 商品 / 訂單分頁貼上管理者權杖 |
-| `caregiver` | 只限被指派住民（`resident_caregiver_links` `status='active'`） | 在登入列選「照護人員」並貼上自己的 Firebase ID Token / 機構提供的 caregiver session 權杖 |
+| `caregiver` | 只限被指派住民（`resident_caregiver_links` `status='active'`） | 在登入列選「照護人員」，用 Firebase Email / Google 登入自動取得 ID Token；若部署尚未設定 Firebase Web config，才使用手動權杖備援 |
 | `none` | 無（尚未登入） | 未登入；不會主動呼叫受保護 API，會提示先登入 |
 
 身分狀態存在瀏覽器 `localStorage`：
@@ -38,7 +39,33 @@ authState = {
 
 ---
 
-## 2. Header 行為（統一 helper）
+## 2. Firebase Web 登入（CR-0103）
+
+caregiver_web 透過 `window.APP_CONFIG.firebase` 讀取 Firebase Web app config：
+
+```js
+window.APP_CONFIG = {
+  apiBaseUrl: "https://api.your-domain.com/api",
+  firebase: {
+    apiKey: "...",
+    authDomain: "...",
+    projectId: "...",
+    appId: "...",
+  },
+};
+```
+
+注意：
+
+- Firebase Web `apiKey` 是前端專案識別設定，不是後端 service account 私鑰。
+- 不可把 Firebase Admin private key、service account JSON、`ADMIN_API_TOKEN` 或任何後端 secret 放進 `config.js`。
+- 未設定 `firebase` 時，Firebase 登入按鈕會停用並顯示備援提示；管理者可協助使用手動 caregiver 權杖完成測試。
+- Email / Google 登入成功後，前端呼叫 Firebase `getIdToken()`，存入 `caregiver_login_token`，並以 caregiver 模式刷新目前分頁。
+- 登出時同步清除 localStorage token 並呼叫 Firebase `signOut()`。
+
+---
+
+## 3. Header 行為（統一 helper）
 
 所有受驗證請求都透過統一 helper 產生 header，依 `authMode` 帶對的 token：
 
@@ -68,7 +95,7 @@ authState = {
 
 ---
 
-## 3. 401 / 403 / 空狀態行為
+## 4. 401 / 403 / 空狀態行為
 
 ### 401（登入失效 / 未授權）
 
@@ -91,7 +118,7 @@ authState = {
 
 ---
 
-## 4. 正式環境界線（重要）
+## 5. 正式環境界線（重要）
 
 - `ADMIN_API_TOKEN` 是 **super_admin 共享 token**，持有者可見全部住民、等同最高權限。
 - **正式環境不可把 super_admin token 發給一般照護人員。**
@@ -100,23 +127,22 @@ authState = {
   （見 `docs/AUTHORIZATION_MODEL.md` §4）。
 - caregiver_web 不在前端驗證 token，也不偽造登入成功；token 有效性一律由後端
   回應決定（無效 → 401 → 重新登入）。
+- 上架後照護人員交付與 Telegram 維運請以 `docs/CAREGIVER_OPERATIONS_RUNBOOK.md`
+  為準；正式交付應設定 Firebase Web login，不要要求照護人員手動貼 token。
 
 ---
 
-## 5. 後續（follow-up CR）
+## 6. 後續（follow-up CR）
 
-- **完整 Firebase popup 登入**（caregiver_web 內嵌 Firebase Web SDK，一鍵 Google / Email
-  登入後自動取得 ID Token，免手動貼 token）：列為後續 CR，本 CR 先提供清楚標示的
-  token 輸入入口（最小可行 UI）。
 - **caregiver 帳號與 `resident_caregiver_links` provisioning 後端**（super_admin-only 端點）：
   **已於 CR-0043 完成**（8 條路由 + 停用閘 + audit）。見 `docs/CAREGIVER_PROVISIONING.md`。
   對應的 caregiver_web 管理 UI（caregiver 管理 + 授權指派，super_admin-only）：
-  **已於 CR-0044 完成**（見 §6）。
+  **已於 CR-0044 完成**（見 §7）。
 - `/api/care-alerts/notify` caller 驗證（長者 session）：FU-CR。
 
 ---
 
-## 6. super_admin-only provisioning UI（CR-0044）
+## 7. super_admin-only provisioning UI（CR-0044）
 
 caregiver_web 新增兩個 **super_admin-only** 管理分頁，前端消費 CR-0043 後端 8 條
 provisioning 端點（本案不改後端）：

@@ -62,7 +62,6 @@ test("各健康區塊渲染器都處理資料不足", () => {
 
 test("不捏造：前端不出現工程字樣，也不顯示敏感欄位", () => {
   const banned = [
-    "password",
     "password_hash",
     "provider_user_id",
     "access_token",

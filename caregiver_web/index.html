@@ -54,6 +54,32 @@
             <button id="auth-login" class="btn btn-primary" type="button">登入</button>
             <button id="auth-logout" class="btn hidden" type="button">登出</button>
           </div>
+          <div id="firebase-login-panel" class="firebase-login-panel" aria-label="照護人員 Firebase 登入">
+            <div class="firebase-login-fields">
+              <input
+                id="firebase-email"
+                type="email"
+                class="text-input"
+                placeholder="照護人員 Email"
+                autocomplete="email"
+                spellcheck="false"
+              />
+              <input
+                id="firebase-password"
+                type="password"
+                class="text-input"
+                placeholder="密碼"
+                autocomplete="current-password"
+              />
+              <button id="firebase-email-login" class="btn btn-primary" type="button">
+                Email 登入
+              </button>
+              <button id="firebase-google-login" class="btn" type="button">
+                Google 登入
+              </button>
+            </div>
+            <p id="firebase-login-status" class="hint auth-hint"></p>
+          </div>
           <p id="auth-hint" class="hint auth-hint"></p>
           <p id="auth-message" class="status-message"></p>
         </div>
@@ -739,10 +765,11 @@
         window.APP_CONFIG = { apiBaseUrl: "https://api.your-domain.com/api" };
       - 留 null：使用同源相對路徑 "/api"（caregiver_web 與後端同網域 / 反向代理時適用）。
       - 請勿在此填 localhost / 127.0.0.1 作為正式預設。
-      - 進階：可改為獨立檔，複製 config.example.js 為 config.js，
-        並在本行前加 <script src="./config.js"></script>，部署時只覆蓋 config.js。
+      - 進階：部署時可用獨立 config.js 覆蓋；Render build 可執行
+        node caregiver_web/build_config_from_env.js 由環境變數產生 config.js。
       - 本機開發若後端在另一個 port（例如 3001），可在頁面「連線設定」輸入後端位址。
     -->
+    <script src="./config.js"></script>
     <script>
       // 正式版分頁旗標：
       // - marketplace：商城已平移到 PostgreSQL 並在正式環境上線（後端回 200），
@@ -750,7 +777,8 @@
       // - dailyCareTasks：今日任務已平移到 PostgreSQL 並在正式環境上線（CR-0068，
       //   migration 016），故開啟分頁。原因後端回 501 暫時關閉，現已解除。
       window.APP_CONFIG = window.APP_CONFIG || {
-        apiBaseUrl: "https://ai-companion-app-7mb8.onrender.com/api",
+        apiBaseUrl: "https://ai-companion-api-rdjv.onrender.com/api",
+        firebase: null,
         featureFlags: { marketplace: true, dailyCareTasks: true },
       };
     </script>
@@ -767,6 +795,6 @@
         window.APP_CONFIG.apiBaseUrl = null;
       }
     </script>
-    <script src="./app.js?v=20260611-cr0068"></script>
+    <script src="./app.js?v=20260821-cr0103"></script>
   </body>
 </html>

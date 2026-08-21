@@ -23,6 +23,7 @@ ios/.symlinks/
 .env.local
 .env.production
 backend/stt_proxy/.env
+caregiver_web/config.js
 
 # Node/backend local files
 backend/stt_proxy/node_modules/

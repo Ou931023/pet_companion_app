@@ -31,9 +31,45 @@ API base URL 為可配置，解析順序（擇先非空者）：
 二擇一：
 
 - 直接編輯 `index.html` 內的 `window.APP_CONFIG`，例如：
-  `window.APP_CONFIG = { apiBaseUrl: "https://api.your-domain.com/api" };`
+  `window.APP_CONFIG = { apiBaseUrl: "https://api.your-domain.com/api", firebase: { ... } };`
 - 或複製 `config.example.js` 為 `config.js` 填入位址，並在 `index.html` 的
   `app.js` script 之前加入 `<script src="./config.js"></script>`，部署時只覆蓋 `config.js`。
+
+正式部署前請跑：
+
+```bash
+node scripts/check_caregiver_web_config.js caregiver_web/config.js
+```
+
+此檢查會確認 API 使用 HTTPS、Firebase Web config 齊全、`featureFlags` 明確設定，且
+`config.js` 沒有誤放 Firebase Admin service account、private key、`ADMIN_API_TOKEN`
+或 Bearer token。`caregiver_web/config.js` 是部署設定檔，不進版控。
+
+### Render Static Site 部署設定
+
+Render 的 caregiver web Static Site 建議使用：
+
+- Build Command：
+  ```bash
+  node caregiver_web/build_config_from_env.js
+  ```
+- Publish Directory：
+  ```text
+  caregiver_web
+  ```
+
+Render Environment Variables：
+
+- `CAREGIVER_WEB_API_BASE_URL=https://ai-companion-api-rdjv.onrender.com/api`
+- `CAREGIVER_WEB_FIREBASE_API_KEY`
+- `CAREGIVER_WEB_FIREBASE_AUTH_DOMAIN`
+- `CAREGIVER_WEB_FIREBASE_PROJECT_ID`
+- `CAREGIVER_WEB_FIREBASE_APP_ID`
+- `CAREGIVER_WEB_MARKETPLACE_ENABLED=true`
+- `CAREGIVER_WEB_DAILY_CARE_TASKS_ENABLED=true`
+
+這些值只填在 Render，不寫進 git。部署後打開頁面原始碼應可看到
+`app.js?v=20260821-cr0103`，且不再指向舊的 `ai-companion-app-7mb8` 後端。
 
 ### 本機 / 區網開發
 
@@ -51,14 +87,16 @@ API base URL 為可配置，解析順序（擇先非空者）：
   成功後即時更新詳情、重新載入列表與統計。狀態為 `resolved` 時不再顯示操作按鈕。
 - 載入中 / 無資料 / 連線錯誤 / 狀態更新失敗皆有白話提示，無任何假資料。
 
-## 身分與登入（CR-0042）
+## 身分與登入（CR-0042 / CR-0103）
 
-頁面頂部「身分與登入」列可選擇身分並貼上對應權杖，詳細機制見
+頁面頂部「身分與登入」列可選擇身分，詳細機制見
 `docs/CAREGIVER_WEB_AUTH.md`。
 
-- **照護人員（caregiver）**：貼上自己的 Firebase ID Token / 機構提供的 caregiver
-  session 權杖。登入後只會看到被指派的住民（後端依 `resident_caregiver_links` 過濾），
-  且不會看到使用者 / 商品 / 訂單等管理者專用分頁。
+- **照護人員（caregiver）**：正式部署時設定 `window.APP_CONFIG.firebase` 後，可用
+  Email / Google 登入；前端會自動取得 Firebase ID Token 並以 caregiver 模式呼叫後端。
+  登入後只會看到被指派的住民（後端依 `resident_caregiver_links` 過濾），且不會看到
+  使用者 / 商品 / 訂單等管理者專用分頁。若 Firebase Web config 尚未設定，頁面會保留
+  登入權杖備援，供管理者協助測試。
 - **管理者（super_admin）**：貼上 `ADMIN_API_TOKEN`，可檢視全部住民與所有分頁。
   此為最高權限，**正式環境請勿提供給一般照護人員**。
 
@@ -70,8 +108,8 @@ API base URL 為可配置，解析順序（擇先非空者）：
 - `403`：顯示「目前帳號沒有權限查看此資料」（不清除 token）。
 - caregiver 無授權住民：顯示「目前尚未被指派可查看的住民。請聯絡管理者確認權限設定。」
 
-> 註：完整 Firebase 一鍵登入（免手動貼 token）為後續 CR；本版先提供清楚標示的
-> token 輸入入口。
+Firebase Web config 只放 Firebase Console 的 Web app config，不可放 Firebase Admin
+service account、private key 或任何後端 secret。
 
 ## 照護人員管理 / 住民授權指派（CR-0044，super_admin-only）
 
@@ -131,7 +169,8 @@ API base URL 為可配置，解析順序（擇先非空者）：
 
 ## 目前限制（MVP）
 
-- 尚未內嵌 Firebase popup 登入；caregiver 需手動貼上自己的 ID Token / session 權杖（後續 CR 補）。
+- Firebase Email / Google 登入已接上；正式部署仍需填 `window.APP_CONFIG.firebase`，
+  並在 Firebase Console 加入 caregiver_web 正式網域後做真帳號 smoke。
 - 只能依「new → acknowledged → resolved」標記狀態，無法復原為較早狀態（後端允許，但前端 UI 以單向流程為主）。
 - super_admin 管理頁（caregiver 帳號管理 + 住民授權指派）已於 **CR-0044** 完成
   （見上方「照護人員管理 / 住民授權指派」；對應後端 provisioning 端點 = **CR-0043**，

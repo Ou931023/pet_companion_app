@@ -69,6 +69,8 @@
 - Firebase 正式專案：✅ iOS/Android App 已以正式 Bundle ID `tw.edu.ncyu.im.aicompanion` 註冊，設定檔已落地（`GoogleService-Info.plist` BUNDLE_ID 對齊；`google-services.json` 含對應 client，**兩檔 gitignored 不進 git**，CR-0062）。🟡 待真機 Firebase Auth smoke 驗證。（提醒：Firebase 專案內仍留舊 `com.Andrew.*` Android app，功能無害，建議 owner 之後於 console 移除以清理。）
 - OpenAI production key（Realtime/STT/chat/embedding）。
 - Telegram production bot token + 授權 care chat 對應（**非**測試 chat）。
+- 管理者 / 照護者後台正式交付與 Telegram 維運：
+  `docs/CAREGIVER_OPERATIONS_RUNBOOK.md`。
 - `CORS_ALLOWED_ORIGINS` 設為 caregiver_web 正式 origin（CR-0054 後 middleware 已正確讀此值）。
 - caregiver_web production hosting（HTTPS 同源 `/api` 或正式 API URL + `config.js`）。
 
@@ -89,7 +91,7 @@
 
 - Marketplace PG 化 + 金流 / IAP 合規（CR-0042 候選；見 `docs/MARKETPLACE_PRODUCTION_DECISION.md`）。
 - DailyCareTask PG 化 + AI Vision proof 儲存 + authz（見 `docs/DAILY_CARE_TASK_PRODUCTION_DECISION.md`）。
-- caregiver_web 完整 Firebase popup 一鍵登入（目前貼 idToken）。
+- caregiver_web Firebase Email / Google login 已可用；待 owner 在正式 `config.js` 填 Firebase Web config 並做真帳號 smoke。
 - email auto-claim（FU-CR-0043a）、email DB unique index（FU-CR-0043b）、reactivate-link endpoint（FU-CR-0044a）、dedicated requireSuperAdmin middleware。
 - marketplace/daily-care 無 auth GET defense-in-depth 加固、orders 細節（CR-0057 已記，非阻擋）。
 - Android namespace `com.example.*` → 正式（內部、非送審阻擋）。
