@@ -48,6 +48,7 @@ import 'package:pet_companion_app/services/taigi_asr_strategy.dart';
 import 'package:pet_companion_app/services/taigi_asr_service.dart';
 import 'package:pet_companion_app/services/text_to_speech_service.dart';
 import 'package:pet_companion_app/services/web_search_service.dart';
+import 'package:pet_companion_app/widgets/pet_avatar.dart';
 import 'package:pet_companion_app/widgets/source_reference_list.dart';
 
 void main() {
@@ -133,6 +134,54 @@ void main() {
     expect(find.text('提醒'), findsOneWidget);
     expect(find.text('陪寵物玩'), findsOneWidget);
     expect(find.text('更換外觀'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpWidget(const SizedBox.shrink());
+    harness.dispose();
+  });
+
+  testWidgets('HomeScreen pet tap gives feedback without leaving home',
+      (tester) async {
+    await binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => binding.setSurfaceSize(null));
+    final harness = await _HomeHarness.create();
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(_homeHost(harness));
+    await tester.pump();
+
+    await tester.tap(find.byType(PetAvatar));
+    await tester.pump();
+
+    expect(find.byType(HomeScreen), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('pet-interaction-effect-pat')),
+      findsOneWidget,
+    );
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpWidget(const SizedBox.shrink());
+    harness.dispose();
+  });
+
+  testWidgets('HomeScreen celebrates when a care task is completed',
+      (tester) async {
+    await binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => binding.setSurfaceSize(null));
+    final harness = await _HomeHarness.create();
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(_homeHost(harness));
+    await tester.pump();
+
+    await harness.taskController.completeTaskById('drinkWater');
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('pet-interaction-effect-celebrate')),
+      findsOneWidget,
+    );
 
     await tester.pump(const Duration(seconds: 1));
     await tester.pumpWidget(const SizedBox.shrink());
@@ -639,6 +688,9 @@ Widget _homeHost(
       ),
       ChangeNotifierProvider<InventoryController>.value(
         value: harness.inventoryController,
+      ),
+      ChangeNotifierProvider<TaskController>.value(
+        value: harness.taskController,
       ),
       ChangeNotifierProvider<MemoryController>.value(
         value: harness.memoryController,

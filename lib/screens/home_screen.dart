@@ -14,6 +14,7 @@ import '../controllers/memory_controller.dart';
 import '../controllers/pet_controller.dart';
 import '../controllers/pet_stats_controller.dart';
 import '../controllers/profile_controller.dart';
+import '../controllers/task_controller.dart';
 import '../controllers/voice_agent_controller.dart';
 import '../controllers/wallet_controller.dart';
 import '../services/app_usage_tracking_service.dart';
@@ -56,6 +57,9 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _didCheckTaigiAsrStatus = false;
   bool _didTrackAppOpen = false;
   bool _showTextInput = false;
+  _PetInteractionEffect _petInteractionEffect = _PetInteractionEffect.none;
+  int _petInteractionEffectRevision = 0;
+  int? _lastTaskCompletedCount;
   // CR-0088：對話結束後短暫顯示情緒狀態。記住已處理過的最新一則對話，避免重複觸發。
   ConversationController? _conversationForTransient;
   String? _lastTransientTurnKey;
@@ -82,6 +86,29 @@ class _HomeScreenState extends State<HomeScreen> {
     final mode = PetStateSelector.transientModeForEmotion(latest.emotionTag);
     if (mode == null) return;
     context.read<PetController>().showTransientState(mode);
+  }
+
+  void _playPetInteractionEffect(_PetInteractionEffect effect) {
+    if (!mounted) return;
+    setState(() {
+      _petInteractionEffect = effect;
+      _petInteractionEffectRevision += 1;
+    });
+  }
+
+  void _maybeCelebrateCompletedTask(TaskController taskController) {
+    final completedCount = taskController.completedCount;
+    final previousCount = _lastTaskCompletedCount;
+    _lastTaskCompletedCount = completedCount;
+    if (previousCount == null || completedCount <= previousCount) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _playPetInteractionEffect(_PetInteractionEffect.celebrate);
+      context.read<PetController>().showTransientState(
+            PetMode.excited,
+            duration: const Duration(seconds: 2),
+          );
+    });
   }
 
   @override
@@ -128,6 +155,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final walletController = context.watch<WalletController>();
     final inventoryController = context.watch<InventoryController>();
     final petStatsController = context.watch<PetStatsController>();
+    final taskController = context.watch<TaskController>();
+    _maybeCelebrateCompletedTask(taskController);
     final agentToolController = _maybeWatchAgentToolController(context);
     if (agentToolController != null) {
       // 高風險工具（撥號 / 寄信 / 傳訊息…）會把 pendingIntent 設成需確認，
@@ -214,6 +243,31 @@ class _HomeScreenState extends State<HomeScreen> {
         },
       );
       Navigator.of(context).pushNamed(AppRoute.puzzle);
+    }
+
+    void patPet(String source) {
+      if (isDead) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('寵物需要復活後才能互動')),
+        );
+        return;
+      }
+      _playPetInteractionEffect(_PetInteractionEffect.pat);
+      petController.showTransientState(
+        PetMode.happy,
+        duration: const Duration(seconds: 2),
+      );
+      _trackUsage(
+        'pet_interaction',
+        sessionId: conversationController.activeSessionId,
+        metadata: {
+          'source': source,
+          ...petController.currentVisualProfile.toTrackingMetadata(),
+          'mood': displayPetMode.name,
+          'satiety': petStatsController.fullness,
+          'intimacy': petStatsController.intimacy,
+        },
+      );
     }
 
     return SafeArea(
@@ -313,7 +367,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                         petController.currentVisualStyle,
                                     growthStage:
                                         petController.currentGrowthStage,
-                                    onPetTap: () => openPetPlay('pet_tap'),
+                                    interactionEffect: _petInteractionEffect,
+                                    interactionEffectRevision:
+                                        _petInteractionEffectRevision,
+                                    onPetTap: () => patPet('pet_tap'),
                                     onDragHoverChanged: (hovering) => setState(
                                       () => _isPetDragHovering = hovering,
                                     ),
@@ -659,6 +716,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!consumed) return;
       await petStatsController.revive();
       if (!context.mounted) return;
+      _playPetInteractionEffect(_PetInteractionEffect.celebrate);
       _showItemUsedSnackBar(context, item);
       return;
     }
@@ -675,6 +733,7 @@ class _HomeScreenState extends State<HomeScreen> {
           PetMode.happy,
           '謝謝你餵我，我覺得有精神多了！',
         );
+    _playPetInteractionEffect(_PetInteractionEffect.feed);
     _trackUsage(
       'pet_interaction',
       metadata: {
@@ -1730,6 +1789,8 @@ class _KeyboardToggleButton extends StatelessWidget {
   }
 }
 
+enum _PetInteractionEffect { none, pat, feed, celebrate }
+
 class _PetStage extends StatelessWidget {
   const _PetStage({
     required this.isDead,
@@ -1739,6 +1800,8 @@ class _PetStage extends StatelessWidget {
     required this.skin,
     required this.visualStyle,
     required this.growthStage,
+    required this.interactionEffect,
+    required this.interactionEffectRevision,
     required this.onPetTap,
     required this.onDragHoverChanged,
     required this.onAcceptItem,
@@ -1751,6 +1814,8 @@ class _PetStage extends StatelessWidget {
   final PetSkin skin;
   final PetVisualStyle visualStyle;
   final PetGrowthStage growthStage;
+  final _PetInteractionEffect interactionEffect;
+  final int interactionEffectRevision;
   final VoidCallback onPetTap;
   final ValueChanged<bool> onDragHoverChanged;
   final ValueChanged<InventoryItem> onAcceptItem;
@@ -1821,6 +1886,11 @@ class _PetStage extends StatelessWidget {
                               growthStage: growthStage,
                               size: avatarSize,
                             ),
+                            _PetInteractionOverlay(
+                              effect: interactionEffect,
+                              revision: interactionEffectRevision,
+                              size: avatarSize,
+                            ),
                           ],
                         ),
                       ),
@@ -1832,6 +1902,188 @@ class _PetStage extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+class _PetInteractionOverlay extends StatefulWidget {
+  const _PetInteractionOverlay({
+    required this.effect,
+    required this.revision,
+    required this.size,
+  });
+
+  final _PetInteractionEffect effect;
+  final int revision;
+  final double size;
+
+  @override
+  State<_PetInteractionOverlay> createState() => _PetInteractionOverlayState();
+}
+
+class _PetInteractionOverlayState extends State<_PetInteractionOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1050),
+    );
+    if (widget.effect != _PetInteractionEffect.none) {
+      _controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _PetInteractionOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.effect != _PetInteractionEffect.none &&
+        (oldWidget.revision != widget.revision ||
+            oldWidget.effect != widget.effect)) {
+      _controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.effect == _PetInteractionEffect.none) {
+      return const SizedBox.shrink();
+    }
+    final colorScheme = Theme.of(context).colorScheme;
+    final accent = switch (widget.effect) {
+      _PetInteractionEffect.pat => const Color(0xFFE8758E),
+      _PetInteractionEffect.feed => const Color(0xFFE9A63E),
+      _PetInteractionEffect.celebrate => colorScheme.primary,
+      _PetInteractionEffect.none => colorScheme.primary,
+    };
+    final icons = switch (widget.effect) {
+      _PetInteractionEffect.pat => const [
+          Icons.favorite,
+          Icons.favorite_border,
+          Icons.favorite,
+        ],
+      _PetInteractionEffect.feed => const [
+          Icons.restaurant,
+          Icons.favorite,
+          Icons.auto_awesome,
+        ],
+      _PetInteractionEffect.celebrate => const [
+          Icons.star,
+          Icons.auto_awesome,
+          Icons.star_border,
+        ],
+      _PetInteractionEffect.none => const [Icons.favorite],
+    };
+    return IgnorePointer(
+      child: SizedBox(
+        key: ValueKey('pet-interaction-effect-${widget.effect.name}'),
+        width: widget.size,
+        height: widget.size,
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) {
+            final t = Curves.easeOutCubic.transform(_controller.value);
+            final opacity = (1 - Curves.easeIn.transform(_controller.value))
+                .clamp(0.0, 1.0);
+            return Stack(
+              clipBehavior: Clip.none,
+              children: [
+                _FloatingPetCue(
+                  icon: icons[0],
+                  color: accent,
+                  size: widget.size * 0.105,
+                  left: widget.size * 0.24,
+                  top: widget.size * (0.24 - 0.16 * t),
+                  opacity: opacity,
+                  angle: -0.22,
+                ),
+                _FloatingPetCue(
+                  icon: icons[1],
+                  color: accent.withValues(alpha: 0.92),
+                  size: widget.size * 0.085,
+                  left: widget.size * 0.60,
+                  top: widget.size * (0.18 - 0.18 * t),
+                  opacity: opacity,
+                  angle: 0.18,
+                ),
+                _FloatingPetCue(
+                  icon: icons[2],
+                  color: accent.withValues(alpha: 0.82),
+                  size: widget.size * 0.075,
+                  left: widget.size * 0.50,
+                  top: widget.size * (0.34 - 0.15 * t),
+                  opacity: opacity,
+                  angle: 0.08,
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _FloatingPetCue extends StatelessWidget {
+  const _FloatingPetCue({
+    required this.icon,
+    required this.color,
+    required this.size,
+    required this.left,
+    required this.top,
+    required this.opacity,
+    required this.angle,
+  });
+
+  final IconData icon;
+  final Color color;
+  final double size;
+  final double left;
+  final double top;
+  final double opacity;
+  final double angle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: left,
+      top: top,
+      child: Opacity(
+        opacity: opacity,
+        child: Transform.rotate(
+          angle: angle,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.82),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: color.withValues(alpha: 0.22),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: EdgeInsets.all(size * 0.22),
+              child: Icon(
+                icon,
+                color: color,
+                size: size,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
