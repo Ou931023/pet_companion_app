@@ -14,6 +14,7 @@ import '../controllers/memory_controller.dart';
 import '../controllers/pet_controller.dart';
 import '../controllers/pet_stats_controller.dart';
 import '../controllers/profile_controller.dart';
+import '../controllers/task_controller.dart';
 import '../controllers/voice_agent_controller.dart';
 import '../controllers/wallet_controller.dart';
 import '../services/app_usage_tracking_service.dart';
@@ -22,6 +23,7 @@ import '../models/inventory_item.dart';
 import '../models/language_route.dart';
 import '../models/pet_skin.dart';
 import '../models/pet_status.dart';
+import '../models/pet_visual_profile.dart';
 import '../utils/pet_state_selector.dart';
 import '../models/pet_stats.dart';
 import '../models/source_reference.dart';
@@ -29,10 +31,8 @@ import '../models/voice_agent_state.dart';
 import '../utils/voice_button_presentation.dart';
 import '../routes/app_routes.dart';
 import '../widgets/agent/agent_confirmation_sheet.dart';
-import '../widgets/bag_icon_button.dart';
 import '../widgets/coin_badge.dart';
 import '../widgets/conversation_bubble_stack.dart';
-import '../widgets/home_date_checkin_card.dart';
 import '../widgets/inventory_item_card.dart';
 import '../widgets/pet_avatar.dart';
 import '../widgets/pet_skin_picker.dart';
@@ -57,6 +57,9 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _didCheckTaigiAsrStatus = false;
   bool _didTrackAppOpen = false;
   bool _showTextInput = false;
+  _PetInteractionEffect _petInteractionEffect = _PetInteractionEffect.none;
+  int _petInteractionEffectRevision = 0;
+  int? _lastTaskCompletedCount;
   // CR-0088：對話結束後短暫顯示情緒狀態。記住已處理過的最新一則對話，避免重複觸發。
   ConversationController? _conversationForTransient;
   String? _lastTransientTurnKey;
@@ -83,6 +86,29 @@ class _HomeScreenState extends State<HomeScreen> {
     final mode = PetStateSelector.transientModeForEmotion(latest.emotionTag);
     if (mode == null) return;
     context.read<PetController>().showTransientState(mode);
+  }
+
+  void _playPetInteractionEffect(_PetInteractionEffect effect) {
+    if (!mounted) return;
+    setState(() {
+      _petInteractionEffect = effect;
+      _petInteractionEffectRevision += 1;
+    });
+  }
+
+  void _maybeCelebrateCompletedTask(TaskController taskController) {
+    final completedCount = taskController.completedCount;
+    final previousCount = _lastTaskCompletedCount;
+    _lastTaskCompletedCount = completedCount;
+    if (previousCount == null || completedCount <= previousCount) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _playPetInteractionEffect(_PetInteractionEffect.celebrate);
+      context.read<PetController>().showTransientState(
+            PetMode.excited,
+            duration: const Duration(seconds: 2),
+          );
+    });
   }
 
   @override
@@ -129,6 +155,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final walletController = context.watch<WalletController>();
     final inventoryController = context.watch<InventoryController>();
     final petStatsController = context.watch<PetStatsController>();
+    final taskController = context.watch<TaskController>();
+    _maybeCelebrateCompletedTask(taskController);
     final agentToolController = _maybeWatchAgentToolController(context);
     if (agentToolController != null) {
       // 高風險工具（撥號 / 寄信 / 傳訊息…）會把 pendingIntent 設成需確認，
@@ -196,6 +224,51 @@ class _HomeScreenState extends State<HomeScreen> {
     final companionSources = _companionSourceReferences(
       voiceAgentController.currentCompanionContext?.sourceReferences,
     );
+    void openPetPlay(String source) {
+      if (isDead) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('寵物需要復活後才能一起玩')),
+        );
+        return;
+      }
+      _trackUsage(
+        'pet_interaction',
+        sessionId: conversationController.activeSessionId,
+        metadata: {
+          'source': source,
+          ...petController.currentVisualProfile.toTrackingMetadata(),
+          'mood': displayPetMode.name,
+          'satiety': petStatsController.fullness,
+          'intimacy': petStatsController.intimacy,
+        },
+      );
+      Navigator.of(context).pushNamed(AppRoute.puzzle);
+    }
+
+    void patPet(String source) {
+      if (isDead) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('寵物需要復活後才能互動')),
+        );
+        return;
+      }
+      _playPetInteractionEffect(_PetInteractionEffect.pat);
+      petController.showTransientState(
+        PetMode.happy,
+        duration: const Duration(seconds: 2),
+      );
+      _trackUsage(
+        'pet_interaction',
+        sessionId: conversationController.activeSessionId,
+        metadata: {
+          'source': source,
+          ...petController.currentVisualProfile.toTrackingMetadata(),
+          'mood': displayPetMode.name,
+          'satiety': petStatsController.fullness,
+          'intimacy': petStatsController.intimacy,
+        },
+      );
+    }
 
     return SafeArea(
       bottom: false,
@@ -220,12 +293,15 @@ class _HomeScreenState extends State<HomeScreen> {
                       }),
                       onOpenCalendarTap: () =>
                           _openCalendarDialog(context, checkInController),
+                      onPlayTap: () => openPetPlay('more_menu'),
+                      onChangeSkinTap: () => _openSkinPicker(context),
                       // 首頁「？」改為觸發 Spotlight 新手導覽（與首次進場相同）。
                       // 已在首頁，requestReplay 後 CoachMarkHost 會立即開始導覽。
                       onHelpTap: () =>
                           context.read<CoachMarkController>().requestReplay(),
+                      moreButtonKey: coachKeys.moreButtonKey,
                       reminderKey: coachKeys.reminderKey,
-                      // 導覽 Step 8 / 9 高亮用：簽到日曆 icon 與金幣區。
+                      // 更多功能 sheet 內仍保留 key，供未來分段導覽或測試使用。
                       dailyCheckInKey: coachKeys.dailyCheckInKey,
                       coinKey: coachKeys.coinKey,
                       onReminderTap: () =>
@@ -239,35 +315,45 @@ class _HomeScreenState extends State<HomeScreen> {
                               (contentConstraints.maxHeight *
                                       (compact ? 0.36 : 0.32))
                                   .clamp(86.0, compact ? 170.0 : 230.0);
+                          final petText = _resolvePetText(
+                            conversationController,
+                            petController.message,
+                          );
+                          final showConversationDetail =
+                              _shouldShowConversationDetail(
+                            conversationController: conversationController,
+                            agentToolController: agentToolController,
+                            companionSources: companionSources,
+                            petText: petText,
+                          );
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxHeight: detailsMaxHeight,
-                                ),
-                                child: SingleChildScrollView(
-                                  key: const ValueKey(
-                                    'home-conversation-detail-scroll',
+                              if (showConversationDetail) ...[
+                                ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    maxHeight: detailsMaxHeight,
                                   ),
-                                  padding: const EdgeInsets.only(bottom: 2),
-                                  child: _ConversationDetailPanel(
-                                    conversationController:
-                                        conversationController,
-                                    agentToolController: agentToolController,
-                                    companionSources: companionSources,
-                                    petText: _resolvePetText(
-                                      conversationController,
-                                      petController.message,
+                                  child: SingleChildScrollView(
+                                    key: const ValueKey(
+                                      'home-conversation-detail-scroll',
                                     ),
-                                    petName: profileController.petName,
-                                    compact: compact,
-                                    streaming: conversationController
-                                        .isRealtimeStreaming,
+                                    padding: const EdgeInsets.only(bottom: 2),
+                                    child: _ConversationDetailPanel(
+                                      conversationController:
+                                          conversationController,
+                                      agentToolController: agentToolController,
+                                      companionSources: companionSources,
+                                      petText: petText,
+                                      petName: profileController.petName,
+                                      compact: compact,
+                                      streaming: conversationController
+                                          .isRealtimeStreaming,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              SizedBox(height: compact ? 6 : 8),
+                                SizedBox(height: compact ? 6 : 8),
+                              ],
                               Expanded(
                                 child: KeyedSubtree(
                                   key: coachKeys.petKey,
@@ -277,36 +363,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                     showVoiceAura: showVoiceAura,
                                     petMode: displayPetMode,
                                     skin: petController.currentSkin,
-                                    onChangeSkin: () =>
-                                        _openSkinPicker(context),
-                                    onPetTap: () {
-                                      if (isDead) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          const SnackBar(
-                                            content: Text('寵物需要復活後才能一起玩'),
-                                          ),
-                                        );
-                                        return;
-                                      }
-                                      _trackUsage(
-                                        'pet_interaction',
-                                        sessionId: conversationController
-                                            .activeSessionId,
-                                        metadata: {
-                                          'source': 'pet_tap',
-                                          'petType': petController
-                                              .currentSkin.storageId,
-                                          'mood': displayPetMode.name,
-                                          'satiety':
-                                              petStatsController.fullness,
-                                          'intimacy':
-                                              petStatsController.intimacy,
-                                        },
-                                      );
-                                      Navigator.of(context)
-                                          .pushNamed(AppRoute.puzzle);
-                                    },
+                                    visualStyle:
+                                        petController.currentVisualStyle,
+                                    growthStage:
+                                        petController.currentGrowthStage,
+                                    interactionEffect: _petInteractionEffect,
+                                    interactionEffectRevision:
+                                        _petInteractionEffectRevision,
+                                    onPetTap: () => patPet('pet_tap'),
                                     onDragHoverChanged: (hovering) => setState(
                                       () => _isPetDragHovering = hovering,
                                     ),
@@ -518,19 +582,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                     ],
-                    if (useTaigiRealtime) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        '台語 Realtime 對話，可以直接用台語跟寵物說話',
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.black.withValues(alpha: 0.56),
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
                     // CR-0023：移除語音按鈕下方「換你說囉，按住再跟…說話」輔助提示字，
                     // 讓首頁更乾淨；按鈕本身與按鈕文字、speaking 時的 toast 不受影響。
                   ],
@@ -599,7 +650,21 @@ class _HomeScreenState extends State<HomeScreen> {
             value: walletController,
           ),
         ],
-        child: const _SkinPickerSheet(),
+        child: _SkinPickerSheet(
+          onSkinApplied: (skin) {
+            final profile = petController.currentVisualProfile;
+            _trackUsage(
+              'pet_style_changed',
+              metadata: {
+                'source': 'home_skin_picker',
+                'selectedPetType': skin.storageId,
+                ...profile.toTrackingMetadata(),
+                'satiety': context.read<PetStatsController>().fullness,
+                'intimacy': context.read<PetStatsController>().intimacy,
+              },
+            );
+          },
+        ),
       ),
     );
   }
@@ -651,6 +716,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!consumed) return;
       await petStatsController.revive();
       if (!context.mounted) return;
+      _playPetInteractionEffect(_PetInteractionEffect.celebrate);
       _showItemUsedSnackBar(context, item);
       return;
     }
@@ -667,11 +733,16 @@ class _HomeScreenState extends State<HomeScreen> {
           PetMode.happy,
           '謝謝你餵我，我覺得有精神多了！',
         );
+    _playPetInteractionEffect(_PetInteractionEffect.feed);
     _trackUsage(
       'pet_interaction',
       metadata: {
         'source': 'inventory_item',
         'itemId': item.itemId,
+        ...context
+            .read<PetController>()
+            .currentVisualProfile
+            .toTrackingMetadata(),
         'satiety': petStatsController.fullness,
         'intimacy': petStatsController.intimacy,
       },
@@ -1013,6 +1084,7 @@ class _CalendarDayCell extends StatelessWidget {
             : Border.all(color: Colors.grey.shade200, width: 1));
 
     return GestureDetector(
+      key: ValueKey('calendar-day-$day'),
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Container(
@@ -1067,7 +1139,10 @@ class _HomeHeader extends StatelessWidget {
     required this.hasCheckedInToday,
     required this.onBagTap,
     required this.onOpenCalendarTap,
+    required this.onPlayTap,
+    required this.onChangeSkinTap,
     required this.onHelpTap,
+    required this.moreButtonKey,
     required this.reminderKey,
     required this.dailyCheckInKey,
     required this.coinKey,
@@ -1080,17 +1155,63 @@ class _HomeHeader extends StatelessWidget {
   final bool hasCheckedInToday;
   final VoidCallback onBagTap;
   final VoidCallback onOpenCalendarTap;
+  final VoidCallback onPlayTap;
+  final VoidCallback onChangeSkinTap;
   final VoidCallback onHelpTap;
+  final Key moreButtonKey;
   final Key reminderKey;
   final Key dailyCheckInKey;
   final Key coinKey;
   final VoidCallback onReminderTap;
 
+  void _openQuickActions(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => _HomeQuickActionsSheet(
+        petName: petName,
+        totalItems: totalItems,
+        coins: coins,
+        hasCheckedInToday: hasCheckedInToday,
+        reminderKey: reminderKey,
+        dailyCheckInKey: dailyCheckInKey,
+        coinKey: coinKey,
+        onReminderTap: () {
+          Navigator.of(sheetContext).pop();
+          Future<void>.delayed(Duration.zero, onReminderTap);
+        },
+        onBagTap: () {
+          Navigator.of(sheetContext).pop();
+          Future<void>.delayed(Duration.zero, onBagTap);
+        },
+        onPlayTap: () {
+          Navigator.of(sheetContext).pop();
+          Future<void>.delayed(Duration.zero, onPlayTap);
+        },
+        onChangeSkinTap: () {
+          Navigator.of(sheetContext).pop();
+          Future<void>.delayed(Duration.zero, onChangeSkinTap);
+        },
+        onOpenCalendarTap: () {
+          Navigator.of(sheetContext).pop();
+          Future<void>.delayed(Duration.zero, onOpenCalendarTap);
+        },
+        onHelpTap: () {
+          Navigator.of(sheetContext).pop();
+          Future<void>.delayed(Duration.zero, onHelpTap);
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // CR-0010：頂部列為次要 chrome（名稱 + 工具按鈕）。多了「？」說明鈕後，
-    // 在極小寬度 + 大字級下會擠不下，因此把這一列的文字放大上限夾住，讓按鈕排得下；
-    // 主要內容（寵物 / 對話）仍維持完整字級，不影響長者閱讀。
+    // 頂部列只保留寵物名稱與一個次要入口，讓首頁重心回到寵物和語音。
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.0,
       child: Row(
@@ -1112,46 +1233,23 @@ class _HomeHeader extends StatelessWidget {
               ],
             ),
           ),
-          // 頂部工具列在窄螢幕（如 320 寬）要放得下 5 個控件，故用 compact
-          // IconButtonTheme 收斂點擊框（仍維持 40px 可點），並縮短間距。
-          IconButtonTheme(
-            data: IconButtonThemeData(
-              style: IconButton.styleFrom(
-                minimumSize: const Size(36, 40),
-                iconSize: 22,
-                padding: EdgeInsets.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  key: reminderKey,
-                  onPressed: onReminderTap,
-                  icon: const Icon(Icons.alarm),
-                  tooltip: '提醒',
-                ),
-                _HelpIconButton(onTap: onHelpTap),
-                const SizedBox(width: 2),
-                BagIconButton(
-                  totalItems: totalItems,
-                  onTap: onBagTap,
-                ),
-                const SizedBox(width: 3),
-                KeyedSubtree(
-                  key: coinKey,
-                  child: CoinBadge(coins: coins),
-                ),
-                const SizedBox(width: 3),
-                KeyedSubtree(
-                  key: dailyCheckInKey,
-                  child: HomeDateCheckinCard(
-                    hasCheckedInToday: hasCheckedInToday,
-                    onOpenCalendarTap: onOpenCalendarTap,
+          KeyedSubtree(
+            key: moreButtonKey,
+            child: Tooltip(
+              message: '更多功能',
+              child: Semantics(
+                button: true,
+                label: '更多功能',
+                child: IconButton.filledTonal(
+                  onPressed: () => _openQuickActions(context),
+                  icon: const Icon(Icons.more_horiz),
+                  iconSize: 30,
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size(56, 56),
+                    tapTargetSize: MaterialTapTargetSize.padded,
                   ),
                 ),
-              ],
+              ),
             ),
           ),
         ],
@@ -1160,42 +1258,279 @@ class _HomeHeader extends StatelessWidget {
   }
 }
 
-/// 首頁「使用教學」入口（放在頂部工具列；長者忘記怎麼用可隨時再看一次導覽）。
-///
-/// CR-0020：改成淡色、無陰影的小圓形 icon button，視覺收斂、和頂部其他按鈕一致，
-/// 不再像浮起的白色圓鈕那麼突兀；點擊行為不變（觸發重新觀看新手導覽）。
-class _HelpIconButton extends StatelessWidget {
-  const _HelpIconButton({required this.onTap});
+class _HomeQuickActionsSheet extends StatelessWidget {
+  const _HomeQuickActionsSheet({
+    required this.petName,
+    required this.totalItems,
+    required this.coins,
+    required this.hasCheckedInToday,
+    required this.reminderKey,
+    required this.dailyCheckInKey,
+    required this.coinKey,
+    required this.onReminderTap,
+    required this.onBagTap,
+    required this.onPlayTap,
+    required this.onChangeSkinTap,
+    required this.onOpenCalendarTap,
+    required this.onHelpTap,
+  });
 
+  final String petName;
+  final int totalItems;
+  final int coins;
+  final bool hasCheckedInToday;
+  final Key reminderKey;
+  final Key dailyCheckInKey;
+  final Key coinKey;
+  final VoidCallback onReminderTap;
+  final VoidCallback onBagTap;
+  final VoidCallback onPlayTap;
+  final VoidCallback onChangeSkinTap;
+  final VoidCallback onOpenCalendarTap;
+  final VoidCallback onHelpTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.86;
+    return SafeArea(
+      top: false,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '還想幫$petName做什麼？',
+                style: textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '平常只要按麥克風跟寵物說話，其他功能都先放在這裡。',
+                style: textTheme.bodyMedium?.copyWith(
+                  color: Colors.black.withValues(alpha: 0.58),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 18),
+              const _HomeQuickActionSectionTitle('常用功能'),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: KeyedSubtree(
+                      key: dailyCheckInKey,
+                      child: _HomeQuickActionTile(
+                        icon: Icons.calendar_month,
+                        title: '每日簽到',
+                        subtitle: hasCheckedInToday ? '今天已完成' : '今天可領獎勵',
+                        onTap: onOpenCalendarTap,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: KeyedSubtree(
+                      key: reminderKey,
+                      child: _HomeQuickActionTile(
+                        icon: Icons.alarm,
+                        title: '提醒',
+                        subtitle: '喝水、吃藥、回診',
+                        onTap: onReminderTap,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              const _HomeQuickActionSectionTitle('照顧寵物'),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: _HomeQuickActionTile(
+                      icon: Icons.extension_outlined,
+                      title: '陪寵物玩',
+                      subtitle: '玩拼圖動動腦',
+                      onTap: onPlayTap,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _HomeQuickActionTile(
+                      icon: Icons.pets,
+                      title: '更換外觀',
+                      subtitle: '選喜歡的樣子',
+                      onTap: onChangeSkinTap,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              const _HomeQuickActionSectionTitle('其他'),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: _HomeQuickActionTile(
+                      icon: Icons.inventory_2_outlined,
+                      title: '背包',
+                      subtitle: totalItems > 0 ? '$totalItems 件物品' : '寵物的小物品',
+                      onTap: onBagTap,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _HomeQuickActionTile(
+                      icon: Icons.help_outline,
+                      title: '使用教學',
+                      subtitle: '再看一次導覽',
+                      onTap: onHelpTap,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              KeyedSubtree(
+                key: coinKey,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '目前金幣',
+                          style: textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      CoinBadge(coins: coins),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeQuickActionSectionTitle extends StatelessWidget {
+  const _HomeQuickActionSectionTitle(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: 16,
+        fontWeight: FontWeight.w900,
+        color: Colors.black.withValues(alpha: 0.62),
+      ),
+    );
+  }
+}
+
+class _HomeQuickActionTile extends StatelessWidget {
+  const _HomeQuickActionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
-    return Semantics(
-      button: true,
-      label: '使用教學',
-      child: Material(
-        // 淡色底、無 elevation：柔和、像產品內的次要入口。
-        color: primary.withValues(alpha: 0.10),
-        shape: const CircleBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Container(
-            width: 38,
-            height: 38,
-            alignment: Alignment.center,
-            child: Icon(
-              Icons.help_outline,
-              size: 20,
-              color: primary.withValues(alpha: 0.75),
+    final colorScheme = Theme.of(context).colorScheme;
+    return Material(
+      color: colorScheme.primary.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(8),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 118),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  icon,
+                  size: 32,
+                  color: colorScheme.primary,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.25,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
       ),
     );
   }
+}
+
+bool _shouldShowConversationDetail({
+  required ConversationController conversationController,
+  required AgentToolController? agentToolController,
+  required List<SourceReference> companionSources,
+  required String petText,
+}) {
+  final hasVisibleConversationText =
+      conversationController.latestUserText.trim().isNotEmpty ||
+          conversationController.temporaryUserBubbleText.trim().isNotEmpty ||
+          conversationController.liveRealtimeReply.trim().isNotEmpty ||
+          conversationController.latestReply.trim().isNotEmpty;
+  return hasVisibleConversationText ||
+      conversationController.hasTemporaryUserBubble ||
+      conversationController.isAwaitingPetReply ||
+      conversationController.hasPendingTaigiAsrTranscript ||
+      conversationController.latestSources.isNotEmpty ||
+      companionSources.isNotEmpty ||
+      agentToolController?.pendingIntent != null ||
+      petText.trim().isNotEmpty && petText.trim() != '準備好開始今天的陪伴了嗎？';
 }
 
 String _resolvePetText(
@@ -1400,7 +1735,9 @@ class _KeyboardToggleButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
+    final colorScheme = Theme.of(context).colorScheme;
+    final primary = colorScheme.primary;
+    final label = expanded ? '收起' : '打字';
     return Semantics(
       button: true,
       label: expanded ? '收起打字' : '打字',
@@ -1410,17 +1747,39 @@ class _KeyboardToggleButton extends StatelessWidget {
           color: enabled
               ? primary.withValues(alpha: expanded ? 0.18 : 0.10)
               : Colors.black.withValues(alpha: 0.06),
-          shape: const CircleBorder(),
+          borderRadius: BorderRadius.circular(29),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: enabled ? onTap : null,
             child: SizedBox(
-              width: 58,
+              width: 88,
               height: 58,
-              child: Icon(
-                expanded ? Icons.keyboard_hide : Icons.keyboard,
-                color: enabled ? primary : Colors.black.withValues(alpha: 0.28),
-                size: 28,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    expanded ? Icons.keyboard_hide : Icons.keyboard,
+                    color: enabled
+                        ? primary
+                        : Colors.black.withValues(alpha: 0.28),
+                    size: 25,
+                  ),
+                  const SizedBox(width: 5),
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: enabled
+                            ? primary
+                            : colorScheme.onSurface.withValues(alpha: 0.32),
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -1430,6 +1789,8 @@ class _KeyboardToggleButton extends StatelessWidget {
   }
 }
 
+enum _PetInteractionEffect { none, pat, feed, celebrate }
+
 class _PetStage extends StatelessWidget {
   const _PetStage({
     required this.isDead,
@@ -1437,7 +1798,10 @@ class _PetStage extends StatelessWidget {
     required this.showVoiceAura,
     required this.petMode,
     required this.skin,
-    required this.onChangeSkin,
+    required this.visualStyle,
+    required this.growthStage,
+    required this.interactionEffect,
+    required this.interactionEffectRevision,
     required this.onPetTap,
     required this.onDragHoverChanged,
     required this.onAcceptItem,
@@ -1448,7 +1812,10 @@ class _PetStage extends StatelessWidget {
   final bool showVoiceAura;
   final PetMode petMode;
   final PetSkin skin;
-  final VoidCallback onChangeSkin;
+  final PetVisualStyle visualStyle;
+  final PetGrowthStage growthStage;
+  final _PetInteractionEffect interactionEffect;
+  final int interactionEffectRevision;
   final VoidCallback onPetTap;
   final ValueChanged<bool> onDragHoverChanged;
   final ValueChanged<InventoryItem> onAcceptItem;
@@ -1515,6 +1882,13 @@ class _PetStage extends StatelessWidget {
                             PetAvatar(
                               mode: petMode,
                               skin: skin,
+                              visualStyle: visualStyle,
+                              growthStage: growthStage,
+                              size: avatarSize,
+                            ),
+                            _PetInteractionOverlay(
+                              effect: interactionEffect,
+                              revision: interactionEffectRevision,
                               size: avatarSize,
                             ),
                           ],
@@ -1525,11 +1899,6 @@ class _PetStage extends StatelessWidget {
                 ),
               ),
             ),
-            Positioned(
-              top: 0,
-              right: 0,
-              child: _ChangeSkinButton(onTap: onChangeSkin),
-            ),
           ],
         );
       },
@@ -1537,43 +1906,180 @@ class _PetStage extends StatelessWidget {
   }
 }
 
-/// 首頁右上角「更換外觀」入口（疊在寵物舞台角落，不擋住寵物主體）。
-class _ChangeSkinButton extends StatelessWidget {
-  const _ChangeSkinButton({required this.onTap});
+class _PetInteractionOverlay extends StatefulWidget {
+  const _PetInteractionOverlay({
+    required this.effect,
+    required this.revision,
+    required this.size,
+  });
 
-  final VoidCallback onTap;
+  final _PetInteractionEffect effect;
+  final int revision;
+  final double size;
+
+  @override
+  State<_PetInteractionOverlay> createState() => _PetInteractionOverlayState();
+}
+
+class _PetInteractionOverlayState extends State<_PetInteractionOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1050),
+    );
+    if (widget.effect != _PetInteractionEffect.none) {
+      _controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _PetInteractionOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.effect != _PetInteractionEffect.none &&
+        (oldWidget.revision != widget.revision ||
+            oldWidget.effect != widget.effect)) {
+      _controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: '更換外觀',
-      child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(999),
-        elevation: 1.5,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(999),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
+    if (widget.effect == _PetInteractionEffect.none) {
+      return const SizedBox.shrink();
+    }
+    final colorScheme = Theme.of(context).colorScheme;
+    final accent = switch (widget.effect) {
+      _PetInteractionEffect.pat => const Color(0xFFE8758E),
+      _PetInteractionEffect.feed => const Color(0xFFE9A63E),
+      _PetInteractionEffect.celebrate => colorScheme.primary,
+      _PetInteractionEffect.none => colorScheme.primary,
+    };
+    final icons = switch (widget.effect) {
+      _PetInteractionEffect.pat => const [
+          Icons.favorite,
+          Icons.favorite_border,
+          Icons.favorite,
+        ],
+      _PetInteractionEffect.feed => const [
+          Icons.restaurant,
+          Icons.favorite,
+          Icons.auto_awesome,
+        ],
+      _PetInteractionEffect.celebrate => const [
+          Icons.star,
+          Icons.auto_awesome,
+          Icons.star_border,
+        ],
+      _PetInteractionEffect.none => const [Icons.favorite],
+    };
+    return IgnorePointer(
+      child: SizedBox(
+        key: ValueKey('pet-interaction-effect-${widget.effect.name}'),
+        width: widget.size,
+        height: widget.size,
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) {
+            final t = Curves.easeOutCubic.transform(_controller.value);
+            final opacity = (1 - Curves.easeIn.transform(_controller.value))
+                .clamp(0.0, 1.0);
+            return Stack(
+              clipBehavior: Clip.none,
               children: [
-                Icon(
-                  Icons.pets,
-                  size: 20,
-                  color: Theme.of(context).colorScheme.primary,
+                _FloatingPetCue(
+                  icon: icons[0],
+                  color: accent,
+                  size: widget.size * 0.105,
+                  left: widget.size * 0.24,
+                  top: widget.size * (0.24 - 0.16 * t),
+                  opacity: opacity,
+                  angle: -0.22,
                 ),
-                const SizedBox(width: 6),
-                const Text(
-                  '更換外觀',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                  ),
+                _FloatingPetCue(
+                  icon: icons[1],
+                  color: accent.withValues(alpha: 0.92),
+                  size: widget.size * 0.085,
+                  left: widget.size * 0.60,
+                  top: widget.size * (0.18 - 0.18 * t),
+                  opacity: opacity,
+                  angle: 0.18,
+                ),
+                _FloatingPetCue(
+                  icon: icons[2],
+                  color: accent.withValues(alpha: 0.82),
+                  size: widget.size * 0.075,
+                  left: widget.size * 0.50,
+                  top: widget.size * (0.34 - 0.15 * t),
+                  opacity: opacity,
+                  angle: 0.08,
                 ),
               ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _FloatingPetCue extends StatelessWidget {
+  const _FloatingPetCue({
+    required this.icon,
+    required this.color,
+    required this.size,
+    required this.left,
+    required this.top,
+    required this.opacity,
+    required this.angle,
+  });
+
+  final IconData icon;
+  final Color color;
+  final double size;
+  final double left;
+  final double top;
+  final double opacity;
+  final double angle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: left,
+      top: top,
+      child: Opacity(
+        opacity: opacity,
+        child: Transform.rotate(
+          angle: angle,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.82),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: color.withValues(alpha: 0.22),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: EdgeInsets.all(size * 0.22),
+              child: Icon(
+                icon,
+                color: color,
+                size: size,
+              ),
             ),
           ),
         ),
@@ -1584,7 +2090,9 @@ class _ChangeSkinButton extends StatelessWidget {
 
 /// 首頁「更換外觀」彈出視窗內容（標題 + 外觀選擇器 + 完成）。
 class _SkinPickerSheet extends StatelessWidget {
-  const _SkinPickerSheet();
+  const _SkinPickerSheet({required this.onSkinApplied});
+
+  final ValueChanged<PetSkin> onSkinApplied;
 
   @override
   Widget build(BuildContext context) {
@@ -1622,10 +2130,13 @@ class _SkinPickerSheet extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           // 卡片列表（可捲動）：內容過高時在這裡捲，不會把完成按鈕擠出畫面。
-          const Flexible(
+          Flexible(
             child: SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(20, 0, 20, 4),
-              child: PetSkinPicker(compact: true),
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+              child: PetSkinPicker(
+                compact: true,
+                onSkinApplied: onSkinApplied,
+              ),
             ),
           ),
           // 完成按鈕（固定在底部，並避開 home indicator）。

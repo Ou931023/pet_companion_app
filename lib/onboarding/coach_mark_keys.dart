@@ -4,7 +4,7 @@ import 'coach_mark_controller.dart';
 
 /// 共享的導覽高亮目標 key。
 ///
-/// HomeScreen 掛上寵物 / 語音 / 狀態 / 提醒 / 簽到 / 金幣的 key；MainShell 掛上
+/// HomeScreen 掛上寵物 / 語音 / 狀態 / 更多功能的 key；MainShell 掛上
 /// 底部導覽列（整條）的 key；SettingsScreen 掛上「家人聯絡人」入口的 key。
 /// 集中放在這裡，讓「組步驟」與「畫面」解耦，畫面端只需把 key 掛上去，不需要
 /// 知道導覽流程邏輯。命名沿用專案既有風格（單一 registry，不另開第二套）。
@@ -13,10 +13,12 @@ class CoachMarkKeys {
   final GlobalKey petKey = GlobalKey(debugLabel: 'coach_pet');
   final GlobalKey voiceButtonKey = GlobalKey(debugLabel: 'coach_voice');
   final GlobalKey statusKey = GlobalKey(debugLabel: 'coach_status');
+  final GlobalKey moreButtonKey = GlobalKey(debugLabel: 'coach_more_button');
   final GlobalKey reminderKey = GlobalKey(debugLabel: 'coach_reminder');
 
-  // 首頁頂部列：每日簽到 / 日曆 icon、金幣區（CR-0016 v2 新增，讓 Step 8 / 9 有真 target）。
-  final GlobalKey dailyCheckInKey = GlobalKey(debugLabel: 'coach_daily_checkin');
+  // 更多功能 sheet 內：每日簽到 / 日曆、金幣區。
+  final GlobalKey dailyCheckInKey =
+      GlobalKey(debugLabel: 'coach_daily_checkin');
   final GlobalKey coinKey = GlobalKey(debugLabel: 'coach_coin');
 
   /// 底部導覽列（整條）的 key。掛在 MainShell 底部列的外層 KeyedSubtree 上，
@@ -34,7 +36,8 @@ class CoachMarkKeys {
   final GlobalKey shopKey = GlobalKey(debugLabel: 'coach_shop');
 
   /// 紀錄頁標題（切到紀錄分頁時高亮）。
-  final GlobalKey historyTitleKey = GlobalKey(debugLabel: 'coach_history_title');
+  final GlobalKey historyTitleKey =
+      GlobalKey(debugLabel: 'coach_history_title');
 
   /// 紀錄頁搜尋框（CR-0091）；無紀錄時搜尋框不顯示 → overlay 自動降級置中卡。
   final GlobalKey historySearchKey =
@@ -75,14 +78,14 @@ Rect settingsRightQuarter(Rect raw, {double bottomInset = 0}) =>
 /// 首頁新手導覽的步驟，共 **16 步**（單一完整導覽，CR-0092 改為「實際帶走一遍」跨頁）：
 ///
 /// 首頁：1 寵物 → 2 說話 → 3 先聽牠說完 → 4 狀態 → 5 親密度 → 6 飽足感 →
-/// 7 點寵物玩遊戲 → 8 每日簽到 → 9 金幣 →
+/// 7 點寵物玩遊戲 → 8 更多功能 → 9 簽到 / 金幣 / 提醒入口 →
 /// 商城頁：10 商城 →
 /// 紀錄頁：11 紀錄 → 12 搜尋紀錄 →
 /// 設定頁：13 換造型 → 14 家人聯絡人 → 15 重看導覽 →
 /// 回首頁：16 開始使用。
 ///
 /// 每步只介紹一件事、文字白話溫柔，並高亮畫面上對應位置：
-/// - 首頁可見元件（寵物 / 語音鍵 / 狀態面板 / 簽到 / 金幣）直接 spotlight。
+/// - 首頁可見元件（寵物 / 語音鍵 / 狀態面板 / 更多功能）直接 spotlight。
 /// - CR-0092：商城 / 紀錄 / 設定步驟帶 `shellTabIndex`，先切到該分頁再高亮頁內目標
 ///   （不再只亮底部分頁按鈕）；最後一步切回首頁。切頁由 CoachMarkHost 處理，
 ///   overlay 會等該頁目標 render 好再高亮。
@@ -128,17 +131,17 @@ List<CoachMarkStep> buildHomeCoachMarkSteps(
       targetKey: keys.petKey,
       text: '輕輕點一下寵物，可以玩記憶小遊戲，動動腦也很有趣。',
     ),
-    // 8：每日簽到可以拿金幣 → 高亮頂部日曆 / 簽到 icon。
+    // 8：更多功能是次要入口 → 高亮右上角更多功能。
     CoachMarkStep(
-      targetKey: keys.dailyCheckInKey,
+      targetKey: keys.moreButtonKey,
       radius: 14,
-      text: '每天回來看看寵物，就能完成每日簽到，拿到金幣。',
+      text: '右上角的「更多功能」放著每日簽到、提醒、背包和更換外觀。',
     ),
-    // 9：金幣可以用來解鎖外觀 → 高亮頂部金幣區。
+    // 9：說明簽到與金幣也在更多功能裡，不再指向已搬家的首頁小按鈕。
     CoachMarkStep(
-      targetKey: keys.coinKey,
+      targetKey: keys.moreButtonKey,
       radius: 14,
-      text: '上面這些金幣，可以用來解鎖新的寵物外觀。',
+      text: '每天回來簽到可以拿金幣，金幣能用來解鎖新的寵物外觀。',
     ),
     // 10：CR-0092 切到「商城」分頁，高亮商城頁本身（不再只亮底部按鈕）。
     CoachMarkStep(

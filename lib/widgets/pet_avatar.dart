@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../models/pet_skin.dart';
 import '../models/pet_status.dart';
+import '../models/pet_visual_profile.dart';
 import '../utils/asset_paths.dart';
 
 /// CR-0093：rest 待機動畫的 ping-pong（來回）影格索引，通用支援 1～4 張 frame。
@@ -29,11 +30,15 @@ class PetAvatar extends StatefulWidget {
     super.key,
     required this.mode,
     this.skin = PetSkin.dog,
+    this.visualStyle = PetVisualStyle.cute,
+    this.growthStage = PetGrowthStage.adult,
     this.size = 220,
   });
 
   final PetMode mode;
   final PetSkin skin;
+  final PetVisualStyle visualStyle;
+  final PetGrowthStage growthStage;
   final double size;
 
   @override
@@ -54,7 +59,10 @@ class _PetAvatarState extends State<PetAvatar> {
   void didUpdateWidget(covariant PetAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
     // 換外觀或換狀態都要從第一張重新播，避免沿用上一隻寵物的 frame index。
-    if (widget.mode != oldWidget.mode || widget.skin != oldWidget.skin) {
+    if (widget.mode != oldWidget.mode ||
+        widget.skin != oldWidget.skin ||
+        widget.visualStyle != oldWidget.visualStyle ||
+        widget.growthStage != oldWidget.growthStage) {
       _frameIndex = 0;
       _setupAnimationTimer();
     }
@@ -77,19 +85,36 @@ class _PetAvatarState extends State<PetAvatar> {
 
   String _imagePath() {
     if (widget.mode == PetMode.talking) {
-      final frames = AssetPaths.talkingFrames(widget.skin);
+      final frames = AssetPaths.talkingFramesForStyle(
+        widget.skin,
+        visualStyle: widget.visualStyle,
+        growthStage: widget.growthStage,
+      );
       // 用取餘數，guineaPig 只有 3 張也能安全循環，不會越界。
       return frames[_frameIndex % frames.length];
     }
     if (widget.mode == PetMode.rest) {
-      final frames = AssetPaths.restFrames(widget.skin);
+      final frames = AssetPaths.restFramesForStyle(
+        widget.skin,
+        visualStyle: widget.visualStyle,
+        growthStage: widget.growthStage,
+      );
       // CR-0093：ping-pong 來回播放（不讓最後一張直接跳回第一張）。
       return frames[pingPongFrameIndex(_frameIndex, frames.length)];
     }
     if (widget.mode == PetMode.listening) {
-      return AssetPaths.listening(widget.skin);
+      return AssetPaths.listeningForStyle(
+        widget.skin,
+        visualStyle: widget.visualStyle,
+        growthStage: widget.growthStage,
+      );
     }
-    return AssetPaths.stateImage(widget.skin, widget.mode);
+    return AssetPaths.stateImageForStyle(
+      widget.skin,
+      widget.mode,
+      visualStyle: widget.visualStyle,
+      growthStage: widget.growthStage,
+    );
   }
 
   @override

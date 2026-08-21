@@ -3,11 +3,19 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pet_companion_app/controllers/daily_care_task_controller.dart';
+import 'package:pet_companion_app/controllers/pet_controller.dart';
+import 'package:pet_companion_app/controllers/profile_controller.dart';
 import 'package:pet_companion_app/models/daily_care_task.dart';
+import 'package:pet_companion_app/models/pet_status.dart';
+import 'package:pet_companion_app/routes/app_routes.dart';
 import 'package:pet_companion_app/screens/daily_care_task_screen.dart';
 import 'package:pet_companion_app/services/daily_care_task_api_service.dart';
+import 'package:pet_companion_app/services/local_storage_service.dart';
 import 'package:pet_companion_app/services/photo_picker_service.dart';
+import 'package:pet_companion_app/services/text_to_speech_service.dart';
+import 'package:pet_companion_app/widgets/daily_care_task_card.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 DailyCareTask _task(
   String id,
@@ -28,9 +36,10 @@ DailyCareTask _task(
 }
 
 class _FakeApi extends DailyCareTaskApiService {
-  _FakeApi({this.tasks = const [], this.listError = false});
+  _FakeApi({this.tasks = const [], this.listError = false, this.submitResult});
   final List<DailyCareTask> tasks;
   final bool listError;
+  final DailyCareTaskSubmitResult? submitResult;
 
   @override
   Future<List<DailyCareTask>> listTasks({required String elderId}) async {
@@ -38,6 +47,18 @@ class _FakeApi extends DailyCareTaskApiService {
       throw const DailyCareTaskApiException('現在拿不到今天的任務，待會再看看好嗎？');
     }
     return tasks;
+  }
+
+  @override
+  Future<DailyCareTaskSubmitResult> submitProof({
+    required String taskId,
+    required File image,
+  }) async {
+    final result = submitResult;
+    if (result == null) {
+      throw const DailyCareTaskApiException('照片上傳沒成功，待會再試一次好嗎？');
+    }
+    return result;
   }
 }
 
@@ -59,16 +80,71 @@ class _CancelPicker extends PhotoPickerService {
   }
 }
 
-Widget _wrap(DailyCareTaskController controller, {PhotoPickerService? picker}) {
-  return ChangeNotifierProvider<DailyCareTaskController>.value(
-    value: controller,
+class _OneImagePicker extends PhotoPickerService {
+  bool cameraCalled = false;
+
+  @override
+  Future<File?> pickFromCamera() async {
+    cameraCalled = true;
+    return File('/tmp/daily-care-proof-test.jpg');
+  }
+}
+
+class _RecordingTextToSpeechService extends TextToSpeechService {
+  String? spokenText;
+  bool? enabledValue;
+
+  @override
+  Future<void> speak(
+    String text, {
+    required bool enabled,
+    required double volume,
+    required String speechStyle,
+    required Future<void> Function() onStart,
+    required Future<void> Function() onComplete,
+    required Future<void> Function() onError,
+  }) async {
+    spokenText = text;
+    enabledValue = enabled;
+    await onStart();
+    await onComplete();
+  }
+}
+
+Widget _wrap(
+  DailyCareTaskController controller, {
+  PhotoPickerService? picker,
+  Object? routeArgs,
+  PetController? petController,
+  ProfileController? profileController,
+  TextToSpeechService? ttsService,
+}) {
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider<DailyCareTaskController>.value(value: controller),
+      if (petController != null)
+        ChangeNotifierProvider<PetController>.value(value: petController),
+      if (profileController != null)
+        ChangeNotifierProvider<ProfileController>.value(
+          value: profileController,
+        ),
+      if (ttsService != null)
+        Provider<TextToSpeechService>.value(value: ttsService),
+    ],
     child: MaterialApp(
-      home: DailyCareTaskScreen(photoPicker: picker),
+      onGenerateRoute: (_) => MaterialPageRoute<void>(
+        settings: RouteSettings(arguments: routeArgs),
+        builder: (_) => DailyCareTaskScreen(photoPicker: picker),
+      ),
     ),
   );
 }
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets('顯示任務卡片：名稱、類型、狀態文案', (tester) async {
     final controller = DailyCareTaskController(
       apiService: _FakeApi(tasks: [
@@ -137,6 +213,121 @@ void main() {
     // 相機被呼叫、回 null（取消）→ 不 crash，仍在任務頁。
     expect(picker.cameraCalled, isTrue);
     expect(find.text('今日任務'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('語音進入吃藥任務時顯示拍照驗證引導', (tester) async {
+    final controller = DailyCareTaskController(
+      apiService: _FakeApi(tasks: [_task('t1', '早上吃藥')]),
+    );
+    await tester.pumpWidget(
+      _wrap(
+        controller,
+        routeArgs: const DailyCareTaskRouteArgs(
+          launchedFromVoice: true,
+          requestedTaskType: 'medication',
+          requestedTaskLabel: '吃藥',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('我聽到你完成吃藥'), findsOneWidget);
+    expect(find.textContaining('再拍一張照片'), findsOneWidget);
+    expect(find.text('拍照完成'), findsOneWidget);
+  });
+
+  testWidgets('照片送出後會更新寵物訊息並朗讀驗證結果', (tester) async {
+    final originalTask = _task('t1', '早上吃藥');
+    final completedTask = _task(
+      't1',
+      '早上吃藥',
+      status: DailyCareTaskStatus.completed,
+    );
+    const submission = DailyCareTaskSubmission(
+      id: 's1',
+      taskId: 't1',
+      status: DailyCareTaskStatus.completed,
+      submittedAt: '2026-08-17T09:00:00.000Z',
+      verification: DailyCareTaskVerification(
+        status: DailyCareVerificationStatus.passed,
+        confidence: 0.92,
+        reason: '照片符合吃藥任務',
+        detectedObjects: ['medication'],
+        reviewRequired: false,
+      ),
+      note: '',
+    );
+    final picker = _OneImagePicker();
+    final petController = PetController();
+    final profileController = ProfileController(LocalStorageService());
+    await profileController.load();
+    final ttsService = _RecordingTextToSpeechService();
+    final controller = DailyCareTaskController(
+      apiService: _FakeApi(
+        tasks: [originalTask],
+        submitResult: DailyCareTaskSubmitResult(
+          task: completedTask,
+          submission: submission,
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(
+      _wrap(
+        controller,
+        picker: picker,
+        petController: petController,
+        profileController: profileController,
+        ttsService: ttsService,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('拍照完成'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('拍照'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('送出'));
+    await tester.pumpAndSettle();
+
+    expect(picker.cameraCalled, isTrue);
+    expect(ttsService.spokenText, contains('早上吃藥'));
+    expect(ttsService.spokenText, contains('確認完成'));
+    expect(ttsService.enabledValue, isTrue);
+    expect(petController.message, contains('確認完成'));
+    expect(petController.mode, PetMode.happy);
+    expect(find.text('完成囉！'), findsOneWidget);
+    petController.dispose();
+    profileController.dispose();
+  });
+
+  testWidgets('任務卡片在窄螢幕不因長狀態文字和按鈕溢出', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(300, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Padding(
+            padding: const EdgeInsets.all(8),
+            child: DailyCareTaskCard(
+              task: _task(
+                't3',
+                '下午散步',
+                type: DailyCareTaskType.exercise,
+                status: DailyCareTaskStatus.needsReview,
+              ),
+              isSubmitting: false,
+              onComplete: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('等待照護人員查看'), findsOneWidget);
+    expect(find.text('重新拍照'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

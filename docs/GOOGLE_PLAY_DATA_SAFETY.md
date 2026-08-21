@@ -12,7 +12,7 @@
 ## 1. 通則
 
 - **傳輸加密**：✅ production 要求 HTTPS（見 `STORE_RELEASE_CHECKLIST.md` §6 ATS/cleartext 收斂）。OpenAI Realtime 媒體為 WebRTC DTLS-SRTP 加密。
-- **可要求刪除**：✅ 提供帳號與資料刪除（`/api/auth/delete` + 前端入口）；記憶可查看 / 刪除 / 封存。
+- **可要求刪除**：✅ 提供帳號與資料刪除（`/api/auth/delete` + 前端入口）；記憶可查看 / 刪除 / 封存。Hosted support page 也提供「帳號與資料刪除申請」網頁資源，可填入 Google Play account deletion URL。
 - **知情同意**：✅ 首次使用 consent gate（須同意才進 App）。
 - **使用分析揭露**：✅ CR-0097 後 App 會送出 `app_usage_events`，同意畫面與 App 內隱私政策已揭露 App 使用時間、語音/打字互動、寵物互動、提醒、任務、照片驗證、小遊戲等使用紀錄。
 - **第三方資料流向**：語音 / 對話文字會傳送至 **OpenAI**（Realtime / 文字 / embedding）以產生回應與記憶；high/urgent Care Alert 摘要會經 **Telegram** 通知授權照護人員。⛔ 此資料流向須於隱私政策與同意內文明確揭露（核對 `legal_content.dart`）。
@@ -59,5 +59,6 @@ iOS「App 隱私」問卷需對應上表，重點：
 - [x] App 內同意內文（`legal_content.dart`）已揭露 OpenAI、Telegram 與 CR-0097 usage tracking 資料流向 / 用途。
 - [x] App 內設定頁提供帳號刪除流程，且確認文案說明會刪除伺服器帳號資料與本機 App 紀錄。
 - [x] Hosted 隱私政策正式頁面同步帳號 / 資料刪除流程。
+- [x] Hosted 支援頁提供 account / data deletion web resource：`https://ou931023.github.io/pet_companion_app/support.html`。
 - [x] Care Alert 明確標示為「照護提醒、非醫療診斷」。
 - [x] 麥克風 / 相機 / 相簿 / 通知權限用途與實際一致。

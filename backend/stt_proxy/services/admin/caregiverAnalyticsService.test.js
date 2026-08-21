@@ -153,6 +153,12 @@ test("App usage events 進入 summary / usageStats / petStatus，後台顯示真
       metadata: {},
     },
     {
+      eventType: "voice_navigation",
+      eventAt: "2026-06-15T09:01:00.000Z",
+      durationMs: null,
+      metadata: { route: "/daily-care-tasks", source: "realtime_voice" },
+    },
+    {
       eventType: "typed_chat_sent",
       eventAt: "2026-06-15T09:02:00.000Z",
       durationMs: null,
@@ -165,11 +171,20 @@ test("App usage events 進入 summary / usageStats / petStatus，後台顯示真
       metadata: { repeatType: "daily" },
     },
     {
+      eventType: "settings_changed",
+      eventAt: "2026-06-15T09:04:30.000Z",
+      durationMs: null,
+      metadata: { setting: "speech_style", value: "calm" },
+    },
+    {
       eventType: "pet_interaction",
       eventAt: "2026-06-15T09:05:00.000Z",
       durationMs: null,
       metadata: {
         petType: "dog",
+        selectedPetType: "dog",
+        visualStyle: "cute",
+        growthStage: "adult",
         mood: "happy",
         satiety: 88,
         intimacy: 42,
@@ -185,12 +200,17 @@ test("App usage events 進入 summary / usageStats / petStatus，後台顯示真
   });
 
   assert.equal(out.usageStats.available, true);
-  assert.equal(out.usageStats.totalEvents, 5);
+  assert.equal(out.usageStats.totalEvents, 7);
   assert.equal(out.usageStats.voiceInteractions, 1);
+  assert.equal(out.usageStats.voiceNavigations, 1);
   assert.equal(out.usageStats.typedChats, 1);
   assert.equal(out.usageStats.remindersCreated, 1);
+  assert.equal(out.usageStats.settingsChanges, 1);
   assert.equal(out.petStatus.available, true);
   assert.equal(out.petStatus.petType, "dog");
+  assert.equal(out.petStatus.selectedPetType, "dog");
+  assert.equal(out.petStatus.visualStyle, "cute");
+  assert.equal(out.petStatus.growthStage, "adult");
   assert.equal(out.petStatus.mood, "happy");
   assert.equal(out.petStatus.satiety, 88);
   assert.equal(out.petStatus.intimacy, 42);

@@ -11,7 +11,7 @@
 
 | 欄位 | 草稿值 | 備註 |
 |---|---|---|
-| App 正式名稱 | ✅ 中文「AI陪伴」/ 英文 "AI Companion"（CR-0061 owner 拍板） | 與 iOS CFBundleDisplayName（`AI Companion`）/ Android label（`AI Companion`）一致 |
+| App 正式名稱 | ✅ 中文「AI陪伴」/ 英文 "AI Companion"（CR-0061 owner 拍板；CR-0101B 對齊裝置顯示名） | iOS CFBundleDisplayName / Android label / 商店中文名皆使用 `AI陪伴` |
 | 開發者 / 發行者名稱 | ✅ 國立嘉義大學資訊管理學系專題第四組（CR-0061） | 機構 / 團隊正式名稱（商店後台 / 著作權顯示用） |
 | 主分類 | Health & Fitness 或 Medical（建議 Health & Fitness，避免醫療宣稱） | Care Alert 為「照護提醒」非醫療診斷 |
 | 次分類 | Lifestyle | |
@@ -26,7 +26,7 @@
 
 ## 2. App Store（iOS）
 
-- **App 名稱（≤30 字元）**：✅「AI陪伴」（英文顯示名 `AI Companion`，CR-0061；副標題可補充定位）
+- **App 名稱（≤30 字元）**：✅「AI陪伴」（英文品牌 `AI Companion` 可放描述或關鍵字；副標題補充定位）
 - **副標題 Subtitle（≤30 字元）**：草稿「用說的，就有人陪你聊天」
 - **簡短描述 / Promotional text**：草稿「對著手機裡的陪伴寵物說說話，牠會聽你說、記得你，也讓家人與照護人員適時關心你。」
 - **完整描述 Full description**：草稿——
@@ -51,7 +51,7 @@
 
 ## 3. Google Play（Android）
 
-- **App 名稱（≤30 字元）**：✅「AI陪伴」（英文 `AI Companion`，與 iOS 一致，CR-0061）
+- **App 名稱（≤30 字元）**：✅「AI陪伴」（英文品牌 `AI Companion` 可放描述或關鍵字）
 - **簡短描述（≤80 字元）**：草稿「對 AI 寵物說說話，牠陪你聊、記得你，也讓家人適時關心。」
 - **完整描述（≤4000 字元）**：同 §2 完整描述（可加長）。
 - **分類**：Health & Fitness
@@ -105,9 +105,9 @@ App 名稱、描述、截圖、審查備註**不得宣稱**：已診斷 / 確診
 | iOS Bundle ID | `tw.edu.ncyu.im.aicompanion` | ✅ **CR-0061 定值**（國立嘉義大學反向網域）；已寫入 `ios/Runner.xcodeproj/project.pbxproj`（app target + `<id>.RunnerTests`）。上架後**不可改**。 |
 | Android applicationId | `tw.edu.ncyu.im.aicompanion`（對齊 iOS） | ✅ **CR-0061 定值**；已寫入 `android/app/build.gradle.kts`。上架後不可改。 |
 | Android namespace | `com.example.pet_companion_app` | 🔵 內部 R/BuildConfig 套件名（**非**發布 ID、不影響送審）；Flutter 模板殘留。owner 明確要求**維持不動**（避免移動 `MainActivity` 套件），與 applicationId 互相獨立。 |
-| iOS CFBundleDisplayName | `AI Companion` | ✅ **CR-0061 定值**；已寫入 `ios/Runner/Info.plist`。 |
-| Android android:label | `AI Companion`（CR-0061 由 interim `Pet Companion App` 定值） | ✅ **CR-0061 定值**；已寫入 `AndroidManifest.xml`。 |
-| App 中文名 | `AI陪伴` | ✅ **CR-0061 定值**（store metadata §1/§2/§3 用；非寫入 build 設定）。 |
+| iOS CFBundleDisplayName | `AI陪伴` | ✅ **CR-0101B 對齊正式中文名**；已寫入 `ios/Runner/Info.plist`。 |
+| Android android:label | `AI陪伴` | ✅ **CR-0101B 對齊正式中文名**；已寫入 `AndroidManifest.xml`。 |
+| App 中文名 | `AI陪伴` | ✅ **CR-0061 定值**（store metadata §1/§2/§3 用；已寫入 build 顯示名）。 |
 | 開發者 / 發行者 | 國立嘉義大學資訊管理學系專題第四組 | ✅ **CR-0061 定值**（商店後台 / 著作權顯示）。 |
 | pubspec name | `pet_companion_app` | 🔵 套件名（非 store 名稱、改動會破壞 import），維持。 |
 | version | `1.0.0+1` | ✅ 首版可用。 |

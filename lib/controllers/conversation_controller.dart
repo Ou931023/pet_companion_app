@@ -257,8 +257,9 @@ class ConversationController extends ChangeNotifier {
   /// role/長度/則數清洗，這裡只負責提供來源。
   List<Map<String, String>> _recentChatHistory({int maxTurns = 6}) {
     final turns = turnsForSession(_activeSessionId);
-    final recent =
-        turns.length > maxTurns ? turns.sublist(turns.length - maxTurns) : turns;
+    final recent = turns.length > maxTurns
+        ? turns.sublist(turns.length - maxTurns)
+        : turns;
     final history = <Map<String, String>>[];
     for (final turn in recent) {
       final userText = turn.userText.trim();
@@ -610,8 +611,7 @@ class ConversationController extends ChangeNotifier {
   }
 
   void clearPendingTaigiAsrTranscript() {
-    if (_pendingTaigiAsrTranscript.isEmpty &&
-        _taigiAsrStatusMessage.isEmpty) {
+    if (_pendingTaigiAsrTranscript.isEmpty && _taigiAsrStatusMessage.isEmpty) {
       return;
     }
     _pendingTaigiAsrTranscript = '';
@@ -867,7 +867,10 @@ class ConversationController extends ChangeNotifier {
     try {
       final navigationIntent = navigationService.detect(text);
       if (navigationIntent != null) {
-        navigationController.navigateTo(navigationIntent.route);
+        navigationController.navigateTo(
+          navigationIntent.route,
+          arguments: navigationIntent.arguments,
+        );
         if (navigationIntent.action == NavigationAction.replayOnboarding) {
           coachMarkController?.requestReplay();
         }

@@ -22,6 +22,7 @@ import 'package:pet_companion_app/services/ai_navigation_service.dart';
 import 'package:pet_companion_app/services/ai_tool_router.dart';
 import 'package:pet_companion_app/services/agent_router_service.dart';
 import 'package:pet_companion_app/services/asr_strategy_service.dart';
+import 'package:pet_companion_app/services/app_usage_tracking_service.dart';
 import 'package:pet_companion_app/services/check_in_storage_service.dart';
 import 'package:pet_companion_app/services/companion_chat_service.dart';
 import 'package:pet_companion_app/services/companion_content_service.dart';
@@ -113,6 +114,95 @@ void main() {
     expect(harness.router.routedTexts, isNot(contains('我想聽音樂')));
     expect(harness.executor.executedCount, 0);
     expect(harness.controller.state, VoiceAgentState.thinking);
+
+    harness.dispose();
+  });
+
+  test('泛用新聞請求先追問類型，不送後端 router、不開始搜尋', () async {
+    final harness = await _Harness.create(_intent('search_trusted_info'));
+    await harness.connect();
+
+    harness.realtime.handleDataChannelEventForTest(
+      '{"type":"conversation.item.input_audio_transcription.completed","transcript":"今天有什麼新聞"}',
+    );
+    await pumpEventQueue();
+    await pumpEventQueue();
+
+    expect(harness.router.routedTexts, isNot(contains('今天有什麼新聞')));
+    expect(harness.executor.executedCount, 0);
+    expect(harness.controller.state, VoiceAgentState.thinking);
+
+    harness.dispose();
+  });
+
+  test('語音查提醒清單會念出真實清單，不送後端 router 猜答案', () async {
+    final harness = await _Harness.create(_intent('create_reminder'));
+    await harness.connect();
+
+    harness.realtime.handleDataChannelEventForTest(
+      '{"type":"conversation.item.input_audio_transcription.completed","transcript":"我的提醒"}',
+    );
+    await pumpEventQueue();
+    await pumpEventQueue();
+
+    expect(harness.router.routedTexts, isNot(contains('我的提醒')));
+    expect(
+      harness.sentRealtimeEvents.any(
+        (payload) =>
+            payload.contains('response.create') &&
+            payload.contains('目前還沒有提醒') &&
+            payload.contains('提醒我晚上八點吃藥'),
+      ),
+      isTrue,
+    );
+
+    harness.dispose();
+  });
+
+  test('語音建立提醒會真的寫入提醒，並念出建立結果', () async {
+    final harness = await _Harness.create(_intent('create_reminder'));
+    await harness.connect();
+
+    harness.realtime.handleDataChannelEventForTest(
+      '{"type":"conversation.item.input_audio_transcription.completed","transcript":"提醒我晚上八點吃藥"}',
+    );
+    await pumpEventQueue();
+    await pumpEventQueue();
+
+    expect(harness.router.routedTexts, isNot(contains('提醒我晚上八點吃藥')));
+    expect(harness.reminderController.reminders, hasLength(1));
+    expect(harness.reminderController.reminders.first.title, '吃藥');
+    expect(
+      harness.sentRealtimeEvents.any(
+        (payload) =>
+            payload.contains('response.create') &&
+            payload.contains('晚上8點') &&
+            payload.contains('吃藥'),
+      ),
+      isTrue,
+    );
+
+    harness.dispose();
+  });
+
+  test('語音說已完成吃藥會導到今日任務，並上報 voice_navigation 給後台分析', () async {
+    final harness = await _Harness.create(_intent('open_app_route'));
+    await harness.connect();
+
+    harness.realtime.handleDataChannelEventForTest(
+      '{"type":"conversation.item.input_audio_transcription.completed","transcript":"我吃藥了"}',
+    );
+    await pumpEventQueue();
+    await pumpEventQueue();
+
+    expect(harness.navigationController.currentShellRoute,
+        isNot('/daily-care-tasks'));
+    expect(harness.tracking.events, hasLength(1));
+    expect(harness.tracking.events.first.eventType, 'voice_navigation');
+    expect(
+        harness.tracking.events.first.metadata['route'], '/daily-care-tasks');
+    expect(harness.tracking.events.first.metadata['source'], 'realtime_voice');
+    expect(harness.router.routedTexts, isNot(contains('我吃藥了')));
 
     harness.dispose();
   });
@@ -263,6 +353,56 @@ class _RecordingExecutor extends NativeToolExecutorService {
   }
 }
 
+class _RecordedUsageEvent {
+  const _RecordedUsageEvent({
+    required this.eventType,
+    required this.sessionId,
+    required this.metadata,
+  });
+
+  final String eventType;
+  final String? sessionId;
+  final Map<String, Object?> metadata;
+}
+
+class _RecordingUsageTrackingService extends AppUsageTrackingService {
+  final List<_RecordedUsageEvent> events = [];
+
+  @override
+  Future<bool> track(
+    String eventType, {
+    String? sessionId,
+    int? durationMs,
+    Map<String, Object?> metadata = const {},
+  }) async {
+    events.add(
+      _RecordedUsageEvent(
+        eventType: eventType,
+        sessionId: sessionId,
+        metadata: metadata,
+      ),
+    );
+    return true;
+  }
+}
+
+class _FakeNotificationService extends NotificationService {
+  @override
+  Future<void> initialize() async {}
+
+  @override
+  Future<void> scheduleReminder(reminder) async {}
+
+  @override
+  Future<void> cancelReminder(String id) async {}
+
+  @override
+  Future<void> cancelAll() async {}
+
+  @override
+  Future<void> rescheduleAll(reminders) async {}
+}
+
 class _Harness {
   _Harness({
     required this.controller,
@@ -270,6 +410,10 @@ class _Harness {
     required this.router,
     required this.executor,
     required this.realtime,
+    required this.sentRealtimeEvents,
+    required this.navigationController,
+    required this.tracking,
+    required this.reminderController,
     required this.attemptsRef,
     required this.disposeAll,
   });
@@ -279,6 +423,10 @@ class _Harness {
   final _RecordingRouter router;
   final _RecordingExecutor executor;
   final RealtimeVoiceService realtime;
+  final List<String> sentRealtimeEvents;
+  final AppNavigationController navigationController;
+  final _RecordingUsageTrackingService tracking;
+  final ReminderController reminderController;
   final Map<String, int> attemptsRef;
   final void Function() disposeAll;
 
@@ -295,6 +443,7 @@ class _Harness {
 
   static Future<_Harness> create(AgentToolIntent intent) async {
     final harnessRef = <String, int>{'attempts': 0};
+    final sentRealtimeEvents = <String>[];
     final realtime = RealtimeVoiceService(
       healthCheckImplementationForTesting: (_) async => RealtimeHealthStatus(
         ok: true,
@@ -304,6 +453,9 @@ class _Harness {
       ),
       connectImplementationForTesting: (_) async {
         harnessRef['attempts'] = (harnessRef['attempts'] ?? 0) + 1;
+      },
+      eventSenderForTesting: (payload) async {
+        sentRealtimeEvents.add(payload);
       },
     );
 
@@ -318,7 +470,7 @@ class _Harness {
     final webSearchService = WebSearchService();
     final reminderController = ReminderController(
       reminderService: ReminderService(),
-      notificationService: NotificationService(),
+      notificationService: _FakeNotificationService(),
     );
     final taskController = TaskController(profile);
     final walletController = WalletController(profile);
@@ -337,10 +489,7 @@ class _Harness {
       mockAiService: MockAiService(),
       companionContentService: companionContentService,
       companionChatService: CompanionChatService(),
-      reminderController: ReminderController(
-        reminderService: ReminderService(),
-        notificationService: NotificationService(),
-      ),
+      reminderController: reminderController,
       useMockChat: true,
     );
     final languageRoutingService = LanguageRoutingService(
@@ -369,6 +518,7 @@ class _Harness {
     );
     final router = _RecordingRouter(intent);
     final executor = _RecordingExecutor();
+    final tracking = _RecordingUsageTrackingService();
     final agent = AgentToolController(
       profileController: profile,
       routerService: router,
@@ -389,6 +539,7 @@ class _Harness {
       memoryController: memoryController,
       navigationService: navigationService,
       navigationController: navigationController,
+      trackingService: tracking,
       agentToolController: agent,
     );
 
@@ -398,6 +549,10 @@ class _Harness {
       router: router,
       executor: executor,
       realtime: realtime,
+      sentRealtimeEvents: sentRealtimeEvents,
+      navigationController: navigationController,
+      tracking: tracking,
+      reminderController: reminderController,
       attemptsRef: harnessRef,
       disposeAll: () {
         controller.dispose();

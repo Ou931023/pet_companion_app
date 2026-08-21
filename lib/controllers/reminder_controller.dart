@@ -79,20 +79,57 @@ class ReminderController extends ChangeNotifier {
   }
 
   bool isCreateReminderCommand(String text) {
-    return text.contains('提醒我') || text.contains('記得提醒');
+    return text.contains('提醒我') ||
+        text.contains('記得提醒') ||
+        text.contains('記得叫我') ||
+        text.contains('叫我') ||
+        text.contains('幫我記得') ||
+        text.contains('幫我設') ||
+        text.contains('設定提醒') ||
+        text.contains('設提醒') ||
+        text.contains('鬧鐘');
   }
 
   bool isListReminderCommand(String text) {
     return text.contains('有哪些提醒') ||
         text.contains('提醒清單') ||
-        text.contains('我的提醒');
+        text.contains('我的提醒') ||
+        text.contains('看提醒') ||
+        text.contains('查提醒') ||
+        text.contains('提醒有哪些');
   }
 
   String listSummary() {
     if (_reminders.isEmpty) return '目前還沒有提醒，你可以跟我說，提醒我晚上八點吃藥。';
     final enabled = _reminders.where((item) => item.enabled).toList();
     if (enabled.isEmpty) return '目前提醒都暫停了，需要時可以再打開。';
-    return '目前有 ${enabled.length} 個提醒：${enabled.map((item) => '${item.repeatLabel}${item.timeLabel}${item.title}').join('、')}。';
+    return '目前有 ${enabled.length} 個提醒：${enabled.map(_summaryFor).join('、')}。';
+  }
+
+  String spokenTimeLabel(Reminder reminder) =>
+      _spokenTime(reminder.hour, reminder.minute);
+
+  String _summaryFor(Reminder reminder) {
+    final repeat = reminder.repeatType == 'none' ? '' : reminder.repeatLabel;
+    return '$repeat${spokenTimeLabel(reminder)}${reminder.title}';
+  }
+
+  String _spokenTime(int hour, int minute) {
+    final period = hour < 6
+        ? '清晨'
+        : hour < 12
+            ? '早上'
+            : hour < 18
+                ? '下午'
+                : '晚上';
+    final displayHour = hour == 0
+        ? 12
+        : hour > 12
+            ? hour - 12
+            : hour;
+    final minuteLabel =
+        minute == 0 ? '' : '${minute.toString().padLeft(2, '0')}分';
+    return '$period$displayHour點$minuteLabel';
   }
 
   Reminder? _parseVoiceReminder(String text) {

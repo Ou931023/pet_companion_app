@@ -23,6 +23,12 @@ void main() {
       expect(runbook, contains('管理者 / 照護者後台 analytics'));
       expect(runbook, contains('Android adaptive icon'));
       expect(runbook, contains('screenshots'));
+      expect(
+        runbook,
+        contains('node scripts/check_caregiver_web_config.js caregiver_web/config.js'),
+      );
+      expect(runbook, contains('app.js?v=20260821-cr0103'));
+      expect(runbook, contains('https://ai-companion-api-rdjv.onrender.com/api'));
       expect(runbook, contains('No-Go'));
     });
 
@@ -56,6 +62,10 @@ void main() {
         contains('docs/BACKEND_DEPLOYMENT_GUIDE.md'),
       );
       expect(
+        _read('docs/BACKEND_DEPLOYMENT_GUIDE.md'),
+        contains('docs/CAREGIVER_OPERATIONS_RUNBOOK.md'),
+      );
+      expect(
         _read('docs/STORE_RELEASE_CHECKLIST.md'),
         contains('docs/FINAL_STORE_BLOCKER_BOARD.md'),
       );
@@ -63,6 +73,29 @@ void main() {
         _read('docs/PRODUCTION_CONFIG_CHECKLIST.md'),
         contains('docs/FINAL_STORE_BLOCKER_BOARD.md'),
       );
+    });
+
+    test('caregiver operations runbook covers analytics handoff and Telegram', () {
+      final runbook = _read('docs/CAREGIVER_OPERATIONS_RUNBOOK.md');
+
+      expect(runbook, contains('Caregiver Operations Runbook'));
+      expect(runbook, contains('POST /api/app-usage/events'));
+      expect(runbook, contains('GET /api/caregiver/analytics'));
+      expect(runbook, contains('app_usage_events'));
+      expect(runbook, contains('resident_caregiver_links'));
+      expect(runbook, contains('照護人員只能以自己的 Firebase 帳號 / ID Token'));
+      expect(runbook, contains('不可以把 `ADMIN_API_TOKEN` 給一般照護人員'));
+      expect(runbook, contains('TELEGRAM_CARE_CHAT_ID'));
+      expect(runbook, contains('TELEGRAM_BOT_TOKEN'));
+      expect(runbook, contains('low` / `medium`'));
+      expect(runbook, contains('high` / `urgent`'));
+      expect(runbook, contains('window.APP_CONFIG'));
+      expect(runbook, contains('Firebase Console'));
+      expect(runbook, contains('Authorized domains'));
+      expect(runbook, contains('check_caregiver_web_config.js'));
+      expect(runbook, contains('CAREGIVER_WEB_API_BASE_URL'));
+      expect(runbook, contains('CR-0104 Per-Caregiver Telegram Routing'));
+      expect(runbook, contains('No-Go'));
     });
 
     test('production gates ignore accidental store-facing debug flags', () {
@@ -213,8 +246,8 @@ void main() {
       final colors = _read('android/app/src/main/res/values/colors.xml');
       final assetChecklist = _read('docs/STORE_ASSET_CHECKLIST.md');
 
-      expect(infoPlist, contains('<string>AI Companion</string>'));
-      expect(androidManifest, contains('android:label="AI Companion"'));
+      expect(infoPlist, contains('<string>AI陪伴</string>'));
+      expect(androidManifest, contains('android:label="AI陪伴"'));
       expect(iosLaunchStoryboard, contains('LaunchImage'));
 
       for (final path in [
@@ -281,7 +314,10 @@ void main() {
       expect(privacy, contains('OpenAI'));
       expect(privacy, contains('不是醫療診斷'));
       expect(terms, contains('不能取代醫師'));
-      expect(support, contains('刪除帳號與資料'));
+      expect(support, contains('帳號與資料刪除申請'));
+      expect(support, contains('AI陪伴帳號刪除申請'));
+      expect(support, contains('使用分析紀錄'));
+      expect(support, contains('不要在信件中提供密碼'));
       expect(
         privacy,
         contains('mailto:aicompanion.support@gmail.com'),

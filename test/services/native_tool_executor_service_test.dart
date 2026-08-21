@@ -443,7 +443,7 @@ class _SpyNavigationController extends AppNavigationController {
   String? lastRoute;
 
   @override
-  void navigateTo(String route) {
+  void navigateTo(String route, {Object? arguments}) {
     lastRoute = route;
   }
 }

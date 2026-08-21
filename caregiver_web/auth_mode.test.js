@@ -167,6 +167,11 @@ test("index.html 提供身分 / 登入 UI 與兩種模式入口", () => {
   assert.ok(indexHtml.includes('id="auth-mode-caregiver"'), "應有照護人員模式選項");
   assert.ok(indexHtml.includes('id="auth-mode-super"'), "應有管理者模式選項");
   assert.ok(indexHtml.includes('id="auth-token-input"'), "應有登入權杖輸入框");
+  assert.ok(indexHtml.includes('id="firebase-login-panel"'), "應有 Firebase 登入區");
+  assert.ok(indexHtml.includes('id="firebase-email"'), "應有照護人員 Email 欄位");
+  assert.ok(indexHtml.includes('id="firebase-password"'), "應有照護人員密碼欄位");
+  assert.ok(indexHtml.includes('id="firebase-email-login"'), "應有 Email 登入按鈕");
+  assert.ok(indexHtml.includes('id="firebase-google-login"'), "應有 Google 登入按鈕");
   assert.ok(indexHtml.includes('id="auth-login"'), "應有登入按鈕");
   assert.ok(indexHtml.includes('id="auth-logout"'), "應有登出按鈕");
   assert.ok(indexHtml.includes("照護人員"), "UI 應標示照護人員身分");
@@ -184,8 +189,23 @@ test("super_admin token 風險與 caregiver 取得方式有清楚說明", () => 
     "應說明 super_admin token 不可給一般照護人員"
   );
   assert.ok(
-    appJs.includes("ID Token") || appJs.includes("session"),
-    "應說明 caregiver 如何取得登入權杖"
+    appJs.includes("Email 或 Google 登入") && appJs.includes("ID Token"),
+    "應說明 caregiver 以 Firebase 登入取得 ID Token"
+  );
+});
+
+test("CR-0103：caregiver_web 內建 Firebase Email / Google login 且未設定時保留備援", () => {
+  assert.ok(appJs.includes("FIREBASE_APP_MODULE_URL"), "應以 Firebase Web SDK 初始化");
+  assert.ok(appJs.includes("firebase-auth.js"), "應載入 Firebase Auth 模組");
+  assert.ok(appJs.includes("function hasFirebaseWebConfig"), "應檢查 Firebase Web config");
+  assert.ok(appJs.includes("signInWithEmailAndPassword"), "應支援 Email 登入");
+  assert.ok(appJs.includes("GoogleAuthProvider"), "應支援 Google 登入");
+  assert.ok(appJs.includes("getIdToken"), "登入成功後應取得 ID Token");
+  assert.ok(appJs.includes("applyFirebaseCaregiverLogin"), "應套用 caregiver scoped login");
+  assert.ok(appJs.includes("signOutFirebaseCaregiver"), "登出應同步 Firebase signOut");
+  assert.ok(
+    appJs.includes("尚未設定 Firebase Web 登入，請暫用登入權杖備援。"),
+    "未設定 Firebase 時應友善保留備援"
   );
 });
 

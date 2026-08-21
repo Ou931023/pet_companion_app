@@ -5,10 +5,11 @@
 //
 // 使用方式（二擇一）：
 //   A. 直接編輯 index.html 內的 window.APP_CONFIG（最簡單）。
-//   B. 複製本檔為 config.js，填入正式位址，並在 index.html 的
-//      <script src="./app.js..."></script> 之前加入：
-//        <script src="./config.js"></script>
+//   B. 複製本檔為 config.js，填入正式位址。index.html 已載入 ./config.js；
 //      部署時只覆蓋 config.js 即可切換環境（config.js 不應進版控）。
+//   C. Render / Static Site 部署時執行：
+//      node caregiver_web/build_config_from_env.js
+//      由 CAREGIVER_WEB_* 環境變數產生 config.js。
 //
 // 解析順序（app.js getApiBase）：
 //   1. 使用者在頁面「連線設定」手動輸入（localStorage，dev / 區網用）。
@@ -20,17 +21,27 @@
 //   - 留 null 代表使用同源相對路徑 "/api"。
 //   - 請勿把 localhost / 127.0.0.1 當成正式預設；本機開發位址只在 dev 設定。
 //
-// 身分 / 登入（CR-0042，見 docs/CAREGIVER_WEB_AUTH.md）：
-//   - 本檔「不放任何 token」。super_admin（ADMIN_API_TOKEN）與 caregiver
-//     （Firebase ID Token / caregiver session 權杖）一律在頁面頂部「身分與登入」列
-//     手動輸入，存在本機瀏覽器 localStorage（caregiver 與 admin token 使用不同 key）。
-//   - 正式環境請勿把 super_admin token 發給一般照護人員；照護人員應以自己的
-//     caregiver 權杖登入，後端會自動套住民範圍。
+// 身分 / 登入（CR-0103，見 docs/CAREGIVER_WEB_AUTH.md）：
+//   - 本檔「不放任何 token」。super_admin（ADMIN_API_TOKEN）仍在頁面頂部「管理者」
+//     模式手動輸入，且不可提供給一般照護人員。
+//   - 照護人員正式登入請設定 firebase web config。頁面會用 Firebase Email / Google
+//     登入取得 ID Token，再以 caregiver 模式呼叫後端，後端自動套住民範圍。
+//   - Firebase web config 的 apiKey 是前端識別設定，不是後端 service account 私鑰；
+//     請勿把 Firebase Admin private key / service account JSON 放在這裡。
 
 window.APP_CONFIG = {
   // 正式部署：改成後端正式 API 位址，例如 "https://api.your-domain.com/api"。
   // 留 null：使用同源相對路徑 "/api"。
   apiBaseUrl: null,
+
+  // Firebase Web Auth 設定。正式部署時請填 Firebase Console 的 Web app config。
+  // 未設定或留 null 時，頁面會停用 Firebase 登入按鈕，保留手動權杖 fallback 給管理者協助測試。
+  firebase: {
+    apiKey: null,
+    authDomain: null,
+    projectId: null,
+    appId: null,
+  },
 
   // 功能旗標（CR-0056）：控制管理端分頁是否顯示。
   //

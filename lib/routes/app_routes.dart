@@ -32,3 +32,15 @@ class ConversationDetailArgs {
   final String sessionId;
   final String title;
 }
+
+class DailyCareTaskRouteArgs {
+  const DailyCareTaskRouteArgs({
+    required this.launchedFromVoice,
+    this.requestedTaskType,
+    this.requestedTaskLabel,
+  });
+
+  final bool launchedFromVoice;
+  final String? requestedTaskType;
+  final String? requestedTaskLabel;
+}

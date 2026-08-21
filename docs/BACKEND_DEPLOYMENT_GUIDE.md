@@ -229,6 +229,11 @@ flutter build appbundle --release \
 
 ### 8.2 管理者 / 照護者數據驗收
 
+照護者交付、App 行為數據與 Telegram 正式維運請同步依
+`docs/CAREGIVER_OPERATIONS_RUNBOOK.md` 執行。該文件是 production 後台交付的單一
+runbook：涵蓋 `app_usage_events` 真實數據、照護人員開通 / 授權指派、Telegram Bot
+配置、smoke 驗收與 No-Go 條件。
+
 部署完成後，必跑以下 smoke：
 
 1. App 用 production build 開啟一次，確認後端收到 app/session usage event。

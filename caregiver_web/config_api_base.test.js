@@ -17,6 +17,14 @@ const configExample = fs.readFileSync(
   path.join(__dirname, "config.example.js"),
   "utf8"
 );
+const configGuard = fs.readFileSync(
+  path.join(__dirname, "..", "scripts", "check_caregiver_web_config.js"),
+  "utf8"
+);
+const configBuilder = fs.readFileSync(
+  path.join(__dirname, "build_config_from_env.js"),
+  "utf8"
+);
 
 test("DEFAULT_API_BASE 不是 localhost / 127.0.0.1（無 localhost 正式預設）", () => {
   const match = appJs.match(/var\s+DEFAULT_API_BASE\s*=\s*"([^"]*)"/);
@@ -67,6 +75,19 @@ test("index.html 提供 APP_CONFIG 注入點，且不以 localhost 為正式預�
     baseMatch[1] === "null" || /^https:\/\//.test(baseValue),
     "正式預設 apiBaseUrl 應為 null 或 https 後端 URL"
   );
+  assert.equal(
+    baseValue,
+    "https://ai-companion-api-rdjv.onrender.com/api",
+    "caregiver_web 正式預設應指向目前 production 後端"
+  );
+  assert.ok(
+    indexHtml.includes('<script src="./config.js"></script>'),
+    "index.html 應先載入 deploy-time config.js"
+  );
+  assert.ok(
+    indexHtml.includes("20260821-cr0103"),
+    "app.js cache bust 應更新，避免 Render/瀏覽器吃舊版"
+  );
 });
 
 test("config.example.js 提供部署設定範本（apiBaseUrl）", () => {
@@ -77,5 +98,64 @@ test("config.example.js 提供部署設定範本（apiBaseUrl）", () => {
   assert.ok(
     configExample.includes("apiBaseUrl"),
     "config.example.js 應包含 apiBaseUrl 欄位"
+  );
+});
+
+test("config.example.js 提供 Firebase Web login 設定範本且不放後端私鑰", () => {
+  assert.ok(configExample.includes("firebase"), "應包含 firebase 設定區");
+  for (const key of ["apiKey", "authDomain", "projectId", "appId"]) {
+    assert.ok(configExample.includes(key), `應列出 Firebase Web config 欄位 ${key}`);
+  }
+  assert.ok(
+    configExample.includes("不是後端 service account 私鑰"),
+    "應說明 Firebase web apiKey 不是 service account 私鑰"
+  );
+  assert.ok(
+    !/private_key"\s*:/.test(configExample) &&
+      !/client_email"\s*:/.test(configExample),
+    "範本不可放 Firebase Admin service account 欄位"
+  );
+});
+
+test("CR-0103：提供 caregiver_web production config 自動檢查腳本", () => {
+  assert.ok(
+    configGuard.includes("check_caregiver_web_config"),
+    "應提供 caregiver_web config 檢查腳本"
+  );
+  assert.ok(
+    configGuard.includes("caregiver_web/config.js"),
+    "檢查腳本預設應指向 caregiver_web/config.js"
+  );
+  assert.ok(
+    configGuard.includes("apiBaseUrl") &&
+      configGuard.includes("firebase") &&
+      configGuard.includes("featureFlags"),
+    "檢查腳本應驗證 API、Firebase 與 feature flags"
+  );
+  assert.ok(
+    configGuard.includes("private_key") &&
+      configGuard.includes("ADMIN_API_TOKEN") &&
+      configGuard.includes("Bearer"),
+    "檢查腳本應阻擋後端 secret / token"
+  );
+});
+
+test("CR-0103：Render build 可由 env 產生 caregiver_web/config.js", () => {
+  assert.ok(
+    configBuilder.includes("CAREGIVER_WEB_API_BASE_URL") &&
+      configBuilder.includes("CAREGIVER_WEB_FIREBASE_API_KEY") &&
+      configBuilder.includes("CAREGIVER_WEB_FIREBASE_AUTH_DOMAIN") &&
+      configBuilder.includes("CAREGIVER_WEB_FIREBASE_PROJECT_ID") &&
+      configBuilder.includes("CAREGIVER_WEB_FIREBASE_APP_ID"),
+    "config builder 應使用 caregiver_web 專用環境變數"
+  );
+  assert.ok(
+    configBuilder.includes("ai-companion-api-rdjv.onrender.com/api"),
+    "config builder fallback 應指向新 production 後端"
+  );
+  assert.ok(
+    configBuilder.includes("CAREGIVER_WEB_MARKETPLACE_ENABLED") &&
+      configBuilder.includes("CAREGIVER_WEB_DAILY_CARE_TASKS_ENABLED"),
+    "config builder 應明確處理 production feature flags"
   );
 });

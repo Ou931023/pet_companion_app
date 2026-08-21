@@ -42,8 +42,7 @@ void main() {
     }
   });
 
-  test('導覽涵蓋 寵物 / 說話 / 狀態 / 親密度 / 飽足 / 金幣 / 商城 / 紀錄 / 設定 / 聯絡',
-      () {
+  test('導覽涵蓋 寵物 / 說話 / 狀態 / 親密度 / 飽足 / 金幣 / 商城 / 紀錄 / 設定 / 聯絡', () {
     final steps = buildHomeCoachMarkSteps(CoachMarkKeys());
     final joined = steps.map((s) => s.text).join('\n');
     for (final keyword in [
@@ -72,14 +71,21 @@ void main() {
     expect(steps.last.shellTabIndex, 0, reason: '最後一步切回首頁');
   });
 
-  test('Step 8 高亮每日簽到 icon、Step 9 高亮金幣區（index 7 / 8）', () {
+  test('Step 8/9 高亮更多功能，說明簽到、金幣與次要入口（index 7 / 8）', () {
     final keys = CoachMarkKeys();
     final steps = buildHomeCoachMarkSteps(keys);
-    expect(steps[7].targetKey, keys.dailyCheckInKey);
-    expect(steps[8].targetKey, keys.coinKey);
+    expect(steps[7].targetKey, keys.moreButtonKey);
+    expect(steps[7].text, contains('更多功能'));
+    expect(steps[7].text, contains('每日簽到'));
+    expect(steps[7].text, contains('提醒'));
+    expect(steps[7].text, contains('背包'));
+    expect(steps[8].targetKey, keys.moreButtonKey);
+    expect(steps[8].text, contains('金幣'));
+    expect(steps[8].text, contains('寵物外觀'));
   });
 
-  test('CR-0092 跨頁：商城(idx9,tab1) / 紀錄(idx10,tab2) / 搜尋(idx11,tab2) 切到該頁高亮頁內目標', () {
+  test('CR-0092 跨頁：商城(idx9,tab1) / 紀錄(idx10,tab2) / 搜尋(idx11,tab2) 切到該頁高亮頁內目標',
+      () {
     final keys = CoachMarkKeys();
     final steps = buildHomeCoachMarkSteps(keys);
     expect(steps[9].targetKey, keys.shopKey);
@@ -92,7 +98,8 @@ void main() {
     expect(steps[9].rectTransform, isNull);
   });
 
-  test('CR-0092 跨頁設定段：換造型(idx12) / 聯絡人(idx13) / 重看導覽(idx14) 皆 shellTabIndex=3', () {
+  test('CR-0092 跨頁設定段：換造型(idx12) / 聯絡人(idx13) / 重看導覽(idx14) 皆 shellTabIndex=3',
+      () {
     final keys = CoachMarkKeys();
     final steps = buildHomeCoachMarkSteps(keys);
     expect(steps[12].targetKey, keys.settingsAppearanceKey);
@@ -116,6 +123,7 @@ void main() {
       keys.petKey,
       keys.voiceButtonKey,
       keys.statusKey,
+      keys.moreButtonKey,
       keys.reminderKey,
       keys.navBarKey,
       keys.dailyCheckInKey,

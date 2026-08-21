@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../config/app_config.dart';
 import '../controllers/check_in_controller.dart';
 import '../controllers/inventory_controller.dart';
@@ -9,8 +11,10 @@ import '../controllers/wallet_controller.dart';
 import '../models/ai_tool_result.dart';
 import '../models/language_route.dart';
 import '../models/pet_status.dart';
+import '../models/reminder.dart';
 import 'companion_chat_service.dart';
 import 'companion_content_service.dart';
+import 'app_usage_tracking_service.dart';
 import 'mock_ai_service.dart';
 import 'shop_service.dart';
 import 'web_search_service.dart';
@@ -29,6 +33,7 @@ class AiToolRouter {
     required this.companionContentService,
     required this.companionChatService,
     required this.reminderController,
+    this.trackingService,
     bool? useMockChat,
   }) : useMockChat = useMockChat ?? AppConfig.mockServicesEnabled;
 
@@ -52,6 +57,7 @@ class AiToolRouter {
 
   /// 提醒建立 / 查詢來源（B4：route() 提醒分支用）。
   final ReminderController reminderController;
+  final AppUsageTrackingService? trackingService;
 
   /// 聊天回覆是否走 mock：dev/test 走 [mockAiService]，production 走
   /// [companionChatService]。預設取 [AppConfig.mockServicesEnabled]，
@@ -64,6 +70,9 @@ class AiToolRouter {
     List<Map<String, String>> history = const [],
   }) async {
     final normalized = _toTraditional(userText.trim());
+    if (_isCapabilityHelpRequest(normalized)) {
+      return _capabilityHelp();
+    }
     // B4：提醒指令在 router 層接住並實際建立提醒。回 shouldSpeak:false → Realtime
     // 不念罐頭、交由寵物語音自然回應；typed 路徑在 conversation_controller 先 return，
     // 不會走到此分支，故零重複建立。
@@ -112,7 +121,10 @@ class AiToolRouter {
 
   bool shouldHandleLocally(String text) {
     final normalized = _toTraditional(text.trim());
-    return _isVoiceLanguageSwitch(normalized) ||
+    return _isCapabilityHelpRequest(normalized) ||
+        reminderController.isCreateReminderCommand(normalized) ||
+        reminderController.isListReminderCommand(normalized) ||
+        _isVoiceLanguageSwitch(normalized) ||
         _isConcernReminderToggle(normalized) ||
         _isDailyCheckIn(normalized) ||
         _isBuyRequest(normalized) ||
@@ -128,16 +140,64 @@ class AiToolRouter {
   // users; normalize the chars used by our intent matchers so detection works
   // regardless of script. This is a targeted map, not a full S→T converter.
   static const Map<String, String> _s2tMap = {
-    '签': '簽', '帮': '幫', '买': '買', '购': '購', '场': '場', '声': '聲',
-    '乐': '樂', '设': '設', '记': '記', '欢': '歡', '务': '務', '历': '歷',
-    '览': '覽', '号': '號', '医': '醫', '体': '體',
-    '关': '關', '开': '開', '点': '點', '钟': '鐘', '币': '幣', '宠': '寵',
-    '态': '態', '说': '說', '话': '話', '让': '讓', '听': '聽', '问': '問',
-    '现': '現', '钱': '錢', '钢': '鋼', '银': '銀', '门': '門', '区': '區',
-    '动': '動', '运': '運', '总': '總', '远': '遠', '过': '過', '应': '應',
-    '处': '處', '会': '會', '后': '後', '从': '從', '们': '們', '为': '為',
-        '东': '東', '车': '車', '电': '電', '简': '簡',
-        '语': '語', '换': '換', '观': '觀', '导': '導',
+    '签': '簽',
+    '帮': '幫',
+    '买': '買',
+    '购': '購',
+    '场': '場',
+    '声': '聲',
+    '乐': '樂',
+    '设': '設',
+    '记': '記',
+    '欢': '歡',
+    '务': '務',
+    '历': '歷',
+    '览': '覽',
+    '号': '號',
+    '医': '醫',
+    '体': '體',
+    '关': '關',
+    '开': '開',
+    '点': '點',
+    '钟': '鐘',
+    '币': '幣',
+    '宠': '寵',
+    '态': '態',
+    '说': '說',
+    '话': '話',
+    '让': '讓',
+    '听': '聽',
+    '问': '問',
+    '现': '現',
+    '钱': '錢',
+    '钢': '鋼',
+    '银': '銀',
+    '门': '門',
+    '区': '區',
+    '动': '動',
+    '运': '運',
+    '总': '總',
+    '远': '遠',
+    '过': '過',
+    '应': '應',
+    '处': '處',
+    '会': '會',
+    '后': '後',
+    '从': '從',
+    '们': '們',
+    '为': '為',
+    '东': '東',
+    '车': '車',
+    '电': '電',
+    '简': '簡',
+    '语': '語',
+    '换': '換',
+    '观': '觀',
+    '导': '導',
+    '么': '麼',
+    '饭': '飯',
+    '饱': '飽',
+    '报': '報',
   };
 
   static String _toTraditional(String input) {
@@ -161,16 +221,47 @@ class AiToolRouter {
     return phoneticMisreads.any(text.contains);
   }
 
+  bool _isCapabilityHelpRequest(String text) {
+    final asksAbility = text.contains('你會做什麼') ||
+        text.contains('你可以做什麼') ||
+        text.contains('你會幫我什麼') ||
+        text.contains('你可以幫我什麼') ||
+        text.contains('你會啥物') ||
+        text.contains('會做啥物') ||
+        text.contains('會當做啥物') ||
+        text.contains('有什麼功能') ||
+        text.contains('功能有哪些');
+    final asksHowToUse = text.contains('我可以說什麼') ||
+        text.contains('我要怎麼說') ||
+        text.contains('怎麼用') ||
+        text.contains('不會用') ||
+        text.contains('教我用') ||
+        text.contains('怎麼跟你說');
+    return asksAbility || asksHowToUse;
+  }
+
+  AiToolResult _capabilityHelp() {
+    return const AiToolResult(
+      toolName: 'capabilityHelp',
+      success: true,
+      message: '你可以直接跟我說：提醒我晚上八點吃藥、我今天心情不好、想聽放鬆音樂，或問我健康、防詐、地方新聞。',
+      petMode: PetMode.listening,
+      shouldSpeak: true,
+    );
+  }
+
   /// CR-0101：語音切換台語 / 中文語音模式。
   bool _isVoiceLanguageSwitch(String text) {
     return text.contains('台語') ||
         (text.contains('中文') &&
-            (text.contains('改') || text.contains('用') || text.contains('切換') || text.contains('說')));
+            (text.contains('改') ||
+                text.contains('用') ||
+                text.contains('切換') ||
+                text.contains('說')));
   }
 
   bool _isConcernReminderToggle(String text) {
-    return text.contains('關心提醒') ||
-        (text.contains('關心') && text.contains('我'));
+    return text.contains('關心提醒') || (text.contains('關心') && text.contains('我'));
   }
 
   bool _isBuyRequest(String text) {
@@ -232,11 +323,7 @@ class AiToolRouter {
       text.contains('任務清單') ||
       text.contains('還有什麼任務');
 
-  bool _isCompleteTask(String text) =>
-      text.contains('我喝水了') ||
-      text.contains('我吃飯了') ||
-      text.contains('我休息了') ||
-      text.contains('我完成任務');
+  bool _isCompleteTask(String text) => _taskCompletionIds(text).isNotEmpty;
 
   Future<AiToolResult> _dailyCheckIn() async {
     if (checkInController.hasCheckedInToday) {
@@ -294,9 +381,7 @@ class AiToolRouter {
     return AiToolResult(
       toolName: 'setVoiceLanguage',
       success: true,
-      message: isTaigi
-          ? '好，我之後會用台語陪你說話。'
-          : '好，我之後會用中文陪你說話。',
+      message: isTaigi ? '好，我之後會用台語陪你說話。' : '好，我之後會用中文陪你說話。',
       petMode: PetMode.happy,
       shouldSpeak: true,
     );
@@ -304,7 +389,8 @@ class AiToolRouter {
 
   /// CR-0101：語音開關寵物關心提醒。
   Future<AiToolResult> _setConcernReminder(String text) async {
-    final enable = !text.contains('關掉') && !text.contains('關閉') && !text.contains('不要');
+    final enable =
+        !text.contains('關掉') && !text.contains('關閉') && !text.contains('不要');
     await profileController.setConcernRemindersEnabled(enable);
     return AiToolResult(
       toolName: 'setConcernReminder',
@@ -381,6 +467,7 @@ class AiToolRouter {
 
     if (_requestsTtsOff(text)) {
       await profileController.setTtsEnabled(false);
+      _trackSettingChanged('tts_enabled', false);
       return const AiToolResult(
         toolName: 'changeSettings',
         success: true,
@@ -391,6 +478,7 @@ class AiToolRouter {
     }
     if (_requestsTtsOn(text)) {
       await profileController.setTtsEnabled(true);
+      _trackSettingChanged('tts_enabled', true);
       return const AiToolResult(
         toolName: 'changeSettings',
         success: true,
@@ -404,6 +492,7 @@ class AiToolRouter {
     if (volume != null) {
       await profileController.setPetVolume(volume);
       final percent = (profileController.petVolume * 100).round();
+      _trackSettingChanged('pet_volume', percent);
       return AiToolResult(
         toolName: 'changeSettings',
         success: true,
@@ -416,6 +505,11 @@ class AiToolRouter {
     final fontScale = _fontScaleFromText(text);
     if (fontScale != null) {
       await profileController.setFontScale(fontScale);
+      _trackSettingChanged(
+        'font_scale',
+        profileController.fontScale,
+        eventType: 'font_size_changed',
+      );
       return AiToolResult(
         toolName: 'changeSettings',
         success: true,
@@ -428,6 +522,7 @@ class AiToolRouter {
     final speechStyle = _speechStyleFromText(text);
     if (speechStyle != null) {
       await profileController.setSpeechStyle(speechStyle);
+      _trackSettingChanged('speech_style', profileController.speechStyle);
       return AiToolResult(
         toolName: 'changeSettings',
         success: true,
@@ -442,6 +537,7 @@ class AiToolRouter {
     if (preference != null) {
       final enabled = !text.contains('不要') && !text.contains('不想');
       await profileController.setContentPreference(preference.key, enabled);
+      _trackSettingChanged('content_${preference.key}', enabled);
       return AiToolResult(
         toolName: 'changeSettings',
         success: true,
@@ -459,6 +555,24 @@ class AiToolRouter {
       message: '這個設定我還不太確定怎麼調，你可以試試「聲音關掉」、「音量調大」或「文字調大」。',
       petMode: PetMode.listening,
       shouldSpeak: true,
+    );
+  }
+
+  void _trackSettingChanged(
+    String setting,
+    Object value, {
+    String eventType = 'settings_changed',
+  }) {
+    unawaited(
+      trackingService?.track(
+            eventType,
+            metadata: {
+              'setting': setting,
+              'value': value,
+              'source': 'ai_tool_router',
+            },
+          ) ??
+          Future<bool>.value(false),
     );
   }
 
@@ -538,16 +652,19 @@ class AiToolRouter {
   }
 
   Future<AiToolResult> _completeCareTask(String text) async {
-    String taskId = 'moodReport';
-    if (text.contains('喝水')) taskId = 'drinkWater';
-    if (text.contains('吃飯')) taskId = 'eatMeal';
-    if (text.contains('休息')) taskId = 'restReminder';
-    final completed = await taskController.completeTaskById(taskId);
-    if (!completed) {
+    final taskIds = _taskCompletionIds(text);
+    final completedLabels = <String>[];
+    for (final taskId in taskIds) {
+      final completed = await taskController.completeTaskById(taskId);
+      if (completed) {
+        completedLabels.add(_taskLabel(taskId));
+      }
+    }
+    if (completedLabels.isEmpty) {
       return AiToolResult(
         toolName: 'completeCareTask',
         success: true,
-        message: '這個任務今天已經完成囉，${profileController.petName} 幫你記住了。',
+        message: '這些任務今天已經完成囉，${profileController.petName} 幫你記住了。',
         petMode: PetMode.happy,
         shouldSpeak: true,
       );
@@ -555,43 +672,85 @@ class AiToolRouter {
     return AiToolResult(
       toolName: 'completeCareTask',
       success: true,
-      message: '太好了，已幫你更新任務進度，金幣與親密度都增加了，${profileController.petName} 為你加油！',
+      message:
+          '太好了，已幫你完成${completedLabels.join('、')}，金幣與親密度都增加了，${profileController.petName} 為你加油！',
       petMode: PetMode.excited,
       shouldSpeak: true,
     );
   }
 
-  // B4：建立提醒。沿用 conversation_controller (~850) 的白話文案；shouldSpeak:false
-  // 讓 Realtime 不念罐頭、交給寵物語音自然回應。
+  List<String> _taskCompletionIds(String text) {
+    if (text.contains('吃藥') || text.contains('散步') || text.contains('拍照')) {
+      return const [];
+    }
+    final ids = <String>[];
+    if (_containsAny(text, const ['喝水', '飲水', '水喝了'])) {
+      ids.add('drinkWater');
+    }
+    if (_containsAny(text, const ['吃飯', '用餐', '食飽', '吃飽', '飯吃了'])) {
+      ids.add('eatMeal');
+    }
+    if (_containsAny(text, const ['休息', '睡一下', '躺一下', '睏一下'])) {
+      ids.add('restReminder');
+    }
+    if (_containsAny(text, const ['心情回報', '心情記錄', '心情說了', '回報心情'])) {
+      ids.add('moodReport');
+    }
+    if (_containsAny(text, const ['完成任務', '任務做完', '任務都做完', '全部任務'])) {
+      return const ['drinkWater', 'eatMeal', 'moodReport', 'restReminder'];
+    }
+    return ids;
+  }
+
+  bool _containsAny(String text, List<String> keywords) =>
+      keywords.any(text.contains);
+
+  String _taskLabel(String taskId) {
+    return switch (taskId) {
+      'drinkWater' => '喝水任務',
+      'eatMeal' => '吃飯任務',
+      'moodReport' => '心情回報',
+      'restReminder' => '休息提醒',
+      _ => '任務',
+    };
+  }
+
+  // B4：建立提醒。Realtime 語音路徑需要把「真實建立結果」念給長者聽，
+  // 避免只由模型泛泛回覆、長者不知道提醒是否真的建立。
   Future<AiToolResult> _createReminder(String text) async {
     final reminder = await reminderController.createFromVoice(text);
     if (reminder == null) {
       return const AiToolResult(
         toolName: 'createReminder',
         success: false,
-        message: '我還沒聽清楚提醒時間，可以說「提醒我晚上八點吃藥」。',
+        message: '我還沒聽清楚要什麼時候提醒你，可以說「提醒我晚上八點吃藥」。',
         petMode: PetMode.listening,
-        shouldSpeak: false,
+        shouldSpeak: true,
       );
     }
     return AiToolResult(
       toolName: 'createReminder',
       success: true,
-      message:
-          '好，我會在${reminder.repeatLabel}${reminder.timeLabel}提醒你${reminder.title}。',
+      message: '好，我會在${_reminderWhenLabel(reminder)}提醒你${reminder.title}。',
       petMode: PetMode.happy,
-      shouldSpeak: false,
+      shouldSpeak: true,
     );
   }
 
-  // B4：唸出提醒清單摘要。同樣 shouldSpeak:false，交由 Realtime 自然回應。
+  String _reminderWhenLabel(Reminder reminder) {
+    final repeat = reminder.repeatType == 'none' ? '' : reminder.repeatLabel;
+    return '$repeat${reminderController.spokenTimeLabel(reminder)}';
+  }
+
+  // B4：唸出提醒清單摘要。這必須由真實 reminderController 提供，不能讓
+  // Realtime 模型自己猜清單。
   AiToolResult _listReminders() {
     return AiToolResult(
       toolName: 'listReminders',
       success: true,
       message: reminderController.listSummary(),
       petMode: PetMode.listening,
-      shouldSpeak: false,
+      shouldSpeak: true,
     );
   }
 

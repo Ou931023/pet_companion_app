@@ -56,16 +56,26 @@ test("空狀態 / 401 / 403 友善提示（不顯示工程字串）", () => {
 test("分析頁會渲染真實 usageStats，不只顯示 Care Alert 與任務", () => {
   assert.ok(appJs.includes("App 使用狀況"), "應有 App 使用狀況區塊");
   assert.ok(appJs.includes("voiceInteractions"), "應顯示語音互動數");
+  assert.ok(appJs.includes("voiceNavigations"), "應顯示語音導覽數");
   assert.ok(appJs.includes("typedChats"), "應顯示打字訊息數");
   assert.ok(appJs.includes("petInteractions"), "應顯示寵物互動數");
   assert.ok(appJs.includes("remindersCreated"), "應顯示提醒建立數");
   assert.ok(appJs.includes("puzzleCompletions"), "應顯示拼圖完成數");
+  assert.ok(appJs.includes("settingsChanges"), "應顯示設定調整數");
   assert.ok(appJs.includes("usageStats"), "應讀取後端 usageStats");
+});
+
+test("寵物照護狀態會顯示寵物類型、視覺風格與成長階段偏好", () => {
+  assert.ok(appJs.includes("petTypeLabel"), "應將寵物類型轉成中文");
+  assert.ok(appJs.includes("petVisualStyleLabel"), "應將 visualStyle 轉成中文");
+  assert.ok(appJs.includes("petGrowthStageLabel"), "應將 growthStage 轉成中文");
+  assert.ok(appJs.includes("寵物類型"), "應顯示寵物類型");
+  assert.ok(appJs.includes("視覺風格"), "應顯示視覺風格");
+  assert.ok(appJs.includes("成長階段"), "應顯示成長階段");
 });
 
 test("不捏造：前端不出現工程 / 敏感字樣", () => {
   const banned = [
-    "password",
     "password_hash",
     "provider_user_id",
     "access_token",

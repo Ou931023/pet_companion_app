@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pet_companion_app/models/pet_skin.dart';
 import 'package:pet_companion_app/models/pet_status.dart';
+import 'package:pet_companion_app/models/pet_visual_profile.dart';
 import 'package:pet_companion_app/utils/asset_paths.dart';
 
 void main() {
@@ -37,6 +40,104 @@ void main() {
   });
 
   group('AssetPaths 依 skin 產生路徑', () {
+    test('productionProfiles 宣告現有可上線素材組合', () {
+      expect(AssetPaths.productionProfiles.length, PetSkin.values.length + 1);
+      expect(
+        AssetPaths.productionProfiles
+            .map((profile) => (
+                  skin: profile.skin,
+                  visualStyle: profile.visualStyle,
+                  growthStage: profile.growthStage,
+                ))
+            .toSet(),
+        {
+          for (final skin in PetSkin.values)
+            (
+              skin: skin,
+              visualStyle: PetVisualStyle.cute,
+              growthStage: PetGrowthStage.adult,
+            ),
+          (
+            skin: PetSkin.dog,
+            visualStyle: PetVisualStyle.realistic,
+            growthStage: PetGrowthStage.adult,
+          ),
+        },
+      );
+      for (final profile in AssetPaths.productionProfiles) {
+        expect(profile.growthStage, PetGrowthStage.adult);
+        expect(profile.isProductionReady, isTrue);
+        expect(profile.talkFrameCount, greaterThan(0));
+        expect(profile.restFrameCount, greaterThan(0));
+      }
+    });
+
+    test('visualProfile 可輸出後台 tracking 需要的偏好欄位', () {
+      final metadata =
+          AssetPaths.visualProfile(PetSkin.fox).toTrackingMetadata();
+
+      expect(metadata['petType'], 'fox');
+      expect(metadata['visualStyle'], 'cute');
+      expect(metadata['growthStage'], 'adult');
+      expect(metadata['talkFrameCount'], 6);
+      expect(metadata['restFrameCount'], 3);
+    });
+
+    test('productionProfiles 內所有 talk/rest/listening/state 圖檔都存在', () {
+      final modes = <PetMode>{
+        PetMode.normal,
+        PetMode.thinking,
+        PetMode.caring,
+        PetMode.concerned,
+        PetMode.happy,
+        PetMode.smile,
+        PetMode.excited,
+        PetMode.thirsty,
+        PetMode.sleepy,
+        PetMode.hungry,
+        PetMode.sad,
+      };
+      final paths = <String>{};
+
+      for (final profile in AssetPaths.productionProfiles) {
+        paths.addAll(
+          AssetPaths.talkingFramesForStyle(
+            profile.skin,
+            visualStyle: profile.visualStyle,
+            growthStage: profile.growthStage,
+          ),
+        );
+        paths.addAll(
+          AssetPaths.restFramesForStyle(
+            profile.skin,
+            visualStyle: profile.visualStyle,
+            growthStage: profile.growthStage,
+          ),
+        );
+        paths.add(
+          AssetPaths.listeningForStyle(
+            profile.skin,
+            visualStyle: profile.visualStyle,
+            growthStage: profile.growthStage,
+          ),
+        );
+        for (final mode in modes) {
+          paths.add(
+            AssetPaths.stateImageForStyle(
+              profile.skin,
+              mode,
+              visualStyle: profile.visualStyle,
+              growthStage: profile.growthStage,
+            ),
+          );
+        }
+      }
+
+      for (final path in paths) {
+        expect(File(path).existsSync(), isTrue, reason: path);
+      }
+    });
+
     test('dog：talk 6 / rest 3 / states 原檔名', () {
       expect(AssetPaths.talkingFrames(PetSkin.dog), [
         'assets/pets/talk/dog_talk_01.png',
@@ -83,6 +184,145 @@ void main() {
           'assets/pets/states/fox_caring.png');
       expect(AssetPaths.stateImage(PetSkin.fox, PetMode.smile),
           'assets/pets/states/fox_happy.png');
+    });
+
+    test('v2 resolver：dog realistic adult 已有完整八個透明 state', () {
+      expect(
+        AssetPaths.availableVisualStyles(PetSkin.dog),
+        [PetVisualStyle.cute, PetVisualStyle.realistic],
+      );
+      expect(
+        AssetPaths.stateImageForStyle(
+          PetSkin.dog,
+          PetMode.normal,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        'assets/pets/v2/realistic/adult/dog/states/normal.png',
+      );
+      expect(
+        AssetPaths.stateImageForStyle(
+          PetSkin.dog,
+          PetMode.happy,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        'assets/pets/v2/realistic/adult/dog/states/happy.png',
+      );
+      expect(
+        AssetPaths.stateImageForStyle(
+          PetSkin.dog,
+          PetMode.caring,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        'assets/pets/v2/realistic/adult/dog/states/caring.png',
+      );
+      expect(
+        AssetPaths.stateImageForStyle(
+          PetSkin.dog,
+          PetMode.sad,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        'assets/pets/v2/realistic/adult/dog/states/sad.png',
+      );
+      expect(
+        AssetPaths.stateImageForStyle(
+          PetSkin.dog,
+          PetMode.excited,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        'assets/pets/v2/realistic/adult/dog/states/excited.png',
+      );
+      expect(
+        AssetPaths.stateImageForStyle(
+          PetSkin.dog,
+          PetMode.hungry,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        'assets/pets/v2/realistic/adult/dog/states/hungry.png',
+      );
+      expect(
+        AssetPaths.stateImageForStyle(
+          PetSkin.dog,
+          PetMode.thirsty,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        'assets/pets/v2/realistic/adult/dog/states/thirsty.png',
+      );
+      expect(
+        AssetPaths.stateImageForStyle(
+          PetSkin.dog,
+          PetMode.sleepy,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        'assets/pets/v2/realistic/adult/dog/states/sleepy.png',
+      );
+      expect(
+        AssetPaths.listeningForStyle(
+          PetSkin.dog,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        'assets/pets/v2/realistic/adult/dog/listening/listening.png',
+      );
+      expect(
+        AssetPaths.restFramesForStyle(
+          PetSkin.dog,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        [
+          'assets/pets/v2/realistic/adult/dog/rest/rest_01.png',
+          'assets/pets/v2/realistic/adult/dog/rest/rest_02.png',
+          'assets/pets/v2/realistic/adult/dog/rest/rest_03.png',
+        ],
+      );
+      expect(
+        AssetPaths.talkingFramesForStyle(
+          PetSkin.dog,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        [
+          'assets/pets/v2/realistic/adult/dog/talk/talk_01.png',
+          'assets/pets/v2/realistic/adult/dog/talk/talk_02.png',
+          'assets/pets/v2/realistic/adult/dog/talk/talk_03.png',
+          'assets/pets/v2/realistic/adult/dog/talk/talk_04.png',
+          'assets/pets/v2/realistic/adult/dog/talk/talk_05.png',
+          'assets/pets/v2/realistic/adult/dog/talk/talk_06.png',
+        ],
+      );
+    });
+
+    test('v2 resolver：非 dog realistic 時回 v1，不顯示破圖', () {
+      expect(
+        AssetPaths.stateImageForStyle(
+          PetSkin.fox,
+          PetMode.happy,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        'assets/pets/states/fox_happy.png',
+      );
+      expect(
+        AssetPaths.availableVisualStyles(PetSkin.fox),
+        [PetVisualStyle.cute],
+      );
+      expect(
+        AssetPaths.listeningForStyle(
+          PetSkin.fox,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        'assets/pets/listening/fox_listening.png',
+      );
+      expect(
+        AssetPaths.restFramesForStyle(
+          PetSkin.fox,
+          visualStyle: PetVisualStyle.realistic,
+        ).first,
+        'assets/pets/rest/fox_rest_01.png',
+      );
+      expect(
+        AssetPaths.talkingFramesForStyle(
+          PetSkin.fox,
+          visualStyle: PetVisualStyle.realistic,
+        ).first,
+        'assets/pets/talk/fox_talk_01.png',
+      );
     });
 
     test('保底圖與第一層 fallback', () {

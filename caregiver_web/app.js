@@ -1,6 +1,6 @@
 // 長照照護管理後台前端邏輯。
-// 只讀取後端已保存的 Care Alert，不做登入 / 權限 / 標記已處理。
-// 全部資料來自後端 API，沒有任何假資料。
+// 讀取後端已保存的 Care Alert / analytics，並以 Firebase caregiver login
+// 或 super_admin token 帶 Authorization header。全部資料來自後端 API，沒有任何假資料。
 
 (function () {
   "use strict";
@@ -20,6 +20,10 @@
   var CAREGIVER_TOKEN_KEY = "caregiver_login_token";
   // CR-0042：目前身分模式（'super_admin' | 'caregiver' | 'none'）。
   var AUTH_MODE_KEY = "caregiver_auth_mode";
+  var FIREBASE_APP_MODULE_URL =
+    "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
+  var FIREBASE_AUTH_MODULE_URL =
+    "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
 
   // CR-0042：友善文案（白話、非工程術語、不顯示完整 token / stack）。
   var EMPTY_CAREGIVER_MSG =
@@ -46,6 +50,13 @@
     token: null,
     displayName: null,
     role: null,
+  };
+  var firebaseAuthState = {
+    loading: false,
+    ready: false,
+    auth: null,
+    modules: null,
+    lastUid: null,
   };
   // 401 之後設為 true，停止重複狂打受保護 API，直到使用者重新登入。
   var sessionInvalid = false;
@@ -169,6 +180,45 @@
 
   function statusLabel(status) {
     return STATUS_LABELS[status] || status || "—";
+  }
+
+  function petTypeLabel(value) {
+    switch (value) {
+      case "dog":
+        return "狗狗";
+      case "guinea_pig":
+        return "天竺鼠";
+      case "fox":
+        return "狐狸";
+      case "mochi":
+        return "麻吉";
+      default:
+        return value || "—";
+    }
+  }
+
+  function petVisualStyleLabel(value) {
+    switch (value) {
+      case "cute":
+        return "Q版";
+      case "realistic":
+        return "真實版";
+      default:
+        return value || "—";
+    }
+  }
+
+  function petGrowthStageLabel(value) {
+    switch (value) {
+      case "baby":
+        return "幼年";
+      case "young":
+        return "成長中";
+      case "adult":
+        return "成年";
+      default:
+        return value || "—";
+    }
   }
 
   function riskClass(riskLevel) {
@@ -986,10 +1036,16 @@
     logout: document.getElementById("auth-logout"),
     hint: document.getElementById("auth-hint"),
     message: document.getElementById("auth-message"),
+    firebasePanel: document.getElementById("firebase-login-panel"),
+    firebaseEmail: document.getElementById("firebase-email"),
+    firebasePassword: document.getElementById("firebase-password"),
+    firebaseEmailLogin: document.getElementById("firebase-email-login"),
+    firebaseGoogleLogin: document.getElementById("firebase-google-login"),
+    firebaseStatus: document.getElementById("firebase-login-status"),
   };
 
   var CAREGIVER_HINT =
-    "照護人員請貼上自己的登入權杖（Firebase 登入後取得的 ID Token，或機構提供的 caregiver session 權杖）。登入後只會看到您被指派的住民。完整的一鍵登入畫面為後續更新項目。";
+    "照護人員請使用 Email 或 Google 登入。若機構尚未設定 Firebase Web 登入，才使用下方登入權杖備援。登入後只會看到您被指派的住民。";
   var SUPER_ADMIN_HINT =
     "管理者權杖（ADMIN_API_TOKEN）擁有最高權限、可檢視全部住民資料，正式環境請勿提供給一般照護人員。";
 
@@ -1020,6 +1076,7 @@
     if (mode === "super_admin") elA.hint.textContent = SUPER_ADMIN_HINT;
     else if (mode === "caregiver") elA.hint.textContent = CAREGIVER_HINT;
     else elA.hint.textContent = CAREGIVER_HINT;
+    updateFirebasePanelUi();
   }
 
   function updateAuthStatusUi() {
@@ -1063,6 +1120,7 @@
       }
     }
     updateAuthStatusUi();
+    updateFirebasePanelUi();
   }
 
   // 目前顯示中的分頁名稱（含 super_admin-only 分頁，供 applyAuthModeUi 判斷）。
@@ -1119,7 +1177,180 @@
 
   function onLogoutClick() {
     logout();
+    signOutFirebaseCaregiver();
     showAuthMessage("已登出。", false);
+  }
+
+  function firebaseConfig() {
+    var cfg = (typeof window !== "undefined" && window.APP_CONFIG) || {};
+    return cfg.firebase || cfg.firebaseConfig || null;
+  }
+
+  function hasFirebaseWebConfig() {
+    var cfg = firebaseConfig();
+    return !!(
+      cfg &&
+      typeof cfg === "object" &&
+      cfg.apiKey &&
+      cfg.authDomain &&
+      cfg.projectId
+    );
+  }
+
+  function setFirebaseStatus(text, isError) {
+    if (!elA.firebaseStatus) return;
+    elA.firebaseStatus.textContent = text || "";
+    elA.firebaseStatus.classList.toggle("error", !!isError);
+  }
+
+  function setFirebaseButtonsDisabled(disabled) {
+    [elA.firebaseEmailLogin, elA.firebaseGoogleLogin].forEach(function (btn) {
+      if (btn) btn.disabled = !!disabled;
+    });
+  }
+
+  function updateFirebasePanelUi() {
+    if (!elA.firebasePanel) return;
+    var caregiverSelected = selectedAuthMode() === "caregiver";
+    elA.firebasePanel.classList.toggle("is-hidden", !caregiverSelected);
+    if (!caregiverSelected) return;
+    var configured = hasFirebaseWebConfig();
+    elA.firebasePanel.classList.toggle("is-disabled", !configured);
+    setFirebaseButtonsDisabled(!configured || firebaseAuthState.loading);
+    if (!configured) {
+      setFirebaseStatus("尚未設定 Firebase Web 登入，請暫用登入權杖備援。", false);
+    } else if (!firebaseAuthState.ready && !firebaseAuthState.loading) {
+      setFirebaseStatus("可使用 Email 或 Google 登入。", false);
+    }
+  }
+
+  function firebaseErrorMessage(error) {
+    var code = error && error.code ? String(error.code) : "";
+    if (code === "auth/invalid-credential" || code === "auth/wrong-password") {
+      return "Email 或密碼不太對，請再確認一次。";
+    }
+    if (code === "auth/user-not-found") {
+      return "找不到這個照護人員帳號，請聯絡管理者確認。";
+    }
+    if (code === "auth/popup-closed-by-user") {
+      return "登入視窗已關閉，尚未完成登入。";
+    }
+    if (code === "auth/unauthorized-domain") {
+      return "這個後台網址尚未加入 Firebase 授權網域。";
+    }
+    if (code === "auth/network-request-failed") {
+      return "網路不太穩，請稍後再試。";
+    }
+    return "登入沒有成功，請稍後再試。";
+  }
+
+  function applyFirebaseCaregiverLogin(user, token, options) {
+    if (!token) {
+      showAuthMessage("登入沒有成功，請稍後再試。", true);
+      return;
+    }
+    if (elA.modeCaregiver) elA.modeCaregiver.checked = true;
+    applyLogin("caregiver", token);
+    firebaseAuthState.lastUid = user && user.uid ? user.uid : null;
+    if (elA.tokenInput) elA.tokenInput.value = "";
+    updateAuthHint();
+    showAuthMessage("正在以照護人員身分載入資料…", false);
+    if (!options || options.reload !== false) reloadActiveView();
+  }
+
+  async function ensureFirebaseAuth() {
+    if (!hasFirebaseWebConfig()) {
+      throw new Error("firebase_not_configured");
+    }
+    if (firebaseAuthState.ready && firebaseAuthState.auth) {
+      return firebaseAuthState;
+    }
+    firebaseAuthState.loading = true;
+    updateFirebasePanelUi();
+    try {
+      var appModule = await import(FIREBASE_APP_MODULE_URL);
+      var authModule = await import(FIREBASE_AUTH_MODULE_URL);
+      var apps =
+        typeof appModule.getApps === "function" ? appModule.getApps() : [];
+      var app = apps.length ? apps[0] : appModule.initializeApp(firebaseConfig());
+      var auth = authModule.getAuth(app);
+      if (authModule.setPersistence && authModule.browserLocalPersistence) {
+        await authModule.setPersistence(auth, authModule.browserLocalPersistence);
+      }
+      firebaseAuthState.auth = auth;
+      firebaseAuthState.modules = authModule;
+      firebaseAuthState.ready = true;
+      authModule.onAuthStateChanged(auth, function (user) {
+        if (!user || isSuperAdminMode()) return;
+        user
+          .getIdToken()
+          .then(function (token) {
+            applyFirebaseCaregiverLogin(user, token, { reload: false });
+          })
+          .catch(function () {
+            setFirebaseStatus("登入狀態已失效，請重新登入。", true);
+          });
+      });
+      setFirebaseStatus("可使用 Email 或 Google 登入。", false);
+      return firebaseAuthState;
+    } catch (error) {
+      setFirebaseStatus("Firebase 登入載入失敗，請暫用登入權杖備援。", true);
+      throw error;
+    } finally {
+      firebaseAuthState.loading = false;
+      updateFirebasePanelUi();
+    }
+  }
+
+  async function onFirebaseEmailLoginClick() {
+    var email = elA.firebaseEmail ? (elA.firebaseEmail.value || "").trim() : "";
+    var password = elA.firebasePassword ? elA.firebasePassword.value || "" : "";
+    if (!email || !password) {
+      setFirebaseStatus("請輸入 Email 和密碼。", true);
+      return;
+    }
+    try {
+      setFirebaseButtonsDisabled(true);
+      setFirebaseStatus("登入中…", false);
+      var state = await ensureFirebaseAuth();
+      var result = await state.modules.signInWithEmailAndPassword(
+        state.auth,
+        email,
+        password
+      );
+      var token = await result.user.getIdToken();
+      if (elA.firebasePassword) elA.firebasePassword.value = "";
+      applyFirebaseCaregiverLogin(result.user, token);
+      setFirebaseStatus("已登入。", false);
+    } catch (error) {
+      setFirebaseStatus(firebaseErrorMessage(error), true);
+    } finally {
+      setFirebaseButtonsDisabled(!hasFirebaseWebConfig());
+    }
+  }
+
+  async function onFirebaseGoogleLoginClick() {
+    try {
+      setFirebaseButtonsDisabled(true);
+      setFirebaseStatus("開啟 Google 登入中…", false);
+      var state = await ensureFirebaseAuth();
+      var provider = new state.modules.GoogleAuthProvider();
+      var result = await state.modules.signInWithPopup(state.auth, provider);
+      var token = await result.user.getIdToken();
+      applyFirebaseCaregiverLogin(result.user, token);
+      setFirebaseStatus("已登入。", false);
+    } catch (error) {
+      setFirebaseStatus(firebaseErrorMessage(error), true);
+    } finally {
+      setFirebaseButtonsDisabled(!hasFirebaseWebConfig());
+    }
+  }
+
+  function signOutFirebaseCaregiver() {
+    if (!firebaseAuthState.auth || !firebaseAuthState.modules) return;
+    firebaseAuthState.modules.signOut(firebaseAuthState.auth).catch(function () {
+      setFirebaseStatus("", false);
+    });
   }
 
   function authProviderLabel(provider) {
@@ -1272,6 +1503,34 @@
     }
   }
 
+  function dailyTaskVerificationClass(status) {
+    if (status === "passed") return "ok";
+    if (status === "failed") return "danger";
+    return "review";
+  }
+
+  function dailyTaskReviewLabel(verification) {
+    if (!verification) return "尚未送出照片";
+    return verification.reviewRequired ? "需要照護者確認" : "暫不需人工確認";
+  }
+
+  function dailyTaskDetectedObjectsLabel(verification) {
+    if (
+      !verification ||
+      !Array.isArray(verification.detectedObjects) ||
+      verification.detectedObjects.length === 0
+    ) {
+      return "沒有可明確辨識的物件";
+    }
+    return verification.detectedObjects
+      .slice(0, 5)
+      .map(function (item) {
+        return String(item || "").trim();
+      })
+      .filter(Boolean)
+      .join("、") || "沒有可明確辨識的物件";
+  }
+
   function summarizeDailyTasks(tasks) {
     var s = { total: tasks.length, completed: 0, pending: 0, review: 0, missed: 0 };
     tasks.forEach(function (t) {
@@ -1300,6 +1559,11 @@
         ? Math.round(Math.max(0, Math.min(1, v.confidence)) * 100) + "%"
         : "—";
     var aiReason = v && v.reason ? escapeHtml(v.reason) : "—";
+    var aiObjects = escapeHtml(dailyTaskDetectedObjectsLabel(v));
+    var reviewLabel = escapeHtml(dailyTaskReviewLabel(v));
+    var verificationClass = dailyTaskVerificationClass(
+      v ? v.verificationStatus : "",
+    );
     var completedAt = task.status === "completed" && sub ? formatTime(sub.submittedAt) : "—";
     var proof =
       sub && sub.id
@@ -1330,18 +1594,33 @@
       "<span>完成時間：" +
       escapeHtml(completedAt) +
       "</span>" +
-      "<span>AI 判斷：" +
+      "</div>" +
+      '<div class="task-verification-card task-verification-' +
+      escapeHtml(verificationClass) +
+      '">' +
+      '<div class="task-verification-head">' +
+      '<span class="task-verification-title">照片驗證摘要</span>' +
+      '<span class="task-review-badge">' +
+      reviewLabel +
+      "</span>" +
+      "</div>" +
+      '<div class="task-verification-grid">' +
+      "<span><b>AI 判斷</b>" +
       escapeHtml(aiStatus) +
       "</span>" +
-      "<span>信心：" +
+      "<span><b>信心</b>" +
       escapeHtml(aiConfidence) +
       "</span>" +
-      "<span>原因：" +
-      aiReason +
+      "<span><b>辨識內容</b>" +
+      aiObjects +
       "</span>" +
-      "<span>照片：" +
+      "<span><b>照片</b>" +
       proof +
       "</span>" +
+      "</div>" +
+      '<p class="task-verification-reason"><b>AI 原因：</b>' +
+      aiReason +
+      "</p>" +
       "</div>" +
       "</div>"
     );
@@ -1861,11 +2140,13 @@
       html += '<div class="metric-grid">';
       html += metricCard("使用天數", String(us.activeDays || 0), "區間內");
       html += metricCard("語音互動", String(us.voiceInteractions || 0), null);
+      html += metricCard("語音導覽", String(us.voiceNavigations || 0), null);
       html += metricCard("打字訊息", String(us.typedChats || 0), null);
       html += metricCard("寵物互動", String(us.petInteractions || 0), null);
       html += metricCard("建立提醒", String(us.remindersCreated || 0), null);
       html += metricCard("任務完成", String(us.dailyTasksCompleted || 0), null);
       html += metricCard("拼圖完成", String(us.puzzleCompletions || 0), null);
+      html += metricCard("設定調整", String(us.settingsChanges || 0), null);
       html += metricCard("最近使用", formatTime(us.lastEventAt), null);
       html += "</div>";
     }
@@ -1917,6 +2198,9 @@
         "。</p>";
     } else {
       html += '<div class="metric-grid">';
+      html += metricCard("寵物類型", petTypeLabel(pet.selectedPetType || pet.petType), null);
+      html += metricCard("視覺風格", petVisualStyleLabel(pet.visualStyle), null);
+      html += metricCard("成長階段", petGrowthStageLabel(pet.growthStage), null);
       html += metricCard("心情", pet.mood || "—", null);
       html += metricCard("飽足度", pet.satiety == null ? "—" : String(pet.satiety), null);
       html += metricCard("親密度", pet.intimacy == null ? "—" : String(pet.intimacy), null);
@@ -3805,6 +4089,12 @@
     // 身分 / 登入列（CR-0042）。
     if (elA.login) elA.login.addEventListener("click", onLoginClick);
     if (elA.logout) elA.logout.addEventListener("click", onLogoutClick);
+    if (elA.firebaseEmailLogin) {
+      elA.firebaseEmailLogin.addEventListener("click", onFirebaseEmailLoginClick);
+    }
+    if (elA.firebaseGoogleLogin) {
+      elA.firebaseGoogleLogin.addEventListener("click", onFirebaseGoogleLoginClick);
+    }
     if (elA.modeCaregiver) {
       elA.modeCaregiver.addEventListener("change", updateAuthHint);
     }
@@ -3818,6 +4108,13 @@
       elA.modeCaregiver.checked = true;
     }
     updateAuthHint();
+    if (hasFirebaseWebConfig()) {
+      ensureFirebaseAuth().catch(function () {
+        // 狀態已由 ensureFirebaseAuth 顯示；初始化失敗時保留手動權杖備援。
+      });
+    } else {
+      updateFirebasePanelUi();
+    }
 
     el.saveApiBase.addEventListener("click", function () {
       var next = normalizeBase(el.apiBase.value) || DEFAULT_API_BASE;

@@ -9,11 +9,13 @@ class DailyCareTaskCard extends StatelessWidget {
     required this.task,
     required this.isSubmitting,
     required this.onComplete,
+    this.isHighlighted = false,
   });
 
   final DailyCareTask task;
   final bool isSubmitting;
   final VoidCallback onComplete;
+  final bool isHighlighted;
 
   IconData get _typeIcon {
     switch (task.type) {
@@ -59,6 +61,12 @@ class DailyCareTaskCard extends StatelessWidget {
     final statusColor = _statusColor(context);
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: isHighlighted
+            ? const BorderSide(color: Color(0xFF2563EB), width: 3)
+            : BorderSide.none,
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -88,7 +96,8 @@ class DailyCareTaskCard extends StatelessWidget {
                         task.scheduledTime.isEmpty
                             ? task.typeLabel
                             : '${task.typeLabel}・預定 ${task.scheduledTime}',
-                        style: const TextStyle(fontSize: 16, color: Colors.black54),
+                        style: const TextStyle(
+                            fontSize: 16, color: Colors.black54),
                       ),
                     ],
                   ),
@@ -96,25 +105,13 @@ class DailyCareTaskCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            Row(
+            Wrap(
+              spacing: 12,
+              runSpacing: 10,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              alignment: WrapAlignment.spaceBetween,
               children: [
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    task.statusLabel,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: statusColor,
-                    ),
-                  ),
-                ),
-                const Spacer(),
+                _StatusChip(label: task.statusLabel, color: statusColor),
                 _buildAction(context),
               ],
             ),
@@ -163,6 +160,32 @@ class DailyCareTaskCard extends StatelessWidget {
       onPressed: onComplete,
       icon: const Icon(Icons.photo_camera, size: 22),
       label: Text(_actionLabel, style: const TextStyle(fontSize: 18)),
+    );
+  }
+}
+
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
     );
   }
 }

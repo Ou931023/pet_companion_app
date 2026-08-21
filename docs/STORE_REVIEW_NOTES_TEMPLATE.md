@@ -49,6 +49,7 @@ Support URL: https://ou931023.github.io/pet_companion_app/support.html
 Privacy Policy: https://ou931023.github.io/pet_companion_app/privacy.html
 Terms of Service: https://ou931023.github.io/pet_companion_app/terms.html
 Support Email: aicompanion.support@gmail.com
+Account deletion web resource: https://ou931023.github.io/pet_companion_app/support.html
 ```
 
 ---
@@ -93,7 +94,7 @@ This build uses a hosted HTTPS API endpoint. The endpoint is not localhost, LAN 
 - [ ] Collects health-related inferences for caregiving support, clearly marked non-diagnostic.
 - [ ] Collects app activity / usage analytics via `app_usage_events`.
 - [ ] Allows account and data deletion in-app.
-- [ ] Provides external deletion/support resource: `https://ou931023.github.io/pet_companion_app/support.html`.
+- [ ] Provides external account / data deletion resource: `https://ou931023.github.io/pet_companion_app/support.html`.
 - [ ] Data is encrypted in transit.
 - [ ] Data is not sold and not used for ads or cross-app tracking.
 

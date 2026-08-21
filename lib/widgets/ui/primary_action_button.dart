@@ -11,7 +11,7 @@ class PrimaryActionButton extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onPressed,
-    this.height = 62,
+    this.height = 74,
     this.active = false,
   });
 
@@ -54,7 +54,8 @@ class PrimaryActionButton extends StatelessWidget {
           boxShadow: enabled
               ? [
                   BoxShadow(
-                    color: scheme.primary.withValues(alpha: active ? 0.42 : 0.3),
+                    color:
+                        scheme.primary.withValues(alpha: active ? 0.42 : 0.3),
                     blurRadius: active ? 24 : 16,
                     offset: const Offset(0, 8),
                   ),
@@ -72,8 +73,8 @@ class PrimaryActionButton extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(icon, size: 26, color: Colors.white),
-                  const SizedBox(width: 10),
+                  Icon(icon, size: 32, color: Colors.white),
+                  const SizedBox(width: 12),
                   Flexible(
                     child: Text(
                       label,
@@ -81,7 +82,7 @@ class PrimaryActionButton extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 19,
+                        fontSize: 21,
                         fontWeight: FontWeight.w800,
                       ),
                     ),

@@ -37,7 +37,7 @@
 | 麥克風權限文案 `NSMicrophoneUsageDescription` | ✅ | 長者友善、無工程字眼 |
 | 相機 / 相簿 / 語音辨識 / 區網權限文案 | ✅ | 皆清楚、無 demo/test/mock |
 | ATS（App Transport Security） | 🔁 | CR-0096S Batch 3 已收斂為 `NSAllowsArbitraryLoads=false` + `NSAllowsLocalNetworking=true`。仍需 HTTPS 後端就緒 + iOS 實體裝置 Realtime / REST smoke 後才能送審結案 |
-| Display name（CFBundleDisplayName） | ✅ （CR-0061） | `AI Companion`（owner 拍板定值），已寫入 `Info.plist` |
+| Display name（CFBundleDisplayName） | ✅ （CR-0101B） | `AI陪伴`（正式中文名），已寫入 `Info.plist` |
 | Bundle ID | ✅ （CR-0061） | `tw.edu.ncyu.im.aicompanion`（嘉義大學反向網域，owner 拍板）。已寫入 pbxproj（app + RunnerTests）。後續 Apple 憑證 / Firebase iOS App / Sign in with Apple 須對應此 ID（上架後不可改） |
 | App icon（全尺寸） | ✅ | CR-0101A 已輸出正式候選 icon 全尺寸組；送審前仍需實機 / 商店後台預覽確認 |
 | Launch screen | ✅ | 已使用正式候選 icon + 品牌底色；送審前仍需實機確認無閃白/裁切 |
@@ -52,7 +52,7 @@
 | 權限（INTERNET / RECORD_AUDIO / MODIFY_AUDIO_SETTINGS / POST_NOTIFICATIONS / ACCESS_NETWORK_STATE / READ_MEDIA_IMAGES / READ_EXTERNAL_STORAGE≤32） | ✅ | 與實際功能相符；POST_NOTIFICATIONS 供 Android 13+ |
 | `usesCleartextTraffic` / network security config | 🔁 | CR-0096S Batch 2 已收斂：release/main 禁明文，debug/profile 保留本機開發 HTTP。仍需 HTTPS 後端 + Android 實體裝置 smoke 後才能送審結案 |
 | `applicationId` | ✅ （CR-0061） | `tw.edu.ncyu.im.aicompanion`（對齊 iOS，owner 拍板）。已寫入 `build.gradle.kts`。**上架後不可再改**。namespace 維持 `com.example.pet_companion_app`（owner 指定不動，與 applicationId 獨立） |
-| `android:label` | ✅ （CR-0061） | `AI Companion`（owner 拍板定值，與 iOS CFBundleDisplayName 一致），已寫入 `AndroidManifest.xml` |
+| `android:label` | ✅ （CR-0101B） | `AI陪伴`（正式中文名，與 iOS CFBundleDisplayName 一致），已寫入 `AndroidManifest.xml` |
 | Adaptive icon / launcher icon | ✅ | CR-0101A 已輸出 legacy launcher icon + Android adaptive icon XML / foreground / background；送審前仍需真機 mask 預覽 |
 | Release signing config | ⛔ **BLOCKER** | 需正式 upload keystore（**禁止提交 keystore / signing key 進版控**） |
 | targetSdk | 🟡 | 用 flutter 預設，送審前確認符合 Play 當期最低 targetSdk |
@@ -71,7 +71,7 @@
 
 ## 5. Owner-decision blockers（必須由負責人決策 / 提供，禁止假完成）
 
-1. ✅ **正式品牌 display name**（CR-0061 已定值）：iOS CFBundleDisplayName = Android `android:label` = 商店 App 名稱 = `AI Companion`（中文 `AI陪伴`）。發行者：國立嘉義大學資訊管理學系專題第四組。
+1. ✅ **正式品牌 display name**（CR-0101B 已對齊）：iOS CFBundleDisplayName = Android `android:label` = 商店 App 名稱 = `AI陪伴`（英文品牌 `AI Companion` 可放描述 / 關鍵字）。發行者：國立嘉義大學資訊管理學系專題第四組。
 2. ✅ **App 識別碼正式化**（CR-0061 已定值）：iOS Bundle ID = Android `applicationId` = `tw.edu.ncyu.im.aicompanion`（**一旦上架不可更改**；後續 Apple/Google/Firebase 憑證與 Sign in with Apple 設定須對應此 ID）。
 3. ✅ **Hosted 法務/支援 URL** / ✅ **客服信箱**：`privacyPolicyUrl` / `termsOfServiceUrl` / `supportUrl` / `contactEmail` 已支援透過 `--dart-define` 注入；GitHub Pages 已提供公開 HTTPS URL：`https://ou931023.github.io/pet_companion_app/privacy.html`、`https://ou931023.github.io/pet_companion_app/terms.html`、`https://ou931023.github.io/pet_companion_app/support.html`；客服信箱已定為 `aicompanion.support@gmail.com`。
 4. ✅ / 🔁 **視覺素材**：App icon（iOS 全尺寸 + Android adaptive/launcher）、Google Play feature graphic、兩平台 store screenshots 與 launch screen 已輸出正式候選；送審前仍需商店後台與實機人工預覽。
@@ -162,7 +162,7 @@ android:networkSecurityConfig="@xml/network_security_config"
 - 🔁 **BLOCKER** iOS ATS / Android cleartext 傳輸收斂（**CR-0054** Batch 2 PATCH-READY；**CR-0055** 落地嘗試 = BLOCKED）：就緒 patch + smoke checklist + rollback 見 `docs/TRANSPORT_SECURITY.md`。CR-0055 因無正式 HTTPS 後端 + 無實體裝置，依 task §2/§12.2 未套用 patch、未跑 T1–T9（見 `E2E_SMOKE_TEST_REPORT` Run #1）。落地待 owner 備齊 HTTPS 後端 + iOS/Android 實機後重跑，**不可盲套**。
 - ✅ Marketplace / DailyCareTask production 策略確定（**CR-0056**）：兩者 = 本版 production 隱藏/停用（A2 / B2），保留 dev/test，PG 化列 post-release。後端本就 fail-closed（不讀 JSON）；本 CR 補 Flutter 入口 `AppConfig.marketplaceVisible`/`dailyCareTasksVisible`（production 完全隱藏）+ caregiver_web `featureFlags`（預設關）。store-facing 文案不得出現商城/購買/下單/照護任務字樣；不申報財務/購買資料。決策見 `docs/MARKETPLACE_PRODUCTION_DECISION.md`、`docs/DAILY_CARE_TASK_PRODUCTION_DECISION.md`。flutter 541/541、caregiver_web 90/90。
 - ✅ Marketplace / DailyCareTask 後端 production 停用路徑收斂（**CR-0057**）：production direct API call 由誤映 500 改為乾淨 **501 `not_enabled`**（保留 `ok`/`success:false` discriminator + 友善 message，不回 stack/path、不讀 JSON、不回 demo data）；helper `isFeatureUnavailableError`（env.js）+ `respondFeatureDisabled`（server.js）；daily-care authz-403 優先序保留、無 token 仍 401、reminders 不受影響；store 語意不改、dev/test 位元不變。backend 473→495。
-- 🟡 Store metadata / app identity / icon / signing readiness 整理（**CR-0058**）：app identity 現況與 owner blocker 列於 `docs/APP_STORE_METADATA.md §7`（Bundle ID/applicationId `com.Andrew.*` 個人名、不可逆 → owner 拍板正式反向網域）；icon/screenshot/launch 規格與缺口（Android 缺 adaptive icon）列於 `docs/STORE_ASSET_CHECKLIST.md`；簽章準備與紅線（release 仍用 debug key、不可提交 keystore）列於 `docs/RELEASE_SIGNING.md`；legal URL（`legal_config.dart` 4×`TODO_*`，已有 `isPlaceholder` 防護）待 owner 真值。可離線安全修者：android:label 已對齊 iOS interim。store 文案未宣稱停用之 marketplace/daily-care（`APP_STORE_METADATA §6`）。
+- ✅ Store metadata / app identity / icon / signing readiness 整理（**CR-0058 → CR-0101B**）：app identity 現況列於 `docs/APP_STORE_METADATA.md §7`，Bundle ID / applicationId 已正式化為 `tw.edu.ncyu.im.aicompanion`，iOS / Android 顯示名已對齊 `AI陪伴`；icon / screenshots / launch screen 已提供正式候選；簽章準備與紅線列於 `docs/RELEASE_SIGNING.md`；hosted legal/support URL 已部署，store 文案未宣稱停用之 marketplace/daily-care（`APP_STORE_METADATA §6`）。
 - 📋 **交接地圖（CR-0059）**：所有剩餘 release blocker（owner decision / infrastructure / device smoke / store console / post-release）、owner action checklist、環境齊後重啟哪個 CR、20-area readiness matrix、不可假完成清單，彙整於 **`docs/RELEASE_HANDOFF.md`**（單一交接來源）。程式面已硬化（backend 495 / flutter 541 / caregiver_web 90 綠）；尚未上架，剩餘全為 owner-gated。
 - ⛔ **BLOCKER** Google Play Data Safety 表單填寫（依 `docs/GOOGLE_PLAY_DATA_SAFETY.md`）
 - ⛔ **BLOCKER** App Store 隱私問卷 / metadata（依 `docs/APP_STORE_METADATA.md`）

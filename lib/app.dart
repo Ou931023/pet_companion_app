@@ -270,6 +270,7 @@ class PetCompanionApp extends StatelessWidget {
             companionContentService: context.read<CompanionContentService>(),
             companionChatService: context.read<CompanionChatService>(),
             reminderController: context.read<ReminderController>(),
+            trackingService: context.read<AppUsageTrackingService>(),
           ),
         ),
         // Native Tool 執行層：放在所需控制器之後建立，讓高影響工具能沿用既有真實流程
@@ -408,6 +409,7 @@ class PetCompanionApp extends StatelessWidget {
             memoryController: context.read<MemoryController>(),
             navigationService: context.read<AiNavigationService>(),
             navigationController: context.read<AppNavigationController>(),
+            trackingService: context.read<AppUsageTrackingService>(),
             agentToolController: context.read<AgentToolController>(),
             careAlertController: context.read<CareAlertController>(),
             careAlertNotificationService:
@@ -428,6 +430,7 @@ class PetCompanionApp extends StatelessWidget {
                 memoryController: context.read<MemoryController>(),
                 navigationService: context.read<AiNavigationService>(),
                 navigationController: navigation,
+                trackingService: context.read<AppUsageTrackingService>(),
                 agentToolController: context.read<AgentToolController>(),
                 careAlertController: context.read<CareAlertController>(),
                 careAlertNotificationService:

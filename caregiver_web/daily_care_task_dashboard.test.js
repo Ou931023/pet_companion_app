@@ -65,6 +65,16 @@ test("任務列表顯示狀態文案與 AI 判斷結果", () => {
   assert.ok(appJs.includes("verification"), "應讀取 submission.verification");
 });
 
+test("照片驗證結果以照護者可讀摘要呈現", () => {
+  assert.ok(appJs.includes("照片驗證摘要"), "應有照片驗證摘要標題");
+  assert.ok(appJs.includes("需要照護者確認"), "應標明是否需要人工確認");
+  assert.ok(appJs.includes("暫不需人工確認"), "通過時應清楚標明暫不需人工確認");
+  assert.ok(appJs.includes("辨識內容"), "應顯示 AI 辨識到的內容");
+  assert.ok(appJs.includes("detectedObjects"), "應讀取 detectedObjects");
+  assert.ok(appJs.includes("reviewRequired"), "應讀取 reviewRequired");
+  assert.ok(appJs.includes("task-verification-card"), "應用卡片方式呈現驗證資訊");
+});
+
 test("AI 判斷文案不宣稱藥物 / 劑量正確（安全界線）", () => {
   // 只檢查實際輸出（字串 / HTML），剔除 // 註解行，避免把「安全界線」說明本身誤判。
   const appCode = appJs

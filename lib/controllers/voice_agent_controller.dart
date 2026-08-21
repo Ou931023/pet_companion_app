@@ -12,6 +12,7 @@ import '../models/realtime_timeout.dart';
 import '../models/voice_agent_state.dart';
 import '../onboarding/coach_mark_controller.dart';
 import '../services/ai_navigation_service.dart';
+import '../services/app_usage_tracking_service.dart';
 import '../services/care_alert_notification_service.dart';
 import '../services/companion_engine_service.dart';
 import '../services/emotion_services.dart';
@@ -19,6 +20,7 @@ import '../services/language_routing_service.dart';
 import '../services/realtime_timeout_registry.dart';
 import '../services/realtime_turn_coordinator.dart';
 import '../services/realtime_voice_service.dart';
+import '../services/web_search_service.dart';
 import '../utils/app_log.dart';
 import '../utils/zh_convert.dart';
 import 'app_navigation_controller.dart';
@@ -42,6 +44,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     required this.memoryController,
     required this.navigationService,
     required this.navigationController,
+    this.trackingService,
     this.agentToolController,
     this.careAlertController,
     this.careAlertNotificationService,
@@ -62,6 +65,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   final MemoryController memoryController;
   final AiNavigationService navigationService;
   final AppNavigationController navigationController;
+  final AppUsageTrackingService? trackingService;
   final AgentToolController? agentToolController;
   final CareAlertController? careAlertController;
   final CareAlertNotificationService? careAlertNotificationService;
@@ -664,10 +668,25 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     final navigationIntent = navigationService.detect(transcript);
     if (navigationIntent != null) {
       if (!_isActiveTurn(turnId)) return;
-      navigationController.navigateTo(navigationIntent.route);
+      navigationController.navigateTo(
+        navigationIntent.route,
+        arguments: navigationIntent.arguments,
+      );
       if (navigationIntent.action == NavigationAction.replayOnboarding) {
         coachMarkController?.requestReplay();
       }
+      unawaited(
+        trackingService?.track(
+              'voice_navigation',
+              sessionId: conversationController.activeSessionId,
+              metadata: {
+                'route': navigationIntent.route,
+                'source': 'realtime_voice',
+                'languageHint': _currentLanguageRoute.languageHint.value,
+              },
+            ) ??
+            Future<bool>.value(false),
+      );
       petController.setMessage(navigationIntent.reply);
       conversationController.appendExternalTurn(
         ConversationTurn(
@@ -824,6 +843,12 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       );
       return;
     }
+    if (WebSearchService.isBroadNewsRequest(transcript)) {
+      unawaited(
+        realtimeVoiceService.speakToolOutcome('你想聽哪一類新聞呢？像是健康、防詐、地方，還是國際新聞？'),
+      );
+      return;
+    }
     // 本地能處理（簽到 / 設定 / 找新聞 / 查資訊…）就走本地，並念出結果；走本地就不再
     // 交給後端 agent，避免同一個指令被執行兩次（重複查 / 重複念）。
     if (conversationController.shouldHandleAsLocalCommand(transcript)) {
@@ -859,8 +884,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   static bool _isBroadMusicRequest(String text) {
-    final normalized =
-        text.replaceAll(RegExp(r'[\s，。！？!?、,.]'), '').trim();
+    final normalized = text.replaceAll(RegExp(r'[\s，。！？!?、,.]'), '').trim();
     if (normalized.isEmpty) return false;
     if (RegExp(
       r'台語|老歌|放鬆|白噪音|輕音樂|雨聲|助眠|懷舊|自然音|歌手|周杰倫|江蕙|鄧麗君|費玉清|蔡琴|五月天|鳳飛飛|望春風|雨夜花|月亮代表我的心',

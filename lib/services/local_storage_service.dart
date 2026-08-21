@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/conversation_turn.dart';
 import '../models/pet_skin.dart';
+import '../models/pet_visual_profile.dart';
 import '../models/user_profile.dart';
 
 class LocalStorageService {
@@ -28,6 +29,7 @@ class LocalStorageService {
   static const _keyConversationHistory = 'conversationHistory';
   static const _keyConversationTitles = 'conversationTitles';
   static const _keyPetSkin = 'petSkin';
+  static const _keyPetVisualStyle = 'petVisualStyle';
   static const _keyOwnedPetSkins = 'ownedPetSkins';
   static const _keyHomeCoachMarkDone = 'homeCoachMarkDone';
   // CR-0087：寵物關心提醒設定 + cooldown 紀錄（避免太頻繁打擾）。
@@ -100,7 +102,8 @@ class LocalStorageService {
   }
 
   /// CR-0087：保存寵物關心提醒的 cooldown 紀錄。
-  Future<void> saveConcernNotifyTimestamps(Map<String, String> timestamps) async {
+  Future<void> saveConcernNotifyTimestamps(
+      Map<String, String> timestamps) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       _k(_keyConcernNotifyTimestamps),
@@ -113,9 +116,7 @@ class LocalStorageService {
     if (raw == null || raw.trim().isEmpty) return [];
     try {
       final decoded = jsonDecode(raw) as List<dynamic>;
-      return decoded
-          .map((e) => Map<String, String>.from(e as Map))
-          .toList();
+      return decoded.map((e) => Map<String, String>.from(e as Map)).toList();
     } catch (_) {
       return [];
     }
@@ -220,6 +221,20 @@ class LocalStorageService {
   Future<void> savePetSkin(PetSkin skin) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_k(_keyPetSkin), skin.storageId);
+  }
+
+  /// 載入目前帳號的寵物視覺風格。沒存過或認不得一律回 Q版。
+  Future<PetVisualStyle> loadPetVisualStyle() async {
+    final prefs = await SharedPreferences.getInstance();
+    return PetVisualStyleX.fromStorageId(
+      prefs.getString(_k(_keyPetVisualStyle)),
+    );
+  }
+
+  /// 保存目前帳號的寵物視覺風格偏好（依 [_k] 各帳號互不影響）。
+  Future<void> savePetVisualStyle(PetVisualStyle style) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_k(_keyPetVisualStyle), style.storageId);
   }
 
   /// 載入目前帳號「已擁有 / 已解鎖」的外觀集合。沒存過 → 只有預設狗狗。

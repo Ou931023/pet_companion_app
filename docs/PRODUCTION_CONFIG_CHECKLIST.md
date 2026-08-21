@@ -103,7 +103,14 @@
 - [ ] 設 `window.APP_CONFIG.apiBaseUrl = "https://api.正式網域/api"`
       （複製 `config.example.js` 為 `config.js`，`config.js` 不進版控），或
 - [ ] 與後端同網域 / 反向代理，使用同源相對路徑 `/api`（`apiBaseUrl` 留 `null`）。
+- [ ] 設 `window.APP_CONFIG.firebase`（Firebase Web app config），讓照護人員可用 Email / Google 登入。
+- [ ] Firebase Console Authorized domains 已加入 caregiver_web 正式網域。
+- [ ] `config.js` 不含 Firebase Admin service account / private key / `ADMIN_API_TOKEN`。
 - [ ] 確認未把 `http://127.0.0.1:3001/api` 當成正式預設。
+- [ ] 執行 `node scripts/check_caregiver_web_config.js caregiver_web/config.js` 通過。
+- [ ] Render Static Site Build Command：`node caregiver_web/build_config_from_env.js`。
+- [ ] Render Static Site Publish Directory：`caregiver_web`。
+- [ ] Render env 設定 `CAREGIVER_WEB_API_BASE_URL=https://ai-companion-api-rdjv.onrender.com/api`。
 
 ---
 
@@ -168,8 +175,8 @@ Production build 應帶：
 - [x] iOS Bundle ID：✅ `tw.edu.ncyu.im.aicompanion`（CR-0061 owner 拍板）
 - [x] Android applicationId：✅ `tw.edu.ncyu.im.aicompanion`（CR-0061，對齊 iOS）
       （namespace 維持 `com.example.pet_companion_app`，owner 指定不動）
-- [x] App 顯示名稱：✅ iOS `CFBundleDisplayName` / Android `android:label` = `AI Companion`
-      （中文名 `AI陪伴`，CR-0061）
+- [x] App 顯示名稱：✅ iOS `CFBundleDisplayName` / Android `android:label` = `AI陪伴`
+      （英文品牌 `AI Companion` 可放商店描述 / 關鍵字，CR-0101B）
 - [x] App icon / launch screen / 權限文案（麥克風、通知）正式化
 - [x] repo 自動檢查確保 production 無 debug banner、無「Demo / 測試 / 開發中」使用者可見入口
 

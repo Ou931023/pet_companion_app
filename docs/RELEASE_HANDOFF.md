@@ -10,7 +10,7 @@
 
 ## 1. 一句話現況
 
-核心功能（語音陪伴 / 打字陪伴 / 長期記憶 / 情緒風險分析 / Care Alert 四級 / Telegram 通知 / 授權鏈 / caregiver_web / 隱私同意 / production 安全閘門）的**程式面已 production-hardened 並有測試覆蓋**（backend 495、flutter 541 綠）。**尚未上架**，因剩餘 blocker 為 owner-gated：HTTPS 後端、真憑證、實機 smoke、商店帳號 / 簽章、icon / 法律 URL。（**App identity 已於 CR-0061 拍板定值**：Bundle ID/applicationId `tw.edu.ncyu.im.aicompanion`、品牌 `AI Companion`/`AI陪伴`。）
+核心功能（語音陪伴 / 打字陪伴 / 長期記憶 / 情緒風險分析 / Care Alert 四級 / Telegram 通知 / 授權鏈 / caregiver_web / 隱私同意 / production 安全閘門）的**程式面已 production-hardened 並有測試覆蓋**（backend 495、flutter 541 綠）。**尚未上架**，因剩餘 blocker 為 owner-gated：HTTPS 後端、真憑證、實機 smoke、商店帳號 / 簽章、icon / 法律 URL。（**App identity 已於 CR-0061 拍板定值，CR-0101B 對齊裝置顯示名**：Bundle ID/applicationId `tw.edu.ncyu.im.aicompanion`、中文顯示名 `AI陪伴`、英文品牌 `AI Companion`。）
 
 ---
 
@@ -52,7 +52,7 @@
 
 | 項目 | 現況 | 不可逆 | 相關 CR |
 |---|---|---|---|
-| 正式 App 名稱（中英品牌） | ✅ `AI Companion` / 中文 `AI陪伴`（CR-0061 定值，已接線 plist/label） | 否（已一致） | CR-0061 |
+| 正式 App 名稱（中英品牌） | ✅ 中文顯示名 `AI陪伴` / 英文品牌 `AI Companion`（CR-0101B 已接線 plist/label） | 否（已一致） | CR-0101B |
 | iOS Bundle ID | ✅ `tw.edu.ncyu.im.aicompanion`（CR-0061 定值，已寫入 pbxproj） | **是（上架後）** | CR-0061 |
 | Android applicationId | ✅ `tw.edu.ncyu.im.aicompanion`（CR-0061 定值，已寫入 build.gradle.kts） | **是（上架後）** | CR-0061 |
 | 開發者 / 發行者名稱 | ✅ 國立嘉義大學資訊管理學系專題第四組（CR-0061 定值） | — | CR-0061 |
@@ -69,6 +69,8 @@
 - Firebase 正式專案：✅ iOS/Android App 已以正式 Bundle ID `tw.edu.ncyu.im.aicompanion` 註冊，設定檔已落地（`GoogleService-Info.plist` BUNDLE_ID 對齊；`google-services.json` 含對應 client，**兩檔 gitignored 不進 git**，CR-0062）。🟡 待真機 Firebase Auth smoke 驗證。（提醒：Firebase 專案內仍留舊 `com.Andrew.*` Android app，功能無害，建議 owner 之後於 console 移除以清理。）
 - OpenAI production key（Realtime/STT/chat/embedding）。
 - Telegram production bot token + 授權 care chat 對應（**非**測試 chat）。
+- 管理者 / 照護者後台正式交付與 Telegram 維運：
+  `docs/CAREGIVER_OPERATIONS_RUNBOOK.md`。
 - `CORS_ALLOWED_ORIGINS` 設為 caregiver_web 正式 origin（CR-0054 後 middleware 已正確讀此值）。
 - caregiver_web production hosting（HTTPS 同源 `/api` 或正式 API URL + `config.js`）。
 
@@ -89,7 +91,7 @@
 
 - Marketplace PG 化 + 金流 / IAP 合規（CR-0042 候選；見 `docs/MARKETPLACE_PRODUCTION_DECISION.md`）。
 - DailyCareTask PG 化 + AI Vision proof 儲存 + authz（見 `docs/DAILY_CARE_TASK_PRODUCTION_DECISION.md`）。
-- caregiver_web 完整 Firebase popup 一鍵登入（目前貼 idToken）。
+- caregiver_web Firebase Email / Google login 已可用；待 owner 在正式 `config.js` 填 Firebase Web config 並做真帳號 smoke。
 - email auto-claim（FU-CR-0043a）、email DB unique index（FU-CR-0043b）、reactivate-link endpoint（FU-CR-0044a）、dedicated requireSuperAdmin middleware。
 - marketplace/daily-care 無 auth GET defense-in-depth 加固、orders 細節（CR-0057 已記，非阻擋）。
 - Android namespace `com.example.*` → 正式（內部、非送審阻擋）。
@@ -113,8 +115,8 @@
 | 10 | Firebase | 🟡 App 已註冊正式 Bundle ID + 設定檔落地（CR-0062） | 真機 Auth smoke 驗證 | — | **是（待真機驗證）** | ENVIRONMENT_SETUP §3 |
 | 11 | PostgreSQL | ⛔ 待 owner 正式 DB | DB + migration 跑 | — | **是** | ENVIRONMENT_SETUP §3 |
 | 12 | Telegram | ⛔ 待 owner 正式 bot/chat | token + chat 對應 | — | **是**（high/urgent 通知核心） | CLAUDE.md §8 |
-| 13 | iOS app identity | ✅ Bundle ID `tw.edu.ncyu.im.aicompanion` + 顯示名 `AI Companion`（CR-0061） | — | — | 否 | APP_STORE_METADATA §7 |
-| 14 | Android app identity | ✅ applicationId `tw.edu.ncyu.im.aicompanion` + label `AI Companion`（CR-0061，namespace 依 owner 維持） | — | — | 否 | APP_STORE_METADATA §7 |
+| 13 | iOS app identity | ✅ Bundle ID `tw.edu.ncyu.im.aicompanion` + 顯示名 `AI陪伴`（CR-0101B） | — | — | 否 | APP_STORE_METADATA §7 |
+| 14 | Android app identity | ✅ applicationId `tw.edu.ncyu.im.aicompanion` + label `AI陪伴`（CR-0101B，namespace 依 owner 維持） | — | — | 否 | APP_STORE_METADATA §7 |
 | 15 | Legal URLs | ⛔ TODO_*（有防護） | 真 URL + email | 填入後接線（CR-0058 completion） | **是** | legal_config.dart |
 | 16 | Store metadata | 🟡 草稿完整、待真值 | 真 URL / 名稱 / 素材 | 填入後定稿 | **是** | APP_STORE_METADATA.md |
 | 17 | Release signing | ⛔ release 仍用 debug key | keystore + 帳號 | signingConfig 接線（owner 提供 key 後） | **是** | RELEASE_SIGNING.md |
@@ -153,7 +155,7 @@
   - Why：上架後**不可逆**；綁 Apple 憑證 / Firebase App / Sign in with Apple。
   - Done in：`ios/Runner.xcodeproj/project.pbxproj`（app + RunnerTests）+ `android/app/build.gradle.kts`（applicationId）。**待 owner**：Firebase 設定檔須以此 ID 建 App。
   - Related：CR-0061
-- [x] **拍板最終品牌名（中英）** — ✅ CR-0061：`AI Companion` / `AI陪伴`；發行者「國立嘉義大學資訊管理學系專題第四組」
+- [x] **拍板最終品牌名（中英）** — ✅ CR-0101B：中文顯示名 `AI陪伴` / 英文品牌 `AI Companion`；發行者「國立嘉義大學資訊管理學系專題第四組」
   - Done in：iOS CFBundleDisplayName + Android `android:label` + metadata §1/§2/§3/§7
   - Related：CR-0061
 - [ ] **部署正式 HTTPS 後端 + TLS + 設 `CORS_ALLOWED_ORIGINS`**
