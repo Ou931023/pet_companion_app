@@ -66,6 +66,7 @@ npm test
 - [ ] release signing readiness script 通過，且未讀取 / 輸出任何 secret 值。
 - [ ] caregiver_web config guard 通過；若本次不交付 caregiver_web，需在 release note 明確列為未開放功能。
 - [ ] caregiver_web production deployment 已更新到 `app.js?v=20260821-cr0103`，且 API 指向 `https://ai-companion-api-rdjv.onrender.com/api`。
+- [ ] caregiver_web Render Blueprint / Static Site 已套用 `render.yaml` 或同等設定，且 `/config.js` 回 200。
 - [ ] Android SDK Platform 36 已安裝；AAB target Android 16 / API 36 以上。
 - [ ] backend `npm run check` / `npm test` 通過，或明確記錄未跑原因。
 
