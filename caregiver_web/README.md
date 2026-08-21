@@ -74,7 +74,8 @@ Render Environment Variables：
 
 這些值只填在 Render，不寫進 git。部署後打開頁面原始碼應可看到
 `app.js?v=20260821-cr0103`，且不再指向舊的 `ai-companion-app-7mb8` 後端。
-正式部署產生的公開設定檔為 `runtime-config.js`；`config.js` 保留為本機 / 手動部署備援。
+正式部署產生的公開設定檔為 `app-config.generated.js` 與 `runtime-config.js`；
+`config.js` 保留為本機 / 手動部署備援。
 Render Static Site 的發布目錄是 `caregiver_web_dist`，由
 `node caregiver_web/build_config_from_env.js` 在部署時產生；請不要手動上傳本機
 `caregiver_web/config.js`。

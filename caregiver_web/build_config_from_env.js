@@ -4,15 +4,24 @@
 // Builds caregiver_web_dist and injects runtime config from deployment env vars.
 // It deliberately excludes local config.js/runtime-config.js before generating
 // fresh files, so local-only config is never copied into the hosted artifact.
+// app-config.generated.js is also written to the source folder because some
+// static hosts keep publishing the source folder after a Blueprint update.
 
 const fs = require("node:fs");
 const path = require("node:path");
 
 const sourceDir = __dirname;
 const distDir = path.join(__dirname, "..", "caregiver_web_dist");
+const generatedFileName = "app-config.generated.js";
 const runtimeOutputPath = path.join(distDir, "runtime-config.js");
+const generatedDistOutputPath = path.join(distDir, generatedFileName);
+const generatedSourceOutputPath = path.join(sourceDir, generatedFileName);
 const compatibilityOutputPath = path.join(distDir, "config.js");
-const excludedPublishFiles = new Set(["config.js", "runtime-config.js"]);
+const excludedPublishFiles = new Set([
+  "config.js",
+  "runtime-config.js",
+  generatedFileName,
+]);
 
 function envValue(name) {
   const value = process.env[name];
@@ -63,9 +72,14 @@ fs.cpSync(sourceDir, distDir, {
   },
 });
 
-for (const outputPath of [runtimeOutputPath, compatibilityOutputPath]) {
+for (const outputPath of [
+  runtimeOutputPath,
+  generatedDistOutputPath,
+  generatedSourceOutputPath,
+  compatibilityOutputPath,
+]) {
   fs.writeFileSync(outputPath, source, { encoding: "utf8", mode: 0o644 });
 }
 console.log(
-  "[caregiver-web-build-config] wrote caregiver_web_dist/runtime-config.js and caregiver_web_dist/config.js mode=0644"
+  "[caregiver-web-build-config] wrote caregiver_web/app-config.generated.js and caregiver_web_dist runtime config files mode=0644"
 );

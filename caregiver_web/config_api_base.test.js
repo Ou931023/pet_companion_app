@@ -81,9 +81,10 @@ test("index.html 提供 APP_CONFIG 注入點，且不以 localhost 為正式預�
     "caregiver_web 正式預設應指向目前 production 後端"
   );
   assert.ok(
-    indexHtml.includes('<script src="./runtime-config.js"></script>') &&
+    indexHtml.includes('<script src="./app-config.generated.js"></script>') &&
+      indexHtml.includes('<script src="./runtime-config.js"></script>') &&
       indexHtml.includes('<script src="./config.js"></script>'),
-    "index.html 應先載入 deploy-time runtime-config.js，並保留本機 config.js 備援"
+    "index.html 應先載入 deploy-time app-config.generated.js/runtime-config.js，並保留本機 config.js 備援"
   );
   assert.ok(
     indexHtml.includes("20260821-cr0103"),
@@ -161,10 +162,12 @@ test("CR-0103：Render build 可由 env 產生 caregiver_web_dist/config.js", ()
   );
   assert.ok(
     configBuilder.includes("runtime-config.js") &&
+      configBuilder.includes("app-config.generated.js") &&
       configBuilder.includes("config.js") &&
       configBuilder.includes("caregiver_web_dist") &&
+      configBuilder.includes("generatedSourceOutputPath") &&
       configBuilder.includes("excludedPublishFiles") &&
       configBuilder.includes("mode=0644"),
-    "config builder 應產生可公開的 dist runtime-config.js，並排除本機 config 後保留相容輸出"
+    "config builder 應產生可公開的 source/dist runtime config，並排除本機 config 後保留相容輸出"
   );
 });

@@ -30,6 +30,7 @@ void main() {
       expect(runbook, contains('app.js?v=20260821-cr0103'));
       expect(runbook, contains('https://ai-companion-api-rdjv.onrender.com/api'));
       expect(runbook, contains('/runtime-config.js'));
+      expect(runbook, contains('/app-config.generated.js'));
       expect(runbook, contains('No-Go'));
     });
 
