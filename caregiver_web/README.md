@@ -74,6 +74,7 @@ Render Environment Variables：
 
 這些值只填在 Render，不寫進 git。部署後打開頁面原始碼應可看到
 `app.js?v=20260821-cr0103`，且不再指向舊的 `ai-companion-app-7mb8` 後端。
+正式部署產生的公開設定檔為 `runtime-config.js`；`config.js` 保留為本機 / 手動部署備援。
 
 若 Render Blueprint 提示 `ai-companion-caregiver-web` 名稱已被其他 workspace 使用，
 請改用新的 Static Site 名稱，部署後把新的 `*.onrender.com` 網域加入 Firebase
