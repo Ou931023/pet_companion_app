@@ -48,5 +48,5 @@ const source = `// Generated at deploy time by caregiver_web/build_config_from_e
 window.APP_CONFIG = ${jsonString(config, null, 2)};
 `;
 
-fs.writeFileSync(outputPath, source, { encoding: "utf8", mode: 0o600 });
-console.log("[caregiver-web-build-config] wrote caregiver_web/config.js");
+fs.writeFileSync(outputPath, source, { encoding: "utf8", mode: 0o644 });
+console.log("[caregiver-web-build-config] wrote caregiver_web/config.js mode=0644");
