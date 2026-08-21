@@ -92,6 +92,22 @@ Notes:
 - `rest` currently uses a safe 3-frame blink loop: `normal`, `sleepy`, `normal`.
 - `talk` currently uses a safe 6-frame open/closed-mouth loop based on `normal` and `happy`. This prevents Q版 fallback during voice playback, but a future polish pass should replace it with true mouth-shape frames.
 
+## Non-Dog Realistic Candidate Sheets
+
+Generated candidate mother sheets for the existing non-dog pets are stored under:
+
+`docs/asset_candidates/cr0100_non_dog_realistic_candidates/`
+
+| Pet | Candidate sheet | Current decision |
+| --- | --- | --- |
+| Fox | `fox_realistic_state_sheet_v1.png` | Strong candidate; clear species identity and readable full-body silhouette. |
+| Guinea pig | `guinea_pig_realistic_state_sheet_v1.png` | Usable candidate; strong warmth, needs cutout QA because of round body. |
+| Mochi | `mochi_realistic_state_sheet_v1.png` | Usable mascot candidate; decide whether Mochi remains mascot-like or becomes an explicit animal before app integration. |
+
+These files are **not production app assets yet**. Keep the app exposing `真實版`
+only for dog until each non-dog candidate has split transparent state files,
+full state coverage, listening, rest, talk, small-size QA, and manifest tests.
+
 ## Production Direction
 
 - Keep the cute / Q style close to the current app illustration language, because it is the safest immediate continuation from the existing dog pet.
@@ -104,10 +120,10 @@ Notes:
 
 ## Next Required Work
 
-1. Pick one cute dog direction and one semi-realistic dog direction.
-2. Review the split white-background PNGs for state clarity and identity consistency.
-3. Review the normalized transparent PNGs for state clarity, edge quality, and identity consistency.
-4. Move reviewed finals into the Flutter app asset tree.
-5. Add asset manifest entries only after the selected files are production-ready.
-6. Add visual regression checks for size, transparency, and non-empty render.
-7. Design the in-app Q/real preference UI so it only exposes complete, reviewed options.
+1. Keep dog realistic as the only production-enabled `真實版` option.
+2. Review non-dog candidate sheets for identity consistency and senior-friendly warmth.
+3. For selected non-dog candidates, split four state cells and convert to transparent PNGs.
+4. Extend selected non-dog candidates to the full state set plus listening/rest/talk frames.
+5. Move reviewed finals into the Flutter app asset tree.
+6. Add asset manifest entries only after the selected files are production-ready.
+7. Add visual regression checks for size, transparency, and non-empty render.
