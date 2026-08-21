@@ -21,6 +21,9 @@ services:
       - key: CAREGIVER_WEB_DAILY_CARE_TASKS_ENABLED
         value: "true"
     headers:
+      - path: /runtime-config.js
+        name: Cache-Control
+        value: no-store
       - path: /config.js
         name: Cache-Control
         value: no-store

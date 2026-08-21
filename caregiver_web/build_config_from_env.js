@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 
 // CR-0103 Render/static deploy helper.
-// Generates caregiver_web/config.js from deployment environment variables.
-// Do not commit the generated config.js file.
+// Generates caregiver_web/runtime-config.js from deployment environment variables.
+// It also writes caregiver_web/config.js for local/manual compatibility, but
+// config.js is gitignored and may be skipped by some static publish pipelines.
 
 const fs = require("node:fs");
 const path = require("node:path");
 
-const outputPath = path.join(__dirname, "config.js");
+const runtimeOutputPath = path.join(__dirname, "runtime-config.js");
+const compatibilityOutputPath = path.join(__dirname, "config.js");
 
 function envValue(name) {
   const value = process.env[name];
@@ -48,5 +50,9 @@ const source = `// Generated at deploy time by caregiver_web/build_config_from_e
 window.APP_CONFIG = ${jsonString(config, null, 2)};
 `;
 
-fs.writeFileSync(outputPath, source, { encoding: "utf8", mode: 0o644 });
-console.log("[caregiver-web-build-config] wrote caregiver_web/config.js mode=0644");
+for (const outputPath of [runtimeOutputPath, compatibilityOutputPath]) {
+  fs.writeFileSync(outputPath, source, { encoding: "utf8", mode: 0o644 });
+}
+console.log(
+  "[caregiver-web-build-config] wrote caregiver_web/runtime-config.js and caregiver_web/config.js mode=0644"
+);

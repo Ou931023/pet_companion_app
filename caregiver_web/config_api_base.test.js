@@ -81,8 +81,9 @@ test("index.html 提供 APP_CONFIG 注入點，且不以 localhost 為正式預�
     "caregiver_web 正式預設應指向目前 production 後端"
   );
   assert.ok(
-    indexHtml.includes('<script src="./config.js"></script>'),
-    "index.html 應先載入 deploy-time config.js"
+    indexHtml.includes('<script src="./runtime-config.js"></script>') &&
+      indexHtml.includes('<script src="./config.js"></script>'),
+    "index.html 應先載入 deploy-time runtime-config.js，並保留本機 config.js 備援"
   );
   assert.ok(
     indexHtml.includes("20260821-cr0103"),
@@ -157,5 +158,11 @@ test("CR-0103：Render build 可由 env 產生 caregiver_web/config.js", () => {
     configBuilder.includes("CAREGIVER_WEB_MARKETPLACE_ENABLED") &&
       configBuilder.includes("CAREGIVER_WEB_DAILY_CARE_TASKS_ENABLED"),
     "config builder 應明確處理 production feature flags"
+  );
+  assert.ok(
+    configBuilder.includes("runtime-config.js") &&
+      configBuilder.includes("config.js") &&
+      configBuilder.includes("mode=0644"),
+    "config builder 應產生可公開的 runtime-config.js，並保留 config.js 相容輸出"
   );
 });
