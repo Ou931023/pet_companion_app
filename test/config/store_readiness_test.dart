@@ -78,7 +78,7 @@ void main() {
       );
       expect(renderYaml, contains('name: ai-companion-caregiver-web'));
       expect(renderYaml, contains('runtime: static'));
-      expect(renderYaml, contains('staticPublishPath: caregiver_web'));
+      expect(renderYaml, contains('staticPublishPath: caregiver_web_dist'));
       expect(
         renderYaml,
         contains('buildCommand: node caregiver_web/build_config_from_env.js'),

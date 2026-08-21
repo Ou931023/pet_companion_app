@@ -1,15 +1,18 @@
 #!/usr/bin/env node
 
 // CR-0103 Render/static deploy helper.
-// Generates caregiver_web/runtime-config.js from deployment environment variables.
-// It also writes caregiver_web/config.js for local/manual compatibility, but
-// config.js is gitignored and may be skipped by some static publish pipelines.
+// Builds caregiver_web_dist and injects runtime config from deployment env vars.
+// It deliberately excludes local config.js/runtime-config.js before generating
+// fresh files, so local-only config is never copied into the hosted artifact.
 
 const fs = require("node:fs");
 const path = require("node:path");
 
-const runtimeOutputPath = path.join(__dirname, "runtime-config.js");
-const compatibilityOutputPath = path.join(__dirname, "config.js");
+const sourceDir = __dirname;
+const distDir = path.join(__dirname, "..", "caregiver_web_dist");
+const runtimeOutputPath = path.join(distDir, "runtime-config.js");
+const compatibilityOutputPath = path.join(distDir, "config.js");
+const excludedPublishFiles = new Set(["config.js", "runtime-config.js"]);
 
 function envValue(name) {
   const value = process.env[name];
@@ -50,9 +53,19 @@ const source = `// Generated at deploy time by caregiver_web/build_config_from_e
 window.APP_CONFIG = ${jsonString(config, null, 2)};
 `;
 
+fs.rmSync(distDir, { recursive: true, force: true });
+fs.mkdirSync(distDir, { recursive: true });
+fs.cpSync(sourceDir, distDir, {
+  recursive: true,
+  filter: (src) => {
+    const name = path.basename(src);
+    return !excludedPublishFiles.has(name);
+  },
+});
+
 for (const outputPath of [runtimeOutputPath, compatibilityOutputPath]) {
   fs.writeFileSync(outputPath, source, { encoding: "utf8", mode: 0o644 });
 }
 console.log(
-  "[caregiver-web-build-config] wrote caregiver_web/runtime-config.js and caregiver_web/config.js mode=0644"
+  "[caregiver-web-build-config] wrote caregiver_web_dist/runtime-config.js and caregiver_web_dist/config.js mode=0644"
 );

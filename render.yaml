@@ -3,7 +3,7 @@ services:
     name: ai-companion-caregiver-web
     runtime: static
     buildCommand: node caregiver_web/build_config_from_env.js
-    staticPublishPath: caregiver_web
+    staticPublishPath: caregiver_web_dist
     autoDeploy: true
     envVars:
       - key: CAREGIVER_WEB_API_BASE_URL
