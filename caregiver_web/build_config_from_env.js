@@ -17,6 +17,8 @@ const runtimeOutputPath = path.join(distDir, "runtime-config.js");
 const generatedDistOutputPath = path.join(distDir, generatedFileName);
 const generatedSourceOutputPath = path.join(sourceDir, generatedFileName);
 const compatibilityOutputPath = path.join(distDir, "config.js");
+const sourceIndexPath = path.join(sourceDir, "index.html");
+const distIndexPath = path.join(distDir, "index.html");
 const excludedPublishFiles = new Set([
   "config.js",
   "runtime-config.js",
@@ -62,6 +64,18 @@ const source = `// Generated at deploy time by caregiver_web/build_config_from_e
 window.APP_CONFIG = ${jsonString(config, null, 2)};
 `;
 
+function injectConfigIntoIndex(indexPath) {
+  const html = fs.readFileSync(indexPath, "utf8");
+  const injected = html.replace(
+    /window\.APP_CONFIG\s*=\s*window\.APP_CONFIG\s*\|\|\s*\{[\s\S]*?\n\s*\};/,
+    `window.APP_CONFIG = window.APP_CONFIG || ${jsonString(config, null, 2)};`
+  );
+  if (injected === html) {
+    throw new Error(`Could not inject APP_CONFIG into ${indexPath}`);
+  }
+  fs.writeFileSync(indexPath, injected, { encoding: "utf8", mode: 0o644 });
+}
+
 fs.rmSync(distDir, { recursive: true, force: true });
 fs.mkdirSync(distDir, { recursive: true });
 fs.cpSync(sourceDir, distDir, {
@@ -80,6 +94,8 @@ for (const outputPath of [
 ]) {
   fs.writeFileSync(outputPath, source, { encoding: "utf8", mode: 0o644 });
 }
+injectConfigIntoIndex(sourceIndexPath);
+injectConfigIntoIndex(distIndexPath);
 console.log(
-  "[caregiver-web-build-config] wrote caregiver_web/app-config.generated.js and caregiver_web_dist runtime config files mode=0644"
+  "[caregiver-web-build-config] injected APP_CONFIG into index.html and wrote runtime config files mode=0644"
 );
