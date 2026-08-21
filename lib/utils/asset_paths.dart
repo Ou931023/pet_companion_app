@@ -29,10 +29,10 @@ class AssetPaths {
     PetMode.sad: 'sad',
   };
 
-  /// v2 半寫實狗狗目前已通過候選 QA 的 state 子集。
+  /// v2 半寫實狗狗目前已通過 QA 的 state 集合。
   ///
-  /// 只宣告已實際存在且可被 Flutter asset bundle 打包的檔案；其餘狀態
-  /// 會 fallback 到既有 v1 Q 版素材，避免正式版顯示不存在的圖片。
+  /// 只宣告已實際存在且可被 Flutter asset bundle 打包的檔案。未來新增其他寵物
+  /// 真實版時，必須先補完整 state/listening/rest/talk，再開放 UI 切換。
   static const Map<PetMode, String> _realisticDogStateSuffix = {
     PetMode.normal: 'normal',
     PetMode.thinking: 'normal',
@@ -86,6 +86,15 @@ class AssetPaths {
     ),
   };
 
+  static const PetVisualProfile _realisticDogProfile = PetVisualProfile(
+    skin: PetSkin.dog,
+    visualStyle: PetVisualStyle.realistic,
+    growthStage: PetGrowthStage.adult,
+    talkFrameCount: 6,
+    restFrameCount: 3,
+    stateSuffixes: _realisticDogStateSuffix,
+  );
+
   /// 最終保底圖（第二層 fallback）：永遠存在的狗狗 rest_01。
   /// 也供登入頁 / 新手導覽頁當預設寵物圖，避免硬寫路徑字串。
   static const String defaultRestImage = 'assets/pets/rest/dog_rest_01.png';
@@ -96,24 +105,44 @@ class AssetPaths {
   static PetVisualProfile visualProfile(PetSkin skin) =>
       _profiles[skin] ?? _profiles[PetSkin.dog]!;
 
-  /// 取得所有 production-ready 寵物素材規格，供測試與未來後台偏好追蹤使用。
-  static List<PetVisualProfile> get productionProfiles =>
-      [for (final skin in PetSkin.values) visualProfile(skin)];
-
-  /// 目前已可提供 v2 半寫實靜態狀態素材的寵物。
+  /// 取得單一寵物 / 風格 / 成長階段的 production-ready 素材能力。
   ///
-  /// 注意：這不是完整 production profile，因為 talk/rest/listening 尚未補齊。
+  /// 回傳 null 表示該組合尚未完成正式素材，不應在正式 UI 開放。
+  static PetVisualProfile? visualProfileForStyle(
+    PetSkin skin, {
+    PetVisualStyle visualStyle = PetVisualStyle.cute,
+    PetGrowthStage growthStage = PetGrowthStage.adult,
+  }) {
+    if (growthStage != PetGrowthStage.adult) return null;
+    if (visualStyle == PetVisualStyle.cute) return visualProfile(skin);
+    if (skin == PetSkin.dog && visualStyle == PetVisualStyle.realistic) {
+      return _realisticDogProfile;
+    }
+    return null;
+  }
+
+  /// 取得所有 production-ready 寵物素材規格，供測試與未來後台偏好追蹤使用。
+  ///
+  /// 目前：四隻 Q版成年素材 + 狗狗真實版成年素材。
+  static List<PetVisualProfile> get productionProfiles => [
+        for (final skin in PetSkin.values) visualProfile(skin),
+        _realisticDogProfile,
+      ];
+
+  /// 目前已可提供指定 visual style 的寵物。
+  ///
   /// UI 若要開放切換，需要用此方法判斷是否能顯示「真實版」選項。
   static bool supportsVisualStyle(
     PetSkin skin,
     PetVisualStyle visualStyle, {
     PetGrowthStage growthStage = PetGrowthStage.adult,
-  }) {
-    if (visualStyle == PetVisualStyle.cute) return true;
-    return skin == PetSkin.dog &&
-        visualStyle == PetVisualStyle.realistic &&
-        growthStage == PetGrowthStage.adult;
-  }
+  }) =>
+      visualProfileForStyle(
+        skin,
+        visualStyle: visualStyle,
+        growthStage: growthStage,
+      ) !=
+      null;
 
   static List<PetVisualStyle> availableVisualStyles(
     PetSkin skin, {

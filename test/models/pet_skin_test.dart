@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pet_companion_app/models/pet_skin.dart';
 import 'package:pet_companion_app/models/pet_status.dart';
@@ -38,10 +40,31 @@ void main() {
   });
 
   group('AssetPaths 依 skin 產生路徑', () {
-    test('productionProfiles 宣告現有素材皆為 Q版 / 成年 / 可上線素材', () {
-      expect(AssetPaths.productionProfiles.length, PetSkin.values.length);
+    test('productionProfiles 宣告現有可上線素材組合', () {
+      expect(AssetPaths.productionProfiles.length, PetSkin.values.length + 1);
+      expect(
+        AssetPaths.productionProfiles
+            .map((profile) => (
+                  skin: profile.skin,
+                  visualStyle: profile.visualStyle,
+                  growthStage: profile.growthStage,
+                ))
+            .toSet(),
+        {
+          for (final skin in PetSkin.values)
+            (
+              skin: skin,
+              visualStyle: PetVisualStyle.cute,
+              growthStage: PetGrowthStage.adult,
+            ),
+          (
+            skin: PetSkin.dog,
+            visualStyle: PetVisualStyle.realistic,
+            growthStage: PetGrowthStage.adult,
+          ),
+        },
+      );
       for (final profile in AssetPaths.productionProfiles) {
-        expect(profile.visualStyle, PetVisualStyle.cute);
         expect(profile.growthStage, PetGrowthStage.adult);
         expect(profile.isProductionReady, isTrue);
         expect(profile.talkFrameCount, greaterThan(0));
@@ -58,6 +81,61 @@ void main() {
       expect(metadata['growthStage'], 'adult');
       expect(metadata['talkFrameCount'], 6);
       expect(metadata['restFrameCount'], 3);
+    });
+
+    test('productionProfiles 內所有 talk/rest/listening/state 圖檔都存在', () {
+      final modes = <PetMode>{
+        PetMode.normal,
+        PetMode.thinking,
+        PetMode.caring,
+        PetMode.concerned,
+        PetMode.happy,
+        PetMode.smile,
+        PetMode.excited,
+        PetMode.thirsty,
+        PetMode.sleepy,
+        PetMode.hungry,
+        PetMode.sad,
+      };
+      final paths = <String>{};
+
+      for (final profile in AssetPaths.productionProfiles) {
+        paths.addAll(
+          AssetPaths.talkingFramesForStyle(
+            profile.skin,
+            visualStyle: profile.visualStyle,
+            growthStage: profile.growthStage,
+          ),
+        );
+        paths.addAll(
+          AssetPaths.restFramesForStyle(
+            profile.skin,
+            visualStyle: profile.visualStyle,
+            growthStage: profile.growthStage,
+          ),
+        );
+        paths.add(
+          AssetPaths.listeningForStyle(
+            profile.skin,
+            visualStyle: profile.visualStyle,
+            growthStage: profile.growthStage,
+          ),
+        );
+        for (final mode in modes) {
+          paths.add(
+            AssetPaths.stateImageForStyle(
+              profile.skin,
+              mode,
+              visualStyle: profile.visualStyle,
+              growthStage: profile.growthStage,
+            ),
+          );
+        }
+      }
+
+      for (final path in paths) {
+        expect(File(path).existsSync(), isTrue, reason: path);
+      }
     });
 
     test('dog：talk 6 / rest 3 / states 原檔名', () {

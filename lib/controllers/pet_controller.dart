@@ -62,15 +62,12 @@ class PetController extends ChangeNotifier {
 
   /// 目前寵物素材能力，用於 UI 呈現與 data tracking。
   PetVisualProfile get currentVisualProfile {
-    final base = AssetPaths.visualProfile(_currentSkin);
-    return PetVisualProfile(
-      skin: _currentSkin,
-      visualStyle: _currentVisualStyle,
-      growthStage: _currentGrowthStage,
-      talkFrameCount: base.talkFrameCount,
-      restFrameCount: base.restFrameCount,
-      stateSuffixes: base.stateSuffixes,
-    );
+    return AssetPaths.visualProfileForStyle(
+          _currentSkin,
+          visualStyle: _currentVisualStyle,
+          growthStage: _currentGrowthStage,
+        ) ??
+        AssetPaths.visualProfile(_currentSkin);
   }
 
   /// 已擁有 / 已解鎖的外觀（狗狗永遠在內）。未擁有的需購買 / 解鎖才能套用。

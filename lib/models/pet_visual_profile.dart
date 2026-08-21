@@ -85,7 +85,6 @@ class PetVisualProfile {
   bool get isProductionReady =>
       talkFrameCount > 0 &&
       restFrameCount > 0 &&
-      visualStyle == PetVisualStyle.cute &&
       growthStage == PetGrowthStage.adult;
 
   String stateSuffixFor(PetMode mode) => stateSuffixes[mode] ?? 'normal';
