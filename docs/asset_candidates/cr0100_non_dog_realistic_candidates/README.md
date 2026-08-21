@@ -1,5 +1,10 @@
 # CR-0100 Non-Dog Realistic Pet Candidates
 
+> Superseded direction: these candidates are kept only as historical references.
+> They should **not** be integrated into the production app. The current preferred
+> direction is `../cr0100_elder_top5_q_consistency/`, which prioritizes obvious
+> species traits and older-adult appeal over semi-realistic redesign.
+
 Generated on 2026-08-21 as candidate mother sheets for future realistic visual
 style expansion. These are **not** integrated into the production app yet.
 
@@ -7,9 +12,9 @@ style expansion. These are **not** integrated into the production app yet.
 
 | Pet | File | Status |
 | --- | --- | --- |
-| Fox | `fox_realistic_state_sheet_v1.png` | Candidate mother sheet |
-| Guinea pig | `guinea_pig_realistic_state_sheet_v1.png` | Candidate mother sheet |
-| Mochi | `mochi_realistic_state_sheet_v1.png` | Candidate mother sheet |
+| Fox | `fox_realistic_state_sheet_v1.png` | Superseded; do not integrate |
+| Guinea pig | `guinea_pig_realistic_state_sheet_v1.png` | Superseded; do not integrate |
+| Mochi | `mochi_realistic_state_sheet_v1.png` | Superseded; do not integrate |
 
 ## QA Notes
 

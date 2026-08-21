@@ -108,6 +108,25 @@ These files are **not production app assets yet**. Keep the app exposing `真實
 only for dog until each non-dog candidate has split transparent state files,
 full state coverage, listening, rest, talk, small-size QA, and manifest tests.
 
+## Elder Top-5 Q-Style Candidate Direction
+
+A second candidate direction was added under:
+
+`docs/asset_candidates/cr0100_elder_top5_q_consistency/`
+
+This direction intentionally prioritizes **clear pet identity and older-adult
+appeal** over strict matching to any old generated character. The goal is that
+each pet is immediately recognizable and likable:
+
+- Dog: familiar, loyal, warm.
+- Cat: tabby markings, bright eyes, gentle expression.
+- Rabbit: soft long ears, round face, calm presence.
+- Bird: small, cheerful, clear silhouette.
+- Fish: round goldfish shape, warm colors, readable fins.
+
+The current top-5 list is a working assumption because the formal survey table
+is not present in the repo. Replace it with the real survey result once added.
+
 ## Production Direction
 
 - Keep the cute / Q style close to the current app illustration language, because it is the safest immediate continuation from the existing dog pet.
@@ -121,9 +140,11 @@ full state coverage, listening, rest, talk, small-size QA, and manifest tests.
 ## Next Required Work
 
 1. Keep dog realistic as the only production-enabled `真實版` option.
-2. Review non-dog candidate sheets for identity consistency and senior-friendly warmth.
-3. For selected non-dog candidates, split four state cells and convert to transparent PNGs.
-4. Extend selected non-dog candidates to the full state set plus listening/rest/talk frames.
-5. Move reviewed finals into the Flutter app asset tree.
-6. Add asset manifest entries only after the selected files are production-ready.
-7. Add visual regression checks for size, transparency, and non-empty render.
+2. Add or confirm the actual survey top-10 / top-5 pet ranking.
+3. Prefer Q-style species-clear candidates for broader pet expansion before adding more realistic variants.
+4. Review non-dog candidate sheets for obvious species traits and senior-friendly warmth.
+5. For selected candidates, split four state cells and convert to transparent PNGs.
+6. Extend selected candidates to the full state set plus listening/rest/talk frames.
+7. Move reviewed finals into the Flutter app asset tree.
+8. Add asset manifest entries only after the selected files are production-ready.
+9. Add visual regression checks for size, transparency, and non-empty render.
