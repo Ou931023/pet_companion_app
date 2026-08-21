@@ -766,9 +766,10 @@
       - 留 null：使用同源相對路徑 "/api"（caregiver_web 與後端同網域 / 反向代理時適用）。
       - 請勿在此填 localhost / 127.0.0.1 作為正式預設。
       - 進階：部署時可用獨立 config.js 覆蓋；Render build 可執行
-        node caregiver_web/build_config_from_env.js 由環境變數產生 config.js。
+        node caregiver_web/build_config_from_env.js 由環境變數產生 app-config.generated.js。
       - 本機開發若後端在另一個 port（例如 3001），可在頁面「連線設定」輸入後端位址。
     -->
+    <script src="./app-config.generated.js"></script>
     <script src="./runtime-config.js"></script>
     <script src="./config.js"></script>
     <script>
