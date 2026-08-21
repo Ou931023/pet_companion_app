@@ -141,7 +141,7 @@ test("CR-0103：提供 caregiver_web production config 自動檢查腳本", () =
   );
 });
 
-test("CR-0103：Render build 可由 env 產生 caregiver_web/config.js", () => {
+test("CR-0103：Render build 可由 env 產生 caregiver_web_dist/config.js", () => {
   assert.ok(
     configBuilder.includes("CAREGIVER_WEB_API_BASE_URL") &&
       configBuilder.includes("CAREGIVER_WEB_FIREBASE_API_KEY") &&
@@ -162,7 +162,9 @@ test("CR-0103：Render build 可由 env 產生 caregiver_web/config.js", () => {
   assert.ok(
     configBuilder.includes("runtime-config.js") &&
       configBuilder.includes("config.js") &&
+      configBuilder.includes("caregiver_web_dist") &&
+      configBuilder.includes("excludedPublishFiles") &&
       configBuilder.includes("mode=0644"),
-    "config builder 應產生可公開的 runtime-config.js，並保留 config.js 相容輸出"
+    "config builder 應產生可公開的 dist runtime-config.js，並排除本機 config 後保留相容輸出"
   );
 });
