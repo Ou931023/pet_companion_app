@@ -152,6 +152,12 @@ test("CR-0103：Render build 可由 env 產生 caregiver_web_dist/config.js", ()
     "config builder 應使用 caregiver_web 專用環境變數"
   );
   assert.ok(
+    configBuilder.includes("requiredEnv") &&
+      configBuilder.includes("Missing required Render env var") &&
+      configBuilder.includes("env summary (masked)"),
+    "config builder 應在 Firebase Web env 缺漏時 fail-fast，並只輸出遮蔽摘要"
+  );
+  assert.ok(
     configBuilder.includes("ai-companion-api-rdjv.onrender.com/api"),
     "config builder fallback 應指向新 production 後端"
   );

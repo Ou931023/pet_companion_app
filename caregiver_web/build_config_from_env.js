@@ -30,6 +30,16 @@ function envValue(name) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function requiredEnv(name) {
+  const value = envValue(name);
+  if (value == null) {
+    throw new Error(
+      `[caregiver-web-build-config] Missing required Render env var: ${name}`
+    );
+  }
+  return value;
+}
+
 function boolEnv(name, fallback) {
   const value = envValue(name);
   if (value == null) return fallback;
@@ -48,16 +58,26 @@ const config = {
     envValue("API_BASE_URL") ||
     "https://ai-companion-api-rdjv.onrender.com/api",
   firebase: {
-    apiKey: envValue("CAREGIVER_WEB_FIREBASE_API_KEY"),
-    authDomain: envValue("CAREGIVER_WEB_FIREBASE_AUTH_DOMAIN"),
-    projectId: envValue("CAREGIVER_WEB_FIREBASE_PROJECT_ID"),
-    appId: envValue("CAREGIVER_WEB_FIREBASE_APP_ID"),
+    apiKey: requiredEnv("CAREGIVER_WEB_FIREBASE_API_KEY"),
+    authDomain: requiredEnv("CAREGIVER_WEB_FIREBASE_AUTH_DOMAIN"),
+    projectId: requiredEnv("CAREGIVER_WEB_FIREBASE_PROJECT_ID"),
+    appId: requiredEnv("CAREGIVER_WEB_FIREBASE_APP_ID"),
   },
   featureFlags: {
     marketplace: boolEnv("CAREGIVER_WEB_MARKETPLACE_ENABLED", true),
     dailyCareTasks: boolEnv("CAREGIVER_WEB_DAILY_CARE_TASKS_ENABLED", true),
   },
 };
+
+console.log("[caregiver-web-build-config] env summary (masked)", {
+  apiBaseUrl: config.apiBaseUrl,
+  firebaseApiKey: "set",
+  firebaseAuthDomain: "set",
+  firebaseProjectId: "set",
+  firebaseAppId: "set",
+  marketplace: config.featureFlags.marketplace,
+  dailyCareTasks: config.featureFlags.dailyCareTasks,
+});
 
 const source = `// Generated at deploy time by caregiver_web/build_config_from_env.js.
 // Do not edit in git.
