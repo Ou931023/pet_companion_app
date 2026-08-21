@@ -1,4 +1,4 @@
-# CR-0100 Elder Top-5 Pet Q-Style Candidates
+# CR-0100 Elder-Friendly Pet Q-Style Candidates
 
 Generated on 2026-08-21 as candidate mother sheets for pets likely to be
 friendly and familiar to older adults.
@@ -6,14 +6,13 @@ friendly and familiar to older adults.
 ## Important Scope
 
 The repo does not currently contain the formal survey table for "top 10 pets
-older adults want". Until the survey source is added, this folder uses a
-working top-5 assumption:
+older adults want". Until the survey source is added, this folder keeps four
+elder-friendly candidate directions:
 
 1. Dog
 2. Cat
 3. Rabbit
 4. Bird
-5. Fish
 
 Replace this list when the actual survey result is available.
 
@@ -36,13 +35,12 @@ The goal is **not strict old-character matching**. The production goal is:
 | Cat | `cat_q_elder_top5_state_sheet_v1.png` | Strong; tabby markings and white paws make the pet identity clear. |
 | Rabbit | `rabbit_q_elder_top5_state_sheet_v1.png` | Good; species is clear, but sad state changes ears to lop style and should be corrected before integration. |
 | Bird | `bird_q_elder_top5_state_sheet_v1.png` | Strong; simple, readable, and warm. |
-| Fish | `fish_q_elder_top5_state_sheet_v1.png` | Good; very readable, but scarf/ribbon should be reviewed so it does not feel unnatural. |
 
 ## Production Gate
 
 These are candidate mother sheets only. Do not integrate them into the app until:
 
-- The actual survey top-5 is confirmed or this assumption is accepted.
+- The actual survey ranking is confirmed or this candidate set is accepted.
 - Each selected sheet is split into independent transparent PNG state assets.
 - The full app state set is complete: `normal`, `happy`, `caring`, `sad`,
   `excited`, `hungry`, `thirsty`, `sleepy`.

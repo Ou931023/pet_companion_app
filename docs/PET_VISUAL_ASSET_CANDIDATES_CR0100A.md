@@ -108,7 +108,7 @@ These files are **not production app assets yet**. Keep the app exposing `真實
 only for dog until each non-dog candidate has split transparent state files,
 full state coverage, listening, rest, talk, small-size QA, and manifest tests.
 
-## Elder Top-5 Q-Style Candidate Direction
+## Elder-Friendly Q-Style Candidate Direction
 
 A second candidate direction was added under:
 
@@ -122,10 +122,10 @@ each pet is immediately recognizable and likable:
 - Cat: tabby markings, bright eyes, gentle expression.
 - Rabbit: soft long ears, round face, calm presence.
 - Bird: small, cheerful, clear silhouette.
-- Fish: round goldfish shape, warm colors, readable fins.
 
-The current top-5 list is a working assumption because the formal survey table
-is not present in the repo. Replace it with the real survey result once added.
+The current candidate list is a working assumption because the formal survey
+table is not present in the repo. Replace or reorder the remaining pet list when
+the real survey result is added.
 
 ## Production Direction
 
@@ -140,7 +140,7 @@ is not present in the repo. Replace it with the real survey result once added.
 ## Next Required Work
 
 1. Keep dog realistic as the only production-enabled `真實版` option.
-2. Add or confirm the actual survey top-10 / top-5 pet ranking.
+2. Add or confirm the actual survey top-10 / selected pet ranking.
 3. Prefer Q-style species-clear candidates for broader pet expansion before adding more realistic variants.
 4. Review non-dog candidate sheets for obvious species traits and senior-friendly warmth.
 5. For selected candidates, split four state cells and convert to transparent PNGs.
