@@ -4186,3 +4186,48 @@ CR-0090 已改後端語音 persona，但 `realtime_voice_service.dart` 內供 `s
 
 ### 裁決
 雪貂下架乾淨（程式 / 素材 / 入口 / 文案皆無殘留，僅保留 fallback 防呆與下架測試）；投資免責以「後端決定性附加」+「persona 指示」雙保險覆蓋 typed / Realtime / 台語；未碰受保護主流程與 API 契約；三端測試全綠。併入主線。**下一個可用 CR 編號：CR-0098。**
+
+---
+
+## CR-0098 — Caregiver Web Firebase Login Runtime Config
+
+### 模式
+**跨邊界 production blocker 修正**（backend-agent + frontend-ux-agent）：Render Static Site build log 顯示
+`CAREGIVER_WEB_FIREBASE_*` 已進 build，但公開頁面仍維持 `firebase: null`，代表 Static Site
+發布內容沒有可靠採用 build-time 注入結果。改為由正式後端提供 public runtime config endpoint，
+caregiver_web 啟動時讀取設定，再初始化 Firebase Email / Google 登入。
+
+### 根因
+- Static Site build command 成功不代表 build-time 修改後的 `index.html` / generated JS 一定會成為公開產物。
+- 前端現況仍偏「貼 Firebase ID token / caregiver session token」，缺少真正的一鍵 Firebase 登入流程。
+- 結果是 Render 顯示 live，但照護人員登入仍落回舊 token 流程，容易出現「登入已失效」。
+
+### 變更
+- `backend/stt_proxy/server.js`：新增 `GET /api/caregiver-web/config`，回傳 public Firebase Web config
+  shape、production API base URL 與 feature flags；缺欄位回 `503 caregiver_web_config_missing`；
+  `Cache-Control: no-store`；不回傳 Firebase Admin service account、private key 或 admin token。
+- `caregiver_web/app.js`：啟動時先 fetch `/caregiver-web/config` 並 merge 到 `window.APP_CONFIG`；
+  照護人員支援 Firebase Email / Google popup 登入；登入成功後取 Firebase ID token，沿用既有
+  caregiver bearer token 授權 API。
+- `caregiver_web/index.html` / `styles.css`：新增照護人員 Email / 密碼 / Google 登入入口；保留貼權杖
+  作為備援；正式 API fallback 指向 `https://ai-companion-api-rdjv.onrender.com/api`。
+
+### 風險與邊界
+- 不改 DB schema。
+- 不改既有 caregiver / admin protected API response shape。
+- 新 endpoint 僅提供 Firebase Web config（瀏覽器端 public config），不得放 Admin private key。
+- 後端正式環境需設定與 Static Site 相同的 `CAREGIVER_WEB_FIREBASE_API_KEY` /
+  `CAREGIVER_WEB_FIREBASE_AUTH_DOMAIN` / `CAREGIVER_WEB_FIREBASE_PROJECT_ID` /
+  `CAREGIVER_WEB_FIREBASE_APP_ID`。
+
+### 測試
+- `node --check caregiver_web/app.js && node --check backend/stt_proxy/server.js`
+- `node --test caregiver_web/config_api_base.test.js`
+- `node --test backend/stt_proxy/services/caregiverWebConfigEndpoint.test.js`
+- `flutter test test/config/store_readiness_test.dart` 未執行成功：目前 checkout 無該檔案。
+
+### 裁決
+此為正式 caregiver_web 登入 blocker 修正：將不穩定的 Static Site build-time config 注入改為後端
+runtime config，並讓照護人員可真正以 Firebase Email / Google 登入。跨邊界但範圍受控，測試守住
+public config shape 與前端登入入口；併入主線後需同步部署 backend 與 caregiver_web，並在 backend
+Render Environment 補齊 `CAREGIVER_WEB_FIREBASE_*` 四個 Web config 變數。**下一個可用 CR 編號：CR-0099。**

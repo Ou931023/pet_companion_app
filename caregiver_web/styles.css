@@ -1649,6 +1649,11 @@ code {
 .auth-token-row .text-input {
   flex: 1 1 240px;
 }
+.firebase-login {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .auth-hint {
   margin: 0;
 }

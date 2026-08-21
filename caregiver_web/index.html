@@ -54,6 +54,28 @@
             <button id="auth-login" class="btn btn-primary" type="button">登入</button>
             <button id="auth-logout" class="btn hidden" type="button">登出</button>
           </div>
+          <div class="firebase-login" id="firebase-login">
+            <div class="row auth-token-row">
+              <input
+                id="firebase-email"
+                type="email"
+                class="text-input"
+                placeholder="照護人員 Email"
+                autocomplete="email"
+              />
+              <input
+                id="firebase-password"
+                type="password"
+                class="text-input"
+                placeholder="密碼"
+                autocomplete="current-password"
+              />
+            </div>
+            <div class="row auth-token-row">
+              <button id="firebase-email-login" class="btn btn-primary" type="button">Email 登入</button>
+              <button id="firebase-google-login" class="btn" type="button">Google 登入</button>
+            </div>
+          </div>
           <p id="auth-hint" class="hint auth-hint"></p>
           <p id="auth-message" class="status-message"></p>
         </div>
@@ -750,7 +772,7 @@
       // - dailyCareTasks：今日任務已平移到 PostgreSQL 並在正式環境上線（CR-0068，
       //   migration 016），故開啟分頁。原因後端回 501 暫時關閉，現已解除。
       window.APP_CONFIG = window.APP_CONFIG || {
-        apiBaseUrl: "https://ai-companion-app-7mb8.onrender.com/api",
+        apiBaseUrl: "https://ai-companion-api-rdjv.onrender.com/api",
         featureFlags: { marketplace: true, dailyCareTasks: true },
       };
     </script>
@@ -767,6 +789,6 @@
         window.APP_CONFIG.apiBaseUrl = null;
       }
     </script>
-    <script src="./app.js?v=20260611-cr0068"></script>
+    <script src="./app.js?v=20260821-cr0103b"></script>
   </body>
 </html>

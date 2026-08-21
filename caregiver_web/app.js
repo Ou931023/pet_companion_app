@@ -95,6 +95,36 @@
     return normalizeBase(cfg.apiBaseUrl);
   }
 
+  function mergeAppConfig(nextConfig) {
+    if (!nextConfig || typeof nextConfig !== "object") return;
+    var current = (typeof window !== "undefined" && window.APP_CONFIG) || {};
+    window.APP_CONFIG = Object.assign({}, current, nextConfig, {
+      firebase: Object.assign({}, current.firebase || {}, nextConfig.firebase || {}),
+      featureFlags: Object.assign(
+        {},
+        current.featureFlags || {},
+        nextConfig.featureFlags || {}
+      ),
+    });
+  }
+
+  function loadRuntimeConfig() {
+    var url = getApiBase() + "/caregiver-web/config";
+    return fetch(url)
+      .then(function (r) {
+        if (!r.ok) throw new Error("config_unavailable");
+        return r.json();
+      })
+      .then(function (body) {
+        if (body && body.ok === true && body.config) {
+          mergeAppConfig(body.config);
+        }
+      })
+      .catch(function () {
+        // 靜默退回 index.html 內的 APP_CONFIG；登入區會用白話提示設定尚未完成。
+      });
+  }
+
   // 功能旗標（CR-0056）：marketplace（商品 / 訂單）與 dailyCareTasks（今日任務）
   // 分頁能力保留，但「正式版預設隱藏入口」。未提供 featureFlags 或對應旗標時，
   // 一律視為關閉（隱藏）；只有明確設成 true 才顯示。純前端隱藏分頁，
@@ -984,12 +1014,17 @@
     tokenInput: document.getElementById("auth-token-input"),
     login: document.getElementById("auth-login"),
     logout: document.getElementById("auth-logout"),
+    firebaseLogin: document.getElementById("firebase-login"),
+    firebaseEmail: document.getElementById("firebase-email"),
+    firebasePassword: document.getElementById("firebase-password"),
+    firebaseEmailLogin: document.getElementById("firebase-email-login"),
+    firebaseGoogleLogin: document.getElementById("firebase-google-login"),
     hint: document.getElementById("auth-hint"),
     message: document.getElementById("auth-message"),
   };
 
   var CAREGIVER_HINT =
-    "照護人員請貼上自己的登入權杖（Firebase 登入後取得的 ID Token，或機構提供的 caregiver session 權杖）。登入後只會看到您被指派的住民。完整的一鍵登入畫面為後續更新項目。";
+    "照護人員請使用 Email 或 Google 登入；若機構提供登入權杖，也可貼上權杖登入。登入後只會看到您被指派的住民。";
   var SUPER_ADMIN_HINT =
     "管理者權杖（ADMIN_API_TOKEN）擁有最高權限、可檢視全部住民資料，正式環境請勿提供給一般照護人員。";
 
@@ -1020,6 +1055,93 @@
     if (mode === "super_admin") elA.hint.textContent = SUPER_ADMIN_HINT;
     else if (mode === "caregiver") elA.hint.textContent = CAREGIVER_HINT;
     else elA.hint.textContent = CAREGIVER_HINT;
+    if (elA.firebaseLogin) {
+      elA.firebaseLogin.classList.toggle("hidden", mode !== "caregiver");
+    }
+  }
+
+  function firebaseWebConfig() {
+    var cfg = (typeof window !== "undefined" && window.APP_CONFIG) || {};
+    var firebase = cfg.firebase || {};
+    if (
+      firebase.apiKey &&
+      firebase.authDomain &&
+      firebase.projectId &&
+      firebase.appId
+    ) {
+      return firebase;
+    }
+    return null;
+  }
+
+  var firebaseAuthPromise = null;
+
+  function getFirebaseAuth() {
+    var cfg = firebaseWebConfig();
+    if (!cfg) {
+      return Promise.reject(new Error("firebase_config_missing"));
+    }
+    if (firebaseAuthPromise) return firebaseAuthPromise;
+    firebaseAuthPromise = Promise.all([
+      import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js"),
+      import("https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js"),
+    ]).then(function (mods) {
+      var appMod = mods[0];
+      var authMod = mods[1];
+      var app = appMod.initializeApp(cfg);
+      return {
+        auth: authMod.getAuth(app),
+        authMod: authMod,
+      };
+    });
+    return firebaseAuthPromise;
+  }
+
+  function completeFirebaseCaregiverLogin(userCredential) {
+    return userCredential.user.getIdToken().then(function (token) {
+      applyLogin("caregiver", token);
+      if (elA.firebasePassword) elA.firebasePassword.value = "";
+      showAuthMessage("正在以照護人員身分載入資料…", false);
+      reloadActiveView();
+    });
+  }
+
+  function handleFirebaseLoginError(error) {
+    var code = error && error.code ? String(error.code) : "";
+    if (error && error.message === "firebase_config_missing") {
+      showAuthMessage("照護人員登入設定尚未完成，請聯絡管理者。", true);
+    } else if (code.indexOf("auth/") === 0) {
+      showAuthMessage("登入沒有成功，請確認帳號和密碼是否正確。", true);
+    } else {
+      showAuthMessage("目前無法登入，請稍後再試。", true);
+    }
+  }
+
+  function onFirebaseEmailLoginClick() {
+    var email = elA.firebaseEmail ? (elA.firebaseEmail.value || "").trim() : "";
+    var password = elA.firebasePassword ? elA.firebasePassword.value || "" : "";
+    if (!email || !password) {
+      showAuthMessage("請輸入照護人員 Email 和密碼。", true);
+      return;
+    }
+    showAuthMessage("登入中…", false);
+    getFirebaseAuth()
+      .then(function (ctx) {
+        return ctx.authMod.signInWithEmailAndPassword(ctx.auth, email, password);
+      })
+      .then(completeFirebaseCaregiverLogin)
+      .catch(handleFirebaseLoginError);
+  }
+
+  function onFirebaseGoogleLoginClick() {
+    showAuthMessage("正在開啟 Google 登入…", false);
+    getFirebaseAuth()
+      .then(function (ctx) {
+        var provider = new ctx.authMod.GoogleAuthProvider();
+        return ctx.authMod.signInWithPopup(ctx.auth, provider);
+      })
+      .then(completeFirebaseCaregiverLogin)
+      .catch(handleFirebaseLoginError);
   }
 
   function updateAuthStatusUi() {
@@ -3784,6 +3906,12 @@
     // 身分 / 登入列（CR-0042）。
     if (elA.login) elA.login.addEventListener("click", onLoginClick);
     if (elA.logout) elA.logout.addEventListener("click", onLogoutClick);
+    if (elA.firebaseEmailLogin) {
+      elA.firebaseEmailLogin.addEventListener("click", onFirebaseEmailLoginClick);
+    }
+    if (elA.firebaseGoogleLogin) {
+      elA.firebaseGoogleLogin.addEventListener("click", onFirebaseGoogleLoginClick);
+    }
     if (elA.modeCaregiver) {
       elA.modeCaregiver.addEventListener("change", updateAuthHint);
     }
@@ -3988,5 +4116,5 @@
     loadAlerts();
   }
 
-  init();
+  loadRuntimeConfig().then(init, init);
 })();
