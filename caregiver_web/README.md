@@ -49,6 +49,10 @@ node scripts/check_caregiver_web_config.js caregiver_web/config.js
 
 Render 的 caregiver web Static Site 建議使用：
 
+- 最穩方式：Render Dashboard → `New` → `Blueprint` → 連到本 repo 的 `render.yaml`。
+  Blueprint 會建立 / 更新 `ai-companion-caregiver-web` Static Site，並要求你填
+  `sync: false` 的 Firebase Web config。這些 Firebase 值只存在 Render，不進 git。
+
 - Build Command：
   ```bash
   node caregiver_web/build_config_from_env.js
@@ -70,6 +74,10 @@ Render Environment Variables：
 
 這些值只填在 Render，不寫進 git。部署後打開頁面原始碼應可看到
 `app.js?v=20260821-cr0103`，且不再指向舊的 `ai-companion-app-7mb8` 後端。
+
+若 Render Blueprint 提示 `ai-companion-caregiver-web` 名稱已被其他 workspace 使用，
+請改用新的 Static Site 名稱，部署後把新的 `*.onrender.com` 網域加入 Firebase
+Authorized domains。
 
 ### 本機 / 區網開發
 

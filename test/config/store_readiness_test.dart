@@ -29,10 +29,13 @@ void main() {
       );
       expect(runbook, contains('app.js?v=20260821-cr0103'));
       expect(runbook, contains('https://ai-companion-api-rdjv.onrender.com/api'));
+      expect(runbook, contains('/config.js'));
       expect(runbook, contains('No-Go'));
     });
 
     test('store documents point to the executable runbook', () {
+      final renderYaml = _read('render.yaml');
+
       expect(
         _read('docs/STORE_RELEASE_CHECKLIST.md'),
         contains('docs/STORE_SUBMISSION_RUNBOOK.md'),
@@ -73,6 +76,15 @@ void main() {
         _read('docs/PRODUCTION_CONFIG_CHECKLIST.md'),
         contains('docs/FINAL_STORE_BLOCKER_BOARD.md'),
       );
+      expect(renderYaml, contains('name: ai-companion-caregiver-web'));
+      expect(renderYaml, contains('runtime: static'));
+      expect(renderYaml, contains('staticPublishPath: caregiver_web'));
+      expect(
+        renderYaml,
+        contains('buildCommand: node caregiver_web/build_config_from_env.js'),
+      );
+      expect(renderYaml, contains('CAREGIVER_WEB_API_BASE_URL'));
+      expect(renderYaml, contains('sync: false'));
     });
 
     test('caregiver operations runbook covers analytics handoff and Telegram', () {

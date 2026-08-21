@@ -111,6 +111,8 @@
 - [ ] Render Static Site Build Command：`node caregiver_web/build_config_from_env.js`。
 - [ ] Render Static Site Publish Directory：`caregiver_web`。
 - [ ] Render env 設定 `CAREGIVER_WEB_API_BASE_URL=https://ai-companion-api-rdjv.onrender.com/api`。
+- [ ] 若找不到既有 Static Site，使用 repo 根目錄 `render.yaml` 建立 Render Blueprint；
+      Firebase Web config 欄位必須以 `sync: false` 在 Render UI 填值，不寫進 git。
 
 ---
 
