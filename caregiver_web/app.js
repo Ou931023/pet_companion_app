@@ -647,6 +647,27 @@
     el.detailBody.innerHTML = "";
   }
 
+  // ========== 照護工作台 ==========
+  var elW = {
+    tab: document.getElementById("tab-workspace"),
+    view: document.getElementById("view-workspace"),
+    refresh: document.getElementById("workspace-refresh"),
+    startTour: document.getElementById("workspace-start-tour"),
+    residentCount: document.getElementById("workspace-resident-count"),
+    alertCount: document.getElementById("workspace-alert-count"),
+    taskCount: document.getElementById("workspace-task-count"),
+    status: document.getElementById("workspace-status"),
+    rosterCount: document.getElementById("workspace-roster-count"),
+    roster: document.getElementById("workspace-roster"),
+    adminSetup: document.getElementById("workspace-admin-setup"),
+    openAssignment: document.getElementById("workspace-open-assignment"),
+    openCaregivers: document.getElementById("workspace-open-caregivers"),
+    importFile: document.getElementById("resident-import-file"),
+    importRun: document.getElementById("resident-import-run"),
+    importStatus: document.getElementById("resident-import-status"),
+  };
+  var workspaceLoaded = false;
+
   // ========== 健康分析 Dashboard（CR-0007 Batch 4）==========
   // 使用後端 6 條 /api/admin/* 端點；只對應實際 response 欄位，不假造欄位。
   var elH = {
@@ -894,6 +915,7 @@
 
   function showView(name) {
     var views = {
+      workspace: { view: elW.view, tab: elW.tab },
       alerts: { view: elH.viewAlerts, tab: elH.tabAlerts },
       analytics: { view: elAN.view, tab: elAN.tab },
       health: { view: elH.viewHealth, tab: elH.tabHealth },
@@ -913,6 +935,10 @@
       }
       if (entry.tab) entry.tab.classList.toggle("is-active", active);
     });
+    if (name === "workspace" && !workspaceLoaded) {
+      workspaceLoaded = true;
+      loadWorkspace();
+    }
     if (name === "analytics" && !analyticsLoaded) {
       analyticsLoaded = true;
       loadAnalyticsElders();
@@ -1134,6 +1160,7 @@
   // CR-0042：依身分模式調整入口。caregiver 不顯示 super_admin-only 分頁。
   function applyAuthModeUi() {
     var caregiver = isCaregiverMode();
+    if (elW.adminSetup) elW.adminSetup.classList.toggle("hidden", caregiver);
     [
       elU && elU.tabUsers,
       elP && elP.tabProducts,
@@ -1143,7 +1170,7 @@
     ].forEach(function (tab) {
       if (tab) tab.classList.toggle("hidden", caregiver);
     });
-    // caregiver 模式若正停在 super_admin-only 分頁，切回照護提醒。
+    // caregiver 模式若正停在 super_admin-only 分頁，切回照護工作台。
     if (caregiver) {
       var name = currentViewName();
       if (
@@ -1153,7 +1180,7 @@
         name === "caregivers" ||
         name === "assignments"
       ) {
-        showView("alerts");
+        showView("workspace");
       }
     }
     updateAuthStatusUi();
@@ -1162,6 +1189,7 @@
 
   // 目前顯示中的分頁名稱（含 super_admin-only 分頁，供 applyAuthModeUi 判斷）。
   function currentViewName() {
+    if (elW.view && !elW.view.classList.contains("hidden")) return "workspace";
     if (elAN.view && !elAN.view.classList.contains("hidden")) return "analytics";
     if (elH.viewHealth && !elH.viewHealth.classList.contains("hidden")) return "health";
     if (elT.viewTasks && !elT.viewTasks.classList.contains("hidden")) return "tasks";
@@ -1176,7 +1204,8 @@
   // 重新載入目前分頁資料（登入後刷新）。
   function reloadActiveView() {
     var name = currentViewName();
-    if (name === "alerts") loadAlerts();
+    if (name === "workspace") loadWorkspace();
+    else if (name === "alerts") loadAlerts();
     else if (name === "health") {
       loadHealthOverview();
       loadElderList();
@@ -1187,6 +1216,306 @@
     else if (name === "caregivers") loadCaregivers();
     else if (name === "assignments") loadAssignments();
     else loadAlerts();
+  }
+
+  function setWorkspaceStatus(message, kind) {
+    if (!elW.status) return;
+    elW.status.textContent = message || "";
+    elW.status.classList.toggle("error", kind === "error");
+  }
+
+  function setImportStatus(message, kind) {
+    if (!elW.importStatus) return;
+    elW.importStatus.textContent = message || "";
+    elW.importStatus.classList.toggle("error", kind === "error");
+  }
+
+  function resetWorkspace() {
+    if (elW.residentCount) elW.residentCount.textContent = "—";
+    if (elW.alertCount) elW.alertCount.textContent = "—";
+    if (elW.taskCount) elW.taskCount.textContent = "—";
+    if (elW.rosterCount) elW.rosterCount.textContent = "";
+    if (elW.roster) elW.roster.innerHTML = "";
+  }
+
+  function workspaceResidentUrl() {
+    return isSuperAdminMode() ? adminUrl("/elders?assignable=1") : adminUrl("/elders");
+  }
+
+  function fetchWorkspaceResidents() {
+    return fetch(workspaceResidentUrl(), { headers: authHeaders() }).then(function (r) {
+      if (r.status === 401) {
+        handleSessionExpired();
+        throw new Error("session_expired");
+      }
+      if (r.status === 403) throw new Error("forbidden");
+      return parseJsonOrApiError(r);
+    });
+  }
+
+  function fetchWorkspaceAlerts() {
+    return fetch(getApiBase() + "/care-alerts?status=new&limit=20", {
+      headers: authHeaders(),
+    }).then(function (r) {
+      if (r.status === 401) {
+        handleSessionExpired();
+        throw new Error("session_expired");
+      }
+      if (r.status === 403) throw new Error("forbidden");
+      if (!r.ok) throw new Error("alerts_failed");
+      return r.json();
+    });
+  }
+
+  function fetchWorkspaceTasks() {
+    return fetch(adminUrl("/daily-care-tasks"), { headers: authHeaders() }).then(function (r) {
+      if (r.status === 401) {
+        handleSessionExpired();
+        throw new Error("session_expired");
+      }
+      if (r.status === 403) throw new Error("forbidden");
+      return parseJsonOrApiError(r);
+    });
+  }
+
+  function normalizeWorkspaceResidents(data) {
+    var rows = Array.isArray(data) ? data : [];
+    return rows
+      .map(function (row) {
+        return {
+          elderId: row.elderId || row.id || "",
+          displayName: row.displayName || row.display_name || "",
+          latestRiskLevel: row.latestRiskLevel || null,
+          lastActiveAt: row.lastActiveAt || null,
+        };
+      })
+      .filter(function (row) {
+        return row.elderId;
+      });
+  }
+
+  function renderWorkspaceRoster(residents) {
+    if (!elW.roster) return;
+    if (elW.rosterCount) elW.rosterCount.textContent = "共 " + residents.length + " 位";
+    if (!residents.length) {
+      elW.roster.innerHTML =
+        '<p class="empty">' +
+        (isSuperAdminMode()
+          ? "目前尚未建立正式住民。可用右側匯入 CSV，或到住民授權指派直接建立。"
+          : "目前尚未被指派住民，請聯絡管理者完成授權。") +
+        "</p>";
+      return;
+    }
+    elW.roster.innerHTML = residents
+      .map(function (r) {
+        return (
+          '<article class="resident-card">' +
+          '<div><strong>' +
+          escapeHtml(r.displayName || r.elderId) +
+          '</strong><small>' +
+          escapeHtml(r.elderId) +
+          "</small></div>" +
+          '<div class="resident-card-actions">' +
+          '<button class="btn btn-sm" data-workspace-elder="' +
+          escapeHtml(r.elderId) +
+          '" data-action="analytics">看分析</button>' +
+          '<button class="btn btn-sm" data-workspace-elder="' +
+          escapeHtml(r.elderId) +
+          '" data-action="tasks">看任務</button>' +
+          "</div></article>"
+        );
+      })
+      .join("");
+  }
+
+  function onWorkspaceRosterClick(e) {
+    var btn =
+      e.target && e.target.closest
+        ? e.target.closest("button[data-workspace-elder]")
+        : null;
+    if (!btn) return;
+    var elderId = btn.getAttribute("data-workspace-elder");
+    var action = btn.getAttribute("data-action");
+    if (action === "analytics") {
+      showView("analytics");
+      analyticsElderId = elderId;
+      if (elAN.elderSelect) elAN.elderSelect.value = elderId;
+      loadResidentAnalytics();
+    } else if (action === "tasks") {
+      showView("tasks");
+      if (elT.tasksFilter) elT.tasksFilter.value = "";
+      loadDailyTasks();
+    }
+  }
+
+  function loadWorkspace() {
+    if (
+      !ensureCanFetch(function (msg) {
+        resetWorkspace();
+        setWorkspaceStatus(msg, "error");
+      })
+    ) {
+      return;
+    }
+    resetWorkspace();
+    setWorkspaceStatus("工作台載入中…", "");
+    Promise.all([fetchWorkspaceResidents(), fetchWorkspaceAlerts(), fetchWorkspaceTasks()])
+      .then(function (results) {
+        var residents = normalizeWorkspaceResidents(results[0]);
+        var alerts = results[1] && Array.isArray(results[1].alerts) ? results[1].alerts : [];
+        var tasks =
+          results[2] && Array.isArray(results[2].tasks)
+            ? results[2].tasks
+            : Array.isArray(results[2])
+              ? results[2]
+              : [];
+        var reviewTasks = tasks.filter(function (t) {
+          return ["needs_review", "submitted", "missed"].indexOf(t.status) >= 0;
+        });
+        if (elW.residentCount) elW.residentCount.textContent = String(residents.length);
+        if (elW.alertCount) elW.alertCount.textContent = String(alerts.length);
+        if (elW.taskCount) elW.taskCount.textContent = String(reviewTasks.length);
+        renderWorkspaceRoster(residents);
+        setWorkspaceStatus(
+          residents.length
+            ? "已載入最新照護資料。"
+            : isSuperAdminMode()
+              ? "尚未建立正式住民。可用 CSV 匯入或在授權指派視窗新增。"
+              : EMPTY_CAREGIVER_MSG,
+          residents.length ? "" : "error"
+        );
+      })
+      .catch(function (err) {
+        resetWorkspace();
+        if (err && err.message === "session_expired") {
+          setWorkspaceStatus(SESSION_EXPIRED_MSG, "error");
+        } else if (err && err.message === "forbidden") {
+          setWorkspaceStatus(FORBIDDEN_MSG, "error");
+        } else {
+          setWorkspaceStatus("目前連不到後端，請稍後重新整理。", "error");
+        }
+      });
+  }
+
+  function parseCsvLine(line) {
+    var cells = [];
+    var current = "";
+    var quoted = false;
+    for (var i = 0; i < line.length; i++) {
+      var ch = line[i];
+      if (ch === '"') {
+        if (quoted && line[i + 1] === '"') {
+          current += '"';
+          i += 1;
+        } else {
+          quoted = !quoted;
+        }
+      } else if (ch === "," && !quoted) {
+        cells.push(current.trim());
+        current = "";
+      } else {
+        current += ch;
+      }
+    }
+    cells.push(current.trim());
+    return cells;
+  }
+
+  function indexOfAny(list, values) {
+    for (var i = 0; i < values.length; i++) {
+      var idx = list.indexOf(values[i]);
+      if (idx >= 0) return idx;
+    }
+    return -1;
+  }
+
+  function parseResidentCsv(text) {
+    var lines = String(text || "")
+      .split(/\r?\n/)
+      .map(function (line) {
+        return line.trim();
+      })
+      .filter(Boolean);
+    if (!lines.length) return [];
+    var first = parseCsvLine(lines[0]).map(function (c) {
+      return c.toLowerCase();
+    });
+    var hasHeader =
+      indexOfAny(first, ["displayname", "display_name", "name", "姓名"]) >= 0;
+    var nameIdx = hasHeader
+      ? indexOfAny(first, ["displayname", "display_name", "name", "姓名"])
+      : 0;
+    var birthIdx = hasHeader
+      ? indexOfAny(first, ["birthyear", "birth_year", "出生年"])
+      : 1;
+    var genderIdx = hasHeader ? indexOfAny(first, ["gender", "性別"]) : 2;
+    return lines
+      .slice(hasHeader ? 1 : 0)
+      .map(parseCsvLine)
+      .map(function (cells) {
+        return {
+          displayName: (cells[nameIdx] || "").trim(),
+          birthYear: birthIdx >= 0 ? normalizeBirthYearInput(cells[birthIdx]) : null,
+          gender: genderIdx >= 0 ? (cells[genderIdx] || "").trim() : "",
+        };
+      })
+      .filter(function (row) {
+        return row.displayName && !Number.isNaN(row.birthYear);
+      });
+  }
+
+  function importResidentCsv() {
+    var file = elW.importFile && elW.importFile.files && elW.importFile.files[0];
+    if (!file) {
+      setImportStatus("請先選擇 CSV 檔案。", "error");
+      return;
+    }
+    if (!getAdminToken()) {
+      setImportStatus(NEED_ADMIN_MSG, "error");
+      return;
+    }
+    var reader = new FileReader();
+    if (elW.importRun) elW.importRun.disabled = true;
+    setImportStatus("讀取檔案中…", "");
+    reader.onload = function () {
+      var rows = parseResidentCsv(reader.result);
+      if (!rows.length) {
+        setImportStatus("CSV 沒有可匯入的住民姓名。", "error");
+        if (elW.importRun) elW.importRun.disabled = false;
+        return;
+      }
+      var ok = 0;
+      var failed = 0;
+      rows
+        .reduce(function (p, row) {
+          return p
+            .then(function () {
+              return createResidentRecord(row.displayName, row.birthYear, row.gender);
+            })
+            .then(function (body) {
+              if (body && body.ok === true) ok += 1;
+              else failed += 1;
+            })
+            .catch(function () {
+              failed += 1;
+            });
+        }, Promise.resolve())
+        .then(function () {
+          setImportStatus(
+            "匯入完成：成功 " + ok + " 筆，失敗 " + failed + " 筆。",
+            failed ? "error" : ""
+          );
+          loadWorkspace();
+        })
+        .finally(function () {
+          if (elW.importRun) elW.importRun.disabled = false;
+        });
+    };
+    reader.onerror = function () {
+      setImportStatus("CSV 讀取失敗，請重新選擇檔案。", "error");
+      if (elW.importRun) elW.importRun.disabled = false;
+    };
+    reader.readAsText(file, "utf-8");
   }
 
   function onLoginClick() {
@@ -2576,28 +2905,28 @@
   // 每一步：view = 要切到哪個分頁；target = 高亮的元素選擇器（null 置中）。
   var TOUR_STEPS = [
     {
-      view: "alerts",
+      view: "workspace",
       target: null,
       title: "歡迎使用長者關懷管理中心",
-      body: "這裡讓家屬或長照人員，查看 AI 陪伴寵物在日常聊天中留意到的長者身心狀況。接下來用幾步帶您看過六個主要分頁。",
+      body: "這裡讓家屬或長照人員，查看 AI 陪伴寵物在日常聊天中留意到的長者身心狀況。先從工作台看今天要關心的人與待處理事項。",
     },
     {
-      view: "alerts",
+      view: "workspace",
       target: ".view-tabs",
-      title: "六個分頁",
-      body: "上方可切換「照護提醒、健康分析、日常任務、使用者管理、商品管理、訂單管理」。平常最常看的是第一頁的照護提醒。",
+      title: "照護流程分頁",
+      body: "平常從「工作台」開始，再依需要進入照護提醒、長者狀態分析、健康分析或日常任務。管理者才會看到帳號與授權設定。",
     },
     {
-      view: "alerts",
-      target: "#stats",
-      title: "關懷概況",
-      body: "這四張卡是一眼可看的重點：新提醒、需通知、緊急、已處理的數量。數字會隨提醒進來即時更新。",
+      view: "workspace",
+      target: ".workspace-metrics",
+      title: "今日重點",
+      body: "這裡會顯示可照護住民、待處理提醒與待確認任務。照護人員只會看到被指派的住民。",
     },
     {
-      view: "alerts",
-      target: ".filters",
-      title: "篩選提醒",
-      body: "可依風險等級、處理狀態、顯示筆數篩選，再按「重新整理」。想先看緊急或待處理的提醒時很方便。",
+      view: "workspace",
+      target: "#workspace-admin-setup",
+      title: "管理者資料建置",
+      body: "管理者可在這裡建立住民與照護人員，也可以用 CSV 匯入住民名單。照護人員登入時不會看到這些管理工具。",
     },
     {
       view: "alerts",
@@ -2645,7 +2974,7 @@
       view: "alerts",
       target: null,
       title: "就這樣，開始使用吧！",
-      body: "隨時可以點右上角的「💡 使用說明」再看一次這份導覽。祝您使用順利，陪伴長者更安心。",
+      body: "隨時可以點右上角的「💡 使用說明」再看一次這份導覽。平常先看工作台，再處理提醒與任務即可。",
     },
   ];
 
@@ -2654,12 +2983,15 @@
     spot: null,
     tooltip: null,
     index: 0,
-    startView: "alerts",
+    startView: "workspace",
     onKey: null,
     onResize: null,
   };
 
   function activeViewName() {
+    if (elW.view && !elW.view.classList.contains("hidden")) {
+      return "workspace";
+    }
     if (elH.viewHealth && !elH.viewHealth.classList.contains("hidden")) {
       return "health";
     }
@@ -4399,11 +4731,33 @@
       updateFirebasePanelUi();
     }
 
+    // 照護工作台：預設入口，整合住民、提醒、任務與資料建置。
+    if (elW.tab) {
+      elW.tab.addEventListener("click", function () {
+        showView("workspace");
+      });
+    }
+    if (elW.refresh) elW.refresh.addEventListener("click", loadWorkspace);
+    if (elW.startTour) elW.startTour.addEventListener("click", startTour);
+    if (elW.openAssignment) {
+      elW.openAssignment.addEventListener("click", function () {
+        showView("assignments");
+        openAssignmentForm();
+      });
+    }
+    if (elW.openCaregivers) {
+      elW.openCaregivers.addEventListener("click", function () {
+        showView("caregivers");
+      });
+    }
+    if (elW.importRun) elW.importRun.addEventListener("click", importResidentCsv);
+    if (elW.roster) elW.roster.addEventListener("click", onWorkspaceRosterClick);
+
     el.saveApiBase.addEventListener("click", function () {
       var next = normalizeBase(el.apiBase.value) || DEFAULT_API_BASE;
       localStorage.setItem(API_BASE_KEY, next);
       el.apiBase.value = next;
-      loadAlerts();
+      loadWorkspace();
     });
 
     el.refresh.addEventListener("click", loadAlerts);
@@ -4592,7 +4946,7 @@
     applyAuthModeUi();
 
     setupGuidedTour();
-    loadAlerts();
+    showView("workspace");
   }
 
   loadRuntimeConfig().then(init, init);

@@ -33,6 +33,7 @@ test("app.js 有導覽核心函式與初始化掛載", () => {
 
 test("導覽涵蓋所有分頁（含 CR-0032 商品 / 訂單管理）", () => {
   for (const view of [
+    'view: "workspace"',
     'view: "alerts"',
     'view: "health"',
     'view: "tasks"',
