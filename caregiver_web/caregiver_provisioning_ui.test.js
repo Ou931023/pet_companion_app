@@ -112,6 +112,17 @@ test("provisioning 讀取後端錯誤碼後顯示可行動訊息", () => {
   assert.ok(assignments.includes("parseJsonOrApiError"), "loadAssignments 應讀取後端錯誤碼");
 });
 
+test("新增住民授權送出前會驗證 select value 是 UUID，避免把姓名或過期選項送到後端", () => {
+  assert.ok(appJs.includes("function isUuid"), "應有 UUID 驗證 helper");
+  const submit = bodyOf("function submitAssignmentForm", 1800);
+  assert.ok(submit.includes("isUuid(residentId)"), "送出前應驗證 residentId");
+  assert.ok(submit.includes("isUuid(caregiverId)"), "送出前應驗證 caregiverId");
+  assert.ok(submit.includes("populateAssignmentSelects();"), "選項異常時應重新載入選項");
+  const populate = bodyOf("function populateAssignmentSelects", 2200);
+  assert.ok(populate.includes("isUuid(e && e.elderId)"), "住民選項應過濾合法 UUID");
+  assert.ok(populate.includes("isUuid(c && c.id)"), "照護人員選項應過濾合法 UUID");
+});
+
 // #9：空 caregiver list 友善空狀態。
 test("空 caregiver 清單顯示『目前尚無照護人員』", () => {
   assert.ok(appJs.includes('"目前尚無照護人員"'), "應有空 caregiver 文案常數");
@@ -145,8 +156,8 @@ test("不使用假資料：select 由後端 API 帶入", () => {
   assert.ok(pop.includes('adminUrl("/elders")'), "住民 select 應來自 /admin/elders");
   assert.ok(pop.includes('adminUrl("/caregivers")'), "照護人員 select 應來自 /admin/caregivers");
   // 來源為空時清楚提示需先建立資料，不以假資料補。
-  assert.ok(pop.includes("請先在「照護人員管理」新增照護人員"), "無照護人員時提示需先建立");
-  assert.ok(pop.includes("確認已有住民資料"), "無住民時提示需先建立");
+  assert.ok(pop.includes("請先在「照護人員管理」新增已啟用照護人員"), "無照護人員時提示需先建立");
+  assert.ok(pop.includes("確認已有可指派住民資料"), "無住民時提示需先建立");
   // 不可硬編 caregiver / 住民識別碼作為清單來源。
   assert.ok(!/caregiversCache\s*=\s*\[\s*\{/.test(appJs), "不可硬編 caregiver 假資料");
 });

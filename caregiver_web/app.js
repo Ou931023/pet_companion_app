@@ -3340,6 +3340,12 @@
     return fallback || "目前後端回應不穩，請重新整理後再試。";
   }
 
+  function isUuid(value) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      String(value || "").trim()
+    );
+  }
+
   var MARKETPLACE_ERROR_MSG = {
     not_enabled:
       "商品與訂單功能尚未在正式後端開放。請確認 Render 後端已部署最新版本，且 production DB migration 已完成。",
@@ -3369,7 +3375,8 @@
     not_found: "找不到這位照護人員，請重新整理後再試。",
   };
   var LINK_ERROR_MSG = {
-    invalid_payload: "請選擇住民與照護人員。",
+    invalid_payload:
+      "住民或照護人員選項資料已過期。請關閉視窗後重新新增，或按重新整理後再選一次。",
     invalid_role: "授權角色設定不正確。",
     resident_not_found: "找不到這位住民，請重新整理後再試。",
     caregiver_not_found: "找不到這位照護人員，請重新整理後再試。",
@@ -3890,8 +3897,14 @@
     function tryFinish() {
       if (elders === null || caregivers === null) return;
       var problems = [];
-      if (!elders.length) problems.push("請先到「健康分析」確認已有住民資料");
-      if (!caregivers.length) problems.push("請先在「照護人員管理」新增照護人員");
+      elders = elders.filter(function (e) {
+        return isUuid(e && e.elderId);
+      });
+      caregivers = caregivers.filter(function (c) {
+        return isUuid(c && c.id);
+      });
+      if (!elders.length) problems.push("請先到「健康分析」確認已有可指派住民資料");
+      if (!caregivers.length) problems.push("請先在「照護人員管理」新增已啟用照護人員");
       if (problems.length) {
         elAS.fResident.innerHTML = elders.length
           ? residentOptions(elders)
@@ -4066,6 +4079,13 @@
     var caregiverId = elAS.fCaregiver.value;
     if (!residentId || !caregiverId) {
       assignmentFormError("請選擇住民與照護人員。");
+      return;
+    }
+    if (!isUuid(residentId) || !isUuid(caregiverId)) {
+      assignmentFormError(
+        "選項資料已過期，正在重新載入。請重新選擇住民與照護人員後再儲存。"
+      );
+      populateAssignmentSelects();
       return;
     }
     submitProvisioning(
