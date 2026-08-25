@@ -111,6 +111,25 @@ async function activeLinkExists(pg, elderId, caregiverId) {
   return Boolean(rows && rows[0]);
 }
 
+function provisioningErrorFromDb(error) {
+  if (!error) return null;
+  if (error.code === "42P01" || error.code === "42703") {
+    return "database_schema_not_ready";
+  }
+  if (error.code === "23503") {
+    const blob = `${error.constraint || ""} ${error.detail || ""} ${error.message || ""}`;
+    if (/caregiver/i.test(blob) || /user/i.test(blob)) return "caregiver_not_found";
+    if (/elder|resident/i.test(blob)) return "resident_not_found";
+    return "invalid_payload";
+  }
+  if (error.code !== "23505") return null;
+  const blob = `${error.constraint || ""} ${error.detail || ""} ${error.message || ""}`;
+  if (/resident_caregiver_links|elder_id|caregiver_id|unique/i.test(blob)) {
+    return "link_exists";
+  }
+  return "create_failed";
+}
+
 // 建立授權關聯。
 //   input: { residentId(必填), caregiverId(必填), role? }
 //   回 { ok:true, link } / { ok:false, error }
@@ -136,12 +155,19 @@ async function createLink(input = {}, options = {}) {
     // 已有 active 關聯 → 不建第二筆（避免重複授權，呼應唯一索引）。
     return { ok: false, error: "link_exists" };
   }
-  const { rows } = await pg.query(
-    `INSERT INTO resident_caregiver_links (elder_id, caregiver_id, role, status)
-       VALUES ($1, $2, $3, 'active')
-     RETURNING id`,
-    [residentId, caregiverId, role],
-  );
+  let rows;
+  try {
+    ({ rows } = await pg.query(
+      `INSERT INTO resident_caregiver_links (elder_id, caregiver_id, role, status)
+         VALUES ($1, $2, $3, 'active')
+       RETURNING id`,
+      [residentId, caregiverId, role],
+    ));
+  } catch (error) {
+    const mapped = provisioningErrorFromDb(error);
+    if (mapped) return { ok: false, error: mapped };
+    throw error;
+  }
   const newId = rows && rows[0] && rows[0].id;
   if (!newId) return { ok: false, error: "create_failed" };
   const link = await getLinkById(pg, newId);
@@ -198,5 +224,6 @@ module.exports = {
   setLinkStatus,
   toSafeLink,
   normalizeRole,
+  provisioningErrorFromDb,
   setPgForTest,
 };

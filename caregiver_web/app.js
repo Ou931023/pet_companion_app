@@ -3374,6 +3374,12 @@
     resident_not_found: "找不到這位住民，請重新整理後再試。",
     caregiver_not_found: "找不到這位照護人員，請重新整理後再試。",
     link_exists: "這位照護人員已經有這位住民的有效授權了。",
+    failed_to_create_link:
+      "新增授權沒有成功。請確認這位照護人員尚未被指派給同一位住民，並重新整理後再試。",
+    failed_to_update_link:
+      "更新授權沒有成功。請重新整理後再試。",
+    failed_to_load_links:
+      "授權資料載入失敗。請確認正式後端資料庫已完成 migration。",
     database_schema_not_ready:
       "正式後端資料庫尚未完成 migration。請對目前 Render 後端使用的 DATABASE_URL 執行 db:migrate 後再試。",
     not_found: "找不到這筆授權，請重新整理後再試。",

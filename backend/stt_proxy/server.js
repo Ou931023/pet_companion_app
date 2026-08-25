@@ -1569,6 +1569,7 @@ const LINK_CLIENT_ERRORS = {
   resident_not_found: 404,
   caregiver_not_found: 404,
   link_exists: 409,
+  database_schema_not_ready: 503,
   not_found: 404,
 };
 
@@ -1698,7 +1699,13 @@ app.get("/api/admin/resident-caregiver-links", requireAdmin, async (_req, res) =
     const links = await residentLinkProvisioning.listLinks();
     return res.json({ ok: true, links });
   } catch (error) {
+    const mapped = residentLinkProvisioning.provisioningErrorFromDb(error);
     logError("admin links list failed", { error: error?.message || error });
+    if (mapped) {
+      return res
+        .status(provisioningStatusCode(mapped, LINK_CLIENT_ERRORS))
+        .json({ ok: false, error: mapped });
+    }
     return res.status(500).json({ ok: false, error: "failed_to_load_links" });
   }
 });
@@ -1713,7 +1720,13 @@ app.post("/api/admin/resident-caregiver-links", requireAdmin, async (req, res) =
       role: body.role,
     });
   } catch (error) {
+    const mapped = residentLinkProvisioning.provisioningErrorFromDb(error);
     logError("admin link create failed", { error: error?.message || error });
+    if (mapped) {
+      return res
+        .status(provisioningStatusCode(mapped, LINK_CLIENT_ERRORS))
+        .json({ ok: false, error: mapped });
+    }
     return res.status(500).json({ ok: false, error: "failed_to_create_link" });
   }
   if (result.ok) {
@@ -1735,7 +1748,13 @@ app.patch("/api/admin/resident-caregiver-links/:id", requireAdmin, async (req, r
   try {
     result = await residentLinkProvisioning.updateLinkRole(req.params.id, role);
   } catch (error) {
+    const mapped = residentLinkProvisioning.provisioningErrorFromDb(error);
     logError("admin link update failed", { error: error?.message || error });
+    if (mapped) {
+      return res
+        .status(provisioningStatusCode(mapped, LINK_CLIENT_ERRORS))
+        .json({ ok: false, error: mapped });
+    }
     return res.status(500).json({ ok: false, error: "failed_to_update_link" });
   }
   if (result.ok) {
