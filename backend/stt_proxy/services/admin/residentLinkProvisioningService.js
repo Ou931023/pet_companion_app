@@ -67,6 +67,20 @@ function toSafeLink(row = {}) {
   };
 }
 
+function minimalCreatedLink(id, residentId, caregiverId, role) {
+  return {
+    id,
+    residentId,
+    residentName: null,
+    caregiverId,
+    caregiverName: null,
+    role: role || "primary",
+    status: "active",
+    createdAt: null,
+    updatedAt: null,
+  };
+}
+
 const LINK_SELECT_JOIN = `
   SELECT l.id, l.elder_id, e.display_name AS resident_name,
          l.caregiver_id, u.display_name AS caregiver_name,
@@ -155,23 +169,30 @@ async function createLink(input = {}, options = {}) {
     // 已有 active 關聯 → 不建第二筆（避免重複授權，呼應唯一索引）。
     return { ok: false, error: "link_exists" };
   }
-  let rows;
   try {
-    ({ rows } = await pg.query(
+    const { rows } = await pg.query(
       `INSERT INTO resident_caregiver_links (elder_id, caregiver_id, role, status)
          VALUES ($1, $2, $3, 'active')
        RETURNING id`,
       [residentId, caregiverId, role],
-    ));
+    );
+    const newId = rows && rows[0] && rows[0].id;
+    if (!newId) return { ok: false, error: "create_failed" };
+    let link = null;
+    try {
+      link = await getLinkById(pg, newId);
+    } catch (_error) {
+      link = null;
+    }
+    return {
+      ok: true,
+      link: link || minimalCreatedLink(newId, residentId, caregiverId, role),
+    };
   } catch (error) {
     const mapped = provisioningErrorFromDb(error);
     if (mapped) return { ok: false, error: mapped };
     throw error;
   }
-  const newId = rows && rows[0] && rows[0].id;
-  if (!newId) return { ok: false, error: "create_failed" };
-  const link = await getLinkById(pg, newId);
-  return { ok: true, link };
 }
 
 // 改 role。回 { ok:true, link } / { ok:false, error }（invalid_role | not_found）。
