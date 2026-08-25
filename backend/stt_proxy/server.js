@@ -640,7 +640,40 @@ app.get("/health", (_, res) => {
   });
 });
 
-function caregiverWebConfigFromEnv(env = process.env) {
+function normalizeCaregiverWebApiBaseUrl(value) {
+  if (!value) return null;
+  const raw = String(value).trim().replace(/\/+$/, "");
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    const staleHosts = new Set([
+      "ai-companion-api.onrender.com",
+      "ai-companion-api-rdjv.onrender.com",
+      "ai-companion-app-7mb8.onrender.com",
+    ]);
+    if (parsed.protocol !== "https:" || staleHosts.has(parsed.hostname)) {
+      return null;
+    }
+    return parsed.pathname.endsWith("/api")
+      ? parsed.toString().replace(/\/+$/, "")
+      : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function inferCaregiverWebApiBaseUrl(req) {
+  if (!req || typeof req.get !== "function") {
+    return "https://ai-companion-api-1gm7.onrender.com/api";
+  }
+  const host = req.get("x-forwarded-host") || req.get("host");
+  const proto = req.get("x-forwarded-proto") || req.protocol || "https";
+  if (!host) return "https://ai-companion-api-1gm7.onrender.com/api";
+  const scheme = proto === "http" ? "http" : "https";
+  return `${scheme}://${host}/api`;
+}
+
+function caregiverWebConfigFromEnv(env = process.env, req = null) {
   const firebase = {
     apiKey: env.CAREGIVER_WEB_FIREBASE_API_KEY || env.FIREBASE_WEB_API_KEY || null,
     authDomain:
@@ -660,9 +693,9 @@ function caregiverWebConfigFromEnv(env = process.env) {
     missing,
     config: {
       apiBaseUrl:
-        env.CAREGIVER_WEB_API_BASE_URL ||
-        env.API_BASE_URL ||
-        "https://ai-companion-api-1gm7.onrender.com/api",
+        normalizeCaregiverWebApiBaseUrl(env.CAREGIVER_WEB_API_BASE_URL) ||
+        normalizeCaregiverWebApiBaseUrl(env.API_BASE_URL) ||
+        inferCaregiverWebApiBaseUrl(req),
       firebase,
       featureFlags: {
         marketplace: env.CAREGIVER_WEB_MARKETPLACE_ENABLED !== "false",
@@ -672,8 +705,8 @@ function caregiverWebConfigFromEnv(env = process.env) {
   };
 }
 
-app.get("/api/caregiver-web/config", (_req, res) => {
-  const { missing, config } = caregiverWebConfigFromEnv();
+app.get("/api/caregiver-web/config", (req, res) => {
+  const { missing, config } = caregiverWebConfigFromEnv(process.env, req);
   res.setHeader("Cache-Control", "no-store");
   if (missing.length) {
     return res.status(503).json({
