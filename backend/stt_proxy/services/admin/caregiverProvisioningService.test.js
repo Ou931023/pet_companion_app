@@ -28,6 +28,16 @@ function makeMockPg(seedUsers = []) {
         return { rows: hit ? [{ id: hit.id }] : [] };
       }
 
+      // Firebase UID 佔用檢查
+      if (/^SELECT id FROM users WHERE firebase_uid = \$1/i.test(sql)) {
+        const firebaseUid = params[0];
+        const excludeId = params[1];
+        const hit = users.find(
+          (u) => u.firebase_uid === firebaseUid && u.id !== excludeId,
+        );
+        return { rows: hit ? [{ id: hit.id }] : [] };
+      }
+
       // 列出 caregivers
       if (/FROM users WHERE role = 'caregiver'/i.test(sql) && /ORDER BY created_at DESC/i.test(sql)) {
         const rows = users
@@ -146,6 +156,17 @@ test("createCaregiver：重複 email → email_exists（全域唯一，含既有
   assert.deepEqual(r, { ok: false, error: "email_exists" });
 });
 
+test("createCaregiver：重複 Firebase UID → firebase_uid_exists（全域唯一，含既有 elder）", async () => {
+  const pg = makeMockPg([
+    { id: "e-1", email: "elder@x.org", role: "elder", status: "active", firebase_uid: "fb-used", created_at: "2026-06-01T00:00:00Z" },
+  ]);
+  const r = await svc.createCaregiver(
+    { email: "new@clinic.org", displayName: "撞 UID", firebaseUid: "fb-used" },
+    { pg },
+  );
+  assert.deepEqual(r, { ok: false, error: "firebase_uid_exists" });
+});
+
 test("updateCaregiver：綁定 firebaseUid（路線 B）", async () => {
   const pg = makeMockPg([
     { id: "cg-1", email: "p@x.org", display_name: "pending", role: "caregiver", status: "active", firebase_uid: null, created_at: "2026-06-01T00:00:00Z" },
@@ -153,6 +174,15 @@ test("updateCaregiver：綁定 firebaseUid（路線 B）", async () => {
   const r = await svc.updateCaregiver("cg-1", { firebaseUid: "fb-bound" }, { pg });
   assert.equal(r.ok, true);
   assert.equal(r.caregiver.firebaseUid, "fb-bound");
+});
+
+test("updateCaregiver：重複 Firebase UID → firebase_uid_exists（排除自身）", async () => {
+  const pg = makeMockPg([
+    { id: "cg-1", email: "a@x.org", role: "caregiver", status: "active", firebase_uid: null, created_at: "2026-06-01T00:00:00Z" },
+    { id: "cg-2", email: "b@x.org", role: "caregiver", status: "active", firebase_uid: "fb-used", created_at: "2026-06-02T00:00:00Z" },
+  ]);
+  const r = await svc.updateCaregiver("cg-1", { firebaseUid: "fb-used" }, { pg });
+  assert.deepEqual(r, { ok: false, error: "firebase_uid_exists" });
 });
 
 test("updateCaregiver：email 改動仍須唯一 → email_exists", async () => {

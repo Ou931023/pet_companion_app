@@ -1557,6 +1557,7 @@ const CAREGIVER_CLIENT_ERRORS = {
   invalid_payload: 400,
   invalid_status: 400,
   email_exists: 409,
+  firebase_uid_exists: 409,
   not_found: 404,
 };
 const LINK_CLIENT_ERRORS = {

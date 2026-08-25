@@ -72,6 +72,28 @@ async function emailTaken(pg, email, excludeId = null) {
   return Boolean(rows && rows[0]);
 }
 
+// 同一 Firebase UID 是否已被任一 user 佔用（全域，排除 excludeId）。
+async function firebaseUidTaken(pg, firebaseUid, excludeId = null) {
+  if (!firebaseUid) return false;
+  const params = [firebaseUid];
+  let sql = "SELECT id FROM users WHERE firebase_uid = $1";
+  if (excludeId != null) {
+    params.push(excludeId);
+    sql += " AND id <> $2";
+  }
+  sql += " LIMIT 1";
+  const { rows } = await pg.query(sql, params);
+  return Boolean(rows && rows[0]);
+}
+
+function provisioningErrorFromDb(error) {
+  if (!error || error.code !== "23505") return null;
+  const blob = `${error.constraint || ""} ${error.detail || ""} ${error.message || ""}`;
+  if (/firebase_uid/i.test(blob)) return "firebase_uid_exists";
+  if (/email/i.test(blob)) return "email_exists";
+  return "create_failed";
+}
+
 // 列出所有 caregiver（role='caregiver'），回安全欄位。
 async function listCaregivers(options = {}) {
   const pg = options.pg || activePg;
@@ -87,7 +109,8 @@ async function listCaregivers(options = {}) {
 
 // 建立 caregiver 帳號。
 //   input: { email(必填), displayName?, firebaseUid?(可 null=pending) }
-//   回 { ok:true, caregiver } / { ok:false, error }（email_required | email_exists）。
+//   回 { ok:true, caregiver } / { ok:false, error }
+//   （email_required | email_exists | firebase_uid_exists）。
 async function createCaregiver(input = {}, options = {}) {
   const pg = options.pg || activePg;
   const email = normalizeEmail(input.email);
@@ -99,20 +122,31 @@ async function createCaregiver(input = {}, options = {}) {
   }
   const displayName = normalizeText(input.displayName);
   const firebaseUid = normalizeText(input.firebaseUid); // null=pending（路線 B）
+  if (firebaseUid && (await firebaseUidTaken(pg, firebaseUid))) {
+    return { ok: false, error: "firebase_uid_exists" };
+  }
 
-  const { rows } = await pg.query(
-    `INSERT INTO users (role, email, display_name, firebase_uid, status, email_verified)
-       VALUES ('caregiver', $1, $2, $3, 'active', FALSE)
-     RETURNING id, email, display_name, role, status, firebase_uid, created_at, updated_at`,
-    [email, displayName, firebaseUid],
-  );
+  let rows;
+  try {
+    ({ rows } = await pg.query(
+      `INSERT INTO users (role, email, display_name, firebase_uid, status, email_verified)
+         VALUES ('caregiver', $1, $2, $3, 'active', FALSE)
+       RETURNING id, email, display_name, role, status, firebase_uid, created_at, updated_at`,
+      [email, displayName, firebaseUid],
+    ));
+  } catch (error) {
+    const mapped = provisioningErrorFromDb(error);
+    if (mapped) return { ok: false, error: mapped };
+    throw error;
+  }
   const row = rows && rows[0];
   if (!row) return { ok: false, error: "create_failed" };
   return { ok: true, caregiver: toSafeCaregiver(row) };
 }
 
 // 修改 caregiver（displayName / email / firebaseUid）。email 改動仍須全域唯一。
-//   回 { ok:true, caregiver } / { ok:false, error }（invalid_payload | not_found | email_exists）。
+//   回 { ok:true, caregiver } / { ok:false, error }
+//   （invalid_payload | not_found | email_exists | firebase_uid_exists）。
 async function updateCaregiver(id, input = {}, options = {}) {
   const pg = options.pg || activePg;
   if (!id) return { ok: false, error: "not_found" };
@@ -136,8 +170,12 @@ async function updateCaregiver(id, input = {}, options = {}) {
   }
   if (input.firebaseUid !== undefined) {
     // 路線 B 綁定：允許設為實際 uid，或清回 null（解除綁定）。
+    const firebaseUid = normalizeText(input.firebaseUid);
+    if (firebaseUid && (await firebaseUidTaken(pg, firebaseUid, id))) {
+      return { ok: false, error: "firebase_uid_exists" };
+    }
     sets.push(`firebase_uid = $${i++}`);
-    params.push(normalizeText(input.firebaseUid));
+    params.push(firebaseUid);
   }
 
   if (sets.length === 0) {
@@ -146,12 +184,19 @@ async function updateCaregiver(id, input = {}, options = {}) {
   sets.push("updated_at = NOW()");
   params.push(id);
 
-  const { rows } = await pg.query(
-    `UPDATE users SET ${sets.join(", ")}
-      WHERE id = $${i} AND role = 'caregiver'
-     RETURNING id, email, display_name, role, status, firebase_uid, created_at, updated_at`,
-    params,
-  );
+  let rows;
+  try {
+    ({ rows } = await pg.query(
+      `UPDATE users SET ${sets.join(", ")}
+        WHERE id = $${i} AND role = 'caregiver'
+       RETURNING id, email, display_name, role, status, firebase_uid, created_at, updated_at`,
+      params,
+    ));
+  } catch (error) {
+    const mapped = provisioningErrorFromDb(error);
+    if (mapped) return { ok: false, error: mapped };
+    throw error;
+  }
   const row = rows && rows[0];
   if (!row) return { ok: false, error: "not_found" };
   return { ok: true, caregiver: toSafeCaregiver(row) };
