@@ -4619,7 +4619,7 @@ Release signing 的 repo 端文件與自動檢查已可執行；真正送審仍�
 ### 變更
 - `backend/stt_proxy/server.js`：新增 `GET /api/caregiver-web/config`，回傳 public Firebase Web config shape、production API base URL 與 feature flags；缺欄位回 `503 caregiver_web_config_missing`；`Cache-Control: no-store`；不回傳 Firebase Admin service account、private key 或 admin token。
 - `caregiver_web/app.js`：啟動時先 fetch `/caregiver-web/config` 並 merge 到 `window.APP_CONFIG`；沿用 main 既有 Firebase Email / Google panel 與狀態機；登入成功後取 Firebase ID token，走既有 caregiver bearer token 授權 API。
-- `caregiver_web/index.html` / `styles.css`：保留照護人員 Email / 密碼 / Google 登入入口與手動權杖備援；正式 API fallback 指向 `https://ai-companion-api-rdjv.onrender.com/api`。
+- `caregiver_web/index.html` / `styles.css`：保留照護人員 Email / 密碼 / Google 登入入口與手動權杖備援；正式 API fallback 指向 `https://ai-companion-api-1gm7.onrender.com/api`。
 
 ### 風險與邊界
 - 不改 DB schema。

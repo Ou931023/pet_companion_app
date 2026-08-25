@@ -21,7 +21,7 @@
   - `https://ou931023.github.io/pet_companion_app/terms.html`
   - `https://ou931023.github.io/pet_companion_app/support.html`
 - [x] Support email：`aicompanion.support@gmail.com`。
-- [x] Production API HTTPS URL：`https://ai-companion-api-rdjv.onrender.com`。
+- [x] Production API HTTPS URL：`https://ai-companion-api-1gm7.onrender.com`。
 - [x] Production PostgreSQL migrations：owner 已回報完成，含 usage tracking schema。
 - [x] Hosted support page includes account / data deletion instructions.
 - [x] Production gating：demo / mock / debug panel / unfinished social sign-in / marketplace / daily-care production 入口關閉。

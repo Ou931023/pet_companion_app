@@ -662,7 +662,7 @@ function caregiverWebConfigFromEnv(env = process.env) {
       apiBaseUrl:
         env.CAREGIVER_WEB_API_BASE_URL ||
         env.API_BASE_URL ||
-        "https://ai-companion-api-rdjv.onrender.com/api",
+        "https://ai-companion-api-1gm7.onrender.com/api",
       firebase,
       featureFlags: {
         marketplace: env.CAREGIVER_WEB_MARKETPLACE_ENABLED !== "false",

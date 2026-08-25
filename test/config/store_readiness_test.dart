@@ -28,7 +28,7 @@ void main() {
         contains('node scripts/check_caregiver_web_config.js caregiver_web/config.js'),
       );
       expect(runbook, contains('app.js?v=20260821-cr0103'));
-      expect(runbook, contains('https://ai-companion-api-rdjv.onrender.com/api'));
+      expect(runbook, contains('https://ai-companion-api-1gm7.onrender.com/api'));
       expect(runbook, contains('/runtime-config.js'));
       expect(runbook, contains('/app-config.generated.js'));
       expect(runbook, contains('No-Go'));

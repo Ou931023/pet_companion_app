@@ -12,7 +12,7 @@
 
 以下資料由 owner / 發行負責人提供，只記錄「名稱與狀態」，不可寫入 secret 值。
 
-- [x] production HTTPS API 網域：Render + Neon production backend 已部署於 `https://ai-companion-api-rdjv.onrender.com`，供 `API_BASE_URL` 使用；不能是 localhost / LAN IP / ngrok。
+- [x] production HTTPS API 網域：Render + Neon production backend 已部署於 `https://ai-companion-api-1gm7.onrender.com`，供 `API_BASE_URL` 使用；不能是 localhost / LAN IP / ngrok。
 - [x] hosted 隱私權政策 URL：`https://ou931023.github.io/pet_companion_app/privacy.html`，供 `PRIVACY_POLICY_URL` 與商店後台使用。
 - [x] hosted 服務條款 URL：`https://ou931023.github.io/pet_companion_app/terms.html`，供 `TERMS_OF_SERVICE_URL` 使用。
 - [x] hosted 支援 / 帳號資料刪除 URL：`https://ou931023.github.io/pet_companion_app/support.html`，供 `SUPPORT_URL`、Google Play account deletion web resource 與商店後台使用。
@@ -65,7 +65,7 @@ npm test
 - [ ] production dart-define 反向測試通過：即使外部誤開 demo / social / marketplace / daily-care，production gating 仍強制關閉。
 - [ ] release signing readiness script 通過，且未讀取 / 輸出任何 secret 值。
 - [ ] caregiver_web config guard 通過；若本次不交付 caregiver_web，需在 release note 明確列為未開放功能。
-- [ ] caregiver_web production deployment 已更新到 `app.js?v=20260821-cr0103`，且 API 指向 `https://ai-companion-api-rdjv.onrender.com/api`。
+- [ ] caregiver_web production deployment 已更新到 `app.js?v=20260821-cr0103`，且 API 指向 `https://ai-companion-api-1gm7.onrender.com/api`。
 - [ ] caregiver_web Render Blueprint / Static Site 已套用 `render.yaml` 或同等設定，`staticPublishPath` 為 `caregiver_web_dist`，且 `/app-config.generated.js` 或 `/runtime-config.js` 回 200。
 - [ ] Android SDK Platform 36 已安裝；AAB target Android 16 / API 36 以上。
 - [ ] backend `npm run check` / `npm test` 通過，或明確記錄未跑原因。

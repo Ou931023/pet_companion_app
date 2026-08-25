@@ -64,7 +64,7 @@ Render 的 caregiver web Static Site 建議使用：
 
 Render Environment Variables：
 
-- `CAREGIVER_WEB_API_BASE_URL=https://ai-companion-api-rdjv.onrender.com/api`
+- `CAREGIVER_WEB_API_BASE_URL=https://ai-companion-api-1gm7.onrender.com/api`
 - `CAREGIVER_WEB_FIREBASE_API_KEY`
 - `CAREGIVER_WEB_FIREBASE_AUTH_DOMAIN`
 - `CAREGIVER_WEB_FIREBASE_PROJECT_ID`
