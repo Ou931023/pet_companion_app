@@ -811,6 +811,8 @@
     formStatus: document.getElementById("assignment-form-status"),
     fId: document.getElementById("asf-id"),
     fResident: document.getElementById("asf-resident"),
+    fNewResidentName: document.getElementById("asf-new-resident-name"),
+    newResidentCreate: document.getElementById("asf-new-resident-create"),
     fCaregiver: document.getElementById("asf-caregiver"),
     fRole: document.getElementById("asf-role"),
     save: document.getElementById("assignment-form-save"),
@@ -1507,39 +1509,47 @@
       });
   }
 
+  function createResidentRecord(displayName, birthYear, gender) {
+    return fetch(adminUrl("/elders"), {
+      method: "POST",
+      headers: adminJsonHeaders(),
+      body: JSON.stringify({ displayName: displayName, birthYear: birthYear, gender: gender }),
+    }).then(function (r) {
+      if (r.status === 401) {
+        handleSessionExpired();
+        throw new Error("session_expired");
+      }
+      if (r.status === 403) throw new Error("forbidden");
+      return parseJsonOrApiError(r);
+    });
+  }
+
+  function normalizeBirthYearInput(value) {
+    if (!value) return null;
+    var birthYear = Number(value);
+    if (!Number.isInteger(birthYear) || birthYear < 1900 || birthYear > 2035) {
+      return NaN;
+    }
+    return birthYear;
+  }
+
   function createResidentFromUsersPage() {
-    var displayName = (elU.residentName && elU.residentName.value || "").trim();
-    var birthYear =
+    var displayName = ((elU.residentName && elU.residentName.value) || "").trim();
+    var birthYear = normalizeBirthYearInput(
       elU.residentBirthYear && elU.residentBirthYear.value
-        ? Number(elU.residentBirthYear.value)
-        : null;
-    var gender = (elU.residentGender && elU.residentGender.value || "").trim();
+    );
+    var gender = ((elU.residentGender && elU.residentGender.value) || "").trim();
     if (!displayName) {
       setResidentCreateStatus("請輸入住民姓名。", "error");
       return;
     }
-    if (
-      birthYear != null &&
-      (!Number.isInteger(birthYear) || birthYear < 1900 || birthYear > 2035)
-    ) {
+    if (Number.isNaN(birthYear)) {
       setResidentCreateStatus("出生年格式不正確。", "error");
       return;
     }
     if (elU.residentCreate) elU.residentCreate.disabled = true;
     setResidentCreateStatus("建立中…", "");
-    fetch(adminUrl("/elders"), {
-      method: "POST",
-      headers: adminJsonHeaders(),
-      body: JSON.stringify({ displayName: displayName, birthYear: birthYear, gender: gender }),
-    })
-      .then(function (r) {
-        if (r.status === 401) {
-          handleSessionExpired();
-          throw new Error("session_expired");
-        }
-        if (r.status === 403) throw new Error("forbidden");
-        return parseJsonOrApiError(r);
-      })
+    createResidentRecord(displayName, birthYear, gender)
       .then(function (body) {
         if (!body || body.ok !== true || !body.resident) {
           throw new Error("api:invalid_payload");
@@ -1566,6 +1576,47 @@
       })
       .finally(function () {
         if (elU.residentCreate) elU.residentCreate.disabled = false;
+      });
+  }
+
+  function createResidentFromAssignmentForm() {
+    var displayName =
+      ((elAS.fNewResidentName && elAS.fNewResidentName.value) || "").trim();
+    if (!displayName) {
+      assignmentFormError("請先輸入住民姓名。");
+      return;
+    }
+    if (elAS.newResidentCreate) elAS.newResidentCreate.disabled = true;
+    assignmentFormError("建立住民中…");
+    createResidentRecord(displayName, null, "")
+      .then(function (body) {
+        if (!body || body.ok !== true || !body.resident) {
+          throw new Error("api:invalid_payload");
+        }
+        if (elAS.fNewResidentName) elAS.fNewResidentName.value = "";
+        assignmentFormError("已建立住民，正在重新載入選項…");
+        populateAssignmentSelects(function () {
+          if (body.resident && body.resident.elderId && elAS.fResident) {
+            elAS.fResident.value = body.resident.elderId;
+          }
+          assignmentFormError("");
+        });
+      })
+      .catch(function (err) {
+        if (err && err.message === "session_expired") {
+          assignmentFormError(SESSION_EXPIRED_MSG);
+        } else if (err && err.message === "forbidden") {
+          assignmentFormError(FORBIDDEN_MSG);
+        } else if (err && err.message && err.message.indexOf("api:") === 0) {
+          assignmentFormError(
+            provisioningErrorMessage(err.message.slice(4), LINK_ERROR_MSG)
+          );
+        } else {
+          assignmentFormError("目前無法建立住民，請稍後再試。");
+        }
+      })
+      .finally(function () {
+        if (elAS.newResidentCreate) elAS.newResidentCreate.disabled = false;
       });
   }
 
@@ -3976,7 +4027,7 @@
       caregivers = caregivers.filter(function (c) {
         return isUuid(c && c.id);
       });
-      if (!elders.length) problems.push("請先到「健康分析」確認已有可指派住民資料");
+      if (!elders.length) problems.push("請在上方輸入住民姓名並按「建立住民」");
       if (!caregivers.length) problems.push("請先在「照護人員管理」新增已啟用照護人員");
       if (problems.length) {
         elAS.fResident.innerHTML = elders.length
@@ -4526,6 +4577,9 @@
       });
     }
     if (elAS.form) elAS.form.addEventListener("submit", submitAssignmentForm);
+    if (elAS.newResidentCreate) {
+      elAS.newResidentCreate.addEventListener("click", createResidentFromAssignmentForm);
+    }
     if (elAS.formClose) elAS.formClose.addEventListener("click", closeAssignmentForm);
     if (elAS.formCancel) elAS.formCancel.addEventListener("click", closeAssignmentForm);
     if (elAS.overlay) {

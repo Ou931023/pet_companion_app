@@ -126,10 +126,24 @@ test("新增住民授權送出前會驗證 select value 是 UUID，避免把姓�
 test("使用者管理可建立正式可指派住民，供授權指派使用", () => {
   assert.ok(indexHtml.includes('id="resident-name"'), "應有住民姓名輸入");
   assert.ok(indexHtml.includes('id="resident-create"'), "應有建立住民按鈕");
+  const helper = bodyOf("function createResidentRecord", 900);
+  assert.ok(helper.includes('adminUrl("/elders")'), "建立住民應呼叫 /api/admin/elders");
+  assert.ok(helper.includes("method: \"POST\""), "建立住民應使用 POST");
+  assert.ok(helper.includes("adminJsonHeaders()"), "建立住民應帶 super_admin JSON header");
   const create = bodyOf("function createResidentFromUsersPage", 2600);
-  assert.ok(create.includes('adminUrl("/elders")'), "建立住民應呼叫 /api/admin/elders");
-  assert.ok(create.includes("method: \"POST\""), "建立住民應使用 POST");
-  assert.ok(create.includes("adminJsonHeaders()"), "建立住民應帶 super_admin JSON header");
+  assert.ok(create.includes("createResidentRecord"), "使用者管理建立住民應重用正式 API helper");
+});
+
+test("授權指派 modal 可直接建立住民，不再要求使用者去健康分析", () => {
+  assert.ok(indexHtml.includes('id="asf-new-resident-name"'), "授權 modal 應有新增住民輸入");
+  assert.ok(indexHtml.includes('id="asf-new-resident-create"'), "授權 modal 應有建立住民按鈕");
+  const inlineCreate = bodyOf("function createResidentFromAssignmentForm", 2300);
+  assert.ok(inlineCreate.includes("createResidentRecord"), "應重用正式建立住民 API");
+  assert.ok(inlineCreate.includes("populateAssignmentSelects"), "建立後應重新載入指派選項");
+  assert.ok(
+    !appJs.includes("請先到「健康分析」確認已有可指派住民資料"),
+    "授權失敗提示不應再引導到健康分析參考清單"
+  );
 });
 
 // #9：空 caregiver list 友善空狀態。
@@ -169,7 +183,7 @@ test("不使用假資料：select 由後端 API 帶入", () => {
   assert.ok(pop.includes('adminUrl("/caregivers")'), "照護人員 select 應來自 /admin/caregivers");
   // 來源為空時清楚提示需先建立資料，不以假資料補。
   assert.ok(pop.includes("請先在「照護人員管理」新增已啟用照護人員"), "無照護人員時提示需先建立");
-  assert.ok(pop.includes("確認已有可指派住民資料"), "無住民時提示需先建立");
+  assert.ok(pop.includes("請在上方輸入住民姓名並按"), "無住民時應在 modal 內引導建立");
   // 不可硬編 caregiver / 住民識別碼作為清單來源。
   assert.ok(!/caregiversCache\s*=\s*\[\s*\{/.test(appJs), "不可硬編 caregiver 假資料");
 });
