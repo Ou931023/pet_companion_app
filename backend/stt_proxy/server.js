@@ -20,6 +20,7 @@ const {
   isFeatureUnavailableError,
 } = require("./config/env");
 assertProductionEnvOrExit(process.env, console);
+const { runStartupMigrations } = require("./db/startupMigrations");
 
 const { createEmbedding } = require("./services/embeddingService");
 const { extractAndStoreMemory } = require("./services/memoryExtractor");
@@ -3074,7 +3075,14 @@ app.post(
   },
 );
 
-if (require.main === module) {
+async function startServer() {
+  try {
+    await runStartupMigrations({ env: process.env, logger: console });
+  } catch (error) {
+    logError("startup migrations failed", { error: error?.message || error });
+    process.exit(1);
+  }
+
   // CR-0032：實際啟動 server 時，若商城商品檔為空，寫入 Demo 種子商品，
   // 方便展示（測試以 require 載入 app，require.main !== module，不會觸發）。
   marketplaceStore
@@ -3090,8 +3098,13 @@ if (require.main === module) {
   });
 }
 
+if (require.main === module) {
+  startServer();
+}
+
 module.exports = app;
 // CR-0050：匯出供單元測試驗證打字 chat persona 組裝（不需打 OpenAI）。
 module.exports.buildCompanionChatInstructions = buildCompanionChatInstructions;
 // CR-0090：測試用匯出語音 persona 組裝器（純函式，非新路由 / 非 response 形狀變更）。
 module.exports.buildRealtimeInstructions = buildRealtimeInstructions;
+module.exports.startServer = startServer;
