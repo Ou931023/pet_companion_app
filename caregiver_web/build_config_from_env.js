@@ -56,7 +56,7 @@ const config = {
   apiBaseUrl:
     envValue("CAREGIVER_WEB_API_BASE_URL") ||
     envValue("API_BASE_URL") ||
-    "https://ai-companion-api-rdjv.onrender.com/api",
+    "https://ai-companion-api-1gm7.onrender.com/api",
   firebase: {
     apiKey: requiredEnv("CAREGIVER_WEB_FIREBASE_API_KEY"),
     authDomain: requiredEnv("CAREGIVER_WEB_FIREBASE_AUTH_DOMAIN"),

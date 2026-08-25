@@ -94,7 +94,7 @@ test("index.html 提供 APP_CONFIG 注入點，且不以 localhost 為正式預�
   );
   assert.equal(
     baseValue,
-    "https://ai-companion-api-rdjv.onrender.com/api",
+    "https://ai-companion-api-1gm7.onrender.com/api",
     "caregiver_web 正式預設應指向目前 production 後端"
   );
   assert.ok(
@@ -175,7 +175,7 @@ test("CR-0103：Render build 可由 env 產生 caregiver_web_dist/config.js", ()
     "config builder 應在 Firebase Web env 缺漏時 fail-fast，並只輸出遮蔽摘要"
   );
   assert.ok(
-    configBuilder.includes("ai-companion-api-rdjv.onrender.com/api"),
+    configBuilder.includes("ai-companion-api-1gm7.onrender.com/api"),
     "config builder fallback 應指向新 production 後端"
   );
   assert.ok(
