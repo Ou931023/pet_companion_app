@@ -38,13 +38,14 @@ test("index.html 提供照護人員管理 / 住民授權指派兩個入口", () 
 
 // #2 + #4：caregiver 模式隱藏兩入口（與既有 users/products/orders 一致）。
 test("caregiver 模式隱藏兩個 super_admin-only 入口", () => {
-  const body = bodyOf("function applyAuthModeUi", 600);
+  const body = bodyOf("function applyAuthModeUi", 900);
   assert.ok(body.includes("elCG && elCG.tab"), "applyAuthModeUi 應切換照護人員管理入口可見性");
   assert.ok(body.includes("elAS && elAS.tab"), "applyAuthModeUi 應切換住民授權指派入口可見性");
   assert.ok(body.includes("caregiver"), "依 caregiver 模式隱藏 super_admin-only 入口");
-  // caregiver 模式停在這兩頁時切回 alerts。
-  assert.ok(body.includes('"caregivers"'), "caregiver 模式應從照護人員管理切回照護提醒");
-  assert.ok(body.includes('"assignments"'), "caregiver 模式應從住民授權指派切回照護提醒");
+  // caregiver 模式停在這兩頁時切回工作台。
+  assert.ok(body.includes('"caregivers"'), "caregiver 模式應從照護人員管理切回工作台");
+  assert.ok(body.includes('"assignments"'), "caregiver 模式應從住民授權指派切回工作台");
+  assert.ok(body.includes('showView("workspace")'), "caregiver 模式應回到工作台");
 });
 
 // #5：建立 / 載入 caregiver 用 super_admin token header，且不用 caregiver scoped helper。

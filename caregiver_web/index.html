@@ -87,7 +87,10 @@
 
       <!-- 分頁：照護提醒 / 健康分析 -->
       <nav class="view-tabs" role="tablist" aria-label="檢視切換">
-        <button id="tab-alerts" class="view-tab is-active" type="button" role="tab">
+        <button id="tab-workspace" class="view-tab is-active" type="button" role="tab">
+          工作台
+        </button>
+        <button id="tab-alerts" class="view-tab" type="button" role="tab">
           照護提醒
         </button>
         <button id="tab-analytics" class="view-tab" type="button" role="tab">
@@ -116,7 +119,64 @@
         </button>
       </nav>
 
-      <div id="view-alerts">
+      <section id="view-workspace" class="view-workspace" aria-hidden="false">
+        <section class="workspace-hero panel">
+          <div>
+            <p class="eyebrow">今日照護工作台</p>
+            <h2>先看需要關心的人，再處理任務與提醒</h2>
+            <p class="workspace-copy">
+              這裡整合住民名單、照護提醒與日常任務。照護人員只會看到被指派的住民；管理者可建立住民、匯入名單並完成授權。
+            </p>
+          </div>
+          <div class="workspace-actions">
+            <button id="workspace-refresh" class="btn btn-primary" type="button">重新整理工作台</button>
+            <button id="workspace-start-tour" class="btn" type="button">看使用導覽</button>
+          </div>
+        </section>
+
+        <section class="workspace-grid">
+          <article class="panel workspace-card">
+            <h2 class="section-title">待處理重點</h2>
+            <div class="workspace-metrics" aria-live="polite">
+              <div><b id="workspace-resident-count">—</b><span>可照護住民</span></div>
+              <div><b id="workspace-alert-count">—</b><span>待處理提醒</span></div>
+              <div><b id="workspace-task-count">—</b><span>待確認任務</span></div>
+            </div>
+            <p id="workspace-status" class="status-message"></p>
+          </article>
+
+          <article class="panel workspace-card" id="workspace-admin-setup">
+            <h2 class="section-title">資料建置</h2>
+            <div class="setup-steps">
+              <button id="workspace-open-assignment" class="setup-step" type="button">
+                <span>1</span><strong>建立住民與授權</strong><small>手動新增住民，指派照護人員</small>
+              </button>
+              <button id="workspace-open-caregivers" class="setup-step" type="button">
+                <span>2</span><strong>照護人員帳號</strong><small>建立 caregiver 並綁定 Firebase UID</small>
+              </button>
+            </div>
+            <div class="import-box">
+              <label class="field-label" for="resident-import-file">匯入住民 CSV</label>
+              <div class="row">
+                <input id="resident-import-file" class="text-input" type="file" accept=".csv,text/csv" />
+                <button id="resident-import-run" class="btn btn-primary" type="button">匯入</button>
+              </div>
+              <p class="hint">CSV 欄位建議：displayName,birthYear,gender。也可以只有第一欄姓名。</p>
+              <p id="resident-import-status" class="status-message"></p>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel">
+          <div class="list-head">
+            <h2 class="section-title">住民一覽</h2>
+            <span id="workspace-roster-count" class="list-count"></span>
+          </div>
+          <div id="workspace-roster" class="workspace-roster"></div>
+        </section>
+      </section>
+
+      <div id="view-alerts" class="hidden" aria-hidden="true">
       <!-- 非醫療診斷提示：風險分級僅供照護參考，避免被誤解為醫療判定 -->
       <p class="hint care-disclaimer">
         情緒辨識與風險分級由系統依對話內容自動產生，僅供照護參考，並非醫療診斷。緊急狀況請直接聯絡長者或撥打緊急電話。
