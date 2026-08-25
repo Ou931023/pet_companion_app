@@ -3307,6 +3307,12 @@
   var CAREGIVER_ERROR_MSG = {
     email_required: "請填寫 Email。",
     email_exists: "這個 Email 已經有人使用了，請換一個。",
+    firebase_uid_exists:
+      "這個 Firebase UID 已經綁到其他帳號。請先編輯既有照護人員，或確認該 UID 沒有被住民帳號使用。",
+    failed_to_create_caregiver:
+      "新增照護人員沒有成功。請確認 Email 與 Firebase UID 沒有被其他帳號使用。",
+    failed_to_update_caregiver:
+      "更新照護人員沒有成功。請確認 Firebase UID 沒有被其他帳號使用。",
     invalid_payload: "沒有要更新的內容。",
     invalid_status: "狀態設定不正確。",
     not_found: "找不到這位照護人員，請重新整理後再試。",
