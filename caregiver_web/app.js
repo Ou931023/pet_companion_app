@@ -714,6 +714,11 @@
     usersStatus: document.getElementById("users-status"),
     usersCount: document.getElementById("users-count"),
     usersTableWrap: document.getElementById("users-table-wrap"),
+    residentName: document.getElementById("resident-name"),
+    residentBirthYear: document.getElementById("resident-birth-year"),
+    residentGender: document.getElementById("resident-gender"),
+    residentCreate: document.getElementById("resident-create"),
+    residentCreateStatus: document.getElementById("resident-create-status"),
   };
   var usersLoaded = false;
 
@@ -1449,6 +1454,12 @@
     elU.usersStatus.classList.toggle("error", kind === "error");
   }
 
+  function setResidentCreateStatus(message, kind) {
+    if (!elU.residentCreateStatus) return;
+    elU.residentCreateStatus.textContent = message || "";
+    elU.residentCreateStatus.classList.toggle("error", kind === "error");
+  }
+
   function loadUsers() {
     elU.usersTableWrap.innerHTML = "";
     elU.usersCount.textContent = "";
@@ -1493,6 +1504,68 @@
             "error"
           );
         }
+      });
+  }
+
+  function createResidentFromUsersPage() {
+    var displayName = (elU.residentName && elU.residentName.value || "").trim();
+    var birthYear =
+      elU.residentBirthYear && elU.residentBirthYear.value
+        ? Number(elU.residentBirthYear.value)
+        : null;
+    var gender = (elU.residentGender && elU.residentGender.value || "").trim();
+    if (!displayName) {
+      setResidentCreateStatus("請輸入住民姓名。", "error");
+      return;
+    }
+    if (
+      birthYear != null &&
+      (!Number.isInteger(birthYear) || birthYear < 1900 || birthYear > 2035)
+    ) {
+      setResidentCreateStatus("出生年格式不正確。", "error");
+      return;
+    }
+    if (elU.residentCreate) elU.residentCreate.disabled = true;
+    setResidentCreateStatus("建立中…", "");
+    fetch(adminUrl("/elders"), {
+      method: "POST",
+      headers: adminJsonHeaders(),
+      body: JSON.stringify({ displayName: displayName, birthYear: birthYear, gender: gender }),
+    })
+      .then(function (r) {
+        if (r.status === 401) {
+          handleSessionExpired();
+          throw new Error("session_expired");
+        }
+        if (r.status === 403) throw new Error("forbidden");
+        return parseJsonOrApiError(r);
+      })
+      .then(function (body) {
+        if (!body || body.ok !== true || !body.resident) {
+          throw new Error("api:invalid_payload");
+        }
+        if (elU.residentName) elU.residentName.value = "";
+        if (elU.residentBirthYear) elU.residentBirthYear.value = "";
+        if (elU.residentGender) elU.residentGender.value = "";
+        setResidentCreateStatus("已建立住民，可到「住民授權指派」新增照護關係。", "");
+        usersLoaded = false;
+      })
+      .catch(function (err) {
+        if (err && err.message === "session_expired") {
+          setResidentCreateStatus(SESSION_EXPIRED_MSG, "error");
+        } else if (err && err.message === "forbidden") {
+          setResidentCreateStatus(FORBIDDEN_MSG, "error");
+        } else if (err && err.message && err.message.indexOf("api:") === 0) {
+          setResidentCreateStatus(
+            provisioningErrorMessage(err.message.slice(4), LINK_ERROR_MSG),
+            "error"
+          );
+        } else {
+          setResidentCreateStatus("目前無法建立住民，請稍後再試。", "error");
+        }
+      })
+      .finally(function () {
+        if (elU.residentCreate) elU.residentCreate.disabled = false;
       });
   }
 
@@ -3922,7 +3995,7 @@
       if (onReady) onReady();
     }
 
-    fetch(adminUrl("/elders"), { headers: adminAuthHeaders() })
+    fetch(adminUrl("/elders?assignable=1"), { headers: adminAuthHeaders() })
       .then(function (r) {
         if (r.status === 401) {
           handleSessionExpired();
@@ -3942,7 +4015,7 @@
         } else if (err && err.message === "forbidden") {
           assignmentFormError(FORBIDDEN_MSG);
         } else {
-          assignmentFormError("讀不到住民清單。請確認正式後端與資料庫 migration 已完成。");
+          assignmentFormError("讀不到可指派住民清單。請確認正式後端與資料庫 migration 已完成。");
         }
         tryFinish();
       });
@@ -4367,6 +4440,9 @@
     }
     if (elU.usersRefresh) {
       elU.usersRefresh.addEventListener("click", loadUsers);
+    }
+    if (elU.residentCreate) {
+      elU.residentCreate.addEventListener("click", createResidentFromUsersPage);
     }
 
     // CR-0032 商品管理分頁。

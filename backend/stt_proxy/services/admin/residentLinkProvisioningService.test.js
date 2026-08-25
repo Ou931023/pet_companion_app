@@ -10,6 +10,7 @@ const svc = require("./residentLinkProvisioningService");
 // 具狀態 mock pg：模擬 elders / users / resident_caregiver_links，依 SQL 形狀路由。
 function makeMockPg({ elders = [], users = [], links = [] } = {}) {
   let seq = links.length;
+  let elderSeq = elders.length;
   const state = { elders, users, links: links.map((l) => ({ ...l })) };
 
   function joinRow(l) {
@@ -37,6 +38,28 @@ function makeMockPg({ elders = [], users = [], links = [] } = {}) {
       if (/^SELECT id FROM elders WHERE id = \$1/i.test(sql)) {
         const hit = state.elders.find((e) => e.id === params[0]);
         return { rows: hit ? [{ id: hit.id }] : [] };
+      }
+      if (/^SELECT id, display_name, birth_year, gender, created_at FROM elders/i.test(sql)) {
+        return {
+          rows: state.elders.map((e) => ({
+            id: e.id,
+            display_name: e.display_name,
+            birth_year: e.birth_year ?? null,
+            gender: e.gender ?? null,
+            created_at: e.created_at ?? null,
+          })),
+        };
+      }
+      if (/^INSERT INTO elders \(display_name, birth_year, gender\)/i.test(sql)) {
+        const row = {
+          id: `elder-${++elderSeq}`,
+          display_name: params[0],
+          birth_year: params[1],
+          gender: params[2],
+          created_at: new Date(Date.now() + elderSeq).toISOString(),
+        };
+        state.elders.push(row);
+        return { rows: [row] };
       }
       if (/^SELECT id FROM users WHERE id = \$1 AND role = 'caregiver'/i.test(sql)) {
         const hit = state.users.find((u) => u.id === params[0] && u.role === "caregiver");
@@ -99,6 +122,48 @@ const ELDER_A = { id: "elder-a", display_name: "陳阿嬤" };
 const CG_1 = { id: "cg-1", display_name: "護理師A", role: "caregiver" };
 
 afterEach(() => svc.setPgForTest(null));
+
+test("listAssignableResidents：只從 elders DB 列出可指派住民安全欄位", async () => {
+  const pg = makeMockPg({
+    elders: [{ id: "elder-a", display_name: "陳阿嬤", birth_year: 1948, gender: "female" }],
+  });
+  const residents = await svc.listAssignableResidents({ pg });
+  assert.deepEqual(residents, [
+    {
+      elderId: "elder-a",
+      displayName: "陳阿嬤",
+      birthYear: 1948,
+      gender: "female",
+      createdAt: null,
+    },
+  ]);
+});
+
+test("createResident：建立 elders row 並回可指派住民格式", async () => {
+  const pg = makeMockPg();
+  const r = await svc.createResident(
+    { displayName: "陳奶奶", birthYear: 1948, gender: "female" },
+    { pg },
+  );
+  assert.equal(r.ok, true);
+  assert.equal(r.resident.elderId, "elder-1");
+  assert.equal(r.resident.displayName, "陳奶奶");
+  assert.equal(r.resident.birthYear, 1948);
+  assert.equal(pg.state.elders.length, 1);
+});
+
+test("createResident：缺姓名或出生年不合理 → invalid_payload", async () => {
+  const pg = makeMockPg();
+  assert.deepEqual(await svc.createResident({ displayName: "" }, { pg }), {
+    ok: false,
+    error: "invalid_payload",
+  });
+  assert.deepEqual(await svc.createResident({ displayName: "陳奶奶", birthYear: 1800 }, { pg }), {
+    ok: false,
+    error: "invalid_payload",
+  });
+  assert.equal(pg.state.elders.length, 0);
+});
 
 test("createLink：成功建立 active link，回 join 名稱與對外 status=active", async () => {
   const pg = makeMockPg({ elders: [ELDER_A], users: [CG_1] });

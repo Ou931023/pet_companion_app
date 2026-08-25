@@ -67,6 +67,16 @@ function toSafeLink(row = {}) {
   };
 }
 
+function toSafeResident(row = {}) {
+  return {
+    elderId: row.id ?? row.elder_id ?? null,
+    displayName: normalizeText(row.display_name),
+    birthYear: row.birth_year ?? null,
+    gender: normalizeText(row.gender),
+    createdAt: row.created_at ?? null,
+  };
+}
+
 function minimalCreatedLink(id, residentId, caregiverId, role) {
   return {
     id,
@@ -101,6 +111,45 @@ async function listLinks(options = {}) {
   const pg = options.pg || activePg;
   const { rows } = await pg.query(`${LINK_SELECT_JOIN} ORDER BY l.created_at DESC LIMIT 500`);
   return (rows || []).map(toSafeLink);
+}
+
+async function listAssignableResidents(options = {}) {
+  const pg = options.pg || activePg;
+  const { rows } = await pg.query(
+    `SELECT id, display_name, birth_year, gender, created_at
+       FROM elders
+      ORDER BY created_at ASC
+      LIMIT 500`,
+  );
+  return (rows || []).map(toSafeResident);
+}
+
+async function createResident(input = {}, options = {}) {
+  const pg = options.pg || activePg;
+  const displayName = normalizeText(input.displayName);
+  const birthYear =
+    input.birthYear == null || input.birthYear === "" ? null : Number(input.birthYear);
+  const gender = normalizeText(input.gender);
+
+  if (!displayName) return { ok: false, error: "invalid_payload" };
+  if (
+    birthYear != null &&
+    (!Number.isInteger(birthYear) || birthYear < 1900 || birthYear > 2035)
+  ) {
+    return { ok: false, error: "invalid_payload" };
+  }
+
+  const { rows } = await pg.query(
+    `INSERT INTO elders (display_name, birth_year, gender)
+       VALUES ($1, $2, $3)
+       RETURNING id, display_name, birth_year, gender, created_at`,
+    [displayName, birthYear, gender],
+  );
+  const resident = rows && rows[0] ? toSafeResident(rows[0]) : null;
+  if (!resident || !resident.elderId) {
+    return { ok: false, error: "database_schema_not_ready" };
+  }
+  return { ok: true, resident };
 }
 
 async function elderExists(pg, elderId) {
@@ -242,11 +291,14 @@ async function setLinkStatus(id, status, options = {}) {
 
 module.exports = {
   VALID_ROLES,
+  listAssignableResidents,
+  createResident,
   listLinks,
   createLink,
   updateLinkRole,
   setLinkStatus,
   toSafeLink,
+  toSafeResident,
   normalizeRole,
   provisioningErrorFromDb,
   setPgForTest,

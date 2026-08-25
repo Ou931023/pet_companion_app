@@ -415,6 +415,35 @@
             </p>
           </div>
 
+          <div class="users-toolbar">
+            <label class="field-label" for="resident-name">新增可指派住民</label>
+            <div class="row">
+              <input
+                id="resident-name"
+                type="text"
+                class="text-input"
+                placeholder="住民姓名，例如陳奶奶"
+                autocomplete="off"
+              />
+              <input
+                id="resident-birth-year"
+                type="number"
+                class="text-input"
+                placeholder="出生年，可留空"
+                min="1900"
+                max="2035"
+              />
+              <select id="resident-gender" class="select">
+                <option value="">性別，可留空</option>
+                <option value="female">女性</option>
+                <option value="male">男性</option>
+                <option value="other">其他</option>
+              </select>
+              <button id="resident-create" class="btn btn-primary">建立住民</button>
+            </div>
+            <p id="resident-create-status" class="status-message"></p>
+          </div>
+
           <p id="users-status" class="status-message"></p>
           <div id="users-table-wrap" class="users-table-wrap"></div>
         </section>
