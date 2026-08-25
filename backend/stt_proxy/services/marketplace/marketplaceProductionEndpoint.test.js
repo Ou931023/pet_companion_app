@@ -1,7 +1,7 @@
 // CR-0066+ Marketplace production DB 路徑端點測試。
 //
 // 背景：商城已從 JSON-only 平移到 PostgreSQL（migration 015）。production 不再回 501
-// not_enabled，而是走 DB（DATABASE_URL + PGVECTOR_ENABLED=true）正常運作。
+// not_enabled，而是走 DB（DATABASE_URL 可連）正常運作。
 //
 // 本測試以 setPgForTest 注入「DB 可用」的 mock pg（server.js 與本檔共用同一 store
 // singleton），並在 production env 下打 HTTP：驗證 marketplace 路由回 200 / {ok:true}。

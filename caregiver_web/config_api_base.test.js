@@ -98,10 +98,10 @@ test("index.html 提供 APP_CONFIG 注入點，且不以 localhost 為正式預�
     "caregiver_web 正式預設應指向目前 production 後端"
   );
   assert.ok(
-    indexHtml.includes('<script src="./app-config.generated.js"></script>') &&
-      indexHtml.includes('<script src="./runtime-config.js"></script>') &&
-      indexHtml.includes('<script src="./config.js"></script>'),
-    "index.html 應先載入 deploy-time app-config.generated.js/runtime-config.js，並保留本機 config.js 備援"
+    !indexHtml.includes('<script src="./app-config.generated.js"></script>') &&
+      !indexHtml.includes('<script src="./runtime-config.js"></script>') &&
+      !indexHtml.includes('<script src="./config.js"></script>'),
+    "index.html 不應載入可能在 Render static publish path 下 404 的外部 config script"
   );
   assert.ok(
     indexHtml.includes("20260821-cr0103"),
