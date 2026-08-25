@@ -159,6 +159,26 @@ test("createLink：DB unique violation → link_exists（競態下仍回可理�
   assert.deepEqual(r, { ok: false, error: "link_exists" });
 });
 
+test("createLink：建立成功但 join 補資料失敗時仍回最小安全 link", async () => {
+  const pg = makeMockPg({ elders: [ELDER_A], users: [CG_1] });
+  const originalQuery = pg.query;
+  pg.query = async (text, params) => {
+    const sql = text.replace(/\s+/g, " ").trim();
+    if (/FROM resident_caregiver_links l/i.test(sql) && /WHERE l\.id = \$1/i.test(sql)) {
+      const err = new Error("column e.display_name does not exist");
+      err.code = "42703";
+      throw err;
+    }
+    return originalQuery(text, params);
+  };
+  const r = await svc.createLink({ residentId: "elder-a", caregiverId: "cg-1", role: "primary" }, { pg });
+  assert.equal(r.ok, true);
+  assert.equal(r.link.residentId, "elder-a");
+  assert.equal(r.link.caregiverId, "cg-1");
+  assert.equal(r.link.role, "primary");
+  assert.equal(r.link.status, "active");
+});
+
 test("provisioningErrorFromDb：schema 未就緒錯誤轉成 database_schema_not_ready", () => {
   assert.equal(svc.provisioningErrorFromDb({ code: "42P01" }), "database_schema_not_ready");
   assert.equal(svc.provisioningErrorFromDb({ code: "42703" }), "database_schema_not_ready");
