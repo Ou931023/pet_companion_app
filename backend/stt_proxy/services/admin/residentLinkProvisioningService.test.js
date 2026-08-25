@@ -159,6 +159,21 @@ test("createLink：DB unique violation → link_exists（競態下仍回可理�
   assert.deepEqual(r, { ok: false, error: "link_exists" });
 });
 
+test("createLink：前置查詢遇到 UUID 格式錯誤 → invalid_payload", async () => {
+  const pg = makeMockPg({ elders: [ELDER_A], users: [CG_1] });
+  const originalQuery = pg.query;
+  pg.query = async (text, params) => {
+    if (/^SELECT id FROM elders WHERE id = \$1/i.test(text.replace(/\s+/g, " ").trim())) {
+      const err = new Error("invalid input syntax for type uuid");
+      err.code = "22P02";
+      throw err;
+    }
+    return originalQuery(text, params);
+  };
+  const r = await svc.createLink({ residentId: "陳奶奶", caregiverId: "cg-1" }, { pg });
+  assert.deepEqual(r, { ok: false, error: "invalid_payload" });
+});
+
 test("createLink：建立成功但 join 補資料失敗時仍回最小安全 link", async () => {
   const pg = makeMockPg({ elders: [ELDER_A], users: [CG_1] });
   const originalQuery = pg.query;
@@ -182,6 +197,10 @@ test("createLink：建立成功但 join 補資料失敗時仍回最小安全 lin
 test("provisioningErrorFromDb：schema 未就緒錯誤轉成 database_schema_not_ready", () => {
   assert.equal(svc.provisioningErrorFromDb({ code: "42P01" }), "database_schema_not_ready");
   assert.equal(svc.provisioningErrorFromDb({ code: "42703" }), "database_schema_not_ready");
+});
+
+test("provisioningErrorFromDb：UUID 格式錯誤轉成 invalid_payload", () => {
+  assert.equal(svc.provisioningErrorFromDb({ code: "22P02" }), "invalid_payload");
 });
 
 test("createLink：role 'backup' → 正規化為 secondary（對齊 013）", async () => {

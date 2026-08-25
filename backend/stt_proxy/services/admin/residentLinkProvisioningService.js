@@ -127,6 +127,9 @@ async function activeLinkExists(pg, elderId, caregiverId) {
 
 function provisioningErrorFromDb(error) {
   if (!error) return null;
+  if (error.code === "22P02") {
+    return "invalid_payload";
+  }
   if (error.code === "42P01" || error.code === "42703") {
     return "database_schema_not_ready";
   }
@@ -152,24 +155,24 @@ async function createLink(input = {}, options = {}) {
   const pg = options.pg || activePg;
   const residentId = normalizeText(input.residentId);
   const caregiverId = normalizeText(input.caregiverId);
-  if (!residentId || !caregiverId) {
-    return { ok: false, error: "invalid_payload" };
-  }
-  const role = normalizeRole(input.role);
-  if (!VALID_ROLES.has(role)) {
-    return { ok: false, error: "invalid_role" };
-  }
-  if (!(await elderExists(pg, residentId))) {
-    return { ok: false, error: "resident_not_found" };
-  }
-  if (!(await caregiverExists(pg, caregiverId))) {
-    return { ok: false, error: "caregiver_not_found" };
-  }
-  if (await activeLinkExists(pg, residentId, caregiverId)) {
-    // 已有 active 關聯 → 不建第二筆（避免重複授權，呼應唯一索引）。
-    return { ok: false, error: "link_exists" };
-  }
   try {
+    if (!residentId || !caregiverId) {
+      return { ok: false, error: "invalid_payload" };
+    }
+    const role = normalizeRole(input.role);
+    if (!VALID_ROLES.has(role)) {
+      return { ok: false, error: "invalid_role" };
+    }
+    if (!(await elderExists(pg, residentId))) {
+      return { ok: false, error: "resident_not_found" };
+    }
+    if (!(await caregiverExists(pg, caregiverId))) {
+      return { ok: false, error: "caregiver_not_found" };
+    }
+    if (await activeLinkExists(pg, residentId, caregiverId)) {
+      // 已有 active 關聯 → 不建第二筆（避免重複授權，呼應唯一索引）。
+      return { ok: false, error: "link_exists" };
+    }
     const { rows } = await pg.query(
       `INSERT INTO resident_caregiver_links (elder_id, caregiver_id, role, status)
          VALUES ($1, $2, $3, 'active')
