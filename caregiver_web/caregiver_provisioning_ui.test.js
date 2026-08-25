@@ -105,6 +105,7 @@ test("provisioning 讀取後端錯誤碼後顯示可行動訊息", () => {
   assert.ok(appJs.includes("function parseJsonOrApiError"), "應共用解析後端 JSON error code");
   assert.ok(appJs.includes("function backendProblemMessage"), "應共用後端錯誤白話化 helper");
   assert.ok(appJs.includes("database_schema_not_ready"), "應辨識 migration/schema 尚未完成");
+  assert.ok(appJs.includes("failed_to_create_link"), "建立授權失敗應有白話錯誤");
   const load = bodyOf("function loadCaregivers", 1900);
   assert.ok(load.includes("parseJsonOrApiError"), "loadCaregivers 應讀取後端錯誤碼");
   const assignments = bodyOf("function loadAssignments", 1700);

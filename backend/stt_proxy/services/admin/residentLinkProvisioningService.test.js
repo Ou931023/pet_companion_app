@@ -143,6 +143,27 @@ test("createLink：同 caregiver+elder 已有 active link → 不建第二筆（
   assert.equal(pg.state.links.length, 1, "不應新增第二筆");
 });
 
+test("createLink：DB unique violation → link_exists（競態下仍回可理解錯誤）", async () => {
+  const pg = makeMockPg({ elders: [ELDER_A], users: [CG_1] });
+  const originalQuery = pg.query;
+  pg.query = async (text, params) => {
+    if (/^INSERT INTO resident_caregiver_links/i.test(text.replace(/\s+/g, " ").trim())) {
+      const err = new Error("duplicate key value violates unique constraint");
+      err.code = "23505";
+      err.constraint = "idx_rcl_unique_active";
+      throw err;
+    }
+    return originalQuery(text, params);
+  };
+  const r = await svc.createLink({ residentId: "elder-a", caregiverId: "cg-1" }, { pg });
+  assert.deepEqual(r, { ok: false, error: "link_exists" });
+});
+
+test("provisioningErrorFromDb：schema 未就緒錯誤轉成 database_schema_not_ready", () => {
+  assert.equal(svc.provisioningErrorFromDb({ code: "42P01" }), "database_schema_not_ready");
+  assert.equal(svc.provisioningErrorFromDb({ code: "42703" }), "database_schema_not_ready");
+});
+
 test("createLink：role 'backup' → 正規化為 secondary（對齊 013）", async () => {
   const pg = makeMockPg({ elders: [ELDER_A], users: [CG_1] });
   const r = await svc.createLink({ residentId: "elder-a", caregiverId: "cg-1", role: "backup" }, { pg });
