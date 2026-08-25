@@ -3313,6 +3313,10 @@
       "新增照護人員沒有成功。請確認 Email 與 Firebase UID 沒有被其他帳號使用。",
     failed_to_update_caregiver:
       "更新照護人員沒有成功。請確認 Firebase UID 沒有被其他帳號使用。",
+    failed_to_load_caregivers:
+      "照護人員資料載入失敗。請確認正式後端資料庫已完成 migration。",
+    database_schema_not_ready:
+      "正式後端資料庫尚未完成 migration。請對目前 Render 後端使用的 DATABASE_URL 執行 db:migrate 後再試。",
     invalid_payload: "沒有要更新的內容。",
     invalid_status: "狀態設定不正確。",
     not_found: "找不到這位照護人員，請重新整理後再試。",
@@ -3373,8 +3377,14 @@
           throw new Error("session_expired");
         }
         if (r.status === 403) throw new Error("forbidden");
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
+        return r.json().then(function (body) {
+          if (!r.ok) {
+            throw new Error(
+              "api:" + (body && body.error ? body.error : "unknown")
+            );
+          }
+          return body;
+        });
       })
       .then(function (body) {
         if (!body || body.ok !== true || !Array.isArray(body.caregivers)) {
@@ -3390,6 +3400,11 @@
           setCaregiversStatus(SESSION_EXPIRED_MSG, "error");
         } else if (err && err.message === "forbidden") {
           setCaregiversStatus(FORBIDDEN_MSG, "error");
+        } else if (err && err.message && err.message.indexOf("api:") === 0) {
+          setCaregiversStatus(
+            provisioningErrorMessage(err.message.slice(4), CAREGIVER_ERROR_MSG),
+            "error"
+          );
         } else {
           setCaregiversStatus("目前連不到後端，待會再重新整理看看。", "error");
         }
