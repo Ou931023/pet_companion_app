@@ -101,6 +101,16 @@ test("403 顯示權限不足", () => {
   assert.ok(loadA.includes("FORBIDDEN_MSG"), "loadAssignments 403 應顯示權限不足");
 });
 
+test("provisioning 讀取後端錯誤碼後顯示可行動訊息", () => {
+  assert.ok(appJs.includes("function parseJsonOrApiError"), "應共用解析後端 JSON error code");
+  assert.ok(appJs.includes("function backendProblemMessage"), "應共用後端錯誤白話化 helper");
+  assert.ok(appJs.includes("database_schema_not_ready"), "應辨識 migration/schema 尚未完成");
+  const load = bodyOf("function loadCaregivers", 1900);
+  assert.ok(load.includes("parseJsonOrApiError"), "loadCaregivers 應讀取後端錯誤碼");
+  const assignments = bodyOf("function loadAssignments", 1700);
+  assert.ok(assignments.includes("parseJsonOrApiError"), "loadAssignments 應讀取後端錯誤碼");
+});
+
 // #9：空 caregiver list 友善空狀態。
 test("空 caregiver 清單顯示『目前尚無照護人員』", () => {
   assert.ok(appJs.includes('"目前尚無照護人員"'), "應有空 caregiver 文案常數");

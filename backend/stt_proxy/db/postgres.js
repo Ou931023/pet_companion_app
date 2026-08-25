@@ -6,12 +6,8 @@ dotenv.config();
 let pool;
 let availability;
 
-function pgvectorEnabled() {
-  return String(process.env.PGVECTOR_ENABLED || "").toLowerCase() === "true";
-}
-
 function getPool() {
-  if (!process.env.DATABASE_URL || !pgvectorEnabled()) {
+  if (!process.env.DATABASE_URL) {
     return null;
   }
   if (!pool) {
@@ -40,7 +36,7 @@ async function query(text, params = []) {
 }
 
 async function isPostgresAvailable() {
-  if (!process.env.DATABASE_URL || !pgvectorEnabled()) return false;
+  if (!process.env.DATABASE_URL) return false;
   if (availability === true) return true;
   try {
     await query("SELECT 1");

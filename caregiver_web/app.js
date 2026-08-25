@@ -2779,8 +2779,7 @@
     setProductsStatus("商品載入中…", "");
     fetch(url)
       .then(function (r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
+        return parseJsonOrApiError(r);
       })
       .then(function (body) {
         if (!body || body.ok !== true || !Array.isArray(body.products)) {
@@ -2790,10 +2789,17 @@
         renderProducts(body.products);
         setProductsStatus("", "");
       })
-      .catch(function () {
+      .catch(function (err) {
         if (elP.tableWrap) elP.tableWrap.innerHTML = "";
         if (elP.count) elP.count.textContent = "";
-        setProductsStatus("目前連不到後端，待會再重新整理看看。", "error");
+        setProductsStatus(
+          backendProblemMessage(
+            err,
+            MARKETPLACE_ERROR_MSG,
+            "商品資料載入失敗。請重新整理後再試。"
+          ),
+          "error"
+        );
       });
   }
 
@@ -2950,8 +2956,7 @@
     })
       .then(function (r) {
         if (r.status === 401 || r.status === 403) throw new Error("unauthorized");
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
+        return parseJsonOrApiError(r);
       })
       .then(function () {
         closeProductForm();
@@ -3051,7 +3056,14 @@
         if (err && err.message === "unauthorized") {
           setOrdersStatus("管理者權杖無效或未授權。", "error");
         } else {
-          setOrdersStatus("目前連不到後端，待會再重新整理看看。", "error");
+          setOrdersStatus(
+            backendProblemMessage(
+              err,
+              MARKETPLACE_ERROR_MSG,
+              "訂單資料載入失敗。請重新整理後再試。"
+            ),
+            "error"
+          );
         }
       });
   }
@@ -3304,6 +3316,41 @@
     return "操作沒有成功，請稍後再試。";
   }
 
+  function parseJsonOrApiError(response, okPredicate) {
+    return response
+      .json()
+      .catch(function () {
+        return null;
+      })
+      .then(function (body) {
+        if (!response.ok || (okPredicate && !okPredicate(body))) {
+          throw new Error(
+            "api:" + (body && body.error ? body.error : "http_" + response.status)
+          );
+        }
+        return body;
+      });
+  }
+
+  function backendProblemMessage(err, map, fallback) {
+    var msg = err && err.message ? err.message : "";
+    if (msg.indexOf("api:") === 0) {
+      return provisioningErrorMessage(msg.slice(4), map);
+    }
+    return fallback || "目前後端回應不穩，請重新整理後再試。";
+  }
+
+  var MARKETPLACE_ERROR_MSG = {
+    not_enabled:
+      "商品與訂單功能尚未在正式後端開放。請確認 Render 後端已部署最新版本，且 production DB migration 已完成。",
+    failed_to_load_products:
+      "商品資料載入失敗。請確認正式後端正在運作，且資料庫 migration 已完成。",
+    failed_to_load_orders:
+      "訂單資料載入失敗。請確認正式後端正在運作，且資料庫 migration 已完成。",
+    invalid_payload: "資料格式不完整，請檢查必填欄位。",
+    not_found: "找不到這筆資料，請重新整理後再試。",
+  };
+
   var CAREGIVER_ERROR_MSG = {
     email_required: "請填寫 Email。",
     email_exists: "這個 Email 已經有人使用了，請換一個。",
@@ -3327,6 +3374,8 @@
     resident_not_found: "找不到這位住民，請重新整理後再試。",
     caregiver_not_found: "找不到這位照護人員，請重新整理後再試。",
     link_exists: "這位照護人員已經有這位住民的有效授權了。",
+    database_schema_not_ready:
+      "正式後端資料庫尚未完成 migration。請對目前 Render 後端使用的 DATABASE_URL 執行 db:migrate 後再試。",
     not_found: "找不到這筆授權，請重新整理後再試。",
   };
 
@@ -3377,14 +3426,7 @@
           throw new Error("session_expired");
         }
         if (r.status === 403) throw new Error("forbidden");
-        return r.json().then(function (body) {
-          if (!r.ok) {
-            throw new Error(
-              "api:" + (body && body.error ? body.error : "unknown")
-            );
-          }
-          return body;
-        });
+        return parseJsonOrApiError(r);
       })
       .then(function (body) {
         if (!body || body.ok !== true || !Array.isArray(body.caregivers)) {
@@ -3406,7 +3448,14 @@
             "error"
           );
         } else {
-          setCaregiversStatus("目前連不到後端，待會再重新整理看看。", "error");
+          setCaregiversStatus(
+            backendProblemMessage(
+              err,
+              CAREGIVER_ERROR_MSG,
+              "照護人員資料載入失敗。請確認正式後端正在運作，且資料庫 migration 已完成。"
+            ),
+            "error"
+          );
         }
       });
   }
@@ -3619,8 +3668,9 @@
           throw new Error("session_expired");
         }
         if (r.status === 403) throw new Error("forbidden");
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
+        return parseJsonOrApiError(r, function (body) {
+          return body && body.ok === true;
+        });
       })
       .then(function () {
         loadCaregivers();
@@ -3634,8 +3684,16 @@
           setCaregiversStatus(SESSION_EXPIRED_MSG, "error");
         } else if (err && err.message === "forbidden") {
           setCaregiversStatus(FORBIDDEN_MSG, "error");
+        } else if (err && err.message && err.message.indexOf("api:") === 0) {
+          setCaregiversStatus(
+            provisioningErrorMessage(err.message.slice(4), CAREGIVER_ERROR_MSG),
+            "error"
+          );
         } else {
-          setCaregiversStatus("狀態更新沒有成功，請稍後再試。", "error");
+          setCaregiversStatus(
+            backendProblemMessage(err, CAREGIVER_ERROR_MSG, "狀態更新沒有成功，請稍後再試。"),
+            "error"
+          );
         }
       });
   }
@@ -3687,8 +3745,7 @@
           throw new Error("session_expired");
         }
         if (r.status === 403) throw new Error("forbidden");
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
+        return parseJsonOrApiError(r);
       })
       .then(function (body) {
         if (!body || body.ok !== true || !Array.isArray(body.links)) {
@@ -3703,8 +3760,20 @@
           setAssignmentsStatus(SESSION_EXPIRED_MSG, "error");
         } else if (err && err.message === "forbidden") {
           setAssignmentsStatus(FORBIDDEN_MSG, "error");
+        } else if (err && err.message && err.message.indexOf("api:") === 0) {
+          setAssignmentsStatus(
+            provisioningErrorMessage(err.message.slice(4), LINK_ERROR_MSG),
+            "error"
+          );
         } else {
-          setAssignmentsStatus("目前連不到後端，待會再重新整理看看。", "error");
+          setAssignmentsStatus(
+            backendProblemMessage(
+              err,
+              LINK_ERROR_MSG,
+              "授權指派資料載入失敗。請確認正式後端正在運作，且資料庫 migration 已完成。"
+            ),
+            "error"
+          );
         }
       });
   }
@@ -3841,8 +3910,7 @@
           throw new Error("session_expired");
         }
         if (r.status === 403) throw new Error("forbidden");
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
+        return parseJsonOrApiError(r);
       })
       .then(function (data) {
         elders = Array.isArray(data) ? data : [];
@@ -3855,7 +3923,7 @@
         } else if (err && err.message === "forbidden") {
           assignmentFormError(FORBIDDEN_MSG);
         } else {
-          assignmentFormError("讀不到住民清單，請稍後再試。");
+          assignmentFormError("讀不到住民清單。請確認正式後端與資料庫 migration 已完成。");
         }
         tryFinish();
       });
@@ -3867,8 +3935,7 @@
           throw new Error("session_expired");
         }
         if (r.status === 403) throw new Error("forbidden");
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
+        return parseJsonOrApiError(r);
       })
       .then(function (body) {
         caregivers =
@@ -3885,6 +3952,12 @@
           assignmentFormError(SESSION_EXPIRED_MSG);
         } else if (err && err.message === "forbidden") {
           assignmentFormError(FORBIDDEN_MSG);
+        } else if (err && err.message && err.message.indexOf("api:") === 0) {
+          assignmentFormError(
+            provisioningErrorMessage(err.message.slice(4), CAREGIVER_ERROR_MSG)
+          );
+        } else {
+          assignmentFormError("讀不到照護人員清單。請確認正式後端與資料庫 migration 已完成。");
         }
         tryFinish();
       });
@@ -4062,8 +4135,9 @@
           throw new Error("session_expired");
         }
         if (r.status === 403) throw new Error("forbidden");
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
+        return parseJsonOrApiError(r, function (body) {
+          return body && body.ok === true;
+        });
       })
       .then(function () {
         loadAssignments();
@@ -4074,8 +4148,16 @@
           setAssignmentsStatus(SESSION_EXPIRED_MSG, "error");
         } else if (err && err.message === "forbidden") {
           setAssignmentsStatus(FORBIDDEN_MSG, "error");
+        } else if (err && err.message && err.message.indexOf("api:") === 0) {
+          setAssignmentsStatus(
+            provisioningErrorMessage(err.message.slice(4), LINK_ERROR_MSG),
+            "error"
+          );
         } else {
-          setAssignmentsStatus("停用沒有成功，請稍後再試。", "error");
+          setAssignmentsStatus(
+            backendProblemMessage(err, LINK_ERROR_MSG, "停用沒有成功，請稍後再試。"),
+            "error"
+          );
         }
       });
   }

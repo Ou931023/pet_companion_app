@@ -27,7 +27,7 @@ const {
 } = require("../../config/env");
 
 // 持久化策略（CR-0066+ 商城 JSON→PostgreSQL 平移；比照 careAlertStoreService §5.3）：
-//   - **DB-優先**：isPostgresAvailable()（要求 DATABASE_URL + PGVECTOR_ENABLED=true）為 true
+//   - **DB-優先**：isPostgresAvailable()（要求 DATABASE_URL 且連線成功）為 true
 //     → 走 PostgreSQL（migration 009 建表、015 放寬 id 為 TEXT 並灌種子）。
 //   - **dev/staging（isJsonFallbackAllowed=true）且無 DB** → 走既有 JSON store（行為零變更，
 //     保住所有現有測試與無 DB 的 Demo 機）。

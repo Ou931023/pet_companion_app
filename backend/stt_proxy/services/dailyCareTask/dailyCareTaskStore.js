@@ -5,7 +5,7 @@
 // 任務狀態，管理者端可查看。
 //
 // 持久化策略（CR-0068 JSON→PostgreSQL 平移；比照 marketplaceStore / careAlertStoreService）：
-//   - **DB-優先**：isPostgresAvailable()（要求 DATABASE_URL + PGVECTOR_ENABLED=true）為 true
+//   - **DB-優先**：isPostgresAvailable()（要求 DATABASE_URL 且連線成功）為 true
 //     → 走 PostgreSQL（migration 016 建 daily_care_tasks / daily_care_task_submissions 兩表）。
 //   - **dev/staging（isJsonFallbackAllowed=true）且無 DB** → 走既有 data/*.json store
 //     （行為零變更，保住所有現有測試與無 DB 的 Demo 機）。
