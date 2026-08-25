@@ -123,6 +123,15 @@ test("新增住民授權送出前會驗證 select value 是 UUID，避免把姓�
   assert.ok(populate.includes("isUuid(c && c.id)"), "照護人員選項應過濾合法 UUID");
 });
 
+test("使用者管理可建立正式可指派住民，供授權指派使用", () => {
+  assert.ok(indexHtml.includes('id="resident-name"'), "應有住民姓名輸入");
+  assert.ok(indexHtml.includes('id="resident-create"'), "應有建立住民按鈕");
+  const create = bodyOf("function createResidentFromUsersPage", 2600);
+  assert.ok(create.includes('adminUrl("/elders")'), "建立住民應呼叫 /api/admin/elders");
+  assert.ok(create.includes("method: \"POST\""), "建立住民應使用 POST");
+  assert.ok(create.includes("adminJsonHeaders()"), "建立住民應帶 super_admin JSON header");
+});
+
 // #9：空 caregiver list 友善空狀態。
 test("空 caregiver 清單顯示『目前尚無照護人員』", () => {
   assert.ok(appJs.includes('"目前尚無照護人員"'), "應有空 caregiver 文案常數");
@@ -153,7 +162,10 @@ test("建立 assignment 成功後刷新列表", () => {
 // #13：不使用假資料填 UI（select 來源為後端 API，非硬編碼）。
 test("不使用假資料：select 由後端 API 帶入", () => {
   const pop = bodyOf("function populateAssignmentSelects", 3200);
-  assert.ok(pop.includes('adminUrl("/elders")'), "住民 select 應來自 /admin/elders");
+  assert.ok(
+    pop.includes('adminUrl("/elders?assignable=1")'),
+    "住民 select 應來自 /admin/elders?assignable=1，不混用健康分析參考清單"
+  );
   assert.ok(pop.includes('adminUrl("/caregivers")'), "照護人員 select 應來自 /admin/caregivers");
   // 來源為空時清楚提示需先建立資料，不以假資料補。
   assert.ok(pop.includes("請先在「照護人員管理」新增已啟用照護人員"), "無照護人員時提示需先建立");

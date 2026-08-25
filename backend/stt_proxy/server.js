@@ -1394,6 +1394,10 @@ app.get("/api/admin/overview", requireAdmin, async (_req, res) => {
 
 app.get("/api/admin/elders", resolveAdminAuthContext, async (req, res) => {
   try {
+    if (authz.isSuperAdmin(req.authContext) && req.query.assignable === "1") {
+      const residents = await residentLinkProvisioning.listAssignableResidents();
+      return res.json(residents);
+    }
     const authContext = req.authContext;
     const elders = await adminAnalysis.listElderSummaries();
     // CR-0040：super_admin 不變；caregiver 只回授權住民。
@@ -1408,6 +1412,31 @@ app.get("/api/admin/elders", resolveAdminAuthContext, async (req, res) => {
     logError("admin elders list failed", { error: error?.message || error });
     return res.status(500).json({ success: false, error: "admin_elders_failed" });
   }
+});
+
+app.post("/api/admin/elders", requireAdmin, async (req, res) => {
+  let result;
+  try {
+    result = await residentLinkProvisioning.createResident({
+      displayName: req.body && req.body.displayName,
+      birthYear: req.body && req.body.birthYear,
+      gender: req.body && req.body.gender,
+    });
+  } catch (error) {
+    const mapped = residentLinkProvisioning.provisioningErrorFromDb(error);
+    if (mapped) {
+      return res
+        .status(provisioningStatusCode(mapped, LINK_CLIENT_ERRORS))
+        .json({ ok: false, error: mapped });
+    }
+    logError("admin resident create failed", { error: error?.message || error });
+    return res.status(500).json({ ok: false, error: "failed_to_create_resident" });
+  }
+
+  if (result.ok) {
+    return res.status(201).json(result);
+  }
+  return res.status(provisioningStatusCode(result.error, LINK_CLIENT_ERRORS)).json(result);
 });
 
 app.get("/api/admin/elders/:elderId", resolveAdminAuthContext, async (req, res) => {
