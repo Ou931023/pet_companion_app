@@ -1068,7 +1068,7 @@
     message: document.getElementById("auth-message"),
     firebasePanel: document.getElementById("firebase-login-panel"),
     firebaseEmail: document.getElementById("firebase-email"),
-    firebasePassword: document.getElementById("firebase-password"),
+    firebaseSecret: document.getElementById("firebase-secret"),
     firebaseEmailLogin: document.getElementById("firebase-email-login"),
     firebaseGoogleLogin: document.getElementById("firebase-google-login"),
     firebaseStatus: document.getElementById("firebase-login-status"),
@@ -1256,7 +1256,7 @@
 
   function firebaseErrorMessage(error) {
     var code = error && error.code ? String(error.code) : "";
-    if (code === "auth/invalid-credential" || code === "auth/wrong-password") {
+    if (code === "auth/invalid-credential") {
       return "Email 或密碼不太對，請再確認一次。";
     }
     if (code === "auth/user-not-found") {
@@ -1334,8 +1334,8 @@
 
   async function onFirebaseEmailLoginClick() {
     var email = elA.firebaseEmail ? (elA.firebaseEmail.value || "").trim() : "";
-    var password = elA.firebasePassword ? elA.firebasePassword.value || "" : "";
-    if (!email || !password) {
+    var secret = elA.firebaseSecret ? elA.firebaseSecret.value || "" : "";
+    if (!email || !secret) {
       setFirebaseStatus("請輸入 Email 和密碼。", true);
       return;
     }
@@ -1346,10 +1346,10 @@
       var result = await state.modules.signInWithEmailAndPassword(
         state.auth,
         email,
-        password
+        secret
       );
       var token = await result.user.getIdToken();
-      if (elA.firebasePassword) elA.firebasePassword.value = "";
+      if (elA.firebaseSecret) elA.firebaseSecret.value = "";
       applyFirebaseCaregiverLogin(result.user, token);
       setFirebaseStatus("已登入。", false);
     } catch (error) {
