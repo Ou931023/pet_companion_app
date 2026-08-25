@@ -87,7 +87,11 @@ async function firebaseUidTaken(pg, firebaseUid, excludeId = null) {
 }
 
 function provisioningErrorFromDb(error) {
-  if (!error || error.code !== "23505") return null;
+  if (!error) return null;
+  if (error.code === "42P01" || error.code === "42703") {
+    return "database_schema_not_ready";
+  }
+  if (error.code !== "23505") return null;
   const blob = `${error.constraint || ""} ${error.detail || ""} ${error.message || ""}`;
   if (/firebase_uid/i.test(blob)) return "firebase_uid_exists";
   if (/email/i.test(blob)) return "email_exists";
@@ -229,5 +233,6 @@ module.exports = {
   updateCaregiver,
   setCaregiverStatus,
   toSafeCaregiver,
+  provisioningErrorFromDb,
   setPgForTest,
 };

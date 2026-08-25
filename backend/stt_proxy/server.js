@@ -1558,6 +1558,7 @@ const CAREGIVER_CLIENT_ERRORS = {
   invalid_status: 400,
   email_exists: 409,
   firebase_uid_exists: 409,
+  database_schema_not_ready: 503,
   not_found: 404,
 };
 const LINK_CLIENT_ERRORS = {
@@ -1595,7 +1596,13 @@ app.get("/api/admin/caregivers", requireAdmin, async (_req, res) => {
     const caregivers = await caregiverProvisioning.listCaregivers();
     return res.json({ ok: true, caregivers });
   } catch (error) {
+    const mapped = caregiverProvisioning.provisioningErrorFromDb(error);
     logError("admin caregivers list failed", { error: error?.message || error });
+    if (mapped) {
+      return res
+        .status(provisioningStatusCode(mapped, CAREGIVER_CLIENT_ERRORS))
+        .json({ ok: false, error: mapped });
+    }
     return res.status(500).json({ ok: false, error: "failed_to_load_caregivers" });
   }
 });
@@ -1610,7 +1617,13 @@ app.post("/api/admin/caregivers", requireAdmin, async (req, res) => {
       firebaseUid: body.firebaseUid,
     });
   } catch (error) {
+    const mapped = caregiverProvisioning.provisioningErrorFromDb(error);
     logError("admin caregiver create failed", { error: error?.message || error });
+    if (mapped) {
+      return res
+        .status(provisioningStatusCode(mapped, CAREGIVER_CLIENT_ERRORS))
+        .json({ ok: false, error: mapped });
+    }
     return res.status(500).json({ ok: false, error: "failed_to_create_caregiver" });
   }
   if (result.ok) {
@@ -1634,7 +1647,13 @@ app.patch("/api/admin/caregivers/:id", requireAdmin, async (req, res) => {
   try {
     result = await caregiverProvisioning.updateCaregiver(req.params.id, input);
   } catch (error) {
+    const mapped = caregiverProvisioning.provisioningErrorFromDb(error);
     logError("admin caregiver update failed", { error: error?.message || error });
+    if (mapped) {
+      return res
+        .status(provisioningStatusCode(mapped, CAREGIVER_CLIENT_ERRORS))
+        .json({ ok: false, error: mapped });
+    }
     return res.status(500).json({ ok: false, error: "failed_to_update_caregiver" });
   }
   if (result.ok) {

@@ -167,6 +167,17 @@ test("createCaregiver：重複 Firebase UID → firebase_uid_exists（全域唯�
   assert.deepEqual(r, { ok: false, error: "firebase_uid_exists" });
 });
 
+test("provisioningErrorFromDb：schema 未就緒錯誤轉成 database_schema_not_ready", () => {
+  assert.equal(
+    svc.provisioningErrorFromDb({ code: "42P01", message: "relation users does not exist" }),
+    "database_schema_not_ready",
+  );
+  assert.equal(
+    svc.provisioningErrorFromDb({ code: "42703", message: "column display_name does not exist" }),
+    "database_schema_not_ready",
+  );
+});
+
 test("updateCaregiver：綁定 firebaseUid（路線 B）", async () => {
   const pg = makeMockPg([
     { id: "cg-1", email: "p@x.org", display_name: "pending", role: "caregiver", status: "active", firebase_uid: null, created_at: "2026-06-01T00:00:00Z" },
