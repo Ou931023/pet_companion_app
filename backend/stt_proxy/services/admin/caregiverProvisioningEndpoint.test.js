@@ -105,6 +105,14 @@ function makeUnifiedPg({ elders = [], users = [], links = [] } = {}) {
         );
         return { rows: hit ? [{ id: hit.id }] : [] };
       }
+      if (/^SELECT id FROM users WHERE firebase_uid = \$1/i.test(sql)) {
+        const firebaseUid = params[0];
+        const excludeId = params[1];
+        const hit = state.users.find(
+          (u) => u.firebase_uid === firebaseUid && u.id !== excludeId,
+        );
+        return { rows: hit ? [{ id: hit.id }] : [] };
+      }
       // caregiverProvisioning：list
       if (/FROM users WHERE role = 'caregiver'/i.test(sql) && /ORDER BY created_at DESC/i.test(sql)) {
         const rows = state.users
@@ -389,6 +397,28 @@ test("重複 email → 409 email_exists", async () => {
     const body = await res.json();
     assert.equal(res.status, 409);
     assert.equal(body.error, "email_exists");
+  } finally {
+    server.close();
+  }
+});
+
+test("重複 Firebase UID → 409 firebase_uid_exists", async () => {
+  const server = await startServer();
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    await fetch(`${baseUrl}/api/admin/caregivers`, {
+      method: "POST",
+      headers: jsonHeaders(ADMIN_HEADERS),
+      body: JSON.stringify({ email: "a@clinic.org", firebaseUid: "fb-used" }),
+    });
+    const res = await fetch(`${baseUrl}/api/admin/caregivers`, {
+      method: "POST",
+      headers: jsonHeaders(ADMIN_HEADERS),
+      body: JSON.stringify({ email: "b@clinic.org", firebaseUid: "fb-used" }),
+    });
+    const body = await res.json();
+    assert.equal(res.status, 409);
+    assert.equal(body.error, "firebase_uid_exists");
   } finally {
     server.close();
   }
