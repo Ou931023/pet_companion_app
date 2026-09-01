@@ -65,12 +65,8 @@ void main() {
       }
     });
 
-    test('dailyCareTasksVisible 在 production 一律 false（CR-0056 B2）', () {
-      if (AppConfig.isProduction) {
-        expect(AppConfig.dailyCareTasksVisible, isFalse);
-      } else {
-        expect(AppConfig.dailyCareTasksVisible, AppConfig.showDailyCareTasks);
-      }
+    test('dailyCareTasksVisible 依正式功能旗標決定', () {
+      expect(AppConfig.dailyCareTasksVisible, AppConfig.showDailyCareTasks);
     });
 
     test('非 production 時不阻擋（API base URL 守門）', () {

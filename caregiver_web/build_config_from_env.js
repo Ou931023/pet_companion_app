@@ -4,8 +4,8 @@
 // Builds caregiver_web_dist and injects runtime config from deployment env vars.
 // It deliberately excludes local config.js/runtime-config.js before generating
 // fresh files, so local-only config is never copied into the hosted artifact.
-// app-config.generated.js is also written to the source folder because some
-// static hosts keep publishing the source folder after a Blueprint update.
+// The tracked caregiver_web source is read-only input; deployment config is
+// injected only into caregiver_web_dist so local/test values cannot dirty git.
 
 const fs = require("node:fs");
 const path = require("node:path");
@@ -15,9 +15,7 @@ const distDir = path.join(__dirname, "..", "caregiver_web_dist");
 const generatedFileName = "app-config.generated.js";
 const runtimeOutputPath = path.join(distDir, "runtime-config.js");
 const generatedDistOutputPath = path.join(distDir, generatedFileName);
-const generatedSourceOutputPath = path.join(sourceDir, generatedFileName);
 const compatibilityOutputPath = path.join(distDir, "config.js");
-const sourceIndexPath = path.join(sourceDir, "index.html");
 const distIndexPath = path.join(distDir, "index.html");
 const excludedPublishFiles = new Set([
   "config.js",
@@ -109,13 +107,11 @@ fs.cpSync(sourceDir, distDir, {
 for (const outputPath of [
   runtimeOutputPath,
   generatedDistOutputPath,
-  generatedSourceOutputPath,
   compatibilityOutputPath,
 ]) {
   fs.writeFileSync(outputPath, source, { encoding: "utf8", mode: 0o644 });
 }
-injectConfigIntoIndex(sourceIndexPath);
 injectConfigIntoIndex(distIndexPath);
 console.log(
-  "[caregiver-web-build-config] injected APP_CONFIG into index.html and wrote runtime config files mode=0644"
+  "[caregiver-web-build-config] built caregiver_web_dist without modifying tracked source"
 );

@@ -1,5 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart';
+
+import '../../utils/app_log.dart';
 
 /// Firebase 的「安全初始化」包裝（CR-0006 Batch 4a）。
 ///
@@ -40,9 +41,7 @@ class FirebaseInitializer {
       _available = true;
     } catch (error) {
       _available = false;
-      debugPrint(
-        '[FIREBASE] 初始化未完成，改用 Demo 登入即可（不影響啟動）：$error',
-      );
+      AppLog.error('[FIREBASE] 初始化未完成，正式登入暫時不可用', error);
     }
     return _available;
   }

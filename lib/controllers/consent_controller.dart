@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../config/legal_config.dart';
 import '../services/consent_service.dart';
+import '../utils/app_log.dart';
 
 /// 知情同意流程的狀態。
 enum ConsentStatus {
@@ -53,7 +54,7 @@ class ConsentController extends ChangeNotifier {
       _setStatus(granted ? ConsentStatus.granted : ConsentStatus.needsConsent);
     } catch (error) {
       // 讀取失敗時保守處理：要求重新同意（不可因為讀取失敗就放行蒐集資料）。
-      debugPrint('[CONSENT] load 失敗，改為要求重新同意：$error');
+      AppLog.error('[CONSENT] load 失敗，改為要求重新同意', error);
       _record = null;
       _setStatus(ConsentStatus.needsConsent);
     }

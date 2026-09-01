@@ -157,12 +157,15 @@ async function buildAuthContext(req, deps = {}) {
 
 // Express 中介層：解析身分掛到 req.authContext，fail-closed（401/403）。
 // 取代「caregiver-or-admin」路由的 requireAdmin（super_admin-only 路由續用 requireAdmin）。
-function resolveAdminAuthContext(req, res, next) {
+function createResolveAdminAuthContext({ responseKey = "ok" } = {}) {
+  return function resolveAdminAuthContextWithEnvelope(req, res, next) {
   Promise.resolve()
     .then(() => buildAuthContext(req))
     .then((result) => {
       if (!result.ok) {
-        return res.status(result.status).json({ ok: false, error: result.error });
+        return res
+          .status(result.status)
+          .json({ [responseKey]: false, error: result.error });
       }
       req.authContext = result.authContext;
       return next();
@@ -172,14 +175,24 @@ function resolveAdminAuthContext(req, res, next) {
       console.error("[admin-auth] resolve failed", {
         error: (error && error.message) || error,
       });
-      return res.status(401).json({ ok: false, error: "invalid_session" });
+      return res
+        .status(401)
+        .json({ [responseKey]: false, error: "invalid_session" });
     });
+  };
 }
+
+const resolveAdminAuthContext = createResolveAdminAuthContext();
+const resolveDailyCareAdminAuthContext = createResolveAdminAuthContext({
+  responseKey: "success",
+});
 
 module.exports = {
   ROLE_SUPER_ADMIN,
   ROLE_CAREGIVER,
   resolveAdminAuthContext,
+  resolveDailyCareAdminAuthContext,
+  createResolveAdminAuthContext,
   buildAuthContext,
   superAdminContext,
   caregiverContext,

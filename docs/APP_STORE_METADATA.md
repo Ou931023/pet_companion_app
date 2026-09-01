@@ -12,7 +12,7 @@
 | 欄位 | 草稿值 | 備註 |
 |---|---|---|
 | App 正式名稱 | ✅ 中文「AI陪伴」/ 英文 "AI Companion"（CR-0061 owner 拍板；CR-0101B 對齊裝置顯示名） | iOS CFBundleDisplayName / Android label / 商店中文名皆使用 `AI陪伴` |
-| 開發者 / 發行者名稱 | ✅ 國立嘉義大學資訊管理學系專題第四組（CR-0061） | 機構 / 團隊正式名稱（商店後台 / 著作權顯示用） |
+| 開發者 / 發行者名稱 | 由 Apple Developer 帳號持有人的正式名稱顯示 | 不在 repo 使用組別名稱；商店後台以帳號法定資料為準 |
 | 主分類 | Health & Fitness 或 Medical（建議 Health & Fitness，避免醫療宣稱） | Care Alert 為「照護提醒」非醫療診斷 |
 | 次分類 | Lifestyle | |
 | 年齡分級 | 建議 4+（iOS）/ Everyone（Google）；最終依問卷 | 無暴力/成人內容；含使用者生成語音對話 |
@@ -108,7 +108,7 @@ App 名稱、描述、截圖、審查備註**不得宣稱**：已診斷 / 確診
 | iOS CFBundleDisplayName | `AI陪伴` | ✅ **CR-0101B 對齊正式中文名**；已寫入 `ios/Runner/Info.plist`。 |
 | Android android:label | `AI陪伴` | ✅ **CR-0101B 對齊正式中文名**；已寫入 `AndroidManifest.xml`。 |
 | App 中文名 | `AI陪伴` | ✅ **CR-0061 定值**（store metadata §1/§2/§3 用；已寫入 build 顯示名）。 |
-| 開發者 / 發行者 | 國立嘉義大學資訊管理學系專題第四組 | ✅ **CR-0061 定值**（商店後台 / 著作權顯示）。 |
+| 開發者 / 發行者 | Apple Developer 帳號持有人正式名稱 | ⛔ owner 需於 App Store Connect 確認；repo 不硬編組別名稱。 |
 | pubspec name | `pet_companion_app` | 🔵 套件名（非 store 名稱、改動會破壞 import），維持。 |
 | version | `1.0.0+1` | ✅ 首版可用。 |
 

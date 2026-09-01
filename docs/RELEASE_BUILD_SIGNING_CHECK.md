@@ -66,10 +66,10 @@ flutter run --release \
 | DEVELOPMENT_TEAM | ✅ 已設（`WAH25TW6U4`）、CODE_SIGN_STYLE Automatic | `project.pbxproj` |
 | CODE_SIGN_IDENTITY | `iPhone Developer`（開發憑證）→ 實機展示可；**App Store 送審需 Apple Distribution / App Store provisioning profile**（Xcode 自動或 App Store Connect） | `project.pbxproj` |
 | Google URL scheme | ✅ 與 `GoogleService-Info.plist` REVERSED_CLIENT_ID 對齊（CR-0056 修正） | `Info.plist:30` |
-| 權限 usage description | ✅ 相機 / 麥克風 / 相簿(2) / 本地網路 / 語音辨識皆齊全 | `Info.plist:48-59` |
+| 權限 usage description | ✅ 相機 / 麥克風 / 相簿(2) / 語音辨識皆齊全；不要求本地網路權限 | `Info.plist` |
 | GoogleService-Info.plist | ✅ 存在 | `ios/Runner/` |
 | Podfile platform | iOS 15.0 | `ios/Podfile:2` |
-| 🔁 ATS | `NSAllowsArbitraryLoads=false` + `NSAllowsLocalNetworking=true`（CR-0096S Batch 3 已收斂；待 iOS 實機 smoke） | `Info.plist` |
+| 🔁 ATS | `NSAllowsArbitraryLoads=false`，無 local-network exception（待 iOS 實機 smoke） | `Info.plist` |
 
 ---
 

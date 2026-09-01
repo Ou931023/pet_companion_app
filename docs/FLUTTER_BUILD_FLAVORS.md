@@ -16,12 +16,12 @@ CHANGE_REVIEW CR-0034 / CR-0048（／延後 CR-0049）。
 
 | dart-define | 預設 | 說明 |
 | --- | --- | --- |
-| `APP_ENV` | `development` | `development` / `staging` / `production`。production 觸發守門。 |
-| `API_BASE_URL` | `http://127.0.0.1:3001` | 正式版必須是 https 正式網域（舊別名 `BACKEND_BASE_URL`）。 |
+| `APP_ENV` | `production` | `development` / `staging` / `production`。本機開發必須明確指定 development。 |
+| `API_BASE_URL` | `https://ai-companion-api-1gm7.onrender.com` | 正式 HTTPS 後端（舊別名 `BACKEND_BASE_URL`）；可由 dart-define 覆寫。 |
 | `ALLOW_MOCK_SERVICES` | `false` | 是否允許注入 mock service。production 一律被蓋掉為 false。 |
 | `SHOW_DEV_PANELS` | `false` | 開發診斷面板。production 強制隱藏。 |
 | `SHOW_DEMO_LOGIN` | `false` | Demo 快速登入按鈕。production 強制隱藏。 |
-| `CARE_MALL_URL` | `http://127.0.0.1:5500` | Care Mall 網站位址。 |
+| `CARE_MALL_URL` | development 本機位址 | Care Mall 網站位址；production 商城入口目前強制隱藏，不構成正式依賴。 |
 
 核心守門邏輯（`AppConfig`）：
 
@@ -42,9 +42,10 @@ static bool get demoLoginVisible    => showDemoLoginButton && !isProduction;
 ### development（本機開發 / 測試）
 
 ```bash
-flutter run
+flutter run --dart-define=APP_ENV=development
 # 或讓實機連到開發電腦後端：
-flutter run --dart-define=API_BASE_URL=http://<後端電腦區網IP>:3001
+flutter run --dart-define=APP_ENV=development \
+  --dart-define=API_BASE_URL=http://<後端電腦區網IP>:3001
 
 # 需要 mock / 開發面板時（僅 dev/test，正式版無效）：
 flutter run \

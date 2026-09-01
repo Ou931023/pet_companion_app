@@ -284,14 +284,14 @@ void main() {
     expect(await service.restoreSession(), isNull);
   });
 
-  test('deleteAccount 後端不可達 → 仍刪 Firebase 帳號並清本機（best-effort）',
+  test('deleteAccount 後端不可達 → 保留 Firebase 帳號與本機 session 供重試',
       () async {
     final fakeFirebase = _FakeFirebaseAuthService(
       result: _firebaseResult,
       authInfo: (uid: 'fb-uid-1', idToken: 'tok'),
     );
     final service = AuthService(
-      // 後端刪除回 500 → deleteAccount 不丟例外、照常刪 Firebase + 清本機。
+      // 後端刪除回 500 → 不得繼續刪 Firebase，保留登入供使用者重試。
       sessionApiService: SessionApiService(
         client: MockClient((request) async {
           if (request.url.path.endsWith('/api/auth/delete')) {
@@ -314,10 +314,19 @@ void main() {
     );
     await service.signInWithEmail(email: 'a@b.c', password: 'secret1');
 
-    await service.deleteAccount(password: 'pw', provider: 'email');
+    await expectLater(
+      service.deleteAccount(password: 'pw', provider: 'email'),
+      throwsA(
+        isA<SessionApiException>().having(
+          (error) => error.code,
+          'code',
+          'account_delete_failed',
+        ),
+      ),
+    );
 
-    expect(fakeFirebase.deleteCalled, isTrue);
-    expect(await service.restoreSession(), isNull);
+    expect(fakeFirebase.deleteCalled, isFalse);
+    expect(await service.restoreSession(), isNotNull);
   });
 
   test('deleteAccount 重新驗證失敗（密碼錯）→ 丟出、不清本機 session、不刪 Firebase',

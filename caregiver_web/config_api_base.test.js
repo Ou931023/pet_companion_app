@@ -104,7 +104,8 @@ test("index.html 提供 APP_CONFIG 注入點，且不以 localhost 為正式預�
     "index.html 不應載入可能在 Render static publish path 下 404 的外部 config script"
   );
   assert.ok(
-    indexHtml.includes("20260821-cr0103"),
+    indexHtml.includes("app.js?v=20260830-store-final") &&
+      indexHtml.includes("styles.css?v=20260830-store-final"),
     "app.js cache bust 應更新，避免 Render/瀏覽器吃舊版"
   );
 });
@@ -188,12 +189,11 @@ test("CR-0103：Render build 可由 env 產生 caregiver_web_dist/config.js", ()
       configBuilder.includes("app-config.generated.js") &&
       configBuilder.includes("config.js") &&
       configBuilder.includes("caregiver_web_dist") &&
-      configBuilder.includes("generatedSourceOutputPath") &&
       configBuilder.includes("injectConfigIntoIndex") &&
-      configBuilder.includes("sourceIndexPath") &&
       configBuilder.includes("distIndexPath") &&
       configBuilder.includes("excludedPublishFiles") &&
-      configBuilder.includes("mode=0644"),
-    "config builder 應產生可公開的 source/dist runtime config，並把 APP_CONFIG 注入 index.html"
+      !configBuilder.includes("generatedSourceOutputPath") &&
+      !configBuilder.includes("sourceIndexPath"),
+    "config builder 應只產生 dist runtime config 並注入 dist index，不可改寫 tracked source"
   );
 });

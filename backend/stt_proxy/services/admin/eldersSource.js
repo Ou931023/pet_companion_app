@@ -1,11 +1,9 @@
 // 健康後台的長者名單來源（CR-0007 Batch 2）。
 //
-// 真實資料優先：
+// 真實資料來源：
 //   - Postgres 可用時，從 elders 表讀取。
-//   - 否則 fallback JSON store（data/elders.json，比照 sessionService.js / memoryStore.js）。
-//
-// 為了讓 Dashboard 在 demo 不為空：若上述來源完全沒有長者，提供一組「示範長者」種子
-// （口語繁中姓名、含 birthYear / gender），讓總覽與列表有內容。
+//   - 非 production 才允許 JSON store 與開發種子。
+//   - production 的 DB 不可用或空集合時，回真實錯誤 / 空集合，不補假住民。
 //
 // 重要：任何對外可見的值（姓名、欄位、API response）都不得出現「demo / fake / mock /
 // test / debug」等工程字樣（CLAUDE.md 要求）。下方種子姓名與資料皆為乾淨的生活化內容。
@@ -14,6 +12,7 @@ const fs = require("fs/promises");
 const path = require("path");
 
 const postgres = require("../../db/postgres");
+const { isJsonFallbackAllowed, isProduction } = require("../../config/env");
 
 const DEFAULT_ELDERS_FILE = path.join(
   __dirname,
@@ -31,7 +30,7 @@ function resolveEldersFile(options = {}) {
   );
 }
 
-// 內建示範長者（當沒有任何真實長者時用來填充 Dashboard）。
+// 內建開發種子（只允許非 production 使用）。
 // 使用穩定固定的 id，讓確定性產生器對同一位示範長者永遠回相同序列。
 const SEED_ELDERS = [
   { id: "seed-elder-chen", displayName: "陳奶奶", birthYear: 1948, gender: "female", bindingStatus: "bound" },
@@ -111,22 +110,28 @@ async function loadFromJson(options) {
 // options.eldersFilePath / options.usersFilePath 供測試注入。
 async function listElders(options = {}) {
   let elders = [];
+  const allowJsonFallback =
+    options.allowJsonFallback ?? isJsonFallbackAllowed(process.env);
+  const allowSeedData =
+    options.allowSeedData ?? !isProduction(process.env);
   if (await postgres.isPostgresAvailable()) {
     try {
       elders = await loadFromPostgres();
     } catch (error) {
-      console.error(
-        "[admin-elders] postgres load failed, falling back to json",
-        error?.message || error,
-      );
+      if (!allowJsonFallback) throw error;
+      console.error("[admin-elders] postgres load failed; using development fallback");
       elders = await loadFromJson(options);
     }
-  } else {
+  } else if (allowJsonFallback) {
     elders = await loadFromJson(options);
+  } else {
+    const error = new Error("PostgreSQL unavailable for resident listing");
+    error.code = "POSTGRES_UNAVAILABLE";
+    throw error;
   }
 
   if (!elders || elders.length === 0) {
-    return SEED_ELDERS.map((e) => ({ ...e }));
+    return allowSeedData ? SEED_ELDERS.map((e) => ({ ...e })) : [];
   }
   return elders;
 }

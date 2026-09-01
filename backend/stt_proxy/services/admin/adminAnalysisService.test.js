@@ -278,6 +278,18 @@ test("elders 來源為空時回示範長者種子（Dashboard 不為空）", asy
   }
 });
 
+test("正式資料模式不產生示範長者", async () => {
+  const options = {
+    eldersFilePath: writeEldersFile([]),
+    usersFilePath: writeUsersFile([]),
+    careAlertsFilePath: emptyCareAlertsFile(),
+    allowJsonFallback: true,
+    allowSeedData: false,
+  };
+  const rows = await service.listElderSummaries(options);
+  assert.deepEqual(rows, []);
+});
+
 test("確定性 PRNG：同 seed 同序列、不同 seed 不同序列", () => {
   const r1 = createRng("seed-x");
   const r2 = createRng("seed-x");

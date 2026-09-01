@@ -5,6 +5,7 @@ import '../models/language_route.dart';
 import '../models/user_profile.dart';
 import '../services/local_storage_service.dart';
 import '../services/speech_to_text_service.dart';
+import '../utils/app_log.dart';
 
 class ProfileController extends ChangeNotifier {
   ProfileController(this._storageService);
@@ -72,7 +73,7 @@ class ProfileController extends ChangeNotifier {
       _profile = _profile.copyWith(sttProxyUrl: normalizedSttProxyUrl);
       await _persist();
     }
-    debugPrint('[PET_NAME] current=${_profile.petName}');
+    AppLog.debug('[PET_NAME] loaded');
     _isLoading = false;
     notifyListeners();
   }
@@ -96,8 +97,7 @@ class ProfileController extends ChangeNotifier {
     if (normalizedName.isEmpty) return;
 
     _profile = _profile.copyWith(petName: normalizedName);
-    debugPrint('[PET_NAME] updatedFrom=$source name=$normalizedName');
-    debugPrint('[PET_NAME] current=${_profile.petName}');
+    AppLog.debug('[PET_NAME] updatedFrom=$source');
     await _persist();
   }
 

@@ -6,13 +6,14 @@
 //      - firebaseAdmin.isConfigured() 為 true → 正式模式，驗 idToken；
 //        token 無效 → 回 { success:false, error:'invalid_id_token' }（endpoint 轉 401）。
 //        驗證成功則以 decoded.uid 為準（覆蓋傳入 firebaseUid）。
-//      - 未 configured（或 AUTH_ALLOW_MOCK !== 'false'）→ mock 模式，採信傳入 firebaseUid。
+//      - 非 production 且未 configured（AUTH_ALLOW_MOCK 未關閉）→ mock 模式，
+//        採信傳入 firebaseUid；production 永遠不可走此路徑。
 //   2. upsert：已有該 firebase_uid → 回既有 userId/elderId（isNewUser=false）；
 //      否則建立 elder + user，binding_status='pending'、
 //      binding_deadline = now + BINDING_DEADLINE_DAYS（預設 60）。
 //   3. 回 { success, userId, elderId, role, bindingStatus, bindingDeadline, isNewUser, authMode }。
 //
-// 儲存層：Postgres 優先、失敗 fallback JSON store（比照 services/memory/memoryStore.js）。
+// 儲存層：Postgres 優先；JSON fallback 僅限非 production。
 // JSON fallback 檔：data/users.json、data/elders.json（runtime、不進 git）。
 // 測試可用 options.filePaths 或 env USERS_DATA_FILE / ELDERS_DATA_FILE 指向 temp 檔，
 // 並可用 options.firebaseAdmin 注入 stub，達到「不需真 DB、不需真 Firebase 金鑰」即可單測。
@@ -327,6 +328,122 @@ async function deleteUserByFirebaseUidPostgres(firebaseUid) {
   };
 }
 
+function rowCount(result) {
+  return Number(result && result.rowCount) || 0;
+}
+
+// Production account deletion must be atomic. Every table containing the
+// account's user/elder identifier is cleaned on one PostgreSQL client before
+// users/elders are removed. Any failure rolls the whole operation back.
+async function deleteAccountDataPostgres(firebaseUid, db = postgres) {
+  const activePool = db && typeof db.getPool === "function" ? db.getPool() : null;
+  if (!activePool || typeof activePool.connect !== "function") {
+    const error = new Error("PostgreSQL transaction client is unavailable");
+    error.code = "POSTGRES_TRANSACTION_UNAVAILABLE";
+    throw error;
+  }
+
+  const client = await activePool.connect();
+  try {
+    await client.query("BEGIN");
+    const found = await client.query(
+      `SELECT id, elder_id FROM users WHERE firebase_uid = $1 LIMIT 1 FOR UPDATE`,
+      [firebaseUid],
+    );
+    const row = found.rows && found.rows[0];
+    if (!row) {
+      await client.query("COMMIT");
+      return {
+        provider: "postgres",
+        user: 0,
+        elder: 0,
+        memories: 0,
+        careAlerts: 0,
+        userId: null,
+        elderId: null,
+      };
+    }
+
+    const userId = row.id;
+    const elderId = row.elder_id;
+    const userKey = String(userId);
+    const elderKey = elderId == null ? null : String(elderId);
+
+    let careAlerts = 0;
+    if (elderId != null) {
+      await client.query(
+        `DELETE FROM notification_logs
+         WHERE elder_id = $1
+            OR alert_id IN (SELECT id FROM care_alerts WHERE elder_id = $1)`,
+        [elderId],
+      );
+      await client.query(
+        `DELETE FROM consent_records WHERE elder_id = $1 OR user_id = $2`,
+        [elderId, userId],
+      );
+      await client.query(
+        `DELETE FROM resident_caregiver_links
+         WHERE elder_id = $1 OR caregiver_id = $2`,
+        [elderId, userId],
+      );
+      await client.query(`DELETE FROM emotion_history WHERE elder_id = $1`, [elderId]);
+      await client.query(`DELETE FROM elder_health_metrics WHERE elder_id = $1`, [elderId]);
+      await client.query(`DELETE FROM game_cognitive_metrics WHERE elder_id = $1`, [elderId]);
+      await client.query(`DELETE FROM daily_care_task_submissions WHERE elder_id = $1`, [elderKey]);
+      await client.query(`DELETE FROM daily_care_tasks WHERE elder_id = $1`, [elderKey]);
+      await client.query(`DELETE FROM app_usage_events WHERE elder_id = $1 OR user_id = $2`, [elderKey, userKey]);
+      const alertDelete = await client.query(
+        `DELETE FROM care_alerts WHERE elder_id = $1`,
+        [elderId],
+      );
+      careAlerts = rowCount(alertDelete);
+    } else {
+      await client.query(`DELETE FROM consent_records WHERE user_id = $1`, [userId]);
+      await client.query(`DELETE FROM resident_caregiver_links WHERE caregiver_id = $1`, [userId]);
+      await client.query(`DELETE FROM app_usage_events WHERE user_id = $1`, [userKey]);
+    }
+
+    await client.query(`DELETE FROM marketplace_orders WHERE user_id = $1`, [userKey]);
+    const legacyMemories = await client.query(`DELETE FROM memory_items WHERE user_id = $1`, [userKey]);
+    const companionMemories = await client.query(
+      `DELETE FROM companion_memories WHERE user_id = $1`,
+      [userKey],
+    );
+    await client.query(
+      `DELETE FROM audit_logs
+       WHERE (actor_type = 'elder' AND actor_id = $1)
+          OR (target_type = 'user' AND target_id = $1)`,
+      [userKey],
+    );
+
+    const userDelete = await client.query(`DELETE FROM users WHERE id = $1`, [userId]);
+    let elderDelete = { rowCount: 0 };
+    if (elderId != null) {
+      elderDelete = await client.query(`DELETE FROM elders WHERE id = $1`, [elderId]);
+    }
+    await client.query("COMMIT");
+
+    return {
+      provider: "postgres",
+      user: rowCount(userDelete),
+      elder: rowCount(elderDelete),
+      memories: rowCount(legacyMemories) + rowCount(companionMemories),
+      careAlerts,
+      userId,
+      elderId,
+    };
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (_) {
+      // Preserve the original failure; the pool will discard a broken client.
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function deleteUserByFirebaseUidJson(firebaseUid, options) {
   const usersFile = resolveUsersFile(options);
   const eldersFile = resolveEldersFile(options);
@@ -381,8 +498,43 @@ async function deleteUserByFirebaseUid(firebaseUid, options = {}) {
   return deleteUserByFirebaseUidJson(uid, options);
 }
 
+async function deleteAccountData(firebaseUid, options = {}) {
+  const uid = typeof firebaseUid === "string" ? firebaseUid.trim() : "";
+  if (!uid) {
+    return {
+      provider: "none",
+      user: 0,
+      elder: 0,
+      memories: 0,
+      careAlerts: 0,
+      userId: null,
+      elderId: null,
+    };
+  }
+
+  const db = options.postgres || postgres;
+  if (await db.isPostgresAvailable()) {
+    return deleteAccountDataPostgres(uid, db);
+  }
+  if (isProduction(options.env || process.env)) {
+    const error = new Error("PostgreSQL is required for production account deletion");
+    error.code = "POSTGRES_REQUIRED";
+    throw error;
+  }
+
+  const result = await deleteUserByFirebaseUidJson(uid, options);
+  return {
+    provider: "json",
+    ...result,
+    memories: null,
+    careAlerts: null,
+  };
+}
+
 module.exports = {
   createSession,
+  deleteAccountData,
+  deleteAccountDataPostgres,
   deleteUserByFirebaseUid,
   // 測試/工具用
   bindingDeadlineDays,

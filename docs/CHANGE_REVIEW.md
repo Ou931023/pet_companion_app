@@ -4634,3 +4634,60 @@ Release signing 的 repo 端文件與自動檢查已可執行；真正送審仍�
 
 ### 裁決
 此為正式 caregiver_web 登入 blocker 修正：將不穩定的 Static Site build-time config 注入改為後端 runtime config，並讓照護人員可真正以 Firebase Email / Google 登入。跨邊界但範圍受控，測試守住 public config shape 與前端登入入口；併入主線後需同步部署 backend 與 caregiver_web，並在 backend Render Environment 補齊 `CAREGIVER_WEB_FIREBASE_*` 四個 Web config 變數。**下一個可用 CR 編號：CR-0099。**
+
+---
+
+## CR-0104 — Final Store Validation and Protected Daily Care Proofs
+
+### 模式
+**跨邊界 production blocker 修正與上架前總驗證**（architecture-agent 審查；backend-agent、frontend-ux-agent、realtime-voice-agent 各自守住擁有範圍）。本批不讀取或修改 `.env`，不加入 mock / demo fallback，也不把 token、照片內容或住民識別資料寫入 log。
+
+### 根因
+- 正式 App 的 API、legal URL 與 production mode 仍有部分依賴 build-time 注入，owner 漏帶 `--dart-define` 時可能產生不可用 release。
+- 日常照護任務的住民 API 與照片證明曾缺少完整 caller scope；照片落在 Render ephemeral disk，重新部署後會遺失，且 proof URL 可能繞過照護者授權。
+- caregiver_web 登入前即呈現管理功能與數據區，容易讓使用者誤認已登入；照片連結也無法攜帶 Firebase bearer token。
+- release logging 尚有輸出使用者識別碼、寵物名稱與 Realtime 事件內容的風險。
+- iOS production plist 仍允許 local networking，與正式 HTTPS-only 上架目標不一致。
+
+### 變更範圍
+- Flutter：正式 API / legal defaults、daily care API bearer token、release-safe logging；Realtime 主流程僅替換 log sink，不改 SDP、ICE、DataChannel、事件解析或狀態機契約。
+- Backend：住民 daily-care routes 使用 Firebase resident caller 並以 caller elderId 為準；狀態修改與照片讀取使用 admin/caregiver scope；JSON fallback 僅限非 production。
+- Database：新增 additive migration `018_store_daily_care_proof_images.sql`，以 `BYTEA` / MIME 保存照護照片；無 drop、rename 或 destructive rewrite。
+- Caregiver Web：登入前只顯示登入介面；登入後才顯示授權資料；照片以帶 bearer token 的 authenticated fetch 讀取，不再直接公開開 URL。
+- iOS：移除 local-network exception，iPhone 固定 portrait；iPad 方向維持既有支援。
+
+### API / DB 契約
+- `GET /api/daily-care-tasks`、`POST /api/daily-care-tasks`、`POST /api/daily-care-tasks/:id/submit`：需要 Firebase resident token；request 的 `elderId` 不具授權效力。本批不新增單筆 task GET route。
+- `PATCH /api/daily-care-tasks/:id/status`：只有 super_admin 或 active `primary` / `secondary` caregiver 可寫，`viewer` 固定回 403。`GET /api/daily-care-tasks/proof/:submissionId`：super_admin 與任何 active 已指派 caregiver（含 `viewer`）可讀；跨住民存取回 403；錯誤 envelope 統一為 `{ success:false, error }`。
+- 對外 JSON 不回傳 server filesystem path 或照片 bytes，只回 `hasProofImage` / `proofMimeType`；照片 response 使用 private no-store。
+- migration 僅新增 nullable 欄位，可先 migrate 再部署；舊資料仍可讀取 legacy proof path，供受控過渡使用。
+
+### 風險、部署與回滾
+- **部署順序**：先執行 migration 018，再同一維護窗口部署 backend 與 caregiver_web，最後安裝新的 Flutter release。不可只部署 backend，否則舊 App / 舊 caregiver_web 無 bearer token 的 daily-care flow 會失敗。
+- Render production 必須使用 persistent PostgreSQL；ephemeral disk 不再是新照片的唯一來源。
+- migration 為 additive；程式回滾不需刪欄位。若 backend 回滾，保留新增欄位不影響舊版查詢。
+- 正式 backend 若 DB 無法讀取住民資料，應回可診斷錯誤，不可回六筆 seed / fake residents 假裝成功。
+
+### 驗證門檻
+- `flutter analyze`、完整 `flutter test`。
+- backend 完整 `npm test`、`npm run check`、migration 018 與 daily-care authorization tests。
+- caregiver_web 完整測試、登入前資料隱藏、caregiver scope 與 authenticated proof fetch tests。
+- iOS release build / 實機啟動，並依 internal smoke runbook 驗證登入、Realtime、字幕、任務、照片、後台數據與帳號刪除。
+- `git diff --check`、release signing readiness、dependency audit；未完成真機與商店後台 owner 項目前不得宣告 Go。
+
+### Architecture Review
+第一次裁決：**changes requested**。指出架構文件與 route 名稱不一致、JSON fallback 成功後刪除 proof、daily-care auth error envelope 不一致，以及 migration/proof/crawler 關鍵測試未納入標準 `npm test`。
+
+修正狀態：已同步 `PROJECT_ARCHITECTURE.md` 與實際 route；JSON fallback 成功時保留 uploads proof、production DB 新照片不保存暫存 path；daily-care auth 統一 `success:false`；補 production DB bytes→caregiver proof→跨住民 403 整合測試與 crawler production 404 測試，並納入 `npm test` / `npm run check`。
+
+第二輪阻塞修正：
+- caregiver_web build 不再修改 tracked `caregiver_web/index.html`，只輸出 `caregiver_web_dist`；原始碼中的 Firebase 設定維持安全空值，避免 build 後把 production public config 誤提交進 git。
+- 帳號刪除改由 PostgreSQL transaction 完整刪除使用者、住民、記憶、Care Alert、usage events、照護任務、照片 submission、照護授權、同意與通知紀錄；任一步驟失敗會 rollback，Firebase 帳號與本機 session 保留供重試。
+- `viewer` 照護授權固定唯讀；只有 `primary`、`secondary` 與 `super_admin` 可修改 daily-care task 狀態，並有 production endpoint regression test。
+- 保留 `npm audit` 產生的 transitive security patch：`express`、`body-parser`、`axios`、`form-data`、`qs`、`undici`、`@google-cloud/storage` 等均為相容範圍內的修補更新；`package.json` 明確限制 Node `>=20.18.1 <25`，部署使用 Node 24。`npm ls --all --omit=dev` 與 `npm ci --ignore-scripts --dry-run` 均通過；`npm audit --omit=dev` 為 0 critical、0 high、8 moderate，剩餘項目來自 Firebase Admin 13 的 Google SDK 傳遞依賴，官方自動修正需升 Firebase Admin 14（breaking），不在上架封版前強制升級。
+
+第二次複審裁決：**changes requested**。前次四項 blocker 已解除；新增指出 legacy `proof_image_path` 成功回應缺少 `private, no-store` / `nosniff`，以及 `PROJECT_ARCHITECTURE.md` 的 daily-care role 契約與 marketplace/daily-care production persistence 敘述過時。
+
+第二次複審修正：proof 安全標頭已移到 DB bytes 與 legacy path 兩分支共用位置，並新增 legacy path HTTP regression test；SSOT 已明確區分所有 active caregiver 可讀 proof、只有 `primary` / `secondary` 可 PATCH，且同步 marketplace / daily-care 已 PostgreSQL 化的 production 現況。
+
+最終小範圍複審裁決：**Approve**，前述 P1 均已解除，無 P0/P1 merge blocker。驗證結果為 legacy proof targeted HTTP regression 3/3、backend 666/666、caregiver_web 119/119、Flutter 760/760、`flutter analyze`、`npm run check`、release signing readiness 與 `git diff --check` 全數通過。可進入 commit / merge 與依 migration → backend + caregiver_web → Flutter release 的正式部署流程；owner-gated 的 production DB smoke、法律營運者名稱確認、商店後台隱私表單與 TestFlight 審查仍不得標記為自動完成。

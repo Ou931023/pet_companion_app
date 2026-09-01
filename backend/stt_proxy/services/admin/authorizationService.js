@@ -106,6 +106,34 @@ async function assertCanAccessResident(authContext, residentId, options = {}) {
   return authorized.has(residentId);
 }
 
+// 可寫入住民照護狀態的角色只有 primary / secondary。viewer 固定唯讀；
+// super_admin 維持 full scope。以單筆 active link 查詢避免把 read scope 誤當 write scope。
+async function assertCanManageResident(authContext, residentId, options = {}) {
+  if (isSuperAdmin(authContext)) return true;
+  if (!isCaregiver(authContext) || !authContext.caregiverId || residentId == null) {
+    return false;
+  }
+  const pg = options.pg || activePg;
+  if (pg && typeof pg.isPostgresAvailable === "function") {
+    try {
+      if (!(await pg.isPostgresAvailable())) return false;
+    } catch (_) {
+      return false;
+    }
+  }
+  const { rows } = await pg.query(
+    `SELECT role
+     FROM resident_caregiver_links
+     WHERE caregiver_id = $1
+       AND elder_id = $2
+       AND status = 'active'
+       AND role IN ('primary', 'secondary')
+     LIMIT 1`,
+    [authContext.caregiverId, residentId],
+  );
+  return Array.isArray(rows) && rows.length > 0;
+}
+
 // 依授權住民過濾 Care Alert 清單。
 //   - super_admin → 原樣回傳（同參考，行為零變更）。
 //   - caregiver   → 只留授權 elderId 的 alert（alert.elderId 為 null 者一律過濾掉）。
@@ -131,6 +159,7 @@ module.exports = {
   isCaregiver,
   getAuthorizedResidentIdsForCaregiver,
   assertCanAccessResident,
+  assertCanManageResident,
   filterAlertsByAuthorizedResidents,
   setPgForTest,
   setAuthContextResolverForTest,

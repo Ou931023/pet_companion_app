@@ -132,14 +132,14 @@ void main() {
     expect(unavailable.userMessage, '台語語音辨識暫時無法使用');
   });
 
-  test('AppConfig preserves LAN backend URLs for real devices', () {
+  test('production AppConfig replaces stale LAN backend URLs', () {
     final normalized = AppConfig.normalizeSttProxyUrl(
       'http://192.168.1.23:3001/api/stt/transcribe',
     );
     final statusUrl = AppConfig.apiBaseUrlForSttProxy(normalized);
 
-    expect(normalized, 'http://192.168.1.23:3001/api/stt/transcribe');
-    expect(statusUrl, 'http://192.168.1.23:3001/api');
+    expect(normalized, AppConfig.defaultSttProxyUrl);
+    expect(statusUrl, '${AppConfig.backendBaseUrl}/api');
   });
 }
 

@@ -44,13 +44,9 @@
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
 		<false/>
-		<key>NSAllowsLocalNetworking</key>
-		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>需要使用相機，才能拍下吃藥、喝水、運動的完成照片。</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>需要連線到同一個 Wi-Fi 內的語音服務，才能使用即時語音陪伴功能。</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>需要使用麥克風，才能和陪伴寵物進行即時語音對話。</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
@@ -89,8 +85,6 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>

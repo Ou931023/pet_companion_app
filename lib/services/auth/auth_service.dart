@@ -164,8 +164,8 @@ class AuthService {
   ///    - [password] 有值（Email 帳號）→ 用密碼重新驗證。
   ///    - [provider] == 'google' → 重新跑一次 Google 登入驗證（使用者可取消）。
   /// 2. 取目前 Firebase user 的 uid + idToken，呼叫**後端刪除**該帳號的所有
-  ///    資料（使用者 / 長者 / 長期記憶 / Care Alert）。後端不可達時為 best-effort
-  ///    （不丟例外、不擋住帳號刪除）。
+  ///    資料（使用者 / 長者 / 長期記憶 / Care Alert）。只有後端確認完成後，
+  ///    才繼續刪除 Firebase 帳號；失敗時保留登入，讓使用者可以重試。
   /// 3. **刪除 Firebase 帳號**（讓同一個 Email 之後可以重新註冊）。
   /// 4. 清除本機 session。
   ///
@@ -179,13 +179,17 @@ class AuthService {
       await _firebaseAuthService.reauthenticateWithGoogle();
     }
 
-    // 2. 後端刪資料（best-effort：失敗只記錄，不擋住帳號刪除）。
+    // 2. 先確認後端資料已刪除。不能先刪 Firebase 身分，否則後端失敗時
+    // 使用者會失去再次登入重試的能力，形成無法自行刪除的孤兒資料。
     final authInfo = await _firebaseAuthService.currentUserAuthInfo();
     if (authInfo != null && authInfo.idToken.isNotEmpty) {
-      await _sessionApiService.deleteAccount(
+      final backendDeleted = await _sessionApiService.deleteAccount(
         firebaseUid: authInfo.uid,
         idToken: authInfo.idToken,
       );
+      if (!backendDeleted) {
+        throw const SessionApiException('account_delete_failed');
+      }
     }
 
     // 3. 刪除 Firebase 帳號（失敗會丟 EmailAuthException）。

@@ -1091,10 +1091,13 @@
   // ---- CR-0042 身分 / 登入列 ----
   var elA = {
     bar: document.getElementById("auth-bar"),
+    authenticatedContent: document.getElementById("authenticated-content"),
     statusValue: document.getElementById("auth-status-value"),
+    modeSelect: document.getElementById("auth-mode-select"),
     modeCaregiver: document.getElementById("auth-mode-caregiver"),
     modeSuper: document.getElementById("auth-mode-super"),
     tokenInput: document.getElementById("auth-token-input"),
+    tokenRow: document.getElementById("auth-token-row"),
     login: document.getElementById("auth-login"),
     logout: document.getElementById("auth-logout"),
     hint: document.getElementById("auth-hint"),
@@ -1182,6 +1185,17 @@
       ) {
         showView("workspace");
       }
+    }
+    var loggedIn = hasActiveToken() && authState.authMode !== "none";
+    if (elA.authenticatedContent) {
+      elA.authenticatedContent.classList.toggle("hidden", !loggedIn);
+    }
+    if (elA.modeSelect) elA.modeSelect.classList.toggle("hidden", loggedIn);
+    if (elA.hint) elA.hint.classList.toggle("hidden", loggedIn);
+    if (elA.tokenRow) {
+      var tokenFallbackNeeded =
+        selectedAuthMode() === "super_admin" || !hasFirebaseWebConfig();
+      elA.tokenRow.classList.toggle("hidden", loggedIn || !tokenFallbackNeeded);
     }
     updateAuthStatusUi();
     updateFirebasePanelUi();
@@ -1538,6 +1552,7 @@
         : "正在以管理者身分載入資料…",
       false
     );
+    maybeStartGuidedTour();
     reloadActiveView();
   }
 
@@ -1578,7 +1593,10 @@
   function updateFirebasePanelUi() {
     if (!elA.firebasePanel) return;
     var caregiverSelected = selectedAuthMode() === "caregiver";
-    elA.firebasePanel.classList.toggle("is-hidden", !caregiverSelected);
+    elA.firebasePanel.classList.toggle(
+      "is-hidden",
+      !caregiverSelected || hasActiveToken(),
+    );
     if (!caregiverSelected) return;
     var configured = hasFirebaseWebConfig();
     elA.firebasePanel.classList.toggle("is-disabled", !configured);
@@ -1621,6 +1639,7 @@
     if (elA.tokenInput) elA.tokenInput.value = "";
     updateAuthHint();
     showAuthMessage("正在以照護人員身分載入資料…", false);
+    maybeStartGuidedTour();
     if (!options || options.reload !== false) reloadActiveView();
   }
 
@@ -2026,11 +2045,53 @@
   }
 
   function dailyTaskProofUrl(submissionId) {
-    return (
-      getApiBase() +
-      "/daily-care-tasks/proof/" +
-      encodeURIComponent(submissionId)
-    );
+    return getApiBase() + "/daily-care-tasks/proof/" + encodeURIComponent(submissionId);
+  }
+
+  function openDailyTaskProof(submissionId) {
+    if (!submissionId) return;
+    var preview = window.open("", "_blank");
+    if (preview) {
+      preview.opener = null;
+      preview.document.title = "照片載入中";
+      preview.document.body.textContent = "照片載入中…";
+    }
+    fetch(dailyTaskProofUrl(submissionId), { headers: authHeaders() })
+      .then(function (response) {
+        if (response.status === 401) {
+          handleSessionExpired();
+          throw new Error("session_expired");
+        }
+        if (response.status === 403) throw new Error("forbidden");
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        return response.blob();
+      })
+      .then(function (blob) {
+        var objectUrl = URL.createObjectURL(blob);
+        if (preview) {
+          preview.location.replace(objectUrl);
+        } else {
+          var link = document.createElement("a");
+          link.href = objectUrl;
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.click();
+        }
+        window.setTimeout(function () {
+          URL.revokeObjectURL(objectUrl);
+        }, 60000);
+      })
+      .catch(function (error) {
+        if (preview) preview.close();
+        if (elT.tasksStatus) {
+          elT.tasksStatus.textContent =
+            error && error.message === "forbidden"
+              ? "您沒有查看這張照片的權限。"
+              : error && error.message === "session_expired"
+                ? SESSION_EXPIRED_MSG
+                : "照片目前無法載入，請稍後再試。";
+        }
+      });
   }
 
   function renderDailyTaskRow(task) {
@@ -2050,9 +2111,9 @@
     var completedAt = task.status === "completed" && sub ? formatTime(sub.submittedAt) : "—";
     var proof =
       sub && sub.id
-        ? '<a class="task-proof-link" href="' +
-          escapeHtml(dailyTaskProofUrl(sub.id)) +
-          '" target="_blank" rel="noopener">查看照片</a>'
+        ? '<button class="task-proof-link" type="button" data-submission-id="' +
+          escapeHtml(sub.id) +
+          '">查看照片</button>'
         : "—";
 
     return (
@@ -2126,7 +2187,7 @@
   }
 
   // GET /api/admin/daily-care-tasks → 任務 + 最新 submission（含 AI 結果）。
-  // 後端連不到時 mock-safe：顯示白話訊息、清空統計，不 crash、不假裝有資料。
+  // 後端連不到時顯示白話訊息、清空統計，不 crash、不假裝有資料。
   function clearDailyTaskStats() {
     ["statTotal", "statCompleted", "statPending", "statReview", "statMissed"].forEach(
       function (k) {
@@ -2925,6 +2986,7 @@
     {
       view: "workspace",
       target: "#workspace-admin-setup",
+      adminOnly: true,
       title: "管理者資料建置",
       body: "管理者可在這裡建立住民與照護人員，也可以用 CSV 匯入住民名單。照護人員登入時不會看到這些管理工具。",
     },
@@ -2949,26 +3011,23 @@
     {
       view: "users",
       target: "#view-users .list-section",
+      adminOnly: true,
       title: "使用者帳戶管理",
       body: "帳戶資料來自後端資料庫，需貼上管理者權杖才會載入。為保護個資，Email 會遮蔽，且不顯示密碼或驗證碼。",
     },
     {
       view: "products",
       target: "#view-products .list-section",
+      adminOnly: true,
       title: "商品管理",
       body: "在這裡為長照商城上架商品：填寫名稱、分類、價格、庫存、所屬長照中心與平台抽成。上架中的商品會出現在長者端 App 的照護用品商城。",
     },
     {
       view: "orders",
       target: "#view-orders .list-section",
+      adminOnly: true,
       title: "訂單管理",
       body: "長者在 App 下單後，訂單會出現在這裡。點開可看商品明細、總金額、平台抽成與長照中心實收，並更新「待處理 / 已確認 / 配送中 / 已完成」等狀態。",
-    },
-    {
-      view: "alerts",
-      target: ".settings",
-      title: "連線設定",
-      body: "用手機或其他電腦連線時，展開這裡把後端位址改成「http://<Mac區網IP>:3001/api」即可。設定會記在本機瀏覽器。",
     },
     {
       view: "alerts",
@@ -2983,6 +3042,7 @@
     spot: null,
     tooltip: null,
     index: 0,
+    steps: TOUR_STEPS,
     startView: "workspace",
     onKey: null,
     onResize: null,
@@ -3039,16 +3099,16 @@
 
   function renderTooltip(step, index) {
     var dots = "";
-    for (var i = 0; i < TOUR_STEPS.length; i++) {
+    for (var i = 0; i < tour.steps.length; i++) {
       dots += '<span class="tour-dot' + (i === index ? " is-active" : "") + '"></span>';
     }
-    var isLast = index === TOUR_STEPS.length - 1;
+    var isLast = index === tour.steps.length - 1;
     var isFirst = index === 0;
     tour.tooltip.innerHTML =
       '<div class="tour-tip-step">第 ' +
       (index + 1) +
       " / " +
-      TOUR_STEPS.length +
+      tour.steps.length +
       " 步</div>" +
       '<h3 class="tour-tip-title">' +
       escapeHtml(step.title) +
@@ -3126,9 +3186,9 @@
   }
 
   function gotoStep(index) {
-    if (index < 0 || index >= TOUR_STEPS.length) return;
+    if (index < 0 || index >= tour.steps.length) return;
     tour.index = index;
-    var step = TOUR_STEPS[index];
+    var step = tour.steps[index];
     showView(step.view);
     renderTooltip(step, index);
     // 切分頁 / 懶載入後讓版面安定，再量測定位。
@@ -3144,7 +3204,15 @@
   }
 
   function startTour() {
+    if (!hasActiveToken()) {
+      showAuthMessage("請先登入，再開始使用導覽。", true);
+      if (elA.bar && elA.bar.scrollIntoView) elA.bar.scrollIntoView({ block: "start" });
+      return;
+    }
     if (!tour.root) buildTourDom();
+    tour.steps = TOUR_STEPS.filter(function (step) {
+      return !step.adminOnly || isSuperAdminMode();
+    });
     tour.startView = activeViewName();
     tour.root.classList.remove("tour-hidden");
 
@@ -3159,7 +3227,7 @@
       }
     };
     tour.onResize = function () {
-      positionSpotlight(TOUR_STEPS[tour.index]);
+      positionSpotlight(tour.steps[tour.index]);
     };
     document.addEventListener("keydown", tour.onKey, true);
     window.addEventListener("resize", tour.onResize);
@@ -3194,9 +3262,19 @@
     } catch (err) {
       done = "";
     }
-    if (!done) {
+    if (!done && hasActiveToken()) {
       setTimeout(startTour, 900);
     }
+  }
+
+  function maybeStartGuidedTour() {
+    var done = "";
+    try {
+      done = localStorage.getItem(TOUR_DONE_KEY) || "";
+    } catch (_error) {
+      done = "";
+    }
+    if (!done && hasActiveToken()) setTimeout(startTour, 600);
   }
 
   // ---- init ----
@@ -4698,6 +4776,12 @@
     // CR-0056：依 featureFlags 隱藏未正式啟用的分頁入口（marketplace / 今日任務）。
     applyFeatureFlags();
 
+    var connectionSettings = document.getElementById("connection-settings");
+    if (connectionSettings) {
+      var localHost = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname);
+      connectionSettings.classList.toggle("hidden", !localHost);
+    }
+
     // CR-0042：先還原身分狀態，再決定要不要打受保護 API。
     loadAuthState();
 
@@ -4827,6 +4911,15 @@
     }
     if (elT.tasksFilter) {
       elT.tasksFilter.addEventListener("change", loadDailyTasks);
+    }
+    if (elT.taskList) {
+      elT.taskList.addEventListener("click", function (event) {
+        var target = event.target && event.target.closest
+          ? event.target.closest("[data-submission-id]")
+          : null;
+        if (!target) return;
+        openDailyTaskProof(target.getAttribute("data-submission-id"));
+      });
     }
 
     // CR-0029 使用者管理分頁。

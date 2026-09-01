@@ -56,6 +56,20 @@ function isProduction(env = process.env) {
   return normalizeAppEnv(env) === "production";
 }
 
+// Web service 在 production 必須對容器網卡監聽；本機開發維持 loopback，
+// 避免開發機無意間對區網暴露。顯式 HOST 永遠優先。
+function resolveListenHost(env = process.env) {
+  const configured = String((env || {}).HOST || "").trim();
+  if (configured) return configured;
+  return isProduction(env) ? "0.0.0.0" : "127.0.0.1";
+}
+
+// Crawler refresh 是資料建置工具，不是正式 App API。production 一律關閉，
+// 避免未授權呼叫造成外部抓取、寫入與資源消耗。
+function isCrawlerRefreshEnabled(env = process.env) {
+  return !isProduction(env);
+}
+
 // 是否允許「JSON store 作為（fallback 或唯一）資料來源」（CR-0034 Batch 2 / B4）。
 // 統一語義，供：
 //   - careAlertStoreService：DB 例外時是否降級寫 JSON（§5.3.1）。
@@ -256,6 +270,8 @@ function describeMaskedConfig(env = process.env) {
 module.exports = {
   normalizeAppEnv,
   isProduction,
+  resolveListenHost,
+  isCrawlerRefreshEnabled,
   parseBoolean,
   resolveCorsOrigins,
   hasFirebaseServiceAccount,

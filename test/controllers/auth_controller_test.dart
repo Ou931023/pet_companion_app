@@ -337,6 +337,25 @@ void main() {
       expect(result, isNot(contains('wrong-password')));
       expect(controller.status, AuthStatus.authenticated);
     });
+
+    test('後端資料尚未刪除 → 白話提示、保留登入供重試', () async {
+      final service = _StubDeleteRecordingAuthService(
+        session: _firebaseSession,
+        throwError: const SessionApiException('account_delete_failed'),
+      );
+      final controller = AuthController(authService: service);
+      await controller.signInWithEmail(
+        email: 'grandma@example.com',
+        password: 'secret1',
+      );
+
+      final result = await controller.deleteAccount(password: 'secret1');
+
+      expect(result, contains('還沒刪除完整'));
+      expect(result, contains('帳號和資料都還保留著'));
+      expect(result, isNot(contains('account_delete_failed')));
+      expect(controller.status, AuthStatus.authenticated);
+    });
   });
 
   group('Email 登入 / 註冊（CR-0006 Batch 4b）', () {

@@ -99,6 +99,58 @@ test("assertCanAccessResident: 無 context / 未知角色 → false（fail-close
   );
 });
 
+test("assertCanManageResident: super_admin 可寫且不查 DB", async () => {
+  const pg = makeMockPg({});
+  assert.equal(await authz.assertCanManageResident(SUPER_ADMIN, "elder-a", { pg }), true);
+  assert.equal(pg.calls.length, 0);
+});
+
+test("assertCanManageResident: primary / secondary 可寫，viewer 固定唯讀", async () => {
+  function rolePg(role) {
+    return {
+      isPostgresAvailable: async () => true,
+      query: async (_text, params) => ({
+        rows:
+          params[0] === "cg-1" &&
+          params[1] === "elder-a" &&
+          (role === "primary" || role === "secondary")
+            ? [{ role }]
+            : [],
+      }),
+    };
+  }
+
+  assert.equal(
+    await authz.assertCanManageResident(caregiver("cg-1"), "elder-a", {
+      pg: rolePg("primary"),
+    }),
+    true,
+  );
+  assert.equal(
+    await authz.assertCanManageResident(caregiver("cg-1"), "elder-a", {
+      pg: rolePg("secondary"),
+    }),
+    true,
+  );
+  assert.equal(
+    await authz.assertCanManageResident(caregiver("cg-1"), "elder-a", {
+      pg: rolePg("viewer"),
+    }),
+    false,
+  );
+});
+
+test("assertCanManageResident: 跨住民、缺 context 或 DB 不可用皆拒絕", async () => {
+  const pg = {
+    isPostgresAvailable: async () => false,
+    query: async () => {
+      throw new Error("must not query unavailable DB");
+    },
+  };
+  assert.equal(await authz.assertCanManageResident(caregiver("cg-1"), "elder-z", { pg }), false);
+  assert.equal(await authz.assertCanManageResident(null, "elder-a", { pg }), false);
+});
+
 test("filterAlertsByAuthorizedResidents: super_admin 原樣回傳（同陣列）", async () => {
   const pg = makeMockPg({});
   const alerts = [

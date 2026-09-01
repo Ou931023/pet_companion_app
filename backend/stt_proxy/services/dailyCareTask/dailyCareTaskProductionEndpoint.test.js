@@ -124,7 +124,7 @@ function assertDailyCareDisabled(res) {
   }
 }
 
-test("production GET /api/daily-care-tasks → 501 not_enabled，不讀 JSON / 不回 demo", async () => {
+test("production GET /api/daily-care-tasks 無住民 token → 401", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -132,13 +132,14 @@ test("production GET /api/daily-care-tasks → 501 not_enabled，不讀 JSON / �
       `${baseUrl}/api/daily-care-tasks?elderId=${ELDER_A}`,
       {},
     );
-    assertDailyCareDisabled(res);
+    assert.equal(res.status, 401);
+    assert.equal(res.body.error, "missing_resident_token");
   } finally {
     server.close();
   }
 });
 
-test("production POST /api/daily-care-tasks → 501 not_enabled", async () => {
+test("production POST /api/daily-care-tasks 無住民 token → 401", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -147,13 +148,14 @@ test("production POST /api/daily-care-tasks → 501 not_enabled", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ elderId: ELDER_A, title: "吃藥", taskType: "medication" }),
     });
-    assertDailyCareDisabled(res);
+    assert.equal(res.status, 401);
+    assert.equal(res.body.error, "missing_resident_token");
   } finally {
     server.close();
   }
 });
 
-test("production POST /api/daily-care-tasks/:id/submit → 501 not_enabled（非 500）", async () => {
+test("production POST /api/daily-care-tasks/:id/submit 無住民 token → 401", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -161,13 +163,14 @@ test("production POST /api/daily-care-tasks/:id/submit → 501 not_enabled（非
     const res = await fetchInProduction(`${baseUrl}/api/daily-care-tasks/any-id/submit`, {
       method: "POST",
     });
-    assertDailyCareDisabled(res);
+    assert.equal(res.status, 401);
+    assert.equal(res.body.error, "missing_resident_token");
   } finally {
     server.close();
   }
 });
 
-test("production PATCH /api/daily-care-tasks/:id/status → 501 not_enabled", async () => {
+test("production PATCH /api/daily-care-tasks/:id/status 無管理者 token → 401", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -176,13 +179,14 @@ test("production PATCH /api/daily-care-tasks/:id/status → 501 not_enabled", as
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "completed" }),
     });
-    assertDailyCareDisabled(res);
+    assert.equal(res.status, 401);
+    assert.equal(res.body.error, "missing_admin_token");
   } finally {
     server.close();
   }
 });
 
-test("production GET /api/daily-care-tasks/proof/:id → 501 not_enabled", async () => {
+test("production GET /api/daily-care-tasks/proof/:id 無管理者 token → 401", async () => {
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -190,7 +194,8 @@ test("production GET /api/daily-care-tasks/proof/:id → 501 not_enabled", async
       `${baseUrl}/api/daily-care-tasks/proof/any-submission`,
       {},
     );
-    assertDailyCareDisabled(res);
+    assert.equal(res.status, 401);
+    assert.equal(res.body.error, "missing_admin_token");
   } finally {
     server.close();
   }
@@ -233,7 +238,7 @@ test("production admin daily-care 無 token → 仍 401 missing_admin_token", as
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
     const res = await fetchInProduction(`${baseUrl}/api/admin/daily-care-tasks`, {});
     assert.equal(res.status, 401);
-    assert.deepEqual(res.body, { ok: false, error: "missing_admin_token" });
+    assert.deepEqual(res.body, { success: false, error: "missing_admin_token" });
   } finally {
     server.close();
   }

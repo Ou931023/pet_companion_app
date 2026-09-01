@@ -1369,8 +1369,13 @@ code {
   color: #991b1b;
 }
 .task-proof-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: #2563eb;
+  font: inherit;
   text-decoration: underline;
+  cursor: pointer;
 }
 .task-verification-card {
   margin-top: 10px;

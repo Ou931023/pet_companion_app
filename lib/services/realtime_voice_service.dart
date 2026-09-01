@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+import '../utils/app_log.dart';
+
 enum RealtimeFailureType {
   none,
   backendUnavailable,
@@ -1215,9 +1217,9 @@ class RealtimeVoiceService {
     // partial 轉錄可能在多位元組（中文）字元中間被切斷，直接印原文會產生無效 UTF-8，
     // 使 `flutter run` 的 stdout 解碼器崩潰（debug session 中斷）。partial 只印長度，
     // final 為完整字串才印原文。
-    debugPrint(
+    AppLog.debug(
       isFinal
-          ? '[TRANSCRIPT] final=$transcript'
+          ? '[TRANSCRIPT] final=${AppLog.previewTranscript(transcript)}'
           : '[TRANSCRIPT] partial(len=${transcript.length})',
     );
     _emit(
@@ -1272,7 +1274,7 @@ class RealtimeVoiceService {
   }
 
   void _log(String message) {
-    debugPrint('[RealtimeVoiceService] $message');
+    AppLog.debug('[RealtimeVoiceService] $message');
   }
 
   void _emit(RealtimeEventType type, String payload) {

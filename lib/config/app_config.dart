@@ -1,12 +1,13 @@
 class AppConfig {
   /// 執行環境：`development` / `staging` / `production`。
   ///
-  /// production build 透過 `--dart-define=APP_ENV=production` 指定。
+  /// 正式產品預設即為 production；本機開發才需明確指定
+  /// `--dart-define=APP_ENV=development`。
   /// production 下會強制關閉開發面板、Demo 登入與 mock service 注入，
   /// 並要求 [apiBaseUrl] 指向正式網域（見 [isApiBaseUrlProductionSafe]）。
   static const String appEnv = String.fromEnvironment(
     'APP_ENV',
-    defaultValue: 'development',
+    defaultValue: 'production',
   );
 
   /// 是否為正式環境。集中判斷，避免各處各自比對字串。
@@ -15,13 +16,14 @@ class AppConfig {
   /// 正式對外 API base URL。
   ///
   /// 新命名 `API_BASE_URL` 為主；舊命名 `BACKEND_BASE_URL` 保留為可讀別名
-  /// （未設定 `API_BASE_URL` 時回退讀取），預設為本機開發位址。
+  /// （未設定 `API_BASE_URL` 時回退讀取）。預設為正式 Render 後端，避免
+  /// 從 Xcode Archive / Android Studio release 時漏帶 dart-define 而連到本機。
   /// UI 頁面一律從這裡取，不得硬編 base URL。
   static const String backendBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
     defaultValue: String.fromEnvironment(
       'BACKEND_BASE_URL',
-      defaultValue: 'http://127.0.0.1:3001',
+      defaultValue: 'https://ai-companion-api-1gm7.onrender.com',
     ),
   );
 
@@ -100,19 +102,18 @@ class AppConfig {
 
   /// 是否顯示「今日任務」入口（dailyCareTask）的原始開關。
   ///
-  /// CR-0056（裁決 B2）：每日照護任務能力保留，但正式版**完全隱藏入口**，
-  /// 理由同 marketplace（避免死路頁與 placeholder 風險）。
-  /// dev / test 預設可見；如需在開發時隱藏可用
+  /// 日常照護任務、照片驗證與正式 PostgreSQL API 已完成，因此 production
+  /// 可以顯示；如需在特定 build 暫停入口可用
   /// `--dart-define=SHOW_DAILY_CARE_TASKS=false`。
   /// 能力與路由（[AppRoute.dailyCareTasks]）不刪，僅隱藏入口。
-  /// 實際是否顯示請用 [dailyCareTasksVisible]（production 一律隱藏）。
+  /// 實際是否顯示請用 [dailyCareTasksVisible]。
   static const bool showDailyCareTasks = bool.fromEnvironment(
     'SHOW_DAILY_CARE_TASKS',
     defaultValue: true,
   );
 
-  /// 今日任務入口實際是否顯示：production 強制隱藏。
-  static bool get dailyCareTasksVisible => showDailyCareTasks && !isProduction;
+  /// 今日任務入口實際是否顯示；正式功能已完成時依 build flag 控制。
+  static bool get dailyCareTasksVisible => showDailyCareTasks;
 
   static const String defaultSttProxyUrl = '$backendBaseUrl/api/stt/transcribe';
   static const String realtimeSessionUrl =

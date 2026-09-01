@@ -53,7 +53,20 @@ const EMAIL_KEYS = new Set(["email"]);
 const PHONE_KEYS = new Set(["phone", "phonenumber"]);
 const DBURL_KEYS = new Set(["databaseurl", "database_url"]);
 // 弱識別子 / 行為識別子：直接遮蔽（不保留值）。
-const OPAQUE_KEYS = new Set(["chatid", "chat_id"]);
+const OPAQUE_KEYS = new Set([
+  "chatid",
+  "chat_id",
+  "userid",
+  "user_id",
+  "elderid",
+  "elder_id",
+  "caregiverid",
+  "caregiver_id",
+  "firebaseuid",
+  "firebase_uid",
+  "petname",
+  "pet_name",
+]);
 // 自由文字內容（對話 / 摘要 / 風險原因）：截斷 + 標記。
 const FREETEXT_KEYS = new Set([
   "transcript",

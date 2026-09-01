@@ -117,7 +117,7 @@ void main() {
       expect(AppConfig.demoLoginVisible, isFalse);
       expect(AppConfig.socialSignInVisible, isFalse);
       expect(AppConfig.marketplaceVisible, isFalse);
-      expect(AppConfig.dailyCareTasksVisible, isFalse);
+      expect(AppConfig.dailyCareTasksVisible, isTrue);
       expect(AppConfig.devPanelsVisible, isFalse);
       expect(AppConfig.mockServicesEnabled, isFalse);
       expect(AppConfig.freeAllPetSkinsEnabled, isFalse);

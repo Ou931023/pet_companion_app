@@ -243,7 +243,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       petController.setMessage('正在連線陪伴寵物');
       conversationController.showPetBubbleMessage('正在連線陪伴寵物');
       notifyListeners();
-      debugPrint('[PET_NAME] current=${profileController.petName}');
+      AppLog.debug('[PET_NAME] current=${profileController.petName}');
       await realtimeVoiceService.connect(
         realtimeCallUrl:
             AppConfig.realtimeCallUrlForSttProxy(profileController.sttProxyUrl),
@@ -260,7 +260,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       if (attemptId != _connectionAttemptId ||
           _state == VoiceAgentState.idle ||
           _state == VoiceAgentState.recovering) {
-        debugPrint(
+        AppLog.debug(
           '[VoiceAgentController] ignore stale connect completion attempt=$attemptId active=$_connectionAttemptId',
         );
         return;
@@ -295,7 +295,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     if (!decision.accepted) {
       // 同一句重複送出或目前已有未完成的 turn 在跑時，不重複注入，
       // 但仍視為「已接手」避免 UI 退回 quickAction 產生平行回覆。
-      debugPrint(
+      AppLog.debug(
         '[VoiceAgentController] typed text rejected by turn coordinator reason=${decision.reason}',
       );
       return true;
@@ -380,7 +380,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
         _speechStartedAt != null || _partialTranscript.trim().isNotEmpty;
     if (!hasSpeech) {
       // 使用者按了按鈕但這一輪還沒開口：不送空 commit，維持待命聆聽，等使用者開口。
-      debugPrint('[VOICE_TURN] manual stop ignored: no speech captured yet');
+      AppLog.debug('[VOICE_TURN] manual stop ignored: no speech captured yet');
       return;
     }
     // 暫停麥克風 + commit 本輪語音 + （無 active response 時）請求回覆。
@@ -399,7 +399,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   ///
   /// 保留此方法只為相容既有呼叫點與測試；不再從 UI 觸發打斷。
   Future<bool> interruptPetForUserTurn() async {
-    debugPrint(
+    AppLog.debug(
         '[VOICE_TURN] barge-in disabled (turn-based); pet finishes first');
     return false;
   }
@@ -422,7 +422,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
         unawaited(_captureUserTranscriptDuringPetReply(event.payload));
         return;
       }
-      debugPrint(
+      AppLog.debug(
         '[VOICE_TURN] ignore user speech event ${event.type.name} while pet reply in progress',
       );
       return;
@@ -475,7 +475,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       case RealtimeEventType.assistantResponseDone:
         _cancelTimeout(RealtimeTimeoutType.responseTimeout);
         if (_responseTurnId.isNotEmpty && !_isActiveTurn(_responseTurnId)) {
-          debugPrint(
+          AppLog.debug(
             '[VoiceAgentController] drop stale response.done turn=$_responseTurnId active=$_activeTurnId',
           );
           return;
@@ -592,7 +592,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     if (_petReplyInProgress &&
         (mapped == VoiceAgentState.listening ||
             mapped == VoiceAgentState.transcribing)) {
-      debugPrint(
+      AppLog.debug(
         '[VOICE_TURN] ignore VAD state=$value while pet reply in progress',
       );
       return;
@@ -621,18 +621,18 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       realtimeTranscript: normalizedRealtimeTranscript,
     );
     if (routeAttemptId != _transcriptRouteAttemptId) {
-      debugPrint(
+      AppLog.debug(
         '[LANGUAGE_ROUTE] ignore stale route attempt=$routeAttemptId active=$_transcriptRouteAttemptId',
       );
       return;
     }
     _currentLanguageRoute = route;
     if (route.isFallback) {
-      debugPrint(
+      AppLog.debug(
         '[LANGUAGE_ROUTE] fallback strategy=${route.strategyName} reason=${route.routeReason}',
       );
     } else {
-      debugPrint(
+      AppLog.debug(
         '[LANGUAGE_ROUTE] strategy=${route.strategyName} language=${route.languageHint.value} reason=${route.routeReason}',
       );
     }
@@ -640,7 +640,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     final decision = _turnCoordinator.acceptFinalTranscript(route.transcript);
     if (!decision.accepted) {
       conversationController.clearRealtimeTranscriptState();
-      debugPrint(
+      AppLog.debug(
         '[VoiceAgentController] ignore transcript reason=${decision.reason} route=${route.routeReason}',
       );
       notifyListeners();
@@ -816,7 +816,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       clearPetReply: false,
     );
 
-    debugPrint(
+    AppLog.debug(
       '[VOICE_TURN] capture user final during pet reply turn=$turnId text="$transcript"',
     );
     // 指令也可能在寵物還在回覆時說出來（例如「幫我找新聞」）。先前這條路徑只做情緒分析、
@@ -984,12 +984,12 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
           _companionContextPrompt(result),
         ));
       }
-      debugPrint(
+      AppLog.debug(
         '[COMPANION_ENGINE] turn=$turnId emotion=${result.emotion} need=${result.companionNeed} strategy=${result.replyStrategy}',
       );
       notifyListeners();
     } catch (error) {
-      debugPrint('[COMPANION_ENGINE] fallback: $error');
+      AppLog.debug('[COMPANION_ENGINE] fallback: $error');
       _applyLocalCompanionFallback(transcript, turnId);
     }
   }
@@ -1165,7 +1165,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   void _startTimeout(RealtimeTimeoutType type, {String turnId = ''}) {
     _cancelTimeout(type);
     final duration = timeoutConfig.durationFor(type);
-    debugPrint(
+    AppLog.debug(
       '[VOICE_TIMEOUT] start type=${type.name} duration=${duration.inSeconds}s turn=${turnId.isEmpty ? '-' : turnId}',
     );
     if (type == RealtimeTimeoutType.ttsTimeout) return;
@@ -1191,11 +1191,11 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
 
   void _handleTimeout(RealtimeTimeoutType type, {String turnId = ''}) {
     final plan = timeoutPolicy.planFor(type);
-    debugPrint(
+    AppLog.debug(
       '[VOICE_TIMEOUT] fired type=${type.name} reason=${plan.reason} turn=${turnId.isEmpty ? '-' : turnId}',
     );
     if (turnId.isNotEmpty && !_isActiveTurn(turnId)) {
-      debugPrint(
+      AppLog.debug(
         '[VOICE_TIMEOUT] ignore stale timeout type=${type.name} turn=$turnId active=$_activeTurnId',
       );
       return;
@@ -1328,14 +1328,14 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     bool notify = true,
   }) {
     if (turnId.isNotEmpty && !_isActiveTurn(turnId)) {
-      debugPrint(
+      AppLog.debug(
         '[VOICE_STATE] drop stale transition reason=$reason turn=$turnId active=$_activeTurnId',
       );
       return;
     }
     final previous = _state;
     _state = newState;
-    debugPrint(
+    AppLog.debug(
       '[VOICE_STATE] ${previous.name} -> ${newState.name} reason=$reason turn=${turnId.isEmpty ? '-' : turnId}',
     );
     switch (newState) {
@@ -1480,7 +1480,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
         );
         break;
     }
-    debugPrint(
+    AppLog.debug(
       '[PET_STATE_FROM_EMOTION] mood=$_petMood expression=$_petExpression action=$_petAction',
     );
     notifyListeners();
@@ -1567,7 +1567,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     }
     _isHandlingRealtimeFailure = true;
     try {
-      debugPrint('[VoiceAgentController] realtime unavailable: $error');
+      AppLog.debug('[VoiceAgentController] realtime unavailable: $error');
       final failureType = error is RealtimeFailure
           ? error.type
           : realtimeVoiceService.lastFailureType;
@@ -1588,14 +1588,14 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
 
   void _handleRealtimeRecoverableFailure(String reason) {
     if (!_userRequestedRealtime) {
-      debugPrint(
+      AppLog.debug(
         '[VoiceAgentController] ignore recoverable failure without user request reason=$reason',
       );
       return;
     }
     if (_state == VoiceAgentState.connecting ||
         _state == VoiceAgentState.recovering) {
-      debugPrint(
+      AppLog.debug(
         '[VoiceAgentController] realtime recovery already running reason=$reason',
       );
       return;
@@ -1609,7 +1609,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     _reconnectAttempts += 1;
-    debugPrint('[VoiceAgentController] realtime recovering reason=$reason');
+    AppLog.debug('[VoiceAgentController] realtime recovering reason=$reason');
     _lastError = '';
     _transition(VoiceAgentState.recovering, reason);
     unawaited(_recoverAndReconnect(
@@ -1653,7 +1653,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
         replyLanguage: _currentLanguageRoute.replyLanguage.value,
       );
       if (attemptId != _connectionAttemptId) {
-        debugPrint(
+        AppLog.debug(
           '[VoiceAgentController] ignore stale reconnect completion attempt=$attemptId active=$_connectionAttemptId',
         );
         return;
@@ -1661,7 +1661,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       await realtimeVoiceService.startListening();
       _cancelTimeout(RealtimeTimeoutType.reconnectTimeout);
     } catch (error) {
-      debugPrint('[VoiceAgentController] reconnect failed: $error');
+      AppLog.debug('[VoiceAgentController] reconnect failed: $error');
       final failureType = error is RealtimeFailure
           ? error.type
           : realtimeVoiceService.lastFailureType;

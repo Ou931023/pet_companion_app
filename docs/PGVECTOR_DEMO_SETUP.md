@@ -83,14 +83,13 @@ flutter run                # iOS 實機 / 模擬器
 
 | key | 是否必須 | 說明 |
 |---|---|---|
-| `DATABASE_URL` | **必須** | server 端無預設值，不設就會走 JSON。建議值對齊 docker-compose 的本機開發設定：`postgres://postgres:password@localhost:5432/love_companion`（其中 `password` 是 compose 內的本機開發預設，非正式機密；若你改過 compose 密碼請同步調整）。 |
+| `DATABASE_URL` | **必須** | 必須由執行環境明確提供；migration 與 server 都不再內建帳密。production 缺少時會 fail-fast，且不得退回 JSON。 |
 | `PGVECTOR_ENABLED` | **必須＝`true`** | 雙重閘門之一；不是 `true` 一律走 JSON fallback。 |
 | `OPENAI_API_KEY` | 非必須、**建議設** | 不設仍可走 DB，但 embedding 會退成 deterministic mock（語意檢索品質下降）。要真語意搜尋就要設。 |
 | `EMBEDDING_MODEL` | 選用 | 預設 `text-embedding-3-small`（1536 維，與 schema 相符），通常不用動。 |
 | `PG_POOL_MAX` / `PG_IDLE_TIMEOUT_MS` / `PG_CONNECTION_TIMEOUT_MS` | 選用 | 皆有預設（10 / 30000 / 2000ms），Demo 不用設。 |
 
-> migration 用的 `db/pool.js` 內含 localhost 預設連線字串，所以**即使沒設 `DATABASE_URL`，`npm run db:migrate` 仍能跑**；
-> 但**後端 server 走不走 DB，只看 `DATABASE_URL` + `PGVECTOR_ENABLED`**，這兩個一定要設好。
+> migration 與後端都需要明確的 `DATABASE_URL`；不提供時必須失敗，不能使用內建本機密碼或把 JSON fallback 當正式資料庫。
 
 ---
 

@@ -314,6 +314,9 @@ class AuthController extends ChangeNotifier {
       // 使用者自己取消 Google 重新驗證：不是錯誤，柔性中止、維持登入。
       if (error.code == 'canceled') return null;
       return _friendlyDeleteError(error.code);
+    } on SessionApiException catch (error) {
+      AppLog.error('[AUTH] backend deleteAccount 失敗', error);
+      return _friendlyDeleteError(error.code);
     } catch (error) {
       AppLog.error('[AUTH] deleteAccount 失敗', error);
       return _friendlyDeleteError('unknown');
@@ -334,6 +337,8 @@ class AuthController extends ChangeNotifier {
         return '為了帳號安全，請先登出再重新登入一次，然後馬上刪除帳號喔。';
       case 'network-request-failed':
         return '現在網路好像不太穩，待會再試一次好嗎？';
+      case 'account_delete_failed':
+        return '目前還沒刪除完整，請檢查網路後再試一次。你的帳號和資料都還保留著。';
       default:
         return '現在沒辦法刪除帳號，待會再試一次好嗎？';
     }

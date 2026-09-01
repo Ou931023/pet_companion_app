@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>長者關懷管理中心</title>
-    <link rel="stylesheet" href="./styles.css?v=20260604b" />
+    <link rel="stylesheet" href="./styles.css?v=20260830-store-final" />
   </head>
   <body>
     <header class="app-header">
@@ -32,7 +32,7 @@
           <span id="auth-status-value" class="auth-status-value">尚未登入</span>
         </div>
         <div class="auth-controls">
-          <div class="auth-mode-select" role="radiogroup" aria-label="選擇登入身分">
+          <div id="auth-mode-select" class="auth-mode-select" role="radiogroup" aria-label="選擇登入身分">
             <label class="auth-mode-option">
               <input type="radio" name="auth-mode" id="auth-mode-caregiver" value="caregiver" />
               照護人員（只看被指派的住民）
@@ -42,7 +42,7 @@
               管理者（可看全部住民）
             </label>
           </div>
-          <div class="row auth-token-row">
+          <div id="auth-token-row" class="row auth-token-row">
             <input
               id="auth-token-input"
               type="password"
@@ -85,6 +85,7 @@
         </div>
       </section>
 
+      <div id="authenticated-content" class="hidden">
       <!-- 分頁：照護提醒 / 健康分析 -->
       <nav class="view-tabs" role="tablist" aria-label="檢視切換">
         <button id="tab-workspace" class="view-tab is-active" type="button" role="tab">
@@ -654,7 +655,7 @@
       </section>
 
       <!-- 後端連線設定（次要，平常收合） -->
-      <details class="settings">
+      <details id="connection-settings" class="settings hidden">
         <summary>連線設定</summary>
         <div class="settings-body">
           <label class="field-label" for="api-base">後端 API 位址</label>
@@ -676,6 +677,7 @@
           </p>
         </div>
       </details>
+      </div>
     </main>
 
     <!-- 詳情 modal -->
@@ -899,6 +901,6 @@
         window.APP_CONFIG.apiBaseUrl = null;
       }
     </script>
-    <script src="./app.js?v=20260821-cr0103b"></script>
+    <script src="./app.js?v=20260830-store-final"></script>
   </body>
 </html>
