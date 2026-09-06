@@ -19,13 +19,22 @@ void main() {
       expect(project, contains('enabled = 1'));
     });
 
-    test('all Runner build configurations use the entitlement file', () {
+    test('Profile and Release use the Apple entitlement file', () {
       final matches = RegExp(
         r'CODE_SIGN_ENTITLEMENTS = Runner/Runner\.entitlements;',
       ).allMatches(project);
 
-      expect(matches.length, 3,
-          reason: 'Debug/Profile/Release 都必須接上 entitlement');
+      expect(matches.length, 2,
+          reason: 'Profile/Release 必須接上 entitlement；Debug 要支援 Personal Team');
+    });
+
+    test('Debug does not request unsupported Personal Team capabilities', () {
+      final debugConfig = RegExp(
+        r'97C147061CF9000F007C117D /\* Debug \*/ = \{[\s\S]*?name = Debug;\s*\};',
+      ).firstMatch(project)?.group(0);
+
+      expect(debugConfig, isNotNull);
+      expect(debugConfig, isNot(contains('CODE_SIGN_ENTITLEMENTS')));
     });
   });
 }

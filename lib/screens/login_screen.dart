@@ -45,7 +45,9 @@ class _LoginScreenState extends State<LoginScreen> {
   bool get _showSocialSignIn =>
       widget.showSocialSignIn ?? AppConfig.socialSignInVisible;
   bool _showAppleSignIn(BuildContext context) =>
-      _showSocialSignIn && Theme.of(context).platform == TargetPlatform.iOS;
+      _showSocialSignIn &&
+      AppConfig.showAppleSignIn &&
+      Theme.of(context).platform == TargetPlatform.iOS;
 
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
