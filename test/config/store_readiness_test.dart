@@ -166,7 +166,8 @@ void main() {
       expect(infoPlist, contains('<false/>'));
     });
 
-    test('iOS Sign in with Apple capability is wired for every build mode', () {
+    test('iOS Sign in with Apple capability is wired for store build modes',
+        () {
       final entitlements = _read('ios/Runner/Runner.entitlements');
       final project = _read('ios/Runner.xcodeproj/project.pbxproj');
 
@@ -178,8 +179,14 @@ void main() {
         RegExp(r'CODE_SIGN_ENTITLEMENTS = Runner/Runner\.entitlements;')
             .allMatches(project)
             .length,
-        3,
+        2,
       );
+
+      final debugConfig = RegExp(
+        r'97C147061CF9000F007C117D /\* Debug \*/ = \{[\s\S]*?name = Debug;\s*\};',
+      ).firstMatch(project)?.group(0);
+      expect(debugConfig, isNotNull);
+      expect(debugConfig, isNot(contains('CODE_SIGN_ENTITLEMENTS')));
     });
 
     test('Traditional Chinese typography is applied above all app routes', () {

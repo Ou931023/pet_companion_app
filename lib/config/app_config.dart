@@ -83,6 +83,16 @@ class AppConfig {
   /// Google / Apple 登入入口實際是否顯示。
   static bool get socialSignInVisible => showSocialSignIn;
 
+  /// 是否顯示 iOS Sign in with Apple。
+  ///
+  /// 正式 Release 預設開啟；使用不支援 Apple capability 的 Personal Team
+  /// 安裝 Debug 實機版時，可用 `--dart-define=SHOW_APPLE_SIGN_IN=false`
+  /// 暫時隱藏入口。這不會改變 Release entitlement 或正式送審規格。
+  static const bool showAppleSignIn = bool.fromEnvironment(
+    'SHOW_APPLE_SIGN_IN',
+    defaultValue: true,
+  );
+
   /// 是否顯示「照護用品商城」入口（marketplace）的原始開關。
   ///
   /// CR-0056（裁決 A2）：marketplace 能力保留，但正式版**完全隱藏入口**，
