@@ -108,7 +108,7 @@ flutter build ipa --release \
 - App Store Connect 看到 build，且 Bundle ID / version / build number 正確。
 - TestFlight 安裝後用 production HTTPS 後端，並跑 `docs/STORE_SUBMISSION_RUNBOOK.md` §4–§5。
 
-若用第三方登入（Google）→ Apple 規範要求併提供 **Sign in with Apple**（見 `APP_STORE_METADATA §2`）。本版 production 已隱藏第三方登入，只保留 Email login/register。
+production 已同時提供 Google 與 **Sign in with Apple**（見 `APP_STORE_METADATA §2`）。送審前必須確認 Apple Developer App ID capability、Firebase provider、provisioning profile 與 iOS 真機登入全部通過。
 
 > ⛔ owner blocker：Apple Developer 帳號 + App Store Connect app record + iOS distribution signing。
 
@@ -155,7 +155,7 @@ iOS：
 - [x] Bundle ID / applicationId 正式化：`tw.edu.ncyu.im.aicompanion`（不可逆，見 `APP_STORE_METADATA §7`）。
 - [x] `build.gradle.kts` release signingConfig 由 debug key 換成正式 keystore（讀 `key.properties`）。
 - [ ] 本機 / CI 提供實際 `android/key.properties` 與 upload keystore（不得提交）。
-- [x] 第三方登入策略：本版 production 隱藏 Google / Apple，只保留 Email login/register；Sign in with Apple 完成前不得開啟第三方登入送審。
+- [ ] 第三方登入正式驗證：repo 已完成 Google / Apple / Email 與 Apple entitlement；owner 尚須完成 Apple Developer、Firebase、provisioning 與 iOS 真機 smoke，通過後才可送審。
 
 ---
 

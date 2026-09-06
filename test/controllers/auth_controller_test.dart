@@ -27,13 +27,18 @@ class _StubEmailAuthService extends AuthService {
     this.session,
     this.error,
     this.googleError,
+    this.appleError,
     this.registerError,
+    this.passwordResetError,
   });
 
   final AuthSession? session;
   final Object? error;
   final Object? googleError;
+  final Object? appleError;
   final Object? registerError;
+  final Object? passwordResetError;
+  String? passwordResetEmail;
 
   @override
   Future<void> registerAccountOnly({
@@ -67,6 +72,18 @@ class _StubEmailAuthService extends AuthService {
   Future<AuthSession> signInWithGoogle() async {
     if (googleError != null) throw googleError!;
     return session!;
+  }
+
+  @override
+  Future<AuthSession> signInWithApple() async {
+    if (appleError != null) throw appleError!;
+    return session!;
+  }
+
+  @override
+  Future<void> sendPasswordResetEmail(String email) async {
+    passwordResetEmail = email;
+    if (passwordResetError != null) throw passwordResetError!;
   }
 }
 
@@ -106,6 +123,15 @@ const _googleSession = AuthSession(
   bindingStatus: 'bound',
   authMode: 'firebase',
   provider: 'google',
+  isNewUser: false,
+);
+
+const _appleSession = AuthSession(
+  userId: 'user-apple-1',
+  elderId: 'elder-apple-1',
+  bindingStatus: 'bound',
+  authMode: 'firebase',
+  provider: 'apple',
   isNewUser: false,
 );
 
@@ -155,7 +181,8 @@ void main() {
     expect(controller.currentElderId, 'default_user');
   });
 
-  test('loginAsDemoUser 成功（mock session）→ authenticated 但 elderId 仍 default_user',
+  test(
+      'loginAsDemoUser 成功（mock session）→ authenticated 但 elderId 仍 default_user',
       () async {
     // CR-0006 Batch 3d：mock/demo session 一律回 default_user，保護既有 seed 記憶。
     final controller = AuthController(
@@ -176,8 +203,7 @@ void main() {
     expect(controller.currentUserId, 'default_user');
   });
 
-  test('正式帳號 session（provider=google）→ 即使 authMode=mock 也用後端真實 id',
-      () async {
+  test('正式帳號 session（provider=google）→ 即使 authMode=mock 也用後端真實 id', () async {
     // CR-0009：隔離依「登入方式」判斷，不靠 authMode。直接持久化一個正式帳號
     // session（provider=google，authMode 故意設 mock）模擬還原。
     final service = _authServiceReturning(const {});
@@ -286,7 +312,8 @@ void main() {
     });
 
     test('deleteAccount 會把密碼與 provider 往下傳給 AuthService', () async {
-      final service = _StubDeleteRecordingAuthService(session: _firebaseSession);
+      final service =
+          _StubDeleteRecordingAuthService(session: _firebaseSession);
       final controller = AuthController(authService: service);
       await controller.signInWithEmail(
         email: 'grandma@example.com',
@@ -301,8 +328,7 @@ void main() {
       expect(controller.status, AuthStatus.unauthenticated);
     });
 
-    test('Google 帳號刪除被取消 → 回 null 且維持登入（柔性中止、不清資料）',
-        () async {
+    test('Google 帳號刪除被取消 → 回 null 且維持登入（柔性中止、不清資料）', () async {
       final service = _StubDeleteRecordingAuthService(
         session: _googleSession,
         throwError: const EmailAuthException('canceled'),
@@ -359,7 +385,8 @@ void main() {
   });
 
   group('Email 登入 / 註冊（CR-0006 Batch 4b）', () {
-    test('signInWithEmail 成功 → authenticated，firebase session 用真實 elderId', () async {
+    test('signInWithEmail 成功 → authenticated，firebase session 用真實 elderId',
+        () async {
       final controller = AuthController(
         authService: _StubEmailAuthService(session: _firebaseSession),
       );
@@ -457,8 +484,7 @@ void main() {
       expect(controller.isAuthenticated, false);
     });
 
-    test('CR-0037：後端 401（SessionApiException invalid_token）→ 引導重新登入',
-        () async {
+    test('CR-0037：後端 401（SessionApiException invalid_token）→ 引導重新登入', () async {
       final controller = AuthController(
         authService: _StubEmailAuthService(
           error: const SessionApiException('invalid_token'),
@@ -476,8 +502,7 @@ void main() {
       expect(controller.isAuthenticated, false);
     });
 
-    test('CR-0037：後端連線問題（SessionApiException network）→ 網路白話訊息',
-        () async {
+    test('CR-0037：後端連線問題（SessionApiException network）→ 網路白話訊息', () async {
       final controller = AuthController(
         authService: _StubEmailAuthService(
           error: const SessionApiException('network'),
@@ -582,8 +607,7 @@ void main() {
       expect(controller.errorMessage, '現在連線不太順，待會再試一次好嗎？');
     });
 
-    test('CR-0037：Google 驗證成功但後端失敗 → error 白話、可重試、不捏造登入',
-        () async {
+    test('CR-0037：Google 驗證成功但後端失敗 → error 白話、可重試、不捏造登入', () async {
       final controller = AuthController(
         authService: _StubEmailAuthService(
           googleError: const SessionApiException('server'),
@@ -596,6 +620,76 @@ void main() {
       expect(controller.errorMessage, '登入暫時有點忙不過來，待會再試一次好嗎？');
       expect(controller.errorMessage, isNot(contains('SessionApiException')));
       expect(controller.isAuthenticated, false);
+    });
+  });
+
+  group('Apple 登入與密碼重設（CR-0106）', () {
+    test('Apple 登入成功使用正式 elderId', () async {
+      final controller = AuthController(
+        authService: _StubEmailAuthService(session: _appleSession),
+      );
+
+      await controller.signInWithApple();
+
+      expect(controller.status, AuthStatus.authenticated);
+      expect(controller.currentElderId, 'elder-apple-1');
+      expect(controller.currentProvider, 'apple');
+      expect(controller.errorMessage, isNull);
+    });
+
+    test('Apple 登入取消為柔性中止，不顯示錯誤', () async {
+      final controller = AuthController(
+        authService: _StubEmailAuthService(
+          appleError: const AppleAuthException('canceled'),
+        ),
+      );
+
+      await controller.signInWithApple();
+
+      expect(controller.status, AuthStatus.unauthenticated);
+      expect(controller.errorMessage, isNull);
+    });
+
+    test('Apple 設定不足時顯示白話替代方式', () async {
+      final controller = AuthController(
+        authService: _StubEmailAuthService(
+          appleError: const AppleAuthException('config'),
+        ),
+      );
+
+      await controller.signInWithApple();
+
+      expect(controller.status, AuthStatus.error);
+      expect(controller.errorMessage, contains('改用 Email'));
+      expect(controller.errorMessage, isNot(contains('config')));
+    });
+
+    test('密碼重設會整理 Email 且不改變登入狀態', () async {
+      final service = _StubEmailAuthService();
+      final controller = AuthController(authService: service);
+      await controller.restore();
+
+      final result =
+          await controller.sendPasswordResetEmail(' grandma@example.com ');
+
+      expect(result, isNull);
+      expect(service.passwordResetEmail, 'grandma@example.com');
+      expect(controller.status, AuthStatus.unauthenticated);
+    });
+
+    test('密碼重設網路錯誤不外洩 Firebase code', () async {
+      final controller = AuthController(
+        authService: _StubEmailAuthService(
+          passwordResetError:
+              const EmailAuthException('network-request-failed'),
+        ),
+      );
+
+      final result =
+          await controller.sendPasswordResetEmail('grandma@example.com');
+
+      expect(result, '現在網路好像不太穩，待會再試一次好嗎？');
+      expect(result, isNot(contains('network-request-failed')));
     });
   });
 }

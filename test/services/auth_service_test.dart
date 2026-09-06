@@ -21,6 +21,7 @@ class _FakeFirebaseAuthService extends FirebaseAuthService {
   _FakeFirebaseAuthService({
     this.result,
     this.googleResult,
+    this.appleResult,
     this.error,
     this.deleteError,
     this.reauthError,
@@ -29,6 +30,7 @@ class _FakeFirebaseAuthService extends FirebaseAuthService {
 
   final FirebaseSignInResult? result;
   final FirebaseSignInResult? googleResult;
+  final FirebaseSignInResult? appleResult;
   final Object? error;
   final Object? deleteError;
   final Object? reauthError;
@@ -39,11 +41,17 @@ class _FakeFirebaseAuthService extends FirebaseAuthService {
   bool deleteCalled = false;
   bool reauthPasswordCalled = false;
   bool reauthGoogleCalled = false;
+  bool reauthAppleCalled = false;
+  bool revokeAppleCalled = false;
+  String? revokedAppleAuthorizationCode;
+  String? resetEmail;
   String? reauthPassword;
+  final List<String> operations = <String>[];
 
   @override
   Future<void> deleteCurrentUser() async {
     deleteCalled = true;
+    operations.add('deleteFirebaseUser');
     if (deleteError != null) throw deleteError!;
   }
 
@@ -62,6 +70,27 @@ class _FakeFirebaseAuthService extends FirebaseAuthService {
   Future<void> reauthenticateWithGoogle() async {
     reauthGoogleCalled = true;
     if (reauthError != null) throw reauthError!;
+  }
+
+  @override
+  Future<String?> reauthenticateWithApple() async {
+    reauthAppleCalled = true;
+    operations.add('reauthApple');
+    if (reauthError != null) throw reauthError!;
+    return 'apple-authorization-code';
+  }
+
+  @override
+  Future<void> revokeAppleToken(String authorizationCode) async {
+    revokeAppleCalled = true;
+    operations.add('revokeAppleToken');
+    revokedAppleAuthorizationCode = authorizationCode;
+  }
+
+  @override
+  Future<void> sendPasswordResetEmail(String email) async {
+    resetEmail = email;
+    if (error != null) throw error!;
   }
 
   @override
@@ -88,6 +117,12 @@ class _FakeFirebaseAuthService extends FirebaseAuthService {
     if (error != null) throw error!;
     return googleResult!;
   }
+
+  @override
+  Future<FirebaseSignInResult> signInWithApple() async {
+    if (error != null) throw error!;
+    return appleResult!;
+  }
 }
 
 const _firebaseResult = FirebaseSignInResult(
@@ -103,6 +138,14 @@ const _googleResult = FirebaseSignInResult(
   idToken: 'fb-id-token-g',
   provider: 'google',
   email: 'grandma@gmail.com',
+  displayName: '陳奶奶',
+);
+
+const _appleResult = FirebaseSignInResult(
+  uid: 'fb-uid-a',
+  idToken: 'fb-id-token-a',
+  provider: 'apple',
+  email: 'hidden@privaterelay.appleid.com',
   displayName: '陳奶奶',
 );
 
@@ -178,8 +221,7 @@ void main() {
     expect(await service.restoreSession(), isNull);
   });
 
-  test('deleteAccount Firebase 失敗 → 丟出且本機 session 保留（可重新登入後再刪）',
-      () async {
+  test('deleteAccount Firebase 失敗 → 丟出且本機 session 保留（可重新登入後再刪）', () async {
     final fakeFirebase = _FakeFirebaseAuthService(
       result: _firebaseResult,
       deleteError: const EmailAuthException('requires-recent-login'),
@@ -207,8 +249,7 @@ void main() {
     expect(await service.restoreSession(), isNotNull);
   });
 
-  test('deleteAccount（Email）→ 用密碼重新驗證 + 呼叫後端刪資料 + 刪 Firebase + 清本機',
-      () async {
+  test('deleteAccount（Email）→ 用密碼重新驗證 + 呼叫後端刪資料 + 刪 Firebase + 清本機', () async {
     Uri? hitUri;
     Map<String, dynamic>? deleteBody;
     final fakeFirebase = _FakeFirebaseAuthService(
@@ -224,7 +265,12 @@ void main() {
             return http.Response(
               jsonEncode({
                 'success': true,
-                'deleted': {'user': 1, 'elder': 1, 'memories': 3, 'careAlerts': 1},
+                'deleted': {
+                  'user': 1,
+                  'elder': 1,
+                  'memories': 3,
+                  'careAlerts': 1
+                },
               }),
               200,
             );
@@ -284,8 +330,7 @@ void main() {
     expect(await service.restoreSession(), isNull);
   });
 
-  test('deleteAccount 後端不可達 → 保留 Firebase 帳號與本機 session 供重試',
-      () async {
+  test('deleteAccount 後端不可達 → 保留 Firebase 帳號與本機 session 供重試', () async {
     final fakeFirebase = _FakeFirebaseAuthService(
       result: _firebaseResult,
       authInfo: (uid: 'fb-uid-1', idToken: 'tok'),
@@ -329,8 +374,7 @@ void main() {
     expect(await service.restoreSession(), isNotNull);
   });
 
-  test('deleteAccount 重新驗證失敗（密碼錯）→ 丟出、不清本機 session、不刪 Firebase',
-      () async {
+  test('deleteAccount 重新驗證失敗（密碼錯）→ 丟出、不清本機 session、不刪 Firebase', () async {
     final fakeFirebase = _FakeFirebaseAuthService(
       result: _firebaseResult,
       authInfo: (uid: 'fb-uid-1', idToken: 'tok'),
@@ -363,7 +407,8 @@ void main() {
     expect(await service.restoreSession(), isNull);
   });
 
-  test('signInWithEmail 成功 → 帶 idToken 與 provider=email 呼叫後端並回 session', () async {
+  test('signInWithEmail 成功 → 帶 idToken 與 provider=email 呼叫後端並回 session',
+      () async {
     Map<String, dynamic>? sentBody;
     final service = AuthService(
       sessionApiService: SessionApiService(
@@ -385,8 +430,8 @@ void main() {
       firebaseAuthService: _FakeFirebaseAuthService(result: _firebaseResult),
     );
 
-    final session =
-        await service.signInWithEmail(email: 'grandma@example.com', password: 'secret1');
+    final session = await service.signInWithEmail(
+        email: 'grandma@example.com', password: 'secret1');
 
     expect(session.userId, 'user-email-1');
     expect(session.elderId, 'elder-email-1');
@@ -432,7 +477,8 @@ void main() {
     await expectLater(
       service.signInWithEmail(email: 'grandma@example.com', password: 'bad'),
       throwsA(
-        isA<EmailAuthException>().having((e) => e.code, 'code', 'wrong-password'),
+        isA<EmailAuthException>()
+            .having((e) => e.code, 'code', 'wrong-password'),
       ),
     );
   });
@@ -450,7 +496,8 @@ void main() {
     );
 
     await expectLater(
-      service.signInWithEmail(email: 'grandma@example.com', password: 'secret1'),
+      service.signInWithEmail(
+          email: 'grandma@example.com', password: 'secret1'),
       throwsA(
         isA<SessionApiException>().having((e) => e.code, 'code', 'server'),
       ),
@@ -471,16 +518,17 @@ void main() {
     );
 
     await expectLater(
-      service.signInWithEmail(email: 'grandma@example.com', password: 'secret1'),
+      service.signInWithEmail(
+          email: 'grandma@example.com', password: 'secret1'),
       throwsA(
-        isA<SessionApiException>().having((e) => e.code, 'code', 'invalid_token'),
+        isA<SessionApiException>()
+            .having((e) => e.code, 'code', 'invalid_token'),
       ),
     );
     expect(await service.restoreSession(), isNull);
   });
 
-  test('Firebase 成功但後端連線錯誤 → 丟 SessionApiException(network)、不持久化',
-      () async {
+  test('Firebase 成功但後端連線錯誤 → 丟 SessionApiException(network)、不持久化', () async {
     final service = AuthService(
       sessionApiService: SessionApiService(
         client: MockClient((request) async {
@@ -491,7 +539,8 @@ void main() {
     );
 
     await expectLater(
-      service.signInWithEmail(email: 'grandma@example.com', password: 'secret1'),
+      service.signInWithEmail(
+          email: 'grandma@example.com', password: 'secret1'),
       throwsA(
         isA<SessionApiException>().having((e) => e.code, 'code', 'network'),
       ),
@@ -519,7 +568,8 @@ void main() {
           );
         }),
       ),
-      firebaseAuthService: _FakeFirebaseAuthService(googleResult: _googleResult),
+      firebaseAuthService:
+          _FakeFirebaseAuthService(googleResult: _googleResult),
     );
 
     final session = await service.signInWithGoogle();
@@ -542,13 +592,111 @@ void main() {
     await expectLater(
       service.signInWithGoogle(),
       throwsA(
-        isA<GoogleAuthException>().having((e) => e.isCanceled, 'isCanceled', true),
+        isA<GoogleAuthException>()
+            .having((e) => e.isCanceled, 'isCanceled', true),
       ),
     );
   });
 
-  test('registerAccountOnly 成功 → 不建後端 session、不持久化（不自動登入）',
-      () async {
+  test('signInWithApple 成功 → provider=apple 呼叫既有後端 session', () async {
+    Map<String, dynamic>? sentBody;
+    final service = AuthService(
+      sessionApiService: SessionApiService(
+        client: MockClient((request) async {
+          sentBody = jsonDecode(request.body) as Map<String, dynamic>;
+          return http.Response(
+            jsonEncode({
+              'success': true,
+              'userId': 'user-a-1',
+              'elderId': 'elder-a-1',
+              'bindingStatus': 'bound',
+              'isNewUser': true,
+              'authMode': 'firebase',
+            }),
+            200,
+          );
+        }),
+      ),
+      firebaseAuthService: _FakeFirebaseAuthService(appleResult: _appleResult),
+    );
+
+    final session = await service.signInWithApple();
+
+    expect(session.elderId, 'elder-a-1');
+    expect(session.provider, 'apple');
+    expect(sentBody!['idToken'], 'fb-id-token-a');
+    expect(sentBody!['provider'], 'apple');
+  });
+
+  test('sendPasswordResetEmail 交由 Firebase 且不建立 session', () async {
+    final firebase = _FakeFirebaseAuthService();
+    final service = AuthService(
+      sessionApiService: _apiReturning(const {}),
+      firebaseAuthService: firebase,
+    );
+
+    await service.sendPasswordResetEmail('grandma@example.com');
+
+    expect(firebase.resetEmail, 'grandma@example.com');
+    expect(await service.restoreSession(), isNull);
+  });
+
+  test('deleteAccount（Apple）先重新驗證，再刪 Firebase 帳號', () async {
+    final firebase = _FakeFirebaseAuthService();
+    final service = AuthService(
+      sessionApiService: _apiReturning(const {}),
+      firebaseAuthService: firebase,
+    );
+
+    await service.deleteAccount(provider: 'apple');
+
+    expect(firebase.reauthAppleCalled, isTrue);
+    expect(firebase.revokeAppleCalled, isTrue);
+    expect(firebase.revokedAppleAuthorizationCode, 'apple-authorization-code');
+    expect(firebase.deleteCalled, isTrue);
+    expect(
+      firebase.operations,
+      ['reauthApple', 'revokeAppleToken', 'deleteFirebaseUser'],
+    );
+  });
+
+  test('Apple 驗證成功但後端失敗時不撤銷 token，也不刪 Firebase 帳號', () async {
+    final firebase = _FakeFirebaseAuthService(
+      authInfo: (uid: 'fb-uid-a', idToken: 'fb-id-token-a'),
+    );
+    final service = AuthService(
+      sessionApiService: SessionApiService(
+        client: MockClient((_) async => http.Response('{}', 500)),
+      ),
+      firebaseAuthService: firebase,
+    );
+
+    await expectLater(
+      service.deleteAccount(provider: 'apple'),
+      throwsA(isA<SessionApiException>()),
+    );
+
+    expect(firebase.reauthAppleCalled, isTrue);
+    expect(firebase.revokeAppleCalled, isFalse);
+    expect(firebase.deleteCalled, isFalse);
+  });
+
+  test('Apple 成功但後端 session 失敗時不建立或持久化 session', () async {
+    final service = AuthService(
+      sessionApiService: SessionApiService(
+        client: MockClient((_) async => http.Response('{}', 500)),
+      ),
+      firebaseAuthService: _FakeFirebaseAuthService(appleResult: _appleResult),
+    );
+
+    await expectLater(
+      service.signInWithApple(),
+      throwsA(isA<SessionApiException>()),
+    );
+    expect(await service.restoreSession(), isNull);
+  });
+
+  test('registerAccountOnly 成功 → 不建後端 session、不持久化（不自動登入）', () async {
     final service = AuthService(
       sessionApiService: _apiReturning({
         'success': true,
@@ -597,7 +745,8 @@ void main() {
       sessionApiService: SessionApiService(
         client: MockClient((request) async => http.Response('err', 500)),
       ),
-      firebaseAuthService: _FakeFirebaseAuthService(googleResult: _googleResult),
+      firebaseAuthService:
+          _FakeFirebaseAuthService(googleResult: _googleResult),
     );
 
     await expectLater(

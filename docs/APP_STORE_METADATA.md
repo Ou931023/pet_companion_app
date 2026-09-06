@@ -43,7 +43,7 @@
 - **What's New（首版）**：草稿「首次推出：即時語音陪伴、長期記憶、關懷提醒。」
 - **審查備註 Review notes**：✅ 模板已備妥於 `docs/STORE_REVIEW_NOTES_TEMPLATE.md`；owner 需在 App Store Connect 填入測試帳號與正式 `API_BASE_URL`，不得寫入 repo。
 - **測試帳號策略（審查用）**：✅ 策略已定：提供一組「審查專用」Firebase resident 帳號 + 預先指派的住民資料，讓審查員能走完登入→語音→設定/刪除帳號；如需 caregiver_web 審查再另提供 caregiver / super_admin 測試帳號。**不可用 production super_admin token、不可 hardcode、不可寫進 repo**。
-- **Sign in with Apple**：若上架時提供第三方登入（Google），Apple 規範要求同時提供 Sign in with Apple。✅ CR-0101A 決策：Apple Sign in 完成前，production build 隱藏 Google / Apple 第三方登入入口，只保留 Email login / Email register；未完成入口不得出現在送審截圖或審查流程。
+- **Sign in with Apple**：✅ CR-0106 已完成 Google / Apple 的 Firebase 正式登入與 iOS entitlement；送審前 owner 仍須在 Apple Developer、Firebase Authentication 與 provisioning profile 啟用並完成真機登入 smoke。Email login / password reset 保留為共同備援。
 - **App Privacy 補充（CR-0097）**：隱私問卷需申報 App 活動 / 使用分析（App 開啟與使用時間、語音/打字互動、寵物互動、提醒/任務、照片驗證、小遊戲等）。用途限 App Functionality / Analytics / Product Personalization（若後台選項適用），不得填成 tracking 或 advertising。
 - **帳號刪除 / 支援備註（CR-0101A）**：設定頁提供「刪除帳號」入口與二次確認，文案說明會刪除伺服器帳號資料與本機 App 紀錄。審查備註可指出：登入後進入設定 → 帳號 → 刪除帳號。正式支援 URL / 客服信箱需由 `SUPPORT_URL` / `CONTACT_EMAIL` 注入並與商店後台一致。
 

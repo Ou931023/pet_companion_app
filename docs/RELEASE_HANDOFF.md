@@ -59,7 +59,7 @@
 | Privacy Policy URL | ✅ `https://ou931023.github.io/pet_companion_app/privacy.html` | — | CR-0101B |
 | Terms URL / Support URL / Email | ✅ hosted terms / support pages；`aicompanion.support@gmail.com` | — | CR-0101B |
 | 內容分級問卷 | ⛔ 未填 | — | CR-0058 |
-| 第三方登入 / Sign in with Apple 決策 | production 隱藏 Google / Apple，先以 Email 登入上架 | — | CR-0101A |
+| 第三方登入 / Sign in with Apple | repo 已完成 Google / Apple / Email；待 owner 完成 console、provisioning 與真機 smoke | — | CR-0106 |
 | Review notes / 審查測試帳號策略 | ✅ 模板完成；真帳密只填商店後台受保護欄位 | — | CR-0101B |
 
 ### 3.2 Infrastructure Blockers（需 owner 部署 / 提供）
@@ -182,8 +182,8 @@
   - Related：CR-0053 / CR-0055 — Blocking：release blocker（驗證）
 - [ ] **商店後台 metadata + Data Safety / Privacy labels + 內容分級問卷 + 審查測試帳號**
   - Related：CR-0058 / `GOOGLE_PLAY_DATA_SAFETY.md` — Blocking：release blocker（console）
-- [ ] **第三方登入 / Sign in with Apple 決策**
-  - Related：CR-0058 — Blocking：release blocker（Apple 規範）
+- [ ] **第三方登入 console / provisioning / 真機 smoke**
+  - Related：CR-0106 — Blocking：release blocker（Apple Developer + Firebase）
 
 ---
 

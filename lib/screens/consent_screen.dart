@@ -116,7 +116,7 @@ class _HighlightCard extends StatelessWidget {
         children: [
           Text(
             highlight.title,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 8),
           Text(

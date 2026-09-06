@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 
 const { analyzeCompanionTurn } = require("./companion_engine");
 const {
+  NORMAL_VOICE_CADENCE,
   planNextStrategy,
   hasReminderIntent,
   hasMemoryRecallIntent,
@@ -183,4 +184,41 @@ test("台語 languageHint 仍附上自然台語與溫和追問指引", () => {
   const r = analyze("睡不太著", { languageHint: "taigi" });
   assert.match(r.nextStrategy.instruction, /台灣長者自然聽得懂/);
   assert.match(r.nextStrategy.instruction, /溫和追問/);
+});
+
+test("CR-0105D 中文／台語／混合語言一般語音共用 1–3 句節奏", () => {
+  const corpus = [
+    { text: "今天太陽很好", languageHint: "zh" },
+    { text: "我今天有點難過", languageHint: "zh" },
+    { text: "今仔日天氣真好", languageHint: "taigi" },
+    { text: "我昨暝袂好睏，今仔日足累", languageHint: "taigi" },
+    { text: "提醒我暗時八點食藥", languageHint: "taigi" },
+    { text: "你還記得我頂擺講的代誌嗎", languageHint: "taigi" },
+  ];
+
+  for (const item of corpus) {
+    const result = analyze(item.text, { languageHint: item.languageHint });
+    assert.notEqual(result.safety.riskLevel, "urgent", item.text);
+    assert.ok(
+      result.nextStrategy.instruction.includes(NORMAL_VOICE_CADENCE),
+      `「${item.text}」缺少一般語音節奏：${result.nextStrategy.instruction}`,
+    );
+    assert.match(result.nextStrategy.instruction, /1–3 句/);
+    assert.match(result.nextStrategy.instruction, /第一句先接住情緒/);
+    assert.match(result.nextStrategy.instruction, /最多一個問題/);
+    assert.match(result.nextStrategy.instruction, /不要在同一問句塞入多題/);
+    assert.match(result.nextStrategy.instruction, /避免連續使用/);
+  }
+});
+
+test("urgent 保留完整安全提醒，不套一般 1–3 句裁切", () => {
+  const result = analyze("我胸口很痛，喘不過氣");
+
+  assert.equal(result.safety.riskLevel, "urgent");
+  assert.equal(result.nextStrategy.mode, "safety_check");
+  assert.doesNotMatch(result.nextStrategy.instruction, /1–3 句/);
+  assert.match(result.nextStrategy.instruction, /接住/);
+  assert.match(result.nextStrategy.instruction, /安不安全/);
+  assert.match(result.nextStrategy.instruction, /立刻聯絡家人/);
+  assert.match(result.nextStrategy.instruction, /緊急 \/ 醫療電話/);
 });

@@ -94,7 +94,7 @@ flutter build appbundle --release \
 | A1 | 安裝 / 首開 |  |  | 可從 TestFlight / Internal testing 安裝並啟動 |
 | A2 | 無開發痕跡 |  |  | 無 debug / demo / mock / test mode / Flutter 預設 launch |
 | A3 | Privacy consent |  |  | 首次使用說明資料用途、使用紀錄、照護用途 |
-| A4 | Email 註冊 / 登入 |  |  | resident 帳號可登入；第三方登入未完成時不顯示 |
+| A4 | 正式登入 / 密碼重設 |  |  | Email 註冊登入與忘記密碼可用；Google 兩平台可登入；iOS Apple 可登入且取消不報錯 |
 | A5 | 首頁易用性 |  |  | 首頁聚焦寵物、狀態、大麥克風、簡潔對話區 |
 | A6 | 麥克風權限 |  |  | 權限文案合理；拒絕後不閃退且白話提示 |
 | A7 | Realtime 語音 |  |  | 開麥、聽取、partial/final transcript、寵物回覆皆正常 |

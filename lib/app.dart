@@ -454,11 +454,18 @@ class PetCompanionApp extends StatelessWidget {
             theme: AppTheme.light(),
             builder: (context, child) {
               final mediaQuery = MediaQuery.of(context);
-              return MediaQuery(
-                data: mediaQuery.copyWith(
-                  textScaler: TextScaler.linear(profile.fontScale),
+              return DefaultTextStyle.merge(
+                style: const TextStyle(
+                  locale: Locale('zh', 'TW'),
+                  fontFamily: 'PingFang TC',
+                  fontFamilyFallback: ['Noto Sans TC'],
                 ),
-                child: child ?? const SizedBox.shrink(),
+                child: MediaQuery(
+                  data: mediaQuery.copyWith(
+                    textScaler: TextScaler.linear(profile.fontScale),
+                  ),
+                  child: child ?? const SizedBox.shrink(),
+                ),
               );
             },
             onGenerateRoute: _onGenerateRoute,

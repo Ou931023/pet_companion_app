@@ -49,12 +49,8 @@ void main() {
       }
     });
 
-    test('socialSignInVisible 在 production 一律 false（Apple 完成前）', () {
-      if (AppConfig.isProduction) {
-        expect(AppConfig.socialSignInVisible, isFalse);
-      } else {
-        expect(AppConfig.socialSignInVisible, AppConfig.showSocialSignIn);
-      }
+    test('socialSignInVisible 依正式第三方登入開關決定', () {
+      expect(AppConfig.socialSignInVisible, AppConfig.showSocialSignIn);
     });
 
     test('marketplaceVisible 在 production 一律 false（CR-0056 A2）', () {

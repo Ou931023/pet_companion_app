@@ -98,6 +98,7 @@ void main() {
 
     test('visualStyle 可切換 dog realistic，並更新 tracking metadata', () async {
       final controller = PetController();
+      await controller.changeVisualStyle(PetVisualStyle.cute);
       final ok = await controller.changeVisualStyle(PetVisualStyle.realistic);
 
       expect(ok, isTrue);
@@ -184,21 +185,21 @@ void main() {
       expect(reloaded.isOwned(PetSkin.dog), isTrue);
     });
 
-    test('dog realistic 偏好可持久化並依 elderId 隔離', () async {
+    test('視覺偏好可持久化並依 elderId 隔離，新帳號首選 realistic', () async {
       final storage = LocalStorageService();
       final controller = PetController(storageService: storage);
 
       storage.setUserId('elder-A');
-      await controller.changeVisualStyle(PetVisualStyle.realistic);
+      await controller.changeVisualStyle(PetVisualStyle.cute);
 
       storage.setUserId('elder-B');
       await controller.loadSkin();
-      expect(controller.currentVisualStyle, PetVisualStyle.cute);
+      expect(controller.currentVisualStyle, PetVisualStyle.realistic);
 
       storage.setUserId('elder-A');
       await controller.loadSkin();
       expect(controller.currentSkin, PetSkin.dog);
-      expect(controller.currentVisualStyle, PetVisualStyle.realistic);
+      expect(controller.currentVisualStyle, PetVisualStyle.cute);
     });
 
     test('loadSkin 依 elderId 載入各自的外觀與擁有狀態', () async {

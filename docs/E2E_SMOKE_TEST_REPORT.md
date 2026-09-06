@@ -5,6 +5,42 @@
 
 ---
 
+## Run #3 — 2026-09-06 Store Preflight（自動檢查 PASS；真機流程仍 PENDING）
+
+| 欄位 | 內容 |
+|---|---|
+| 日期 | 2026-09-06 |
+| 模式 | **Automated preflight**：正式公開端點唯讀 smoke、repo tests、Android production AAB build；未使用測試帳號或管理者權杖 |
+| 後端 URL | `https://ai-companion-api-1gm7.onrender.com` |
+| caregiver_web | `https://ai-companion-caregiver-web.onrender.com` |
+| app version | `1.0.0+1` |
+| source revision | `e0ac477` + 尚未 commit 的 CR-0105 / CR-0106 working tree；送 Play 前必須由最終乾淨 commit 重建 |
+
+### 已通過
+
+| 檢項 | 結果 | 去敏佐證 |
+|---|---|---|
+| Backend syntax + unit / endpoint tests | PASS | `npm run check` 通過；`npm test`：667 passed、0 failed |
+| caregiver_web regression tests | PASS | `node --test caregiver_web/*.test.js`：119 passed、0 failed |
+| Flutter production / signing gate | PASS | app config、legal、store readiness、Android signing：36 passed、0 failed |
+| Release signing readiness | PASS | 本機 upload keystore 設定存在且未被追蹤；Android release 不使用 debug signing；target API gate 通過 |
+| Production backend health | PASS | `/health` 200、`status:ok`、OpenAI 已設定、Realtime model 為 `gpt-realtime` |
+| caregiver_web runtime config | PASS | endpoint 200、API base 指向現役後端、Firebase Web 欄位齊全、正式網域 CORS 通過；未輸出任何設定值 |
+| Hosted pages | PASS | caregiver_web、Privacy、Terms、Support 全部 HTTPS 200 |
+| Android production AAB | PASS | `build/app/outputs/bundle/release/app-release.aab` 建置成功（113.3 MB build output）；`jarsigner` 回 `jar verified` |
+| AAB SHA-256 | Recorded | `b239a6634c365874dbab12eba96f06a0a02648b5d5a0f29c9d9006e3f7d8008e` |
+
+### 尚未宣稱通過
+
+- **Android Internal testing**：AAB 尚未上傳 Play Console，尚未由 Play 安裝至 Android 實機。
+- **iOS TestFlight / distribution signing**：owner 決定延後處理 Apple Developer Team / provisioning；功能碼與 capability 保留。
+- **Firebase 真帳號流程**：Email 註冊／登入／忘記密碼、Google、Apple 尚需從商店候選 build 真機驗證。
+- **Realtime / 台語 / transcript**：需真機麥克風與正式帳號執行，不以單元測試取代。
+- **Care Alert / Telegram / usage tracking / caregiver analytics**：需有權限的測試帳號與去敏測試資料完成 production round trip。
+- 本輪 AAB 是 build preflight。因 working tree 尚未 commit，**不可直接視為最終送審 artifact**；合併並確認乾淨 commit 後需用相同 production flags 重建一次。
+
+---
+
 ## Demo Readiness Checklist（CR-0074 — 展示前檢查，非 smoke 結果）
 
 > 僅列「正式展示前要逐項確認」的項目，供發表 / 口試前 10 分鐘勾選。完整操作腳本見 `docs/DEMO_SCRIPT.md`。**這不是 smoke 通過紀錄**——實機 smoke 逐項結果見下方 Run #2 / CR-0071 佐證表。
@@ -12,7 +48,7 @@
 - [ ] 後端 `/health` 回 `status:ok`、`hasOpenAiKey:true`（先打一次喚醒 Render 冷啟動）。
 - [ ] caregiver_web 可登入（super_admin + Admin Token 已貼好），照護提醒 / 商品管理 / 訂單管理 / 日常任務分頁可載資料。
 - [ ] Telegram bot 可收訊（high 測試句自測過，注意冷卻）。
-- [ ] iPhone App 已用 production flags 安裝（`APP_ENV=production` + `-7mb8` + marketplace/daily-care 兩旗標）、已登入、無 debug/demo/dev 字樣。
+- [ ] iPhone App 已用 production flags 安裝（`APP_ENV=production` + `https://ai-companion-api-1gm7.onrender.com`）、已登入、無 debug/demo/dev 字樣。
 - [ ] 麥克風 / 相機權限已允許；網路穩定（備手機熱點）。
 - [ ] Admin Token 不外露、不當眾輸入；**不展示** OpenAI key / Firebase key / `DATABASE_URL` / 後台 log。
 - [ ] 不使用真實長者個資；測試句用 `DEMO_SCRIPT.md §2` 的設計句。

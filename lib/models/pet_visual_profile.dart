@@ -71,6 +71,7 @@ class PetVisualProfile {
     required this.talkFrameCount,
     required this.restFrameCount,
     required this.stateSuffixes,
+    this.isProductionPreferred = false,
   });
 
   final PetSkin skin;
@@ -78,6 +79,7 @@ class PetVisualProfile {
   final PetGrowthStage growthStage;
   final int talkFrameCount;
   final int restFrameCount;
+  final bool isProductionPreferred;
 
   /// PetMode 對應到 `assets/pets/states/<skin>_<suffix>.png` 的 suffix。
   final Map<PetMode, String> stateSuffixes;

@@ -311,10 +311,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     Expanded(
                       child: LayoutBuilder(
                         builder: (context, contentConstraints) {
-                          final detailsMaxHeight =
+                          // CR-0105E：對話資訊使用固定槽位。先前只有內容出現時才
+                          // 從 Expanded 寵物舞台扣掉 32–36% 高度，會讓寵物瞬間縮小。
+                          // 固定保留較精簡且可捲動的槽位，字級不縮小、舞台尺寸也穩定。
+                          final detailsSlotHeight =
                               (contentConstraints.maxHeight *
-                                      (compact ? 0.36 : 0.32))
-                                  .clamp(86.0, compact ? 170.0 : 230.0);
+                                      (compact ? 0.18 : 0.22))
+                                  .clamp(
+                            compact ? 64.0 : 96.0,
+                            compact ? 84.0 : 150.0,
+                          );
                           final petText = _resolvePetText(
                             conversationController,
                             petController.message,
@@ -329,31 +335,31 @@ class _HomeScreenState extends State<HomeScreen> {
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              if (showConversationDetail) ...[
-                                ConstrainedBox(
-                                  constraints: BoxConstraints(
-                                    maxHeight: detailsMaxHeight,
-                                  ),
-                                  child: SingleChildScrollView(
-                                    key: const ValueKey(
-                                      'home-conversation-detail-scroll',
-                                    ),
-                                    padding: const EdgeInsets.only(bottom: 2),
-                                    child: _ConversationDetailPanel(
-                                      conversationController:
-                                          conversationController,
-                                      agentToolController: agentToolController,
-                                      companionSources: companionSources,
-                                      petText: petText,
-                                      petName: profileController.petName,
-                                      compact: compact,
-                                      streaming: conversationController
-                                          .isRealtimeStreaming,
-                                    ),
-                                  ),
-                                ),
-                                SizedBox(height: compact ? 6 : 8),
-                              ],
+                              SizedBox(
+                                height: detailsSlotHeight,
+                                child: showConversationDetail
+                                    ? SingleChildScrollView(
+                                        key: const ValueKey(
+                                          'home-conversation-detail-scroll',
+                                        ),
+                                        padding:
+                                            const EdgeInsets.only(bottom: 2),
+                                        child: _ConversationDetailPanel(
+                                          conversationController:
+                                              conversationController,
+                                          agentToolController:
+                                              agentToolController,
+                                          companionSources: companionSources,
+                                          petText: petText,
+                                          petName: profileController.petName,
+                                          compact: compact,
+                                          streaming: conversationController
+                                              .isRealtimeStreaming,
+                                        ),
+                                      )
+                                    : null,
+                              ),
+                              SizedBox(height: compact ? 6 : 8),
                               Expanded(
                                 child: KeyedSubtree(
                                   key: coachKeys.petKey,
@@ -1880,6 +1886,7 @@ class _PetStage extends StatelessWidget {
                                 size: auraSize,
                               ),
                             PetAvatar(
+                              key: const ValueKey('home-pet-avatar'),
                               mode: petMode,
                               skin: skin,
                               visualStyle: visualStyle,

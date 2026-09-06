@@ -4,7 +4,10 @@ const { classifyCompanionNeed } = require("./companion_need_classifier");
 const { mapPetState, mapReplyStrategy } = require("./pet_state_mapper");
 const { shouldSaveMemory } = require("./memory_policy");
 const { assessSafety } = require("./safety_guard");
-const { planNextStrategy } = require("./next_strategy_planner");
+const {
+  NORMAL_VOICE_CADENCE,
+  planNextStrategy,
+} = require("./next_strategy_planner");
 const { buildCareAlertSummary } = require("./companion_prompt_builder");
 const { estimateVoiceFeatures } = require("./voice_feature_service");
 const { fuseEmotion } = require("./emotion_fusion_service");
@@ -29,7 +32,7 @@ function analyzeCompanionTurn(input = {}) {
       careAlertSummary: buildCareAlertSummary({ riskLevel: "low", transcript: "" }),
       nextStrategy: {
         mode: "normal_chat",
-        instruction: "下一輪回應保持自然、簡短、陪伴感，每次最多問一個問題。",
+        instruction: `下一輪先溫和請使用者再說一次。 ${NORMAL_VOICE_CADENCE}`,
       },
       voiceFeatures: estimateVoiceFeatures({ transcript, audioFeatures: input.audioFeatures }),
       fusion: {

@@ -7,6 +7,7 @@ import 'package:pet_companion_app/controllers/pet_controller.dart';
 import 'package:pet_companion_app/controllers/profile_controller.dart';
 import 'package:pet_companion_app/controllers/wallet_controller.dart';
 import 'package:pet_companion_app/models/pet_skin.dart';
+import 'package:pet_companion_app/models/pet_visual_profile.dart';
 import 'package:pet_companion_app/services/local_storage_service.dart';
 import 'package:pet_companion_app/widgets/pet_skin_picker.dart';
 
@@ -123,6 +124,7 @@ void main() {
 
   testWidgets('狗狗顯示 Q版 / 真實版選項，切換真實版會觸發追蹤 callback', (tester) async {
     final pet = PetController();
+    await pet.changeVisualStyle(PetVisualStyle.cute);
     final selected = <PetSkin>[];
     await _pump(
       tester,
@@ -134,6 +136,7 @@ void main() {
     expect(find.text('狗狗樣子'), findsOneWidget);
     expect(find.text('Q版'), findsOneWidget);
     expect(find.text('真實版'), findsOneWidget);
+    expect(find.text('推薦'), findsOneWidget);
 
     await tester.tap(find.text('真實版'));
     await tester.pumpAndSettle();

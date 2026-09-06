@@ -90,6 +90,19 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   String _lastBackgroundUserTranscript = '';
   String _activeTurnId = '';
   String _responseTurnId = '';
+  bool _responseAwaitingUserFinal = false;
+  bool _completedResponseAwaitingUserFinal = false;
+  String _currentResponsePairingTurnId = '';
+  String _currentResponseReply = '';
+  String _completedResponsePairingTurnId = '';
+  String _completedResponseReply = '';
+  String _pendingUserItemId = '';
+  String _currentResponseUserItemId = '';
+  final Map<String, _CompletedResponsePairing>
+      _completedResponsePairingsByUserItemId = {};
+  final Set<String> _settledResponseUserItemIds = {};
+  int _responsePairingSequence = 0;
+  int _finalTranscriptRoutesInFlight = 0;
   String _latestCompanionTurnId = '';
   // CR-0089：字幕 / talk 狀態保留到「語音真的播完」才收。
   // _currentTurnHadAudio：本輪是否有播語音（assistantAudioStart 設）。
@@ -137,17 +150,29 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   bool get isLanguageFallback => _currentLanguageRoute.isFallback;
   String get activeTurnId => _activeTurnId;
   String get partialTranscript => _partialTranscript;
+
+  /// 寵物說完後雖回到 idle 並關麥，底層 Realtime session 仍保持可用。
+  /// 這個 warm 狀態可直接開始下一輪或注入文字，不需重新建立連線。
+  bool get isWarmNextTurnReady =>
+      _state == VoiceAgentState.idle &&
+      !_isConnecting &&
+      realtimeVoiceService.isConnectionUsable;
+
   bool get isRealtimeReady =>
-      _state != VoiceAgentState.idle &&
-      _state != VoiceAgentState.error &&
-      _state != VoiceAgentState.recovering;
+      isWarmNextTurnReady ||
+      (_state != VoiceAgentState.idle &&
+          _state != VoiceAgentState.error &&
+          _state != VoiceAgentState.recovering);
 
   /// 連續 Realtime session 的輪次控制核心：只有「未連線」（idle / error）時，
   /// 才能開始一段新的語音對話 / 開始一次新的語音輸入。
   /// 一旦進入 connecting…speaking…recovering 任何進行中的狀態，都視為對話已在進行，
   /// 必須等寵物講完（回到 listening 待命）才可繼續，不可重複開始。
   bool get canStartVoiceInput =>
-      _state == VoiceAgentState.idle || _state == VoiceAgentState.error;
+      (_state == VoiceAgentState.idle &&
+          !_isConnecting &&
+          !realtimeVoiceService.isConnecting) ||
+      _state == VoiceAgentState.error;
 
   /// 寵物正在回覆中：thinking（思考 / 工具處理）或 speaking（播放語音）。
   /// 此時使用者要說話，必須先「打斷」（barge-in），不可悄悄插入新的一輪。
@@ -356,6 +381,13 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     _lastError = '';
     _activeTurnId = '';
     _responseTurnId = '';
+    _responseAwaitingUserFinal = false;
+    _flushUnpairedCompletedResponse();
+    _clearCompletedResponsePairing();
+    _completedResponsePairingsByUserItemId.clear();
+    _settledResponseUserItemIds.clear();
+    _pendingUserItemId = '';
+    _currentResponseUserItemId = '';
     _partialTranscript = '';
     _speechStartedAt = null;
     _speechStoppedAt = null;
@@ -405,6 +437,73 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _handleRealtimeEvent(RealtimeVoiceEvent event) {
+    if (event.type == RealtimeEventType.finalTranscript) {
+      final sourceItemId = event.sourceItemId.trim();
+      if (sourceItemId.isNotEmpty &&
+          _settledResponseUserItemIds.contains(sourceItemId)) {
+        AppLog.debug(
+          '[VOICE_TURN] ignore settled user final item=$sourceItemId',
+        );
+        return;
+      }
+
+      // 已完成 response 以 OpenAI user item id 保留配對；即使下一個 warm turn
+      // 已開始或 speech_started 已抵達，舊 item 的 final 仍只會回補上一輪。
+      final completedPairing = sourceItemId.isEmpty
+          ? null
+          : _completedResponsePairingsByUserItemId.remove(sourceItemId);
+      if (completedPairing != null) {
+        _settledResponseUserItemIds.add(sourceItemId);
+        unawaited(_captureLateUserFinalForCompletedResponse(
+          event.payload,
+          pairingTurnId: completedPairing.turnId,
+          reply: completedPairing.reply,
+        ));
+        return;
+      }
+      if (sourceItemId.isEmpty &&
+          _completedResponsePairingsByUserItemId.isNotEmpty) {
+        AppLog.debug(
+          '[VOICE_TURN] ignore final without item id while completed response pairing is unresolved',
+        );
+        return;
+      }
+    }
+
+    // Turn-based warm idle 的麥克風已關閉，不應在這裡接出新的 user turn。唯一例外是
+    // 無 item id 可用的舊版事件：只在尚未開始下一個 warm turn 的 idle 狀態回補。
+    if (event.type == RealtimeEventType.finalTranscript &&
+        _state == VoiceAgentState.idle &&
+        realtimeVoiceService.isConnectionUsable) {
+      _cancelTimeout(RealtimeTimeoutType.transcriptTimeout);
+      if (_completedResponseAwaitingUserFinal) {
+        final pairingTurnId = _completedResponsePairingTurnId;
+        final reply = _completedResponseReply;
+        _clearCompletedResponsePairing();
+        unawaited(_captureLateUserFinalForCompletedResponse(
+          event.payload,
+          pairingTurnId: pairingTurnId,
+          reply: reply,
+        ));
+      } else {
+        AppLog.debug(
+          '[VOICE_TURN] ignore user final while warm idle item=${event.sourceItemId}',
+        );
+      }
+      return;
+    }
+
+    // 上一輪 response 沒有可關聯的 item id 時，未知 final 在 warm turn 中無法安全
+    // 判斷新舊。只有明確等於目前 committed item 才放行，避免破壞新輪。
+    if (event.type == RealtimeEventType.finalTranscript &&
+        _completedResponseAwaitingUserFinal &&
+        (event.sourceItemId.isEmpty ||
+            event.sourceItemId != _pendingUserItemId)) {
+      AppLog.debug(
+        '[VOICE_TURN] ignore ambiguous final while an unassociated response is pending item=${event.sourceItemId}',
+      );
+      return;
+    }
     // Turn-based 防護：寵物這一輪回覆進行中時，一律忽略使用者語音相關事件。
     // 麥克風雖已暫停，這裡再做一層阻擋，確保任何殘留的咳嗽 / 雜音 event 都不會
     // 觸發下一輪輸入或打斷寵物（即使技術上無法完全關閉 mic 也安全）。
@@ -418,8 +517,17 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       // 仍要記錄對話 + 送分析（情緒 / 長期記憶 / Care Alert），但**不打斷寵物、
       // 不重新觸發回覆**。其餘（新插話 / 雜音 / partial）照舊忽略。
       if (event.type == RealtimeEventType.finalTranscript) {
+        if (!_isFinalAssociatedWithCurrentResponse(event.sourceItemId)) {
+          AppLog.debug(
+            '[VOICE_TURN] ignore final not associated with current response item=${event.sourceItemId}',
+          );
+          return;
+        }
         _cancelTimeout(RealtimeTimeoutType.transcriptTimeout);
-        unawaited(_captureUserTranscriptDuringPetReply(event.payload));
+        unawaited(_captureUserTranscriptDuringPetReply(
+          event.payload,
+          sourceItemId: event.sourceItemId,
+        ));
         return;
       }
       AppLog.debug(
@@ -430,6 +538,16 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     switch (event.type) {
       case RealtimeEventType.state:
         _applyStateFromPayload(event.payload);
+        break;
+      case RealtimeEventType.userAudioCommitted:
+        final sourceItemId = event.sourceItemId.trim();
+        if (sourceItemId.isNotEmpty) {
+          _pendingUserItemId = sourceItemId;
+          if (_responseAwaitingUserFinal &&
+              _currentResponseUserItemId.isEmpty) {
+            _currentResponseUserItemId = sourceItemId;
+          }
+        }
         break;
       case RealtimeEventType.userSpeechStarted:
         _speechStartedAt = DateTime.now();
@@ -457,10 +575,19 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
         break;
       case RealtimeEventType.finalTranscript:
         _cancelTimeout(RealtimeTimeoutType.transcriptTimeout);
-        unawaited(_handleFinalTranscript(event.payload));
+        unawaited(_handleFinalTranscript(
+          event.payload,
+          sourceItemId: event.sourceItemId,
+        ));
         break;
       case RealtimeEventType.assistantResponseStart:
         _responseTurnId = _activeTurnId;
+        _responseAwaitingUserFinal = _activeTurnId.isEmpty;
+        _currentResponseUserItemId = _pendingUserItemId;
+        _currentResponsePairingTurnId = _activeTurnId.isNotEmpty
+            ? _activeTurnId
+            : 'rt_response_${DateTime.now().microsecondsSinceEpoch}_${++_responsePairingSequence}';
+        _currentResponseReply = '';
         _currentTurnHadAudio = false; // CR-0089：新一輪重置「是否有語音」。
         _startTimeout(
           RealtimeTimeoutType.responseTimeout,
@@ -497,12 +624,20 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
             _responseTurnId.isEmpty ? _pendingRealtimeTurnId : _responseTurnId;
         // 寵物回覆已指示用繁體，這裡再保險轉一次，確保對話紀錄全繁體。
         final assistantReply = toTraditional(event.payload);
+        _currentResponseReply = assistantReply.trim();
         unawaited(petStatsController.markRealtimeConversationCompleted());
-        conversationController.handleRealtimeAssistantReply(
-          assistantReply,
-          turnId: responseTurnId,
-        );
-        if (_pendingRealtimeUserText.isNotEmpty &&
+        if (_responseAwaitingUserFinal) {
+          // user final 尚未抵達：先更新畫面，等 final 後以單一完整 turn 落地，
+          // 避免先寫 assistant-only、稍後又追加完整配對而重複。
+          conversationController.showPetBubbleMessage(assistantReply);
+        } else {
+          conversationController.handleRealtimeAssistantReply(
+            assistantReply,
+            turnId: responseTurnId,
+          );
+        }
+        if (!_responseAwaitingUserFinal &&
+            _pendingRealtimeUserText.isNotEmpty &&
             _pendingRealtimeTurnId.isNotEmpty) {
           unawaited(
             memoryController.extractMemory(
@@ -605,7 +740,10 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     _transition(mapped, 'service_state_$value');
   }
 
-  Future<void> _handleFinalTranscript(String realtimeTranscript) async {
+  Future<void> _handleFinalTranscript(
+    String realtimeTranscript, {
+    String sourceItemId = '',
+  }) async {
     // Realtime 轉錄常回簡體；顯示與送後端前先統一轉台灣繁體。
     final normalizedRealtimeTranscript =
         toTraditional(realtimeTranscript.trim());
@@ -615,17 +753,66 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     final routeAttemptId = ++_transcriptRouteAttemptId;
-    final route = await languageRoutingService.routeTranscript(
-      mode: profileController.voiceLanguageMode,
-      manualStrategyName: profileController.manualAsrStrategy,
-      realtimeTranscript: normalizedRealtimeTranscript,
-    );
+    _finalTranscriptRoutesInFlight += 1;
+    late final LanguageRouteResult route;
+    try {
+      route = await languageRoutingService.routeTranscript(
+        mode: profileController.voiceLanguageMode,
+        manualStrategyName: profileController.manualAsrStrategy,
+        realtimeTranscript: normalizedRealtimeTranscript,
+      );
+    } finally {
+      _finalTranscriptRoutesInFlight -= 1;
+    }
+
+    // Language routing 是 async；若等待期間 response + playback 已收尾，依 user item id
+    // 補到剛完成的 response，不能在 continuation 另建 active turn / timeout。
+    final completedPairing = sourceItemId.isEmpty
+        ? null
+        : _completedResponsePairingsByUserItemId.remove(sourceItemId);
+    if (completedPairing != null) {
+      _settledResponseUserItemIds.add(sourceItemId);
+      _recordLateUserFinalForCompletedResponse(
+        route.transcript,
+        pairingTurnId: completedPairing.turnId,
+        reply: completedPairing.reply,
+        route: route,
+      );
+      return;
+    }
+    if (_completedResponseAwaitingUserFinal) {
+      final pairingTurnId = _completedResponsePairingTurnId;
+      final reply = _completedResponseReply;
+      _clearCompletedResponsePairing();
+      _recordLateUserFinalForCompletedResponse(
+        route.transcript,
+        pairingTurnId: pairingTurnId,
+        reply: reply,
+        route: route,
+      );
+      return;
+    }
+
+    // response.done 已帶回完整 assistant text、但語音 buffer 尚未 stopped：直接用
+    // 當前 response 的 pairing turn 落一筆完整紀錄。這條 continuation 不可建立
+    // active turn、切 thinking，或重新掛 response timeout。
+    if (_responseAwaitingUserFinal &&
+        _currentResponseReply.isNotEmpty &&
+        _isFinalAssociatedWithCurrentResponse(sourceItemId)) {
+      _recordUserFinalForCurrentResponse(
+        route.transcript,
+        sourceItemId: sourceItemId,
+        route: route,
+      );
+      return;
+    }
     if (routeAttemptId != _transcriptRouteAttemptId) {
       AppLog.debug(
         '[LANGUAGE_ROUTE] ignore stale route attempt=$routeAttemptId active=$_transcriptRouteAttemptId',
       );
       return;
     }
+    _responseAwaitingUserFinal = false;
     _currentLanguageRoute = route;
     if (route.isFallback) {
       AppLog.debug(
@@ -637,7 +824,10 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       );
     }
 
-    final decision = _turnCoordinator.acceptFinalTranscript(route.transcript);
+    final decision = _turnCoordinator.acceptFinalTranscript(
+      route.transcript,
+      sourceId: sourceItemId,
+    );
     if (!decision.accepted) {
       conversationController.clearRealtimeTranscriptState();
       AppLog.debug(
@@ -788,33 +978,101 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   /// 不會空白也不重複），並送 companion 分析（情緒 / 後端長期記憶 / Care Alert）。
   /// 刻意**不改語音狀態機、不路由工具 / 導頁、不重新觸發寵物回覆、不清掉寵物正在
   /// 播放的回覆泡泡**——只做旁路記錄與分析。
+  void _recordUserFinalForCurrentResponse(
+    String transcript, {
+    required String sourceItemId,
+    required LanguageRouteResult route,
+  }) {
+    final normalized = transcript.trim();
+    if (normalized.isEmpty) return;
+    final turnId = _currentResponsePairingTurnId.isNotEmpty
+        ? _currentResponsePairingTurnId
+        : 'rt_response_${DateTime.now().microsecondsSinceEpoch}_${++_responsePairingSequence}';
+
+    _responseAwaitingUserFinal = false;
+    _currentLanguageRoute = route;
+    _pendingRealtimeTurnId = turnId;
+    _pendingRealtimeUserText = normalized;
+    _emotion = detectEmotion(normalized);
+    _pendingRealtimeEmotion = _emotion.name;
+    _latestCompanionTurnId = turnId;
+    if (sourceItemId.isNotEmpty) {
+      _settledResponseUserItemIds.add(sourceItemId);
+    }
+
+    _appendCompletedRealtimeTurn(
+      transcript: normalized,
+      reply: _currentResponseReply,
+      turnId: turnId,
+      route: route,
+    );
+    unawaited(_analyzeCompanionTranscript(
+      normalized,
+      turnId,
+      applyPetState: false,
+      languageRoute: route,
+    ));
+    AppLog.debug(
+      '[VOICE_TURN] pair routed user final with active response turn=$turnId item=$sourceItemId',
+    );
+    notifyListeners();
+  }
+
+  bool _isFinalAssociatedWithCurrentResponse(String sourceItemId) {
+    final source = sourceItemId.trim();
+    if (_currentResponseUserItemId.isNotEmpty) {
+      return source.isNotEmpty && source == _currentResponseUserItemId;
+    }
+    if (source.isNotEmpty) {
+      return !_completedResponseAwaitingUserFinal ||
+          source == _pendingUserItemId;
+    }
+    return !_completedResponseAwaitingUserFinal &&
+        _completedResponsePairingsByUserItemId.isEmpty;
+  }
+
   Future<void> _captureUserTranscriptDuringPetReply(
-    String realtimeTranscript,
-  ) async {
+    String realtimeTranscript, {
+    String sourceItemId = '',
+  }) async {
     // 同上：背景接住的使用者句也統一轉繁體再顯示 / 分析 / 記憶。
     final transcript = toTraditional(realtimeTranscript.trim());
     if (transcript.isEmpty) return;
+    _responseAwaitingUserFinal = false;
     // 同一句去重（transcription.completed 與 conversation.item.done 可能各送一次）。
     if (transcript == _lastBackgroundUserTranscript) return;
     _lastBackgroundUserTranscript = transcript;
 
     final turnId = _pendingRealtimeTurnId.isNotEmpty
         ? _pendingRealtimeTurnId
-        : 'rt_bg_${DateTime.now().microsecondsSinceEpoch}';
+        : (_currentResponsePairingTurnId.isNotEmpty
+            ? _currentResponsePairingTurnId
+            : 'rt_bg_${DateTime.now().microsecondsSinceEpoch}');
     _pendingRealtimeTurnId = turnId;
     _pendingRealtimeUserText = transcript;
     _emotion = detectEmotion(transcript);
     _pendingRealtimeEmotion = _emotion.name;
     _latestCompanionTurnId = turnId;
+    if (sourceItemId.isNotEmpty) {
+      _settledResponseUserItemIds.add(sourceItemId);
+    }
 
-    // 設定 _latestUserText（不另外新增 turn、不清掉寵物正在播放的回覆）→ 等寵物回覆
-    // 落地（assistantText）時，handleRealtimeAssistantReply 會配對成「使用者這句 +
-    // 寵物回覆」一筆完整紀錄。
-    conversationController.showUserBubbleMessage(
-      transcript,
-      awaitingPetReply: true,
-      clearPetReply: false,
-    );
+    if (_currentResponseReply.isNotEmpty) {
+      // assistantText 已先抵達：直接以單一完整 turn 落地，不再另留 assistant-only。
+      _appendCompletedRealtimeTurn(
+        transcript: transcript,
+        reply: _currentResponseReply,
+        turnId: turnId,
+        route: _currentLanguageRoute,
+      );
+    } else {
+      // assistantText 尚未抵達：先保留 user bubble，稍後由正常 assistantText 配對。
+      conversationController.showUserBubbleMessage(
+        transcript,
+        awaitingPetReply: true,
+        clearPetReply: false,
+      );
+    }
 
     AppLog.debug(
       '[VOICE_TURN] capture user final during pet reply turn=$turnId text="$transcript"',
@@ -827,6 +1085,92 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       _analyzeCompanionTranscript(transcript, turnId, applyPetState: false),
     );
     notifyListeners();
+  }
+
+  /// `output_audio_buffer.stopped` 之後才抵達的本輪 user final。
+  ///
+  /// 回覆已經完成，這裡只補齊「使用者文字 + 剛完成回覆」的配對紀錄；刻意不進
+  /// [_turnCoordinator]、不設定 active turn、不切 thinking、不掛 response timeout。
+  Future<void> _captureLateUserFinalForCompletedResponse(
+    String realtimeTranscript, {
+    required String pairingTurnId,
+    required String reply,
+  }) async {
+    final normalized = toTraditional(realtimeTranscript.trim());
+    if (normalized.isEmpty) return;
+    final route = await languageRoutingService.routeTranscript(
+      mode: profileController.voiceLanguageMode,
+      manualStrategyName: profileController.manualAsrStrategy,
+      realtimeTranscript: normalized,
+    );
+    _recordLateUserFinalForCompletedResponse(
+      route.transcript,
+      pairingTurnId: pairingTurnId,
+      reply: reply,
+      route: route,
+    );
+  }
+
+  void _recordLateUserFinalForCompletedResponse(
+    String transcript, {
+    required String pairingTurnId,
+    required String reply,
+    required LanguageRouteResult route,
+  }) {
+    final normalized = transcript.trim();
+    if (normalized.isEmpty) return;
+
+    if (reply.trim().isNotEmpty) {
+      _appendCompletedRealtimeTurn(
+        transcript: normalized,
+        reply: reply,
+        turnId: pairingTurnId,
+        route: route,
+      );
+    } else {
+      conversationController.showUserBubbleMessage(
+        normalized,
+        awaitingPetReply: false,
+        clearPetReply: false,
+      );
+    }
+
+    // late final 仍是本輪真實使用者輸入；陪伴分析與 Care Alert 不可因 response
+    // 已完成而漏掉。applyPetState=false 保持 idle/warm-ready 的畫面與狀態。
+    unawaited(_analyzeCompanionTranscript(
+      normalized,
+      pairingTurnId,
+      applyPetState: false,
+      languageRoute: route,
+    ));
+
+    AppLog.debug(
+      '[VOICE_TURN] pair late user final with completed response turn=$pairingTurnId',
+    );
+    notifyListeners();
+  }
+
+  void _appendCompletedRealtimeTurn({
+    required String transcript,
+    required String reply,
+    required String turnId,
+    required LanguageRouteResult route,
+  }) {
+    conversationController.appendExternalTurn(
+      ConversationTurn(
+        timestamp: DateTime.now(),
+        userText: transcript,
+        petReply: reply.trim(),
+        toolName: 'realtimeVoice',
+        turnId: turnId,
+        emotionTag: detectEmotion(transcript).name,
+        petMood: petController.mood,
+        asrSource: route.strategyName,
+        languageHint: route.languageHint.value,
+        routeReason: route.routeReason,
+        replyLanguage: route.replyLanguage.value,
+      ),
+    );
   }
 
   /// 對一句使用者轉錄做「工具路由 + 語音回應」：
@@ -938,8 +1282,10 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     String transcript,
     String turnId, {
     bool applyPetState = true,
+    LanguageRouteResult? languageRoute,
   }) async {
     try {
+      final route = languageRoute ?? _currentLanguageRoute;
       final result = await companionEngineService.analyze(
         sttProxyUrl: profileController.sttProxyUrl,
         userId: memoryController.userId,
@@ -947,7 +1293,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
         turnId: turnId,
         petName: profileController.petName,
         transcript: transcript,
-        languageHint: _currentLanguageRoute.languageHint.value,
+        languageHint: route.languageHint.value,
         audioFeatures: _estimateAudioFeatures(transcript),
         petState: {
           'mood': petController.mood,
@@ -968,12 +1314,11 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
         _applyLocalCompanionFallback(transcript, turnId);
         return;
       }
-      if (result.turnId != _latestCompanionTurnId ||
-          turnId != _latestCompanionTurnId) {
-        return;
-      }
-      _currentCompanionContext = result;
+      if (result.turnId != turnId) return;
+      // Care Alert 是安全旁路，不能因較新的 UI turn 讓舊 turn 分析變 stale 而漏掉。
       _maybeCreateCareAlert(result, transcript, turnId);
+      if (turnId != _latestCompanionTurnId) return;
+      _currentCompanionContext = result;
       // 背景捕捉（寵物正在回覆同一句的轉錄）時不動寵物表情 / 狀態 / 即時 session
       // context，避免打斷正在播放的回覆；情緒與記憶配對已在捕捉端用本地分析設好。
       if (applyPetState) {
@@ -1258,6 +1603,8 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   void _clearCurrentTurn() {
     _activeTurnId = '';
     _responseTurnId = '';
+    _pendingUserItemId = '';
+    _currentResponseUserItemId = '';
     _pendingRealtimeTurnId = '';
     _pendingRealtimeUserText = '';
     _partialTranscript = '';
@@ -1308,6 +1655,27 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     _currentTurnHadAudio = false;
     _cancelTimeout(RealtimeTimeoutType.responseTimeout);
     _turnCoordinator.clearActiveTurn(_responseTurnId);
+    if (_responseAwaitingUserFinal) {
+      final pairing = _CompletedResponsePairing(
+        turnId: _currentResponsePairingTurnId,
+        reply: _currentResponseReply,
+      );
+      if (_currentResponseUserItemId.isNotEmpty) {
+        _completedResponsePairingsByUserItemId[_currentResponseUserItemId] =
+            pairing;
+      } else {
+        _completedResponseAwaitingUserFinal = true;
+        _completedResponsePairingTurnId = pairing.turnId;
+        _completedResponseReply = pairing.reply;
+      }
+    }
+    if (_pendingUserItemId == _currentResponseUserItemId) {
+      _pendingUserItemId = '';
+    }
+    _responseAwaitingUserFinal = false;
+    _currentResponseUserItemId = '';
+    _currentResponsePairingTurnId = '';
+    _currentResponseReply = '';
     _activeTurnId = '';
     _responseTurnId = '';
     _partialTranscript = '';
@@ -1315,6 +1683,37 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     _lastBackgroundUserTranscript = '';
     realtimeVoiceService.pauseMicInput();
     _transition(VoiceAgentState.idle, reason);
+  }
+
+  void _clearCompletedResponsePairing() {
+    _completedResponseAwaitingUserFinal = false;
+    _completedResponsePairingTurnId = '';
+    _completedResponseReply = '';
+  }
+
+  void _flushUnpairedCompletedResponse() {
+    if (!_completedResponseAwaitingUserFinal ||
+        _finalTranscriptRoutesInFlight > 0) {
+      return;
+    }
+    final reply = _completedResponseReply.trim();
+    if (reply.isNotEmpty) {
+      conversationController.appendExternalTurn(
+        ConversationTurn(
+          timestamp: DateTime.now(),
+          userText: '',
+          petReply: reply,
+          toolName: 'realtimeVoice',
+          turnId: _completedResponsePairingTurnId,
+          petMood: petController.mood,
+          asrSource: _currentLanguageRoute.strategyName,
+          languageHint: _currentLanguageRoute.languageHint.value,
+          routeReason: _currentLanguageRoute.routeReason,
+          replyLanguage: _currentLanguageRoute.replyLanguage.value,
+        ),
+      );
+    }
+    _clearCompletedResponsePairing();
   }
 
   bool _isActiveTurn(String turnId) {
@@ -1757,4 +2156,14 @@ class _RenameResult {
 
   final bool handled;
   final String? reply;
+}
+
+class _CompletedResponsePairing {
+  const _CompletedResponsePairing({
+    required this.turnId,
+    required this.reply,
+  });
+
+  final String turnId;
+  final String reply;
 }

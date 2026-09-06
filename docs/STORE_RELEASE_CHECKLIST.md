@@ -138,7 +138,7 @@ android:networkSecurityConfig="@xml/network_security_config"
 ## 8. 內容合規（送審前掃描）
 
 - ✅ App 內無 demo/test/mock/debug 對使用者可見字樣（dev panel / Demo 登入由 flag 隔離、production 強制關）
-- ✅ **CR-0101A 第三方登入上架策略**：Apple Sign in 尚未完成前，production 隱藏 Google / Apple 入口，只保留 Email login / Email register，避免 App Store Sign in with Apple 與 placeholder 風險。
+- 🟡 **CR-0106 第三方登入**：repo 已完成 Firebase Google / Apple / Email、Apple entitlement 與 Email 密碼重設；送審前仍須完成 Apple Developer / Firebase provider / provisioning 設定及 iOS 真機登入 smoke。
 - ✅ **CR-0101A in-app support / account deletion wording**：設定頁有 App 內隱私 / 條款、重新檢視同意、支援說明與帳號刪除流程；刪除確認文案明確說明會刪除伺服器帳號資料與本機寵物 / 記憶 / 提醒 / 使用紀錄。
 - ✅ pubspec `description` 已移除 "demo"（CR-0046）
 - 🔁 mock service build-flavor 隔離（CR-0048，詳見 `docs/FLUTTER_BUILD_FLAVORS.md`）：

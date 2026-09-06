@@ -40,7 +40,7 @@ class PetController extends ChangeNotifier {
   String _expression = 'normal';
   String _action = 'idle';
   PetSkin _currentSkin = PetSkin.dog;
-  PetVisualStyle _currentVisualStyle = PetVisualStyle.cute;
+  PetVisualStyle _currentVisualStyle = PetVisualStyle.realistic;
   final PetGrowthStage _currentGrowthStage = PetGrowthStage.adult;
   Set<PetSkin> _ownedSkins;
 
@@ -54,7 +54,8 @@ class PetController extends ChangeNotifier {
   /// 目前寵物外觀，預設狗狗。
   PetSkin get currentSkin => _currentSkin;
 
-  /// 目前寵物視覺風格，預設 Q版。只有已支援的 pet/style 會被保存與套用。
+  /// 目前寵物視覺風格，新使用者預設為已完成 QA 的真實版狗狗。
+  /// 只有已支援的 pet/style 會被保存與套用。
   PetVisualStyle get currentVisualStyle => _currentVisualStyle;
 
   /// 目前成長階段。CR-0100C 先維持成年，後續 CR-0100E 再接成長資料。

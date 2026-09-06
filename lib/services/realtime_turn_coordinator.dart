@@ -19,6 +19,7 @@ class RealtimeTurnCoordinator {
   String _activeTurnId = '';
   String _lastFinalTranscript = '';
   DateTime? _lastFinalAt;
+  final Set<String> _acceptedSourceIds = <String>{};
   int _sequence = 0;
   final Set<String> _committedTurnIds = <String>{};
 
@@ -27,6 +28,7 @@ class RealtimeTurnCoordinator {
   RealtimeTranscriptDecision acceptFinalTranscript(
     String transcript, {
     DateTime? now,
+    String sourceId = '',
   }) {
     final normalized = transcript.trim();
     if (normalized.isEmpty) {
@@ -37,8 +39,17 @@ class RealtimeTurnCoordinator {
     }
 
     final currentTime = now ?? DateTime.now();
+    final normalizedSourceId = sourceId.trim();
+    if (normalizedSourceId.isNotEmpty &&
+        !_acceptedSourceIds.add(normalizedSourceId)) {
+      return const RealtimeTranscriptDecision(
+        accepted: false,
+        reason: 'duplicate_source_item',
+      );
+    }
     final previousAt = _lastFinalAt;
-    if (_lastFinalTranscript == normalized &&
+    if (normalizedSourceId.isEmpty &&
+        _lastFinalTranscript == normalized &&
         previousAt != null &&
         currentTime.difference(previousAt).abs() <= duplicateWindow) {
       return const RealtimeTranscriptDecision(
@@ -79,6 +90,7 @@ class RealtimeTurnCoordinator {
     _activeTurnId = '';
     _lastFinalTranscript = '';
     _lastFinalAt = null;
+    _acceptedSourceIds.clear();
     _committedTurnIds.clear();
   }
 }

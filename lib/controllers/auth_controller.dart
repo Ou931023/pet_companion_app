@@ -189,6 +189,68 @@ class AuthController extends ChangeNotifier {
     }
   }
 
+  /// Apple 登入。使用者取消時回到登入頁，不顯示錯誤；其餘錯誤轉白話。
+  Future<void> signInWithApple() async {
+    _errorMessage = null;
+    _setStatus(AuthStatus.loading);
+    try {
+      _session = await _authService.signInWithApple();
+      _setStatus(AuthStatus.authenticated);
+    } on AppleAuthException catch (error) {
+      if (error.isCanceled) {
+        _errorMessage = null;
+        _setStatus(AuthStatus.unauthenticated);
+      } else {
+        _errorMessage = _friendlyAppleError(error.code);
+        _setStatus(AuthStatus.error);
+      }
+    } on SessionApiException catch (error) {
+      _errorMessage = _friendlySessionError(error.code);
+      _setStatus(AuthStatus.error);
+    } catch (error) {
+      AppLog.error('[AUTH] apple 登入失敗', error);
+      _errorMessage = _friendlyAppleError('unknown');
+      _setStatus(AuthStatus.error);
+    }
+  }
+
+  String _friendlyAppleError(String code) {
+    switch (code) {
+      case 'config':
+      case 'unavailable':
+        return 'Apple 登入目前無法使用，可以改用 Email 登入喔。';
+      case 'network-request-failed':
+        return '現在網路好像不太穩，待會再試一次好嗎？';
+      default:
+        return 'Apple 登入沒有成功，再試一次好嗎？';
+    }
+  }
+
+  /// 寄送密碼重設信。此流程不改變登入狀態，避免 AuthGate 把表單換頁。
+  /// 成功回 null；失敗回可直接顯示的白話訊息。
+  Future<String?> sendPasswordResetEmail(String email) async {
+    final normalized = email.trim();
+    if (normalized.isEmpty) return '請先填一下 Email 喔。';
+    try {
+      await _authService.sendPasswordResetEmail(normalized);
+      return null;
+    } on EmailAuthException catch (error) {
+      switch (error.code) {
+        case 'invalid-email':
+          return 'Email 的格式好像不太對，再檢查一下喔。';
+        case 'network-request-failed':
+          return '現在網路好像不太穩，待會再試一次好嗎？';
+        case 'unavailable':
+          return '密碼重設暫時無法使用，待會再試一次好嗎？';
+        default:
+          return '目前沒辦法寄出重設信，待會再試一次好嗎？';
+      }
+    } catch (error) {
+      AppLog.error('[AUTH] password reset 失敗', error);
+      return '目前沒辦法寄出重設信，待會再試一次好嗎？';
+    }
+  }
+
   /// Google 錯誤 code → 白話訊息。
   String _friendlyGoogleError(String code) {
     switch (code) {

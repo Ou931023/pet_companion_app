@@ -12,11 +12,9 @@ import 'legal_document_screen.dart';
 /// 登入頁。
 ///
 /// 正式展示主視覺：先看到放大的陪伴寵物與溫暖文案，再呈現登入選項
-/// （第三方登入於開發版可見；正式版暫以 Email 登入為主）。Email / 密碼欄位預設收合，
-/// 點「用 Email 登入」才展開，避免一開始就太像工具表單。Demo 快速登入預設隱藏，由
+/// （正式版提供 Google、Apple 與 Email 登入）。Email / 密碼欄位預設收合，
+/// 點「Email 登入」才展開，避免一開始就太像工具表單。Demo 快速登入預設隱藏，由
 /// `AppConfig.demoLoginVisible`（或建構參數 [showDemoLogin]）控制，開發時可開啟。
-///
-/// Apple Sign in 完成前，正式版不顯示第三方登入入口，避免商店審查看到未完成按鈕。
 class LoginScreen extends StatefulWidget {
   const LoginScreen({
     super.key,
@@ -46,6 +44,8 @@ class _LoginScreenState extends State<LoginScreen> {
   bool get _showDemoLogin => widget.showDemoLogin ?? AppConfig.demoLoginVisible;
   bool get _showSocialSignIn =>
       widget.showSocialSignIn ?? AppConfig.socialSignInVisible;
+  bool _showAppleSignIn(BuildContext context) =>
+      _showSocialSignIn && Theme.of(context).platform == TargetPlatform.iOS;
 
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
@@ -53,11 +53,18 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isSigningIn = false;
   bool _isEmailSubmitting = false;
   bool _isGoogleSubmitting = false;
+  bool _isAppleSubmitting = false;
+  bool _isPasswordResetSubmitting = false;
 
-  /// Email / 密碼欄位是否已展開（點「用 Email 登入」後才出現）。
+  /// Email / 密碼欄位是否已展開（點「Email 登入」後才出現）。
   bool _emailExpanded = false;
 
-  bool get _isBusy => _isSigningIn || _isEmailSubmitting || _isGoogleSubmitting;
+  bool get _isBusy =>
+      _isSigningIn ||
+      _isEmailSubmitting ||
+      _isGoogleSubmitting ||
+      _isAppleSubmitting ||
+      _isPasswordResetSubmitting;
 
   @override
   void dispose() {
@@ -73,7 +80,7 @@ class _LoginScreenState extends State<LoginScreen> {
     context.read<AppNavigationController>().navigateTo(AppRoute.home);
   }
 
-  /// 點「用 Email 登入」：展開欄位，並把畫面捲到底讓欄位看得到。
+  /// 點「Email 登入」：展開欄位，並把畫面捲到底讓欄位看得到。
   void _expandEmail() {
     if (_emailExpanded) return;
     setState(() => _emailExpanded = true);
@@ -153,9 +160,49 @@ class _LoginScreenState extends State<LoginScreen> {
     // 取消（errorMessage 為 null）不打擾；其他失敗由 build() 的錯誤橫幅顯示。
   }
 
-  /// Apple 登入尚未接上：點到時給白話提示，不 crash（按鈕僅作展示）。
-  void _handleApplePending() {
-    _showFriendlyMessage('Apple 登入準備中，敬請期待。');
+  Future<void> _handleAppleSignIn() async {
+    if (_isBusy) return;
+    final authController = context.read<AuthController>();
+    _resetShellToHome();
+    setState(() => _isAppleSubmitting = true);
+
+    await authController.signInWithApple();
+
+    if (!mounted) return;
+    setState(() => _isAppleSubmitting = false);
+
+    if (authController.status == AuthStatus.authenticated) {
+      widget.onSignedIn?.call();
+    }
+    // 使用者取消時 controller 會回到未登入，不顯示錯誤；其他失敗沿用白話橫幅。
+  }
+
+  Future<void> _handlePasswordReset() async {
+    if (_isBusy) return;
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      _showFriendlyMessage('請先填入要重設密碼的 Email 喔。');
+      return;
+    }
+    if (!_looksLikeEmail(email)) {
+      _showFriendlyMessage('Email 的格式好像不太對，再檢查一下喔。');
+      return;
+    }
+
+    FocusScope.of(context).unfocus();
+    setState(() => _isPasswordResetSubmitting = true);
+    final errorMessage =
+        await context.read<AuthController>().sendPasswordResetEmail(email);
+
+    if (!mounted) return;
+    setState(() => _isPasswordResetSubmitting = false);
+    _showFriendlyMessage(
+      errorMessage ?? '重設密碼的信已寄出，請到 Email 信箱收信喔。',
+    );
+  }
+
+  bool _looksLikeEmail(String email) {
+    return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email);
   }
 
   void _showFriendlyMessage(String message) {
@@ -185,7 +232,13 @@ class _LoginScreenState extends State<LoginScreen> {
         child: SafeArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              const pagePadding = EdgeInsets.fromLTRB(24, 24, 24, 28);
+              final horizontalPadding = constraints.maxWidth < 400 ? 8.0 : 24.0;
+              final pagePadding = EdgeInsets.fromLTRB(
+                horizontalPadding,
+                24,
+                horizontalPadding,
+                28,
+              );
               final minContentHeight =
                   (constraints.maxHeight - pagePadding.vertical)
                       .clamp(0.0, double.infinity);
@@ -225,17 +278,28 @@ class _LoginScreenState extends State<LoginScreen> {
                         if (_showSocialSignIn) ...[
                           AuthProviderButton(
                             icon: Icons.g_mobiledata,
-                            label: '用 Google 登入',
+                            label: 'Google 登入',
                             iconColor: const Color(0xFF4285F4),
                             onPressed: () => _handleGoogleSignIn(),
                           ),
                           const SizedBox(height: 14),
-                          AuthProviderButton(
-                            icon: Icons.apple,
-                            label: '用 Apple 登入',
-                            onPressed: _handleApplePending,
-                          ),
-                          const SizedBox(height: 14),
+                          if (_showAppleSignIn(context)) ...[
+                            AuthProviderButton(
+                              icon: Icons.apple,
+                              label: 'Apple 登入',
+                              trailing: _isAppleSubmitting
+                                  ? const SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.5,
+                                      ),
+                                    )
+                                  : null,
+                              onPressed: () => _handleAppleSignIn(),
+                            ),
+                            const SizedBox(height: 14),
+                          ],
                         ],
                         _buildEmailSection(),
                         if (errorMessage != null) ...[
@@ -263,7 +327,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  /// Email 登入區：收合時是一顆「用 Email 登入」按鈕；點開後柔順展開
+  /// Email 登入區：收合時是一顆「Email 登入」按鈕；點開後柔順展開
   /// Email / 密碼欄位與「登入」按鈕。
   Widget _buildEmailSection() {
     return AnimatedSize(
@@ -277,7 +341,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _buildEmailExpander() {
     return AuthProviderButton(
       icon: Icons.email_outlined,
-      label: '用 Email 登入',
+      label: 'Email 登入',
       trailing: Icon(
         Icons.keyboard_arrow_down_rounded,
         size: 26,
@@ -313,12 +377,41 @@ class _LoginScreenState extends State<LoginScreen> {
                 textInputAction: TextInputAction.done,
                 onSubmitted: (_) => _handleEmailSignIn(),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
+              _buildPasswordResetButton(),
+              const SizedBox(height: 10),
               _buildEmailSignInButton(),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildPasswordResetButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 54,
+      child: OutlinedButton.icon(
+        key: const Key('forgot_password_button'),
+        onPressed: _isBusy ? null : _handlePasswordReset,
+        icon: _isPasswordResetSubmitting
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2.5),
+              )
+            : const Icon(Icons.lock_reset_rounded, size: 26),
+        label: Text(
+          _isPasswordResetSubmitting ? '正在寄送重設信…' : '忘記密碼？',
+          style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
+        ),
+        style: OutlinedButton.styleFrom(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      ),
     );
   }
 

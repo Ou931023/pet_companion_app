@@ -14,9 +14,12 @@ String _firstAssetName(WidgetTester tester) {
 void main() {
   Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
 
-  testWidgets('預設外觀為狗狗（talking）', (tester) async {
+  testWidgets('預設外觀為 production 首選真實版狗狗（talking）', (tester) async {
     await tester.pumpWidget(wrap(const PetAvatar(mode: PetMode.talking)));
-    expect(_firstAssetName(tester), startsWith('assets/pets/talk/dog_talk_'));
+    expect(
+      _firstAssetName(tester),
+      startsWith('assets/pets/v2/realistic/adult/dog/talk/talk_'),
+    );
   });
 
   testWidgets('依 skin 顯示對應狀態圖（normal）', (tester) async {
@@ -122,12 +125,18 @@ void main() {
       wrap(const PetAvatar(mode: PetMode.rest, skin: PetSkin.dog)),
     );
     // 起始為第一張 rest frame。
-    expect(_firstAssetName(tester), 'assets/pets/rest/dog_rest_01.png');
+    expect(
+      _firstAssetName(tester),
+      'assets/pets/v2/realistic/adult/dog/rest/rest_01.png',
+    );
     // 推進多個 rest frame 週期，全程不 crash、且都還在 rest frames 內。
     for (var i = 0; i < 8; i++) {
       await tester.pump(kRestFrameDuration);
       expect(tester.takeException(), isNull);
-      expect(_firstAssetName(tester), startsWith('assets/pets/rest/dog_rest_'));
+      expect(
+        _firstAssetName(tester),
+        startsWith('assets/pets/v2/realistic/adult/dog/rest/rest_'),
+      );
     }
   });
 

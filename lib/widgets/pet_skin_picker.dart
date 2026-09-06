@@ -267,12 +267,16 @@ class _VisualStyleSelector extends StatelessWidget {
             ),
           ),
           for (final style in AssetPaths.availableVisualStyles(PetSkin.dog))
-            Padding(
-              padding: const EdgeInsets.only(left: 8),
-              child: _StyleChoiceButton(
-                style: style,
-                selected: style == selected,
-                onTap: () => onSelected(style),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: _StyleChoiceButton(
+                  style: style,
+                  selected: style == selected,
+                  recommended:
+                      style == AssetPaths.preferredVisualStyle(PetSkin.dog),
+                  onTap: () => onSelected(style),
+                ),
               ),
             ),
         ],
@@ -285,11 +289,13 @@ class _StyleChoiceButton extends StatelessWidget {
   const _StyleChoiceButton({
     required this.style,
     required this.selected,
+    required this.recommended,
     required this.onTap,
   });
 
   final PetVisualStyle style;
   final bool selected;
+  final bool recommended;
   final VoidCallback onTap;
 
   @override
@@ -298,24 +304,42 @@ class _StyleChoiceButton extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selected,
-      label: '${style.label}${selected ? '，使用中' : ''}',
+      label:
+          '${style.label}${recommended ? '，推薦' : ''}${selected ? '，使用中' : ''}',
       child: InkWell(
         borderRadius: BorderRadius.circular(999),
         onTap: onTap,
         child: Container(
+          constraints: const BoxConstraints(minHeight: 52),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
           decoration: BoxDecoration(
             color: selected ? primary : Colors.white,
             borderRadius: BorderRadius.circular(999),
             border: Border.all(color: selected ? primary : Colors.black12),
           ),
-          child: Text(
-            style.label,
-            style: TextStyle(
-              color: selected ? Colors.white : Colors.black87,
-              fontSize: 17,
-              fontWeight: FontWeight.w900,
-            ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                style.label,
+                style: TextStyle(
+                  color: selected ? Colors.white : Colors.black87,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              if (recommended)
+                Text(
+                  '推薦',
+                  style: TextStyle(
+                    color: selected
+                        ? Colors.white.withValues(alpha: 0.88)
+                        : primary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+            ],
           ),
         ),
       ),
@@ -396,11 +420,14 @@ class _SkinPreview extends StatelessWidget {
         AssetPaths.stateImageForStyle(
           skin,
           PetMode.normal,
-          visualStyle: visualStyle ?? PetVisualStyle.cute,
+          visualStyle: visualStyle ?? AssetPaths.preferredVisualStyle(skin),
         ),
         fit: BoxFit.contain,
         errorBuilder: (_, __, ___) => Image.asset(
-          AssetPaths.skinRestPrimary(skin),
+          AssetPaths.skinRestPrimaryForStyle(
+            skin,
+            visualStyle: visualStyle ?? AssetPaths.preferredVisualStyle(skin),
+          ),
           fit: BoxFit.contain,
           errorBuilder: (_, __, ___) => Image.asset(
             AssetPaths.defaultRestImage,

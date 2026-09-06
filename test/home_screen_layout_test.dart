@@ -225,6 +225,44 @@ void main() {
     await _pumpHomeScreen(tester, harness);
   });
 
+  testWidgets('HomeScreen 對話資訊出現前後維持相同寵物尺寸', (tester) async {
+    await binding.setSurfaceSize(const Size(320, 568));
+    addTearDown(() => binding.setSurfaceSize(null));
+    final harness = await _HomeHarness.create();
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(_homeHost(harness));
+    await tester.pump();
+    final idleSize = tester.getSize(
+      find.byKey(const ValueKey('home-pet-avatar')),
+    );
+
+    harness.conversationController.appendExternalTurn(
+      ConversationTurn(
+        timestamp: DateTime.now(),
+        userText: '今天想跟你說說話',
+        petReply: '我在這裡陪你，我們慢慢聊。',
+        toolName: '',
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('home-conversation-detail-scroll')),
+      findsOneWidget,
+    );
+    final conversationSize = tester.getSize(
+      find.byKey(const ValueKey('home-pet-avatar')),
+    );
+    expect(conversationSize, idleSize);
+    expect(conversationSize.height, greaterThanOrEqualTo(180));
+    expect(tester.takeException(), isNull);
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpWidget(const SizedBox.shrink());
+    harness.dispose();
+  });
+
   testWidgets('每日簽到彈窗在小螢幕（320 寬）不 overflow，且顯示標題與簽到按鈕', (tester) async {
     await binding.setSurfaceSize(const Size(320, 568));
     addTearDown(() => binding.setSurfaceSize(null));
@@ -397,8 +435,7 @@ void main() {
     expect(find.text('AI Agent 工具測試'), findsNothing);
   });
 
-  testWidgets('SettingsScreen「今日任務」入口依正式功能旗標顯示',
-      (tester) async {
+  testWidgets('SettingsScreen「今日任務」入口依正式功能旗標顯示', (tester) async {
     final harness = await _HomeHarness.create();
     addTearDown(harness.dispose);
 

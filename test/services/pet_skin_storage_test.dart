@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pet_companion_app/models/pet_skin.dart';
+import 'package:pet_companion_app/models/pet_visual_profile.dart';
 import 'package:pet_companion_app/services/local_storage_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -83,6 +84,71 @@ void main() {
 
       storage.setUserId('elder-A');
       expect(await storage.loadOwnedPetSkins(), {PetSkin.dog, PetSkin.fox});
+    });
+  });
+
+  group('寵物視覺風格預設 migration', () {
+    test('真正新使用者預設 realistic，並一次性回填偏好', () async {
+      final storage = LocalStorageService();
+
+      expect(await storage.loadPetVisualStyle(), PetVisualStyle.realistic);
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('petVisualStyle'), 'realistic');
+
+      await storage.savePetSkin(PetSkin.dog);
+      expect(await storage.loadPetVisualStyle(), PetVisualStyle.realistic);
+    });
+
+    test('升級前已有寵物資料但沒有 visual style 時保留 cute', () async {
+      SharedPreferences.setMockInitialValues({
+        'petSkin': 'fox',
+        'ownedPetSkins': <String>['dog', 'fox'],
+      });
+      final storage = LocalStorageService();
+
+      expect(await storage.loadPetVisualStyle(), PetVisualStyle.cute);
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('petVisualStyle'), 'cute');
+    });
+
+    test('升級前已有其他舊資料時保留 cute', () async {
+      SharedPreferences.setMockInitialValues({'petName': '小福'});
+      final storage = LocalStorageService();
+
+      expect(await storage.loadPetVisualStyle(), PetVisualStyle.cute);
+    });
+
+    test('migration 依 elderId 隔離，舊帳號不影響真正新帳號', () async {
+      SharedPreferences.setMockInitialValues({
+        'u:elder-A:petSkin': 'fox',
+      });
+      final storage = LocalStorageService();
+
+      storage.setUserId('elder-A');
+      expect(await storage.loadPetVisualStyle(), PetVisualStyle.cute);
+
+      storage.setUserId('elder-B');
+      expect(await storage.loadPetVisualStyle(), PetVisualStyle.realistic);
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('u:elder-A:petVisualStyle'), 'cute');
+      expect(prefs.getString('u:elder-B:petVisualStyle'), 'realistic');
+    });
+
+    test('既有顯式 cute / realistic 偏好都完整保留', () async {
+      SharedPreferences.setMockInitialValues({
+        'u:elder-A:petVisualStyle': 'cute',
+        'u:elder-B:petVisualStyle': 'realistic',
+      });
+      final storage = LocalStorageService();
+
+      storage.setUserId('elder-A');
+      expect(await storage.loadPetVisualStyle(), PetVisualStyle.cute);
+
+      storage.setUserId('elder-B');
+      expect(await storage.loadPetVisualStyle(), PetVisualStyle.realistic);
     });
   });
 }

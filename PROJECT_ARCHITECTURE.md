@@ -359,11 +359,11 @@ Care Alert 共用資料結構、`pubspec.yaml` / `backend/stt_proxy/package.json
 ## 10. 身份與綁定模型（CR-0006，🔒 跨前後端契約）
 
 登入導入後，**每位長者都有固定 `userId` 與 `elderId`**；後續對話記憶、Care Alert、情緒分析、遊戲紀錄都綁定 `elderId`。
-正式上架登入供應商目前為 Firebase Authentication Email。Google / Apple 能力尚未同時完成前，production UI 強制隱藏第三方登入入口。production 缺 Firebase Admin 設定時後端拒絕啟動，不得走 mock；mock 只保留給 development / test。
+正式上架登入供應商為 Firebase Authentication Email、Google 與 Apple。Google / Apple 登入都必須取得 Firebase ID Token，並走同一個 production session API；不得只在前端建立假 session。production 缺 Firebase Admin 設定時後端拒絕啟動，不得走 mock；mock 只保留給 development / test。
 
 ### 10.1 登入流程（不破壞 Realtime / 不擋 Demo）
 
-1. Flutter 透過 Firebase Email 登入取得 `firebaseUid` + `idToken`；Google / Apple 僅可在非 production 驗證尚未正式開啟的流程。
+1. Flutter 透過 Firebase Email、Google 或 Apple 登入取得 `firebaseUid` + `idToken`；iOS 提供 Google / Apple，Android 提供 Google，Email 為兩平台共同備援。
 2. Flutter 呼叫 `POST /api/auth/session`（見下）。
 3. 後端在 production 驗證 ID Token → upsert `users` / `elders` → 回 `{ userId, elderId, role, bindingStatus, bindingDeadline }`；mock 驗證僅限非 production。
 4. Flutter 把 `userId` / `elderId` 存進 secure storage，作為記憶 / care alert / 遊戲 / 情緒寫入時的綁定鍵。
@@ -371,11 +371,11 @@ Care Alert 共用資料結構、`pubspec.yaml` / `backend/stt_proxy/package.json
 
 ### 10.1.1 帳號刪除順序（production 隱私契約）
 
-1. 使用者先以 Firebase 重新驗證並取得最新 ID Token。
+1. 使用者先依原登入方式以 Firebase 重新驗證並取得最新 ID Token（Email 密碼、Google 或 Apple）；Apple 重新驗證同時取得只留在記憶體中的 authorization code。
 2. App 呼叫 `POST /api/auth/delete`；後端以驗證後的 Firebase UID 為權威，刪除 user / elder / memory / Care Alert 等伺服器資料。
-3. **只有後端明確回傳成功後**，App 才刪除 Firebase 帳號與本機 session。
-4. 後端不可達或刪除失敗時，App 保留 Firebase 帳號與登入狀態並提示重試；不得先刪登入身分而留下使用者無法自行刪除的孤兒資料。
-6. **紅線**：`lib/services/realtime_voice_service.dart` 主流程不得因登入而修改；登入只改「上層傳入的 userId / elderId 來源」。
+3. **只有後端明確回傳成功後**，Apple 帳號才以 authorization code 呼叫 `revokeTokenWithAuthorizationCode` 撤銷 Apple token；接著刪除 Firebase 帳號與本機 session。Email / Google 帳號直接進入 Firebase 刪除步驟。
+4. 後端不可達或刪除失敗時，App 不得撤銷 Apple token 或刪除 Firebase 帳號；須保留登入狀態並提示重試，避免留下使用者無法自行刪除的孤兒資料。
+5. **紅線**：`lib/services/realtime_voice_service.dart` 主流程不得因登入而修改；登入只改「上層傳入的 userId / elderId 來源」。
 
 ### 10.2 `POST /api/auth/session` 契約
 

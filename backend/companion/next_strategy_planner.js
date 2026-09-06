@@ -26,6 +26,9 @@
 //   clarify           → 語句不清楚，簡短確認，不硬猜
 //   normal_chat       → 一般日常閒聊，順著內容自然接話
 
+const NORMAL_VOICE_CADENCE =
+  "一般語音回覆控制在 1–3 句；若使用者有情緒，第一句先接住情緒，再回應內容。整段最多一個問題，也不要在同一問句塞入多題。依這一輪的具體內容自然開場，避免連續使用「聽起來」「我在這裡陪你」等固定開場。";
+
 function compact(text, maxLength = 42) {
   const normalized = (text || "").toString().replace(/\s+/g, " ").trim();
   if (normalized.length <= maxLength) return normalized;
@@ -119,9 +122,9 @@ function planNextStrategy({
     languageHint === "taigi"
       ? " 使用台灣長者自然聽得懂的語氣，不要硬翻成不自然台語；若 transcript 不完整，溫和追問確認。"
       : "";
-  const finish = (mode, instruction) => ({
+  const finish = (mode, instruction, { applyNormalCadence = true } = {}) => ({
     mode,
-    instruction: `${instruction}${memoryHint}${taigiHint}`,
+    instruction: `${instruction}${applyNormalCadence ? ` ${NORMAL_VOICE_CADENCE}` : ""}${memoryHint}${taigiHint}`,
   });
 
   // 1) 高風險優先：安全 / 情緒危機凌駕一般聊天與一般工具。
@@ -129,6 +132,7 @@ function planNextStrategy({
     return finish(
       "safety_check",
       "使用者可能遇到危急狀況。先用一句話冷靜接住他剛剛說的，簡短確認他現在安不安全，並溫和鼓勵他立刻聯絡家人或撥打緊急 / 醫療電話。語氣關心、不慌張，不要說教、不要做醫療診斷。",
+      { applyNormalCadence: false },
     );
   }
   if (safety?.riskLevel === "high") {
@@ -226,6 +230,7 @@ function planNextStrategy({
 }
 
 module.exports = {
+  NORMAL_VOICE_CADENCE,
   planNextStrategy,
   // 匯出意圖偵測供測試與其他模組重用（純函式、無副作用）。
   hasReminderIntent,

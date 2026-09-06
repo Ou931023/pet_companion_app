@@ -116,6 +116,14 @@ test("returns fixed structured schema", () => {
   assert.equal(result.turnId, "turn-今天家裡好安靜");
 });
 
+test("空白 transcript 的一般回覆指引也套用 CR-0105D 節奏", () => {
+  const result = analyzeCompanionTurn({ transcript: "" });
+
+  assert.equal(result.safety.riskLevel, "low");
+  assert.match(result.nextStrategy.instruction, /1–3 句/);
+  assert.match(result.nextStrategy.instruction, /最多一個問題/);
+});
+
 test("marks knowledge search intent", () => {
   const result = analyze("跟我說健康小知識");
   assert.equal(result.needsSearch, true);

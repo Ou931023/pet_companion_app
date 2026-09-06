@@ -58,8 +58,8 @@ class AppConfig {
 
   /// 是否在登入頁顯示 Demo 快速登入按鈕（原始開關）。
   ///
-  /// **正式展示 / 截圖預設為 false**（登入頁只露 Google / Email / 建立帳號，
-  /// 不出現測試感按鈕）。開發 / 測試需要 Demo 備援時，用
+  /// **正式展示 / 截圖預設為 false**（登入頁只露 Google、Email、建立帳號，
+  /// iOS 另顯示 Apple；不出現測試感按鈕）。開發 / 測試需要 Demo 備援時，用
   /// `--dart-define=SHOW_DEMO_LOGIN=true` 開啟。
   /// 注意：即使隱藏，`AuthController.loginAsDemoUser()` 仍保留，能力不刪。
   /// 實際是否顯示請用 [demoLoginVisible]（production 一律隱藏）。
@@ -73,16 +73,15 @@ class AppConfig {
 
   /// 是否顯示第三方登入（Google / Apple）的原始開關。
   ///
-  /// 目前 Apple Sign in 尚未正式接線。為避免 App Store 審查看到未完成入口，
-  /// production 先只顯示 Email 登入 / 註冊；第三方登入待 Apple + Google 兩者皆完成
-  /// 後再另開 CR 開啟。
+  /// Google 與 Apple 已走 Firebase 正式登入；預設顯示，必要時可由 build flag
+  /// 暫停入口。production 不再強制隱藏，避免正式使用者只能依賴 Email。
   static const bool showSocialSignIn = bool.fromEnvironment(
     'SHOW_SOCIAL_SIGN_IN',
     defaultValue: true,
   );
 
-  /// Google / Apple 登入入口實際是否顯示：production 強制隱藏。
-  static bool get socialSignInVisible => showSocialSignIn && !isProduction;
+  /// Google / Apple 登入入口實際是否顯示。
+  static bool get socialSignInVisible => showSocialSignIn;
 
   /// 是否顯示「照護用品商城」入口（marketplace）的原始開關。
   ///
