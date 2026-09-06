@@ -19,22 +19,24 @@ void main() {
       expect(project, contains('enabled = 1'));
     });
 
-    test('Profile and Release use the Apple entitlement file', () {
+    test('Release store build uses the Apple entitlement file', () {
       final matches = RegExp(
         r'CODE_SIGN_ENTITLEMENTS = Runner/Runner\.entitlements;',
       ).allMatches(project);
 
-      expect(matches.length, 2,
-          reason: 'Profile/Release 必須接上 entitlement；Debug 要支援 Personal Team');
+      expect(matches.length, 1,
+          reason: 'Release 必須接上 entitlement；Debug/Profile 要支援 Personal Team');
     });
 
-    test('Debug does not request unsupported Personal Team capabilities', () {
-      final debugConfig = RegExp(
+    test('Debug and Profile do not request Personal Team capabilities', () {
+      for (final pattern in <String>[
         r'97C147061CF9000F007C117D /\* Debug \*/ = \{[\s\S]*?name = Debug;\s*\};',
-      ).firstMatch(project)?.group(0);
-
-      expect(debugConfig, isNotNull);
-      expect(debugConfig, isNot(contains('CODE_SIGN_ENTITLEMENTS')));
+        r'249021D4217E4FDB00AE95B9 /\* Profile \*/ = \{[\s\S]*?name = Profile;\s*\};',
+      ]) {
+        final localConfig = RegExp(pattern).firstMatch(project)?.group(0);
+        expect(localConfig, isNotNull);
+        expect(localConfig, isNot(contains('CODE_SIGN_ENTITLEMENTS')));
+      }
     });
   });
 }

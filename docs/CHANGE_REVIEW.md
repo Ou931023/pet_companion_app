@@ -4767,10 +4767,10 @@ Release signing 的 repo 端文件與自動檢查已可執行；真正送審仍�
 
 ### 根因與範圍
 - Personal Team 建立的七日開發 provisioning profile 到期後，Xcode 因 Debug configuration 也要求 Sign in with Apple capability，無法自動更新 profile，導致已安裝 App 顯示「無法再使用」。
-- Debug configuration 不再掛載 `Runner.entitlements`；Profile / Release 仍使用該檔並保留 Sign in with Apple capability。
+- Debug / Profile configuration 不再掛載 `Runner.entitlements`；Release 仍使用該檔並保留 Sign in with Apple capability。Profile 用於可從 iPhone 桌面獨立啟動的 Personal Team 實機驗證。
 - 新增 `SHOW_APPLE_SIGN_IN` build flag。正式版預設為 `true`；Personal Team Debug 實機安裝時設為 `false`，只隱藏無法使用的 Apple 入口，Google / Email 登入維持可用。
 
 ### 驗收與上架邊界
-- Personal Team Debug build 可重新產生 provisioning profile、安裝並啟動。
-- Profile / Release 仍有 `com.apple.developer.applesignin` entitlement；正式 TestFlight 必須改用付費 Apple Developer Team，並完成 Firebase Apple provider 與真機登入 smoke。
-- Debug 分流僅供本機實機驗證，不是送審產物；不得把 Personal Team build 上傳 App Store Connect。
+- Personal Team Debug build 可重新產生 provisioning profile；由於 iOS 14+ 的 Flutter Debug build 無法離開 tooling 從桌面獨立啟動，日常實機展示改裝 Profile build。
+- Release 仍有 `com.apple.developer.applesignin` entitlement；正式 TestFlight 必須改用付費 Apple Developer Team，並完成 Firebase Apple provider 與真機登入 smoke。
+- Debug / Profile 分流僅供本機實機驗證，不是送審產物；不得把 Personal Team build 上傳 App Store Connect。
