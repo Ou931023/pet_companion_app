@@ -128,8 +128,8 @@ class SessionApiService {
   /// （使用者 / 長者 / 長期記憶 / Care Alert）。
   ///
   /// 設計同 [createSession]：**不丟例外**。成功回 `true`，任何失敗
-  /// （非 2xx、連線錯誤、解析失敗）回 `false`——讓「帳號刪除」不被後端
-  /// 連線問題擋住（Firebase 帳號與本機資料仍會照常清除）。
+  /// （非 2xx、連線錯誤、解析失敗）回 `false`。上層必須在 `false` 時保留
+  /// Firebase 帳號與登入狀態，避免後端留下使用者無法再自行刪除的資料。
   Future<bool> deleteAccount({
     required String firebaseUid,
     required String idToken,

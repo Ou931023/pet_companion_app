@@ -60,6 +60,7 @@ import 'services/companion_chat_service.dart';
 import 'services/companion_content_service.dart';
 import 'services/companion_engine_service.dart';
 import 'services/contact_lookup_service.dart';
+import 'services/daily_care_task_api_service.dart';
 import 'models/care_alert.dart';
 import 'services/companion_reply_strategy_service.dart';
 import 'services/emotion_services.dart';
@@ -179,6 +180,10 @@ class PetCompanionApp extends StatelessWidget {
         // CR-0025 日常照護任務（與遊戲化 CareTask 不同功能）。
         ChangeNotifierProvider(
           create: (context) => DailyCareTaskController(
+            apiService: DailyCareTaskApiService(
+              authTokenProvider: () =>
+                  context.read<AuthController>().resolveNotifyAuthToken(),
+            ),
             trackingService: context.read<AppUsageTrackingService>(),
           ),
         ),
@@ -449,11 +454,18 @@ class PetCompanionApp extends StatelessWidget {
             theme: AppTheme.light(),
             builder: (context, child) {
               final mediaQuery = MediaQuery.of(context);
-              return MediaQuery(
-                data: mediaQuery.copyWith(
-                  textScaler: TextScaler.linear(profile.fontScale),
+              return DefaultTextStyle.merge(
+                style: const TextStyle(
+                  locale: Locale('zh', 'TW'),
+                  fontFamily: 'PingFang TC',
+                  fontFamilyFallback: ['Noto Sans TC'],
                 ),
-                child: child ?? const SizedBox.shrink(),
+                child: MediaQuery(
+                  data: mediaQuery.copyWith(
+                    textScaler: TextScaler.linear(profile.fontScale),
+                  ),
+                  child: child ?? const SizedBox.shrink(),
+                ),
               );
             },
             onGenerateRoute: _onGenerateRoute,

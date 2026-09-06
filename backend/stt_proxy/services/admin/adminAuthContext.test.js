@@ -265,3 +265,28 @@ test("resolveAdminAuthContext 中介層：無 token → 401 missing_admin_token"
   assert.equal(res.statusCode, 401);
   assert.deepEqual(res.body, { ok: false, error: "missing_admin_token" });
 });
+
+test("daily-care auth 中介層使用 success:false envelope", async () => {
+  const req = reqWith(null);
+  const res = {
+    statusCode: null,
+    body: null,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload) {
+      this.body = payload;
+      return this;
+    },
+  };
+  await new Promise((resolve) => {
+    adminAuth.resolveDailyCareAdminAuthContext(req, res, () => resolve());
+    setImmediate(() => resolve());
+  });
+  assert.equal(res.statusCode, 401);
+  assert.deepEqual(res.body, {
+    success: false,
+    error: "missing_admin_token",
+  });
+});

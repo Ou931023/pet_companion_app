@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/app_config.dart';
 import '../models/agent_route_result.dart';
+import '../utils/app_log.dart';
 
 class AgentRouterService {
   AgentRouterService({http.Client? client}) : _client = client ?? http.Client();
@@ -55,7 +55,7 @@ class AgentRouterService {
           .timeout(const Duration(seconds: 5));
       if (response.statusCode >= 400) {
         // CR-0079：工程細節只進 log，errorMessage 一律是長者看得懂的白話。
-        debugPrint(
+        AppLog.debug(
             '[AgentRouterService] route failed: HTTP ${response.statusCode}');
         return AgentRouteResult.noIntent(
           errorMessage: '寵物現在回應比較慢，請稍等一下再試一次。',
@@ -65,12 +65,12 @@ class AgentRouterService {
       if (decoded is! Map) return AgentRouteResult.noIntent();
       return AgentRouteResult.fromJson(Map<String, dynamic>.from(decoded));
     } on TimeoutException {
-      debugPrint('[AgentRouterService] route timeout');
+      AppLog.debug('[AgentRouterService] route timeout');
       return AgentRouteResult.noIntent(
         errorMessage: '等待時間比較久，請稍後再試一次。',
       );
     } catch (error) {
-      debugPrint('[AgentRouterService] route error: $error');
+      AppLog.error('[AgentRouterService] route error', error);
       return AgentRouteResult.noIntent(
         errorMessage: '目前連線不太穩，請確認網路後再試一次。',
       );

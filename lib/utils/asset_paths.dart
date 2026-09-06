@@ -29,7 +29,9 @@ class AssetPaths {
     PetMode.sad: 'sad',
   };
 
-  /// v2 半寫實狗狗目前已通過 QA 的 state 集合。
+  static const String _realisticDogRoot = 'assets/pets/v2/realistic/adult/dog';
+
+  /// v2 半寫實狗狗目前已通過 QA 的完整 state 集合。
   ///
   /// 只宣告已實際存在且可被 Flutter asset bundle 打包的檔案。未來新增其他寵物
   /// 真實版時，必須先補完整 state/listening/rest/talk，再開放 UI 切換。
@@ -93,11 +95,12 @@ class AssetPaths {
     talkFrameCount: 6,
     restFrameCount: 3,
     stateSuffixes: _realisticDogStateSuffix,
+    isProductionPreferred: true,
   );
 
   /// 最終保底圖（第二層 fallback）：永遠存在的狗狗 rest_01。
   /// 也供登入頁 / 新手導覽頁當預設寵物圖，避免硬寫路徑字串。
-  static const String defaultRestImage = 'assets/pets/rest/dog_rest_01.png';
+  static const String defaultRestImage = '$_realisticDogRoot/rest/rest_01.png';
 
   static String _padded(int i) => i.toString().padLeft(2, '0');
 
@@ -149,14 +152,33 @@ class AssetPaths {
     PetGrowthStage growthStage = PetGrowthStage.adult,
   }) =>
       [
-        PetVisualStyle.cute,
         if (supportsVisualStyle(
           skin,
           PetVisualStyle.realistic,
           growthStage: growthStage,
         ))
           PetVisualStyle.realistic,
+        PetVisualStyle.cute,
       ];
+
+  /// 指定寵物在正式版 picker / 首次使用時的首選視覺。
+  static PetVisualStyle preferredVisualStyle(
+    PetSkin skin, {
+    PetGrowthStage growthStage = PetGrowthStage.adult,
+  }) {
+    for (final style in availableVisualStyles(
+      skin,
+      growthStage: growthStage,
+    )) {
+      final profile = visualProfileForStyle(
+        skin,
+        visualStyle: style,
+        growthStage: growthStage,
+      );
+      if (profile?.isProductionPreferred ?? false) return style;
+    }
+    return PetVisualStyle.cute;
+  }
 
   /// 說話動畫每一張（張數依 [skin]，guineaPig 只有 3 張）。
   static List<String> talkingFrames(PetSkin skin) {
@@ -179,8 +201,8 @@ class AssetPaths {
         visualStyle == PetVisualStyle.realistic &&
         growthStage == PetGrowthStage.adult) {
       return [
-        for (var i = 1; i <= 6; i++)
-          'assets/pets/v2/realistic/adult/dog/talk/talk_${_padded(i)}.png',
+        for (var i = 1; i <= _realisticDogProfile.talkFrameCount; i++)
+          '$_realisticDogRoot/talk/talk_${_padded(i)}.png',
       ];
     }
     return talkingFrames(skin);
@@ -207,8 +229,8 @@ class AssetPaths {
         visualStyle == PetVisualStyle.realistic &&
         growthStage == PetGrowthStage.adult) {
       return [
-        for (var i = 1; i <= 3; i++)
-          'assets/pets/v2/realistic/adult/dog/rest/rest_${_padded(i)}.png',
+        for (var i = 1; i <= _realisticDogProfile.restFrameCount; i++)
+          '$_realisticDogRoot/rest/rest_${_padded(i)}.png',
       ];
     }
     return restFrames(skin);
@@ -229,7 +251,7 @@ class AssetPaths {
     if (skin == PetSkin.dog &&
         visualStyle == PetVisualStyle.realistic &&
         growthStage == PetGrowthStage.adult) {
-      return 'assets/pets/v2/realistic/adult/dog/listening/listening.png';
+      return '$_realisticDogRoot/listening/listening.png';
     }
     return listening(skin);
   }
@@ -243,7 +265,7 @@ class AssetPaths {
   /// v2 visual-style-aware 靜態圖 resolver。
   ///
   /// - Q 版：維持既有 v1 路徑。
-  /// - 真實版：目前僅 dog / adult / normal-happy-caring-sad 子集走 v2。
+  /// - 真實版：dog / adult 的完整狀態集合走 v2。
   /// - 缺素材：立即 fallback 到 v1，正式版不顯示破圖。
   static String stateImageForStyle(
     PetSkin skin,
@@ -256,7 +278,7 @@ class AssetPaths {
         growthStage == PetGrowthStage.adult) {
       final suffix = _realisticDogStateSuffix[mode];
       if (suffix != null) {
-        return 'assets/pets/v2/realistic/adult/dog/states/$suffix.png';
+        return '$_realisticDogRoot/states/$suffix.png';
       }
     }
     return stateImage(skin, mode);
@@ -265,4 +287,18 @@ class AssetPaths {
   /// 該外觀的第一層 fallback：自己的 rest_01。
   static String skinRestPrimary(PetSkin skin) =>
       'assets/pets/rest/${skin.assetPrefix}_rest_01.png';
+
+  /// 第一層 fallback 也維持目前視覺風格，避免真實版載入失敗時突然跳回 Q 版。
+  static String skinRestPrimaryForStyle(
+    PetSkin skin, {
+    PetVisualStyle visualStyle = PetVisualStyle.cute,
+    PetGrowthStage growthStage = PetGrowthStage.adult,
+  }) {
+    final frames = restFramesForStyle(
+      skin,
+      visualStyle: visualStyle,
+      growthStage: growthStage,
+    );
+    return frames.isEmpty ? skinRestPrimary(skin) : frames.first;
+  }
 }

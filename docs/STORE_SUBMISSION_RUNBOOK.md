@@ -18,7 +18,7 @@
 - [x] hosted 支援 / 帳號資料刪除 URL：`https://ou931023.github.io/pet_companion_app/support.html`，供 `SUPPORT_URL`、Google Play account deletion web resource 與商店後台使用。
 - [x] 正式客服信箱：`aicompanion.support@gmail.com`，供 `CONTACT_EMAIL` 與商店後台使用。
 - [x] GitHub Pages 已啟用 Source: GitHub Actions，且 `Deploy legal site to GitHub Pages` workflow 成功部署。
-- [ ] `BLOCKER` Android release upload keystore / key alias / CI secret；不得提交進 git。
+- [x] Android release upload keystore / key alias 已在本機設定，`key.properties` 受 gitignore 保護；2026-09-06 production AAB preflight 成功。Play App Signing 與 Internal testing 上傳仍是 owner action。
 - [ ] `BLOCKER` iOS distribution certificate / provisioning profile / App Store Connect app record。
 - [x] Android target API gate：`android/app/build.gradle.kts` 明確要求 Android 16 / API 36 以上；本機 / CI 需安裝對應 Android SDK platform。
 - [ ] `BLOCKER` Firebase iOS / Android app config 已對應 `tw.edu.ncyu.im.aicompanion`。
@@ -62,7 +62,7 @@ npm test
 
 - [ ] `flutter analyze` 通過，無 production-facing warning。
 - [ ] `flutter test` 通過。
-- [ ] production dart-define 反向測試通過：即使外部誤開 demo / social / marketplace / daily-care，production gating 仍強制關閉。
+- [ ] production dart-define 反向測試通過：demo / mock / debug / marketplace 等未上架入口仍強制關閉；Google 與 iOS Apple 正式登入保持啟用並通過 Firebase 真機 smoke。
 - [ ] release signing readiness script 通過，且未讀取 / 輸出任何 secret 值。
 - [ ] caregiver_web config guard 通過；若本次不交付 caregiver_web，需在 release note 明確列為未開放功能。
 - [ ] caregiver_web production deployment 已更新到 `app.js?v=20260821-cr0103`，且 API 指向 `https://ai-companion-api-1gm7.onrender.com/api`。
@@ -176,7 +176,7 @@ flutter build appbundle --release \
 ## 7. 商店後台 Smoke
 
 - [ ] App Store Connect：metadata 無醫療診斷或過度宣稱。
-- [ ] App Store Connect：若未啟用第三方登入，審查流程只出現 Email login / register。
+- [ ] App Store Connect：審查流程提供 Email、Google 與 iOS Sign in with Apple；Firebase providers、Apple capability / provisioning、密碼重設與真機 smoke 均已通過。
 - [x] App Store Connect：Review notes 模板已備妥於 `docs/STORE_REVIEW_NOTES_TEMPLATE.md`。
 - [ ] App Store Connect：Review notes 後台填入測試帳號、Care Alert 非醫療診斷說明、麥克風用途。
 - [ ] App Store Privacy Nutrition Labels 已申報帳號資料、語音 / 文字互動、App 使用紀錄與照護分析用途。

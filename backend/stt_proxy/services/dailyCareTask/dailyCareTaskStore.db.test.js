@@ -147,7 +147,8 @@ test("recordSubmission DB：交易序列 BEGIN→SELECT FOR UPDATE→INSERT→UP
   const r = await store.recordSubmission(
     "t1",
     {
-      proofImagePath: "/tmp/fake.jpg",
+      proofImageBytes: Buffer.from([1, 2, 3]),
+      proofMimeType: "image/jpeg",
       verification: {
         verificationStatus: "passed",
         confidence: 0.9,
@@ -166,6 +167,8 @@ test("recordSubmission DB：交易序列 BEGIN→SELECT FOR UPDATE→INSERT→UP
   assert.equal(texts[0], "BEGIN");
   assert.match(pg.calls[1].text, /SELECT \* FROM daily_care_tasks WHERE id = \$1 FOR UPDATE/);
   assert.match(pg.calls[2].text, /INSERT INTO daily_care_task_submissions/);
+  assert.deepEqual(pg.calls[2].params[4], Buffer.from([1, 2, 3]));
+  assert.equal(pg.calls[2].params[5], "image/jpeg");
   assert.match(pg.calls[3].text, /UPDATE daily_care_tasks SET status/);
   assert.equal(texts[texts.length - 1], "COMMIT");
 });
@@ -256,7 +259,7 @@ test("listTasksForAdmin DB：附最新 submission + submissionCount", async () =
     available: true,
     rowsFor: (text) => {
       if (/SELECT \* FROM daily_care_tasks/.test(text)) return [taskRow()];
-      if (/SELECT \* FROM daily_care_task_submissions WHERE task_id = ANY/.test(text)) {
+      if (/FROM daily_care_task_submissions WHERE task_id = ANY/.test(text)) {
         return [
           submissionRow({ id: "s2", submitted_at: new Date("2026-06-05T10:00:00.000Z") }),
           submissionRow({ id: "s1", submitted_at: new Date("2026-06-05T09:00:00.000Z") }),

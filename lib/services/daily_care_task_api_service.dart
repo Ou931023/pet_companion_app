@@ -1,11 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/app_config.dart';
 import '../models/daily_care_task.dart';
+import '../utils/app_log.dart';
+import 'care_alert_notification_service.dart' show AuthTokenProvider;
 
 /// 日常照護任務 API 呼叫失敗時丟出的應用層例外（訊息已是白話，可直接顯示）。
 class DailyCareTaskApiException implements Exception {
@@ -17,7 +18,8 @@ class DailyCareTaskApiException implements Exception {
 
 /// submit 完成證明後的結果（任務最新狀態 + 該次 submission 的 AI 結果）。
 class DailyCareTaskSubmitResult {
-  const DailyCareTaskSubmitResult({required this.task, required this.submission});
+  const DailyCareTaskSubmitResult(
+      {required this.task, required this.submission});
   final DailyCareTask task;
   final DailyCareTaskSubmission submission;
 }
@@ -27,10 +29,14 @@ class DailyCareTaskSubmitResult {
 /// 失敗一律轉成白話 [DailyCareTaskApiException]，不外洩工程訊息（長者友善）。
 /// HTTP client 可注入，方便測試；方法皆為 instance method，可在測試以子類覆寫。
 class DailyCareTaskApiService {
-  DailyCareTaskApiService({http.Client? client})
-      : _client = client ?? http.Client();
+  DailyCareTaskApiService({
+    http.Client? client,
+    AuthTokenProvider? authTokenProvider,
+  })  : _client = client ?? http.Client(),
+        _authTokenProvider = authTokenProvider;
 
   final http.Client _client;
+  final AuthTokenProvider? _authTokenProvider;
 
   static const Duration _timeout = Duration(seconds: 20);
 
@@ -41,7 +47,8 @@ class DailyCareTaskApiService {
     final uri = Uri.parse('$_base/api/daily-care-tasks')
         .replace(queryParameters: {'elderId': elderId});
     try {
-      final response = await _client.get(uri).timeout(_timeout);
+      final response =
+          await _client.get(uri, headers: await _headers()).timeout(_timeout);
       final decoded = _decodeOk(response);
       final tasks = (decoded['tasks'] as List<dynamic>? ?? [])
           .whereType<Map<String, dynamic>>()
@@ -66,7 +73,7 @@ class DailyCareTaskApiService {
       final response = await _client
           .post(
             uri,
-            headers: {'Content-Type': 'application/json'},
+            headers: await _headers(json: true),
             body: jsonEncode({
               'elderId': elderId,
               'title': title,
@@ -91,6 +98,7 @@ class DailyCareTaskApiService {
     final uri = Uri.parse('$_base/api/daily-care-tasks/$taskId/submit');
     try {
       final request = http.MultipartRequest('POST', uri)
+        ..headers.addAll(await _headers())
         ..files.add(await http.MultipartFile.fromPath('photo', image.path));
       final streamed = await _client.send(request).timeout(_timeout);
       final response = await http.Response.fromStream(streamed);
@@ -116,7 +124,7 @@ class DailyCareTaskApiService {
       final response = await _client
           .patch(
             uri,
-            headers: {'Content-Type': 'application/json'},
+            headers: await _headers(json: true),
             body: jsonEncode({'status': _statusToWire(status)}),
           )
           .timeout(_timeout);
@@ -138,9 +146,25 @@ class DailyCareTaskApiService {
     return decoded;
   }
 
+  Future<Map<String, String>> _headers({bool json = false}) async {
+    final headers = <String, String>{
+      if (json) 'Content-Type': 'application/json',
+    };
+    String? token;
+    try {
+      token = await _authTokenProvider?.call();
+    } catch (_) {
+      token = null;
+    }
+    if (token != null && token.trim().isNotEmpty) {
+      headers['Authorization'] = 'Bearer ${token.trim()}';
+    }
+    return headers;
+  }
+
   DailyCareTaskApiException _friendly(Object error, String fallback) {
     if (error is DailyCareTaskApiException) return error;
-    debugPrint('[DAILY_CARE_TASK] API 失敗：$error');
+    AppLog.error('[DAILY_CARE_TASK] API 失敗', error);
     return DailyCareTaskApiException(fallback);
   }
 

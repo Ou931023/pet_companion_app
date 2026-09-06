@@ -4634,3 +4634,126 @@ Release signing 的 repo 端文件與自動檢查已可執行；真正送審仍�
 
 ### 裁決
 此為正式 caregiver_web 登入 blocker 修正：將不穩定的 Static Site build-time config 注入改為後端 runtime config，並讓照護人員可真正以 Firebase Email / Google 登入。跨邊界但範圍受控，測試守住 public config shape 與前端登入入口；併入主線後需同步部署 backend 與 caregiver_web，並在 backend Render Environment 補齊 `CAREGIVER_WEB_FIREBASE_*` 四個 Web config 變數。**下一個可用 CR 編號：CR-0099。**
+
+---
+
+## CR-0104 — Final Store Validation and Protected Daily Care Proofs
+
+### 模式
+**跨邊界 production blocker 修正與上架前總驗證**（architecture-agent 審查；backend-agent、frontend-ux-agent、realtime-voice-agent 各自守住擁有範圍）。本批不讀取或修改 `.env`，不加入 mock / demo fallback，也不把 token、照片內容或住民識別資料寫入 log。
+
+### 根因
+- 正式 App 的 API、legal URL 與 production mode 仍有部分依賴 build-time 注入，owner 漏帶 `--dart-define` 時可能產生不可用 release。
+- 日常照護任務的住民 API 與照片證明曾缺少完整 caller scope；照片落在 Render ephemeral disk，重新部署後會遺失，且 proof URL 可能繞過照護者授權。
+- caregiver_web 登入前即呈現管理功能與數據區，容易讓使用者誤認已登入；照片連結也無法攜帶 Firebase bearer token。
+- release logging 尚有輸出使用者識別碼、寵物名稱與 Realtime 事件內容的風險。
+- iOS production plist 仍允許 local networking，與正式 HTTPS-only 上架目標不一致。
+
+### 變更範圍
+- Flutter：正式 API / legal defaults、daily care API bearer token、release-safe logging；Realtime 主流程僅替換 log sink，不改 SDP、ICE、DataChannel、事件解析或狀態機契約。
+- Backend：住民 daily-care routes 使用 Firebase resident caller 並以 caller elderId 為準；狀態修改與照片讀取使用 admin/caregiver scope；JSON fallback 僅限非 production。
+- Database：新增 additive migration `018_store_daily_care_proof_images.sql`，以 `BYTEA` / MIME 保存照護照片；無 drop、rename 或 destructive rewrite。
+- Caregiver Web：登入前只顯示登入介面；登入後才顯示授權資料；照片以帶 bearer token 的 authenticated fetch 讀取，不再直接公開開 URL。
+- iOS：移除 local-network exception，iPhone 固定 portrait；iPad 方向維持既有支援。
+
+### API / DB 契約
+- `GET /api/daily-care-tasks`、`POST /api/daily-care-tasks`、`POST /api/daily-care-tasks/:id/submit`：需要 Firebase resident token；request 的 `elderId` 不具授權效力。本批不新增單筆 task GET route。
+- `PATCH /api/daily-care-tasks/:id/status`：只有 super_admin 或 active `primary` / `secondary` caregiver 可寫，`viewer` 固定回 403。`GET /api/daily-care-tasks/proof/:submissionId`：super_admin 與任何 active 已指派 caregiver（含 `viewer`）可讀；跨住民存取回 403；錯誤 envelope 統一為 `{ success:false, error }`。
+- 對外 JSON 不回傳 server filesystem path 或照片 bytes，只回 `hasProofImage` / `proofMimeType`；照片 response 使用 private no-store。
+- migration 僅新增 nullable 欄位，可先 migrate 再部署；舊資料仍可讀取 legacy proof path，供受控過渡使用。
+
+### 風險、部署與回滾
+- **部署順序**：先執行 migration 018，再同一維護窗口部署 backend 與 caregiver_web，最後安裝新的 Flutter release。不可只部署 backend，否則舊 App / 舊 caregiver_web 無 bearer token 的 daily-care flow 會失敗。
+- Render production 必須使用 persistent PostgreSQL；ephemeral disk 不再是新照片的唯一來源。
+- migration 為 additive；程式回滾不需刪欄位。若 backend 回滾，保留新增欄位不影響舊版查詢。
+- 正式 backend 若 DB 無法讀取住民資料，應回可診斷錯誤，不可回六筆 seed / fake residents 假裝成功。
+
+### 驗證門檻
+- `flutter analyze`、完整 `flutter test`。
+- backend 完整 `npm test`、`npm run check`、migration 018 與 daily-care authorization tests。
+- caregiver_web 完整測試、登入前資料隱藏、caregiver scope 與 authenticated proof fetch tests。
+- iOS release build / 實機啟動，並依 internal smoke runbook 驗證登入、Realtime、字幕、任務、照片、後台數據與帳號刪除。
+- `git diff --check`、release signing readiness、dependency audit；未完成真機與商店後台 owner 項目前不得宣告 Go。
+
+### Architecture Review
+第一次裁決：**changes requested**。指出架構文件與 route 名稱不一致、JSON fallback 成功後刪除 proof、daily-care auth error envelope 不一致，以及 migration/proof/crawler 關鍵測試未納入標準 `npm test`。
+
+修正狀態：已同步 `PROJECT_ARCHITECTURE.md` 與實際 route；JSON fallback 成功時保留 uploads proof、production DB 新照片不保存暫存 path；daily-care auth 統一 `success:false`；補 production DB bytes→caregiver proof→跨住民 403 整合測試與 crawler production 404 測試，並納入 `npm test` / `npm run check`。
+
+第二輪阻塞修正：
+- caregiver_web build 不再修改 tracked `caregiver_web/index.html`，只輸出 `caregiver_web_dist`；原始碼中的 Firebase 設定維持安全空值，避免 build 後把 production public config 誤提交進 git。
+- 帳號刪除改由 PostgreSQL transaction 完整刪除使用者、住民、記憶、Care Alert、usage events、照護任務、照片 submission、照護授權、同意與通知紀錄；任一步驟失敗會 rollback，Firebase 帳號與本機 session 保留供重試。
+- `viewer` 照護授權固定唯讀；只有 `primary`、`secondary` 與 `super_admin` 可修改 daily-care task 狀態，並有 production endpoint regression test。
+- 保留 `npm audit` 產生的 transitive security patch：`express`、`body-parser`、`axios`、`form-data`、`qs`、`undici`、`@google-cloud/storage` 等均為相容範圍內的修補更新；`package.json` 明確限制 Node `>=20.18.1 <25`，部署使用 Node 24。`npm ls --all --omit=dev` 與 `npm ci --ignore-scripts --dry-run` 均通過；`npm audit --omit=dev` 為 0 critical、0 high、8 moderate，剩餘項目來自 Firebase Admin 13 的 Google SDK 傳遞依賴，官方自動修正需升 Firebase Admin 14（breaking），不在上架封版前強制升級。
+
+第二次複審裁決：**changes requested**。前次四項 blocker 已解除；新增指出 legacy `proof_image_path` 成功回應缺少 `private, no-store` / `nosniff`，以及 `PROJECT_ARCHITECTURE.md` 的 daily-care role 契約與 marketplace/daily-care production persistence 敘述過時。
+
+第二次複審修正：proof 安全標頭已移到 DB bytes 與 legacy path 兩分支共用位置，並新增 legacy path HTTP regression test；SSOT 已明確區分所有 active caregiver 可讀 proof、只有 `primary` / `secondary` 可 PATCH，且同步 marketplace / daily-care 已 PostgreSQL 化的 production 現況。
+
+最終小範圍複審裁決：**Approve**，前述 P1 均已解除，無 P0/P1 merge blocker。驗證結果為 legacy proof targeted HTTP regression 3/3、backend 666/666、caregiver_web 119/119、Flutter 760/760、`flutter analyze`、`npm run check`、release signing readiness 與 `git diff --check` 全數通過。可進入 commit / merge 與依 migration → backend + caregiver_web → Flutter release 的正式部署流程；owner-gated 的 production DB smoke、法律營運者名稱確認、商店後台隱私表單與 TestFlight 審查仍不得標記為自動完成。
+
+---
+
+## CR-0105 — Core Conversation and Pet Experience Polish
+
+### 模式
+**跨 agent 的核心體驗修正**（architecture-agent 審查；realtime-voice-agent、companion-memory-agent、frontend-ux-agent 各自守住擁有範圍）。本 CR 不改 WebRTC transport、不改 API response shape、不改 DB schema、不新增依賴，也不加入 mock 或 demo fallback。
+
+### 根因
+- 現行 Realtime 刻意採逐輪按鍵模式：寵物說完回 `idle`，長者下一句必須再次按麥克風；回覆中也完全禁止打斷。穩定但互動感接近語音表單，不像自然陪伴。
+- Realtime transcript 事件存在 assistant/user 歸屬的相容分支，需先以事件重播守住「assistant 不得成為 user partial、空白 final 不落歷史、response.done 不提早收字幕」。
+- 一般陪伴回覆可能過長或連續追問，語音播放和字幕閱讀負擔偏高。
+- production 寵物素材混合不同美術語言；目前只有狗狗具備完整 v2 半寫實圖包，且透明邊緣需在明暗底色覆驗。
+
+### 分批範圍
+1. **CR-0105A/B — Realtime baseline 與 lifecycle 正確性**：補事件序列 regression tests；必要時只修事件分類、turn coordinator、controller 狀態，不改 SDP / ICE / DataChannel 建立方式。
+2. **CR-0105C — 輪次流暢度**：先改善 warm next-turn 與按鈕/字幕回饋；持續開麥、真正 barge-in 或 VAD 參數變更需另一次 architecture checkpoint 與真機量測後才放行。
+3. **CR-0105D — 陪伴回覆節奏**：一般語音回覆以 1–3 句、最多一個問題為預設；保留 urgent 安全提醒與 Care Alert 四級規則。
+4. **CR-0105E — 寵物視覺試點**：先以狗狗單一完整 production 圖包驗收 rest/listening/talk/all states，不做零散換圖；通過後再逐隻處理其他寵物。
+
+### 驗收門檻
+- Realtime event matrix：assistant-as-user、重複 final、空白 final、partial 落 history 均為 0；`response.done` 早於 playback stopped 時，talk 與字幕保留至真正播完。
+- 同一條 warm session 的下一輪不得重建 `/api/realtime/call`；30 turns 不得卡在 connecting/thinking/speaking 超過既有 timeout。
+- 中文／台語／混合語言腳本中，一般閒聊 90% 為 1–3 句、95% 最多一個問題；urgent safety corpus 不縮短必要安全訊息。
+- 寵物 production 圖包需為 1024×1024 RGBA、透明背景、無缺圖；明／暗／品牌底色無彩色 halo；320px 與 430px 畫面無 overflow、fallback 閃現或尺寸跳動。
+
+### Architecture Review
+裁決：**條件式核准**。先執行事件與真機 baseline，再放行 lifecycle 小修；第一波不放行持續開麥、真正 barge-in 或 VAD 參數變更。寵物視覺可由 frontend-ux-agent 以單一完整 skin 試點獨立進行。任何 `realtime_voice_service.dart` 修改須由 realtime-voice-agent 主導，完成後再做 architecture checkpoint。
+
+### 完成與驗證
+- Realtime 已改用 user `item_id` 關聯 final transcript 與 response，涵蓋字幕晚到、語言路由晚於 response、下一輪已開始等交錯順序；晚到的危急內容仍會執行 Care Alert，且不建立重複歷史或錯誤 thinking/timeout。
+- 一般陪伴回覆收斂為 1–3 句、最多一個問題，保留 urgent 安全回覆與 Care Alert 四級規則。
+- 首頁採完整 v2 寫實狗圖包，對話資訊不再改變寵物尺寸；全新使用者預設寫實風格，已有舊資料或顯式偏好的使用者保留原選擇。
+- 核心 Flutter regression：176 項通過；Realtime 最終新增 regression 另行通過；`flutter analyze` 無問題。
+- backend：`npm test` 667/667 通過。完整 Flutter suite 執行至既有 `consent_gate_test` 長時間 timer 未前進後中止，該檔與本 CR 無修改；受影響範圍已由上述 targeted suites 覆蓋。
+- 最終 architecture checkpoint：**APPROVED**，無 P0/P1 blocker。仍維持逐輪按鍵與禁止 barge-in；持續開麥需另案真機量測後評估。
+
+---
+
+## CR-0106 — Production Authentication and Traditional Chinese Typography
+
+### 模式
+**跨模組上架阻礙修正**（architecture-agent checkpoint；Flutter auth 與 frontend UX）。不改後端 API response shape、不改 DB schema、不加入 mock 登入或假成功。
+
+### 根因與範圍
+- production 目前把已完成的 Google 登入一併隱藏；Apple 按鈕仍是 placeholder，與正式 App Store 登入需求不符。
+- Email 登入沒有 Firebase password reset 入口，長者忘記密碼後形成死路。
+- 知情同意頁部分粗體中文字形在 iOS 顯示不一致，需要固定繁中 locale/fallback 並避免過度合成粗體。
+- 本 CR 接上 Firebase Google/Apple 真登入、iOS Sign in with Apple entitlement、Email 密碼重設，以及全 App 繁中字形 fallback；登入失敗一律維持白話錯誤且不可繞過後端 session 驗證。
+
+### 驗收門檻
+- production 登入頁顯示可操作的 Google 與 iOS Apple 登入；Apple 不再出現「準備中」。取消登入不視為錯誤。
+- 忘記密碼會要求有效 Email，成功後明確告知查收重設信；Firebase/網路錯誤不外洩工程訊息。
+- Apple/Google 成功後仍以 Firebase ID token 呼叫既有 `/api/auth/session`，後端失敗不得捏造 authenticated session。
+- iOS 知情同意頁與登入頁採繁體中文字形，粗體不出現異常 glyph；小螢幕與 1.3 倍文字無 overflow。
+- auth/controller/widget/config/store readiness tests、`flutter analyze`、iOS release build 通過。
+
+### 完成與驗證
+- production 登入頁已接上 Firebase Google / Apple / Email；Apple 僅在 iOS 顯示，Android 不出現不適用入口。第三方登入成功後仍以 Firebase ID token 呼叫既有 `/api/auth/session`，後端失敗時不建立或持久化假 session。
+- Email 登入已補上密碼重設，空白與錯誤格式會先在本機以白話提示；Firebase / 網路失敗不顯示 SDK code 或工程例外。
+- Apple 帳號刪除採 `provider reauth → backend delete → Apple token revoke → Firebase user delete → local session clear`；後端刪除失敗時不撤銷 Apple token、不刪 Firebase 帳號，保留重試能力。
+- iOS 已加入 Sign in with Apple capability 與 `Runner.entitlements`，Debug / Profile / Release 三種 Runner build config 均使用同一 entitlement。
+- 全 App route 上層指定繁中 locale、`PingFang TC` 與 `Noto Sans TC` fallback；同意卡片標題降為 `w700`，小螢幕 1.3 倍字體測試無 overflow。
+- focused auth / typography / store tests：**137/137 passed**；完整 Flutter suite：**807/807 passed**；production store / Apple capability tests：**22/22 passed**；`flutter analyze`：No issues found；`git diff --check`：通過。
+- `flutter build ios --release --no-codesign` 以 production HTTPS / hosted legal URL / release flags 成功，產出 `build/ios/iphoneos/Runner.app`（89.5 MB）。簽章 build 已執行並確認唯一 blocker：本機仍選到 Personal Team `WAH25TW6U4`，該 Team 不支援 Sign in with Apple；須由 owner 改選已加入 Apple Developer Program 的正式 Team、啟用 App ID capability 並更新 provisioning profile 後重跑。
+- 最終 architecture checkpoint：**APPROVED**，無 P0/P1 blocker。Personal Team 簽章限制屬 owner provisioning 工作，Apple capability 必須保留。

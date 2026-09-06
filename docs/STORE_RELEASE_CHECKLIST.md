@@ -35,8 +35,8 @@
 | 項目 | 狀態 | 說明 |
 |---|---|---|
 | 麥克風權限文案 `NSMicrophoneUsageDescription` | ✅ | 長者友善、無工程字眼 |
-| 相機 / 相簿 / 語音辨識 / 區網權限文案 | ✅ | 皆清楚、無 demo/test/mock |
-| ATS（App Transport Security） | 🔁 | CR-0096S Batch 3 已收斂為 `NSAllowsArbitraryLoads=false` + `NSAllowsLocalNetworking=true`。仍需 HTTPS 後端就緒 + iOS 實體裝置 Realtime / REST smoke 後才能送審結案 |
+| 相機 / 相簿 / 語音辨識權限文案 | ✅ | 皆清楚、無 demo/test/mock；正式版不要求本機網路權限 |
+| ATS（App Transport Security） | 🔁 | `NSAllowsArbitraryLoads=false`，且已移除 local-network exception。仍需 iOS 實體裝置 Realtime / REST smoke 後才能送審結案 |
 | Display name（CFBundleDisplayName） | ✅ （CR-0101B） | `AI陪伴`（正式中文名），已寫入 `Info.plist` |
 | Bundle ID | ✅ （CR-0061） | `tw.edu.ncyu.im.aicompanion`（嘉義大學反向網域，owner 拍板）。已寫入 pbxproj（app + RunnerTests）。後續 Apple 憑證 / Firebase iOS App / Sign in with Apple 須對應此 ID（上架後不可改） |
 | App icon（全尺寸） | ✅ | CR-0101A 已輸出正式候選 icon 全尺寸組；送審前仍需實機 / 商店後台預覽確認 |
@@ -71,7 +71,7 @@
 
 ## 5. Owner-decision blockers（必須由負責人決策 / 提供，禁止假完成）
 
-1. ✅ **正式品牌 display name**（CR-0101B 已對齊）：iOS CFBundleDisplayName = Android `android:label` = 商店 App 名稱 = `AI陪伴`（英文品牌 `AI Companion` 可放描述 / 關鍵字）。發行者：國立嘉義大學資訊管理學系專題第四組。
+1. ✅ **正式品牌 display name**（CR-0101B 已對齊）：iOS CFBundleDisplayName = Android `android:label` = 商店 App 名稱 = `AI陪伴`（英文品牌 `AI Companion` 可放描述 / 關鍵字）。發行者名稱由商店開發者帳號的正式資料顯示，repo 不使用組別名稱。
 2. ✅ **App 識別碼正式化**（CR-0061 已定值）：iOS Bundle ID = Android `applicationId` = `tw.edu.ncyu.im.aicompanion`（**一旦上架不可更改**；後續 Apple/Google/Firebase 憑證與 Sign in with Apple 設定須對應此 ID）。
 3. ✅ **Hosted 法務/支援 URL** / ✅ **客服信箱**：`privacyPolicyUrl` / `termsOfServiceUrl` / `supportUrl` / `contactEmail` 已支援透過 `--dart-define` 注入；GitHub Pages 已提供公開 HTTPS URL：`https://ou931023.github.io/pet_companion_app/privacy.html`、`https://ou931023.github.io/pet_companion_app/terms.html`、`https://ou931023.github.io/pet_companion_app/support.html`；客服信箱已定為 `aicompanion.support@gmail.com`。
 4. ✅ / 🔁 **視覺素材**：App icon（iOS 全尺寸 + Android adaptive/launcher）、Google Play feature graphic、兩平台 store screenshots 與 launch screen 已輸出正式候選；送審前仍需商店後台與實機人工預覽。
@@ -90,24 +90,15 @@
 
 驗證步驟（需 macOS + 實機/模擬器 + 區網 http 後端 + 真 OpenAI key）：
 1. 套用下列 iOS / Android 變更。
-2. 跑一次區網語音 smoke：開麥 → SDP 交換 → DataChannel 開 → partial/final transcript 正常 → Care Alert 可建立。
-3. 通過 → 結案；失敗 → `git checkout` 回退這兩處，維持全域允許，並回報實際錯誤。
+2. 以 staging / production HTTPS 跑語音 smoke：開麥 → SDP 交換 → DataChannel 開 → partial/final transcript 正常 → Care Alert 可建立。
+3. 通過 → 結案；失敗 → 記錄實際錯誤並修正，不得回退成全域明文允許。
 
 ### iOS（`ios/Runner/Info.plist`）— 以下列取代全域 `NSAllowsArbitraryLoads`
 ```xml
 <key>NSAppTransportSecurity</key>
 <dict>
-    <!-- 正式網域走 HTTPS，無需例外。以下僅為 dev 區網 http 後端。 -->
-    <key>NSAllowsLocalNetworking</key>
-    <true/>
-    <key>NSExceptionDomains</key>
-    <dict>
-        <key>localhost</key>
-        <dict>
-            <key>NSExceptionAllowsInsecureHTTPLoads</key>
-            <true/>
-        </dict>
-    </dict>
+    <key>NSAllowsArbitraryLoads</key>
+    <false/>
 </dict>
 ```
 
@@ -147,7 +138,7 @@ android:networkSecurityConfig="@xml/network_security_config"
 ## 8. 內容合規（送審前掃描）
 
 - ✅ App 內無 demo/test/mock/debug 對使用者可見字樣（dev panel / Demo 登入由 flag 隔離、production 強制關）
-- ✅ **CR-0101A 第三方登入上架策略**：Apple Sign in 尚未完成前，production 隱藏 Google / Apple 入口，只保留 Email login / Email register，避免 App Store Sign in with Apple 與 placeholder 風險。
+- 🟡 **CR-0106 第三方登入**：repo 已完成 Firebase Google / Apple / Email、Apple entitlement 與 Email 密碼重設；送審前仍須完成 Apple Developer / Firebase provider / provisioning 設定及 iOS 真機登入 smoke。
 - ✅ **CR-0101A in-app support / account deletion wording**：設定頁有 App 內隱私 / 條款、重新檢視同意、支援說明與帳號刪除流程；刪除確認文案明確說明會刪除伺服器帳號資料與本機寵物 / 記憶 / 提醒 / 使用紀錄。
 - ✅ pubspec `description` 已移除 "demo"（CR-0046）
 - 🔁 mock service build-flavor 隔離（CR-0048，詳見 `docs/FLUTTER_BUILD_FLAVORS.md`）：

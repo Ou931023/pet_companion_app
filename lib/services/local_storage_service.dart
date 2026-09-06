@@ -36,6 +36,39 @@ class LocalStorageService {
   static const _keyConcernRemindersEnabled = 'concernRemindersEnabled';
   static const _keyConcernNotifyTimestamps = 'concernNotifyTimestamps';
 
+  /// `petVisualStyle` 推出前就存在的帳號資料 key。
+  ///
+  /// migration 只看目前帳號命名空間內的這些資料，避免 elder-A 的舊資料
+  /// 影響真正新建立的 elder-B。若日後新增 key，不需加入此集合；這裡只負責辨識
+  /// 升級前已可能存在的資料。
+  static const Set<String> _legacyUserDataKeys = {
+    _keyHasCompletedOnboarding,
+    _keyPetName,
+    _keyUserCoins,
+    _keyPetBond,
+    _keyPetFullness,
+    _keyPetMood,
+    _keyCheckInDate,
+    _keyTaskCompletionState,
+    _keySttMode,
+    _keySttProxyUrl,
+    _keyTtsEnabled,
+    _keyFontScale,
+    _keyPetVolume,
+    _keySpeechStyle,
+    _keyContentPreferences,
+    _keyVoiceLanguageMode,
+    _keyManualAsrStrategy,
+    _keyFamilyContacts,
+    _keyConversationHistory,
+    _keyConversationTitles,
+    _keyPetSkin,
+    _keyOwnedPetSkins,
+    _keyHomeCoachMarkDone,
+    _keyConcernRemindersEnabled,
+    _keyConcernNotifyTimestamps,
+  };
+
   static const String defaultUserId = 'default_user';
 
   // CR-0009：依帳號隔離本機資料。`default_user`（Demo / 未登入）沿用原本的
@@ -223,12 +256,28 @@ class LocalStorageService {
     await prefs.setString(_k(_keyPetSkin), skin.storageId);
   }
 
-  /// 載入目前帳號的寵物視覺風格。沒存過或認不得一律回 Q版。
+  /// 載入目前帳號的寵物視覺風格。
+  ///
+  /// - 已有合法值：完整保留使用者的顯式偏好。
+  /// - 缺少 key、但目前帳號已有升級前資料：一次性回填 Q版，避免升級後換臉。
+  /// - 目前帳號完全沒有資料：一次性回填真實版，作為新使用者預設。
+  ///
+  /// 回填後結果固定，不會因之後完成 onboarding 或新增資料而再次改變。
   Future<PetVisualStyle> loadPetVisualStyle() async {
     final prefs = await SharedPreferences.getInstance();
-    return PetVisualStyleX.fromStorageId(
-      prefs.getString(_k(_keyPetVisualStyle)),
+    final storageKey = _k(_keyPetVisualStyle);
+    final storedId = prefs.getString(storageKey);
+    if (storedId != null) {
+      return PetVisualStyleX.fromStorageId(storedId);
+    }
+
+    final hasLegacyData = _legacyUserDataKeys.any(
+      (key) => prefs.containsKey(_k(key)),
     );
+    final migratedStyle =
+        hasLegacyData ? PetVisualStyle.cute : PetVisualStyle.realistic;
+    await prefs.setString(storageKey, migratedStyle.storageId);
+    return migratedStyle;
   }
 
   /// 保存目前帳號的寵物視覺風格偏好（依 [_k] 各帳號互不影響）。

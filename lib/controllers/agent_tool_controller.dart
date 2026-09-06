@@ -10,6 +10,7 @@ import 'memory_controller.dart';
 import 'profile_controller.dart';
 import 'reminder_controller.dart';
 import '../services/search_service.dart';
+import '../utils/app_log.dart';
 
 class AgentToolController extends ChangeNotifier {
   AgentToolController({
@@ -90,7 +91,7 @@ class AgentToolController extends ChangeNotifier {
       await _executeCurrentIntent();
     } catch (error) {
       _errorMessage = error.toString();
-      debugPrint('[AgentToolController] route failed: $error');
+      AppLog.error('[AgentToolController] route failed', error);
     } finally {
       _isRouting = false;
       notifyListeners();

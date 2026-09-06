@@ -49,12 +49,8 @@ void main() {
       }
     });
 
-    test('socialSignInVisible 在 production 一律 false（Apple 完成前）', () {
-      if (AppConfig.isProduction) {
-        expect(AppConfig.socialSignInVisible, isFalse);
-      } else {
-        expect(AppConfig.socialSignInVisible, AppConfig.showSocialSignIn);
-      }
+    test('socialSignInVisible 依正式第三方登入開關決定', () {
+      expect(AppConfig.socialSignInVisible, AppConfig.showSocialSignIn);
     });
 
     test('marketplaceVisible 在 production 一律 false（CR-0056 A2）', () {
@@ -65,12 +61,8 @@ void main() {
       }
     });
 
-    test('dailyCareTasksVisible 在 production 一律 false（CR-0056 B2）', () {
-      if (AppConfig.isProduction) {
-        expect(AppConfig.dailyCareTasksVisible, isFalse);
-      } else {
-        expect(AppConfig.dailyCareTasksVisible, AppConfig.showDailyCareTasks);
-      }
+    test('dailyCareTasksVisible 依正式功能旗標決定', () {
+      expect(AppConfig.dailyCareTasksVisible, AppConfig.showDailyCareTasks);
     });
 
     test('非 production 時不阻擋（API base URL 守門）', () {

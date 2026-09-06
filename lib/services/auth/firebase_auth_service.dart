@@ -33,9 +33,21 @@ class GoogleAuthException implements Exception {
   String toString() => 'GoogleAuthException($code)';
 }
 
+/// Apple 登入的應用層錯誤。取消登入是柔性中止，其餘錯誤由上層轉成白話。
+class AppleAuthException implements Exception {
+  const AppleAuthException(this.code);
+
+  final String code;
+
+  bool get isCanceled => code == 'canceled';
+
+  @override
+  String toString() => 'AppleAuthException($code)';
+}
+
 /// 登入成功後要交給後端 `POST /api/auth/session` 的最小欄位集合。
 ///
-/// CR-0006 Batch 4b / 4c 會在真正接上 Email / Google 後產生此結果，
+/// Email / Google / Apple 登入成功後會產生此結果，
 /// 再由 `AuthService` 帶著 `idToken` 呼叫 `createSession`。
 class FirebaseSignInResult {
   const FirebaseSignInResult({
@@ -53,7 +65,7 @@ class FirebaseSignInResult {
   /// Firebase ID Token，交給後端驗證。
   final String idToken;
 
-  /// 'email' | 'google'。
+  /// 'email' | 'google' | 'apple'。
   final String provider;
 
   final String? email;
@@ -61,9 +73,7 @@ class FirebaseSignInResult {
   final String? photoUrl;
 }
 
-/// Firebase / Google 登入的包裝層。
-///
-/// **CR-0006 Batch 4b**：Email 註冊 / 登入已實作；Google 登入仍為 4c 的 stub。
+/// Firebase Email / Google / Apple 登入的包裝層。
 ///
 /// 這層刻意把 Firebase 細節（v7 `google_sign_in` 實例化 API、`FirebaseAuthException`
 /// 等）封裝起來，讓上層 `AuthService` / `AuthController` 不直接依賴原生 SDK，
@@ -136,6 +146,20 @@ class FirebaseAuthService {
     }
   }
 
+  /// 寄送 Firebase 密碼重設信。成功不會洩漏帳號是否存在，避免帳號枚舉。
+  Future<void> sendPasswordResetEmail(String email) async {
+    if (!_initializer.isAvailable) {
+      throw const EmailAuthException('unavailable');
+    }
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email.trim());
+    } on FirebaseAuthException catch (error) {
+      throw EmailAuthException(error.code);
+    } catch (_) {
+      throw const EmailAuthException('unknown');
+    }
+  }
+
   bool _googleInitialized = false;
 
   /// Google 登入（google_sign_in v7 實例化 API）。
@@ -169,6 +193,46 @@ class FirebaseAuthService {
       rethrow;
     } catch (_) {
       throw const GoogleAuthException('unknown');
+    }
+  }
+
+  /// Apple 登入直接使用 firebase_auth 的原生 provider，不在 App 內保存 Apple token。
+  Future<FirebaseSignInResult> signInWithApple() async {
+    if (!_initializer.isAvailable) {
+      throw const AppleAuthException('unavailable');
+    }
+    try {
+      final provider = AppleAuthProvider()
+        ..addScope('email')
+        ..addScope('name');
+      final credential =
+          await FirebaseAuth.instance.signInWithProvider(provider);
+      final user = credential.user;
+      if (user == null) throw const AppleAuthException('unknown');
+      return _toResult(user, provider: 'apple');
+    } on FirebaseAuthException catch (error) {
+      throw AppleAuthException(_mapAppleCode(error.code));
+    } on AppleAuthException {
+      rethrow;
+    } catch (_) {
+      throw const AppleAuthException('unknown');
+    }
+  }
+
+  String _mapAppleCode(String code) {
+    switch (code) {
+      case 'web-context-cancelled':
+      case 'canceled':
+      case 'cancelled':
+        return 'canceled';
+      case 'operation-not-allowed':
+      case 'unauthorized-domain':
+      case 'invalid-credential':
+        return 'config';
+      case 'network-request-failed':
+        return 'network-request-failed';
+      default:
+        return 'unknown';
     }
   }
 
@@ -342,6 +406,49 @@ class FirebaseAuthService {
       throw EmailAuthException(error.code);
     } on EmailAuthException {
       rethrow;
+    } catch (_) {
+      throw const EmailAuthException('unknown');
+    }
+  }
+
+  /// 用 Apple 重新驗證，並回傳撤銷 Apple token 所需的 authorization code。
+  ///
+  /// 帳號刪除時不能只刪 Firebase 帳號；Apple 要求同步撤銷 Sign in with Apple
+  /// token。若 Firebase 不可用 / 沒有目前使用者，回 null（Demo 安全 no-op）。
+  Future<String?> reauthenticateWithApple() async {
+    if (!_initializer.isAvailable) return null;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return null;
+    try {
+      final provider = AppleAuthProvider()
+        ..addScope('email')
+        ..addScope('name');
+      final credential = await user.reauthenticateWithProvider(provider);
+      final authorizationCode =
+          credential.additionalUserInfo?.authorizationCode?.trim();
+      if (authorizationCode == null || authorizationCode.isEmpty) {
+        throw const EmailAuthException('apple-authorization-code-missing');
+      }
+      return authorizationCode;
+    } on FirebaseAuthException catch (error) {
+      final mapped = _mapAppleCode(error.code);
+      throw EmailAuthException(mapped == 'canceled' ? 'canceled' : mapped);
+    } on EmailAuthException {
+      rethrow;
+    } catch (_) {
+      throw const EmailAuthException('unknown');
+    }
+  }
+
+  /// 使用 Apple authorization code 撤銷 token；值不寫入 log 或本機儲存。
+  Future<void> revokeAppleToken(String authorizationCode) async {
+    if (!_initializer.isAvailable || authorizationCode.trim().isEmpty) return;
+    try {
+      await FirebaseAuth.instance.revokeTokenWithAuthorizationCode(
+        authorizationCode.trim(),
+      );
+    } on FirebaseAuthException catch (error) {
+      throw EmailAuthException(error.code);
     } catch (_) {
       throw const EmailAuthException('unknown');
     }

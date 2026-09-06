@@ -11,7 +11,7 @@
 
 ## 0. TL;DR（最容易踩雷的四件事）
 
-1. **`HOST` 必須設成 `0.0.0.0`**。程式預設 `HOST=127.0.0.1`（`server.js:165`），在 Render / Railway 上會導致服務「啟動成功卻無法被路由連到」。
+1. production 會預設綁定 `0.0.0.0`；development 預設只綁 loopback。部署平台仍可顯式設定 `HOST=0.0.0.0`，但不再依賴人工補值才能被 Render 路由連到。
 2. **`PGVECTOR_ENABLED=true` 必須顯式開啟**。它**不在** fail-fast 必檢清單內，但 runtime Postgres pool（`db/postgres.js:14`）在沒有它時會回傳 `null` → 長期記憶 / Admin Users / care alert 持久化等功能不會用 DB。設了 `DATABASE_URL` 卻忘了這個，會「靜默」少一半功能。
 3. **`DATABASE_URL` 的 SSL**。`db/pool.js` / `db/postgres.js` 直接把 `DATABASE_URL` 丟給 `pg`，**沒有**額外設 `ssl` 選項。雲端託管 PG 多半要求 TLS → 若連線報 SSL 錯，請在連線字串尾端加 `?sslmode=require`（自簽憑證用 `?sslmode=no-verify`）。**不需要改程式**，只改連線字串。
 4. **Render Free 可用來先跑正式 HTTPS smoke，但會休眠**。語音陪伴 App 正式送審前建議升級到 always-on；否則長者第一次開 App 可能遇到冷啟動等待。
@@ -46,10 +46,10 @@ GitHub Pages
 | 啟動指令 | `node server.js`（= `npm start` = `npm run dev`） | `package.json` scripts |
 | 進入點 | `server.js`；啟動最前面呼叫 `assertProductionEnvOrExit(process.env, console)` | `server.js:23` |
 | PORT | `process.env.PORT || 3001` | `server.js:133` |
-| HOST | `process.env.HOST || "127.0.0.1"` ← **PaaS 需設 `0.0.0.0`** | `server.js:165` |
+| HOST | `HOST` 有值優先；production 預設 `0.0.0.0`，development 預設 `127.0.0.1` | `config/env.js resolveListenHost` |
 | listen | `app.listen(port, host, …)`，啟動時 log 一份**遮蔽過**的設定摘要（`describeMaskedConfig`，不印完整值） | `server.js:2793-2794` |
 | health check | `GET /health` → `{ status:"ok", hasOpenAiKey:<bool>, realtimeModel, time }`（**只回布林，不回 key**） | `server.js:554` |
-| Node 版本 | `package.json` 無 `engines` 欄位；建議在平台指定 **Node 20 LTS 以上**（開發機為 v24） | — |
+| Node 版本 | `package.json` 已限制 **Node >=20.18.1 且 <25**，目前 Render Node 24 可用 | `NODE_VERSION` 必須落在此範圍 |
 
 ### `package.json` scripts
 
@@ -58,7 +58,7 @@ GitHub Pages
 | `npm start` / `npm run dev` | `node server.js` | 啟動服務 |
 | `npm run db:migrate` | `node db/migrate.js` | 套用 DB 擴充 + migration（見 §6） |
 | `npm run check` | 一連串 `node --check`（語法檢查，不連線） | CI / 部署前快速健檢 |
-| `npm test` | `node --test …`（495 案，使用 stub / mock pg，不需真環境） | 回歸測試 |
+| `npm test` | `node --test …`（目前 654 案，使用 stub / mock pg，不需真環境） | 回歸測試 |
 
 > production 啟動語義（`config/env.js`）：顯式 `APP_ENV=production` 優先；否則 `NODE_ENV=production` → production。`NODE_ENV=test` 永不解析為 production。
 
@@ -151,7 +151,7 @@ GitHub Pages
    - **Build Command**：`npm ci`（或 `npm install`）
    - **Start Command**：`node server.js`
    - **Health Check Path**：`/health`
-   - Node 版本：在環境變數設 `NODE_VERSION=20`（或更新）以固定 runtime。
+   - Node 版本：在環境變數固定 `NODE_VERSION=24`；支援範圍以 `package.json` 的 `>=20.18.1 <25` 為準。
 3. Plan：
    - Free 可以先跑 production-like smoke。
    - 正式送審前建議改 always-on，避免後端休眠造成 Realtime 首次連線等待。

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:pet_companion_app/controllers/consent_controller.dart';
+import 'package:pet_companion_app/config/legal_content.dart';
 import 'package:pet_companion_app/screens/consent_screen.dart';
 import 'package:pet_companion_app/screens/legal_document_screen.dart';
 import 'package:pet_companion_app/services/auth/consent_api_service.dart';
@@ -57,12 +58,24 @@ class _TestConsentGate extends StatelessWidget {
 
 Future<void> _pumpGate(
   WidgetTester tester,
-  ConsentController controller,
-) async {
+  ConsentController controller, {
+  double textScale = 1,
+}) async {
   await tester.pumpWidget(
     ChangeNotifierProvider<ConsentController>.value(
       value: controller,
-      child: const MaterialApp(home: _TestConsentGate()),
+      child: MaterialApp(
+        builder: (context, child) {
+          final mediaQuery = MediaQuery.of(context);
+          return MediaQuery(
+            data: mediaQuery.copyWith(
+              textScaler: TextScaler.linear(textScale),
+            ),
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
+        home: const _TestConsentGate(),
+      ),
     ),
   );
 }
@@ -176,6 +189,26 @@ void main() {
     await tester.tap(find.text('閱讀服務條款'));
     await tester.pumpAndSettle();
     expect(find.byType(LegalDocumentScreen), findsOneWidget);
+  });
+
+  testWidgets('同意卡片標題使用 w700，小螢幕 1.3 倍文字不 overflow', (tester) async {
+    addTearDown(tester.view.reset);
+    tester.view.physicalSize = const Size(375, 812);
+    tester.view.devicePixelRatio = 1;
+    SharedPreferences.setMockInitialValues({});
+    final controller =
+        ConsentController(consentService: _offlineConsentService());
+    await controller.load();
+
+    await _pumpGate(tester, controller, textScale: 1.3);
+    await tester.pumpAndSettle();
+
+    final firstCardTitle = tester.widget<Text>(
+      find.text(LegalContent.consentHighlights.first.title),
+    );
+    expect(firstCardTitle.style?.fontWeight, FontWeight.w700);
+    expect(find.byType(ListView), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('隱私權政策 / 服務條款畫面可在 App 內捲動閱讀（設定頁與同意畫面共用入口）', (tester) async {

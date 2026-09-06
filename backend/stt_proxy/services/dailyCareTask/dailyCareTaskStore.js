@@ -72,6 +72,23 @@ const DEFAULT_SUBMISSIONS_FILE = path.join(
   "data",
   "daily_care_task_submissions.json",
 );
+const JSON_PROOF_UPLOAD_DIR = path.join(__dirname, "..", "..", "uploads");
+
+function proofExtensionForMimeType(mimeType) {
+  switch (String(mimeType || "").toLowerCase()) {
+    case "image/png":
+      return ".png";
+    case "image/webp":
+      return ".webp";
+    case "image/heic":
+      return ".heic";
+    case "image/heif":
+      return ".heif";
+    case "image/jpeg":
+    default:
+      return ".jpg";
+  }
+}
 
 // 任務類型：吃藥 / 喝水 / 運動（walk 視為 exercise 的同義）。
 const VALID_TASK_TYPES = new Set(["medication", "hydration", "exercise"]);
@@ -190,17 +207,25 @@ function rowToTask(row) {
 }
 
 // DB row（snake_case）→ 對外 submission 形狀（camelCase）。
-function rowToSubmission(row) {
-  return {
+function rowToSubmission(row, options = {}) {
+  const submission = {
     id: row.id,
     taskId: row.task_id,
     elderId: row.elder_id ?? null,
     proofImagePath: row.proof_image_path ?? null,
+    proofMimeType: row.proof_mime_type ?? null,
+    hasProofImage: Boolean(
+      row.has_proof_image || row.proof_image_bytes || row.proof_image_path,
+    ),
     submittedAt: toIso(row.submitted_at),
     status: row.status ?? "needs_review",
     verification: normalizeVerification(safeParseJson(row.verification_json)),
     note: row.note ?? "",
   };
+  if (options.includeProofBytes) {
+    submission.proofImageBytes = row.proof_image_bytes ?? null;
+  }
+  return submission;
 }
 
 // 把 AI 驗證結果（passed/uncertain/failed）對應到任務狀態。
@@ -291,11 +316,24 @@ async function recordSubmissionJson(taskId, payload, options) {
   const verification = normalizeVerification(payload.verification);
   const nextTaskStatus = taskStatusForVerification(verification.verificationStatus);
 
+  const submissionId = payload.id || randomUUID();
+  let proofImagePath = payload.proofImagePath ?? null;
+  if (Buffer.isBuffer(payload.proofImageBytes)) {
+    await fs.mkdir(JSON_PROOF_UPLOAD_DIR, { recursive: true });
+    proofImagePath = path.join(
+      JSON_PROOF_UPLOAD_DIR,
+      `${submissionId}${proofExtensionForMimeType(payload.proofMimeType)}`,
+    );
+    await fs.writeFile(proofImagePath, payload.proofImageBytes);
+  }
+
   const submission = {
-    id: payload.id || randomUUID(),
+    id: submissionId,
     taskId,
     elderId: task.elderId,
-    proofImagePath: payload.proofImagePath ?? null,
+    proofImagePath,
+    proofMimeType: payload.proofMimeType ?? null,
+    hasProofImage: Boolean(proofImagePath),
     submittedAt: nowIso(),
     status: nextTaskStatus,
     verification,
@@ -441,15 +479,24 @@ async function recordSubmissionDb(pg, taskId, payload) {
     const submittedAt = nowIso();
     const elderId = taskRow.elder_id ?? null;
 
+    // 新照片以 DB bytes 為唯一正式來源，避免留下已刪除的暫存路徑。
+    // proof_image_path 只保留給 migration 018 前的 legacy 資料相容讀取。
+    const persistentProofPath = payload.proofImageBytes
+      ? null
+      : payload.proofImagePath ?? null;
+
     await run(
       `INSERT INTO daily_care_task_submissions
-         (id, task_id, elder_id, proof_image_path, submitted_at, status, verification_json, note)
-       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8)`,
+         (id, task_id, elder_id, proof_image_path, proof_image_bytes, proof_mime_type,
+          submitted_at, status, verification_json, note)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10)`,
       [
         submissionId,
         taskId,
         elderId,
-        payload.proofImagePath ?? null,
+        persistentProofPath,
+        payload.proofImageBytes ?? null,
+        payload.proofMimeType ?? null,
         submittedAt,
         nextTaskStatus,
         JSON.stringify(verification),
@@ -470,7 +517,9 @@ async function recordSubmissionDb(pg, taskId, payload) {
       id: submissionId,
       taskId,
       elderId,
-      proofImagePath: payload.proofImagePath ?? null,
+      proofImagePath: persistentProofPath,
+      proofMimeType: payload.proofMimeType ?? null,
+      hasProofImage: Boolean(payload.proofImageBytes || payload.proofImagePath),
       submittedAt,
       status: nextTaskStatus,
       verification,
@@ -493,7 +542,10 @@ async function recordSubmissionDb(pg, taskId, payload) {
 
 async function listSubmissionsByTaskIdDb(pg, taskId) {
   const result = await pg.query(
-    `SELECT * FROM daily_care_task_submissions WHERE task_id = $1
+    `SELECT id, task_id, elder_id, proof_image_path, proof_mime_type,
+            (proof_image_bytes IS NOT NULL) AS has_proof_image,
+            submitted_at, status, verification_json, note
+       FROM daily_care_task_submissions WHERE task_id = $1
      ORDER BY submitted_at DESC`,
     [taskId],
   );
@@ -506,7 +558,7 @@ async function getSubmissionByIdDb(pg, submissionId) {
     [submissionId],
   );
   const row = (result.rows || [])[0];
-  return row ? rowToSubmission(row) : null;
+  return row ? rowToSubmission(row, { includeProofBytes: true }) : null;
 }
 
 async function listTasksForAdminDb(pg, options) {
@@ -514,7 +566,10 @@ async function listTasksForAdminDb(pg, options) {
   if (tasks.length === 0) return [];
   const ids = tasks.map((t) => t.id);
   const result = await pg.query(
-    `SELECT * FROM daily_care_task_submissions WHERE task_id = ANY($1)
+    `SELECT id, task_id, elder_id, proof_image_path, proof_mime_type,
+            (proof_image_bytes IS NOT NULL) AS has_proof_image,
+            submitted_at, status, verification_json, note
+       FROM daily_care_task_submissions WHERE task_id = ANY($1)
      ORDER BY submitted_at DESC`,
     [ids],
   );

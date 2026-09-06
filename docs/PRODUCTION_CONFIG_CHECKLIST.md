@@ -92,7 +92,7 @@
 - [ ] `--dart-define=SHOW_DEV_PANELS=false`
 - [ ] `--dart-define=SHOW_DEMO_LOGIN=false`
 - [ ] `--dart-define=ALLOW_MOCK_SERVICES=false`
-- [ ] 不帶 `--dart-define=SHOW_SOCIAL_SIGN_IN=true`（Apple Sign in 完成前，production 強制隱藏 Google / Apple 入口）
+- [ ] `--dart-define=SHOW_SOCIAL_SIGN_IN=true`（正式顯示 Google，iOS 同時顯示 Apple；送審前須完成 Firebase / Apple Developer / provisioning 與真機 smoke）
 - [ ] 驗收：production build 開啟不會出現開發面板 / Demo 登入；
       若 `API_BASE_URL` 不安全會顯示長者友善守門畫面（不進主流程）。
 

@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../controllers/app_navigation_controller.dart';
@@ -9,6 +8,7 @@ import '../models/agent_tool_intent.dart';
 import '../routes/app_routes.dart';
 import 'contact_lookup_service.dart';
 import 'search_service.dart';
+import '../utils/app_log.dart';
 
 typedef UrlLauncherCallback = Future<bool> Function(
   Uri uri,
@@ -97,10 +97,12 @@ class NativeToolExecutorService {
             message: '不支援的工具，已拒絕執行。',
           )),
       };
-    } catch (error, stackTrace) {
+    } catch (error) {
       // 原始錯誤只留給開發者除錯，絕不顯示給長者。
-      debugPrint(
-          '[NativeToolExecutorService] ${intent.toolName} failed: $error\n$stackTrace');
+      AppLog.error(
+        '[NativeToolExecutorService] ${intent.toolName} failed',
+        error,
+      );
       return AgentToolExecutionResult.failed(
         toolName: intent.toolName,
         message: '這個動作暫時沒辦法完成，待會再試一次好嗎？',

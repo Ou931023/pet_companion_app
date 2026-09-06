@@ -30,7 +30,7 @@ class PetAvatar extends StatefulWidget {
     super.key,
     required this.mode,
     this.skin = PetSkin.dog,
-    this.visualStyle = PetVisualStyle.cute,
+    this.visualStyle = PetVisualStyle.realistic,
     this.growthStage = PetGrowthStage.adult,
     this.size = 220,
   });
@@ -131,13 +131,21 @@ class _PetAvatarState extends State<PetAvatar> {
       width: widget.size,
       height: widget.size,
       fit: BoxFit.contain,
+      filterQuality: FilterQuality.high,
+      gaplessPlayback: true,
       errorBuilder: (_, __, ___) {
-        // 第一層 fallback：該外觀自己的 rest_01。
+        // 第一層 fallback：維持該寵物目前風格的 rest_01。
         return Image.asset(
-          AssetPaths.skinRestPrimary(widget.skin),
+          AssetPaths.skinRestPrimaryForStyle(
+            widget.skin,
+            visualStyle: widget.visualStyle,
+            growthStage: widget.growthStage,
+          ),
           width: widget.size,
           height: widget.size,
           fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+          gaplessPlayback: true,
           errorBuilder: (_, __, ___) {
             // 第二層 fallback：永遠存在的狗狗 rest_01。
             return Image.asset(

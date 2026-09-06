@@ -147,7 +147,7 @@ void main() {
 
     expect(find.byType(LoginScreen), findsOneWidget);
     // 正式模式無 Demo 按鈕；以可操作的登入入口為標記。
-    expect(find.text('用 Email 登入'), findsOneWidget);
+    expect(find.text('Email 登入'), findsOneWidget);
   });
 
   testWidgets('error → 顯示 LoginScreen（可重試，不死路、不露工程字）', (tester) async {
@@ -157,12 +157,13 @@ void main() {
 
     expect(find.byType(LoginScreen), findsOneWidget);
     // 仍可看到可操作的登入入口（可重試）。
-    expect(find.text('用 Email 登入'), findsOneWidget);
+    expect(find.text('Email 登入'), findsOneWidget);
     expect(find.textContaining('Exception'), findsNothing);
     expect(find.textContaining('error'), findsNothing);
   });
 
-  testWidgets('authenticated + 未完成 onboarding → OnboardingScreen', (tester) async {
+  testWidgets('authenticated + 未完成 onboarding → OnboardingScreen',
+      (tester) async {
     useTallView(tester);
     await _pumpGate(
       tester,
@@ -175,8 +176,7 @@ void main() {
     expect(find.byType(LoginScreen), findsNothing);
   });
 
-  testWidgets('authenticated + profile 載入中 → 簡單等待畫面（落回既有流程）',
-      (tester) async {
+  testWidgets('authenticated + profile 載入中 → 簡單等待畫面（落回既有流程）', (tester) async {
     useTallView(tester);
     await _pumpGate(
       tester,
@@ -203,8 +203,7 @@ void main() {
     // 用 takeException 收掉，重點是「不是被誤導到 LoginScreen / Onboarding」。
     useTallView(tester);
     final auth = _StubAuthController(AuthStatus.authenticated);
-    final profile =
-        _FakeProfileController(isLoading: false, onboarded: true);
+    final profile = _FakeProfileController(isLoading: false, onboarded: true);
 
     await _pumpGate(tester, auth: auth, profile: profile);
 
@@ -237,8 +236,8 @@ void main() {
     expect(find.byType(LoginScreen), findsOneWidget);
 
     // 正式模式登入頁用 Email 登入（stub 直接收斂 authenticated）。
-    // 先點開「用 Email 登入」展開欄位，再填寫並按「登入」。
-    await tester.tap(find.text('用 Email 登入'));
+    // 先點開「Email 登入」展開欄位，再填寫並按「登入」。
+    await tester.tap(find.text('Email 登入'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).at(0), 'grandma@example.com');
     await tester.enterText(find.byType(TextField).at(1), 'secret1');

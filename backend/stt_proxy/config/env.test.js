@@ -4,6 +4,8 @@ const { test } = require("node:test");
 const {
   normalizeAppEnv,
   isProduction,
+  resolveListenHost,
+  isCrawlerRefreshEnabled,
   parseBoolean,
   validateProductionEnv,
   isJsonFallbackAllowed,
@@ -42,6 +44,21 @@ test("normalizeAppEnv：NODE_ENV=test 永不解析為 production", () => {
   // 即使 APP_ENV=production，test 環境也降為 development。
   assert.equal(normalizeAppEnv({ NODE_ENV: "test", APP_ENV: "production" }), "development");
   assert.equal(isProduction({ NODE_ENV: "test", APP_ENV: "production" }), false);
+});
+
+test("resolveListenHost：production 預設綁容器網卡，dev 預設只綁本機", () => {
+  assert.equal(resolveListenHost({ APP_ENV: "production" }), "0.0.0.0");
+  assert.equal(resolveListenHost({ APP_ENV: "development" }), "127.0.0.1");
+  assert.equal(
+    resolveListenHost({ APP_ENV: "production", HOST: "10.1.2.3" }),
+    "10.1.2.3",
+  );
+});
+
+test("isCrawlerRefreshEnabled：production 關閉資料建置端點", () => {
+  assert.equal(isCrawlerRefreshEnabled({ APP_ENV: "production" }), false);
+  assert.equal(isCrawlerRefreshEnabled({ APP_ENV: "development" }), true);
+  assert.equal(isCrawlerRefreshEnabled({ NODE_ENV: "test" }), true);
 });
 
 test("parseBoolean：只有 'true' / '1' 視為 true", () => {

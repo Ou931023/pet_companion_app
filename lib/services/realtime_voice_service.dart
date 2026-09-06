@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+import '../utils/app_log.dart';
+
 enum RealtimeFailureType {
   none,
   backendUnavailable,
@@ -30,7 +32,8 @@ extension RealtimeFailureTypeLabel on RealtimeFailureType {
       RealtimeFailureType.peerConnectionFailed => '連線不太穩，正在幫你重新連接。',
       RealtimeFailureType.dataChannelFailed => '連線不太穩，正在幫你重新連接。',
       RealtimeFailureType.responseTimeout => '剛剛沒聽清楚，我回到聆聽狀態了，請再說一次好嗎？',
-      RealtimeFailureType.microphonePermissionDenied => '我聽不到你的聲音耶，請到手機設定打開麥克風權限，這樣才聽得到你說話喔。',
+      RealtimeFailureType.microphonePermissionDenied =>
+        '我聽不到你的聲音耶，請到手機設定打開麥克風權限，這樣才聽得到你說話喔。',
       RealtimeFailureType.unknown => '連線出了點小狀況，我們正在處理，請稍候再試。',
     };
   }
@@ -96,6 +99,7 @@ enum RealtimeEventType {
   dataChannelOpen,
   dataChannelClosed,
   peerConnectionFailed,
+  userAudioCommitted,
   userSpeechStarted,
   userSpeechStopped,
   error,
@@ -105,10 +109,14 @@ class RealtimeVoiceEvent {
   const RealtimeVoiceEvent({
     required this.type,
     this.payload = '',
+    this.sourceItemId = '',
   });
 
   final RealtimeEventType type;
   final String payload;
+
+  /// OpenAI conversation item id，供 final transcript 跨相容事件精準去重。
+  final String sourceItemId;
 }
 
 class RealtimeConnectRequest {
@@ -202,6 +210,7 @@ class RealtimeVoiceService {
   String _partialUserTranscriptBuffer = '';
   String _lastFinalUserTranscript = '';
   DateTime? _lastFinalTranscriptAt;
+  final Set<String> _emittedFinalUserItemIds = <String>{};
   Timer? _dataChannelOpenTimer;
   RealtimeFailureType _lastFailureType = RealtimeFailureType.none;
   String _lastFailureMessage = '';
@@ -593,9 +602,8 @@ class RealtimeVoiceService {
       await _sendEventPayload(jsonEncode({
         'type': 'response.create',
         'response': {
-          'instructions':
-              '請用溫暖、簡短、口語的方式對長輩說以下這件事，像剛幫他做完一樣自然，'
-                  '不要重複問問題、不要說自己是 AI：$line',
+          'instructions': '請用溫暖、簡短、口語的方式對長輩說以下這件事，像剛幫他做完一樣自然，'
+              '不要重複問問題、不要說自己是 AI：$line',
         },
       }));
       _log('Sent tool outcome to realtime session for spoken reply');
@@ -702,7 +710,8 @@ class RealtimeVoiceService {
   Future<void> commitUserAudioAndRespond() async {
     try {
       pauseMicInput();
-      await _sendEventPayload(jsonEncode({'type': 'input_audio_buffer.commit'}));
+      await _sendEventPayload(
+          jsonEncode({'type': 'input_audio_buffer.commit'}));
       if (!_hasActiveAssistantResponse) {
         await _sendEventPayload(jsonEncode({'type': 'response.create'}));
         _log('Manual stop: committed user audio + requested response');
@@ -804,9 +813,7 @@ class RealtimeVoiceService {
 
     if (type == 'conversation.item.input_audio_transcription.delta' ||
         type == 'conversation.item.input_audio_transcription.partial' ||
-        type == 'input_audio_buffer.transcription.delta' ||
-        (type == 'response.audio_transcript.delta' &&
-            !_hasActiveAssistantResponse)) {
+        type == 'input_audio_buffer.transcription.delta') {
       _emitUserTranscriptFromEvent(map, isFinal: false);
       return;
     }
@@ -819,6 +826,15 @@ class RealtimeVoiceService {
     if (type == 'conversation.item.added' || type == 'conversation.item.done') {
       // Fallback for sessions where transcript appears on conversation item events.
       _emitUserTranscriptFromEvent(map, isFinal: true);
+      return;
+    }
+
+    if (type == 'input_audio_buffer.committed') {
+      _emit(
+        RealtimeEventType.userAudioCommitted,
+        '',
+        sourceItemId: _extractTranscriptSourceItemId(map),
+      );
       return;
     }
 
@@ -866,6 +882,23 @@ class RealtimeVoiceService {
       return;
     }
 
+    if (type == 'response.output_audio_transcript.done' ||
+        type == 'response.audio_transcript.done') {
+      final transcript = (map['transcript'] as String?)?.trim() ?? '';
+      if (transcript.isNotEmpty) {
+        if (!_isSpeaking) {
+          _isSpeaking = true;
+          _emit(RealtimeEventType.assistantAudioStart, '');
+          _emit(RealtimeEventType.state, 'speaking');
+        }
+        // done 帶的是完整 assistant transcript；取代可能不完整的 delta buffer，
+        // 避免 final 字幕只留下前半句。
+        _assistantBuffer = transcript;
+        _emitAssistantPartial();
+      }
+      return;
+    }
+
     if (type == 'output_audio_buffer.started' ||
         type == 'response.output_audio.delta' ||
         type == 'response.audio.delta') {
@@ -899,9 +932,9 @@ class RealtimeVoiceService {
     }
 
     if (type == 'response.done') {
-      final text = _assistantBuffer.trim().isEmpty
-          ? _extractReplyTextFromResponseDone(map).trim()
-          : _assistantBuffer.trim();
+      final responseText = _extractReplyTextFromResponseDone(map).trim();
+      final text =
+          responseText.isNotEmpty ? responseText : _assistantBuffer.trim();
       // 這一輪已結束，取消任何待送的 partial trailing emit，避免在最終完整文字
       // 之後又冒出一筆過時字幕；並重置節流時間，讓下一輪第一筆 partial 立即顯示。
       _cancelPartialThrottleTimer();
@@ -1120,6 +1153,7 @@ class RealtimeVoiceService {
     _partialUserTranscriptBuffer = '';
     _lastFinalUserTranscript = '';
     _lastFinalTranscriptAt = null;
+    _emittedFinalUserItemIds.clear();
     _isSpeaking = false;
     _hasActiveAssistantResponse = false;
     _sawOutputAudioBufferThisResponse = false;
@@ -1191,6 +1225,7 @@ class RealtimeVoiceService {
     Map<String, dynamic> event, {
     required bool isFinal,
   }) {
+    final sourceItemId = _extractTranscriptSourceItemId(event);
     final transcript = isFinal
         ? _extractUserTranscript(event)
         : _extractPartialUserTranscript(event);
@@ -1202,22 +1237,28 @@ class RealtimeVoiceService {
     }
     if (isFinal) {
       _partialUserTranscriptBuffer = '';
-      final now = DateTime.now();
-      final previousAt = _lastFinalTranscriptAt;
-      if (transcript == _lastFinalUserTranscript &&
-          previousAt != null &&
-          now.difference(previousAt).abs() <= const Duration(seconds: 2)) {
-        return;
+      if (sourceItemId.isNotEmpty) {
+        if (!_emittedFinalUserItemIds.add(sourceItemId)) return;
+      } else {
+        // 舊版相容事件沒有 item id 時才使用短時間文字去重。正式事件以 item id
+        // 判斷，讓長者連續兩輪說同一句仍各自成為合法 turn。
+        final now = DateTime.now();
+        final previousAt = _lastFinalTranscriptAt;
+        if (transcript == _lastFinalUserTranscript &&
+            previousAt != null &&
+            now.difference(previousAt).abs() <= const Duration(seconds: 2)) {
+          return;
+        }
+        _lastFinalUserTranscript = transcript;
+        _lastFinalTranscriptAt = now;
       }
-      _lastFinalUserTranscript = transcript;
-      _lastFinalTranscriptAt = now;
     }
     // partial 轉錄可能在多位元組（中文）字元中間被切斷，直接印原文會產生無效 UTF-8，
     // 使 `flutter run` 的 stdout 解碼器崩潰（debug session 中斷）。partial 只印長度，
     // final 為完整字串才印原文。
-    debugPrint(
+    AppLog.debug(
       isFinal
-          ? '[TRANSCRIPT] final=$transcript'
+          ? '[TRANSCRIPT] final=${AppLog.previewTranscript(transcript)}'
           : '[TRANSCRIPT] partial(len=${transcript.length})',
     );
     _emit(
@@ -1225,20 +1266,23 @@ class RealtimeVoiceService {
           ? RealtimeEventType.finalTranscript
           : RealtimeEventType.partialTranscript,
       transcript,
+      sourceItemId: sourceItemId,
     );
   }
 
   String _extractUserTranscript(Map<String, dynamic> event) {
+    final item = event['item'];
+    if (item is Map<String, dynamic>) {
+      final role = item['role'] as String?;
+      if (role != null && role != 'user') return '';
+    }
+
     final direct = (event['transcript'] as String?)?.trim();
     if (direct != null && direct.isNotEmpty) {
       return direct;
     }
 
-    final item = event['item'];
     if (item is! Map<String, dynamic>) return '';
-    final role = item['role'] as String?;
-    if (role != null && role != 'user') return '';
-
     final content = item['content'];
     if (content is! List) return '';
     final buffer = StringBuffer();
@@ -1271,13 +1315,29 @@ class RealtimeVoiceService {
     return _partialUserTranscriptBuffer.trim();
   }
 
-  void _log(String message) {
-    debugPrint('[RealtimeVoiceService] $message');
+  String _extractTranscriptSourceItemId(Map<String, dynamic> event) {
+    final direct = (event['item_id'] as String?)?.trim();
+    if (direct != null && direct.isNotEmpty) return direct;
+    final item = event['item'];
+    if (item is! Map<String, dynamic>) return '';
+    return (item['id'] as String?)?.trim() ?? '';
   }
 
-  void _emit(RealtimeEventType type, String payload) {
+  void _log(String message) {
+    AppLog.debug('[RealtimeVoiceService] $message');
+  }
+
+  void _emit(
+    RealtimeEventType type,
+    String payload, {
+    String sourceItemId = '',
+  }) {
     if (_eventController.isClosed) return;
-    _eventController.add(RealtimeVoiceEvent(type: type, payload: payload));
+    _eventController.add(RealtimeVoiceEvent(
+      type: type,
+      payload: payload,
+      sourceItemId: sourceItemId,
+    ));
   }
 
   /// 寵物（assistant）語音字幕的「即時」更新：每收到一段 transcript delta，就把

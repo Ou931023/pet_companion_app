@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pet_companion_app/models/pet_skin.dart';
@@ -40,6 +41,21 @@ void main() {
   });
 
   group('AssetPaths 依 skin 產生路徑', () {
+    test('storage id parser 保留顯式偏好，空值維持舊版安全預設', () {
+      expect(
+        PetVisualStyleX.fromStorageId(null),
+        PetVisualStyle.cute,
+      );
+      expect(
+        PetVisualStyleX.fromStorageId('cute'),
+        PetVisualStyle.cute,
+      );
+      expect(
+        PetVisualStyleX.fromStorageId('realistic'),
+        PetVisualStyle.realistic,
+      );
+    });
+
     test('productionProfiles 宣告現有可上線素材組合', () {
       expect(AssetPaths.productionProfiles.length, PetSkin.values.length + 1);
       expect(
@@ -70,6 +86,13 @@ void main() {
         expect(profile.talkFrameCount, greaterThan(0));
         expect(profile.restFrameCount, greaterThan(0));
       }
+      expect(
+        AssetPaths.productionProfiles
+            .where((profile) => profile.isProductionPreferred)
+            .single
+            .visualStyle,
+        PetVisualStyle.realistic,
+      );
     });
 
     test('visualProfile 可輸出後台 tracking 需要的偏好欄位', () {
@@ -189,7 +212,11 @@ void main() {
     test('v2 resolver：dog realistic adult 已有完整八個透明 state', () {
       expect(
         AssetPaths.availableVisualStyles(PetSkin.dog),
-        [PetVisualStyle.cute, PetVisualStyle.realistic],
+        [PetVisualStyle.realistic, PetVisualStyle.cute],
+      );
+      expect(
+        AssetPaths.preferredVisualStyle(PetSkin.dog),
+        PetVisualStyle.realistic,
       );
       expect(
         AssetPaths.stateImageForStyle(
@@ -326,9 +353,105 @@ void main() {
     });
 
     test('保底圖與第一層 fallback', () {
-      expect(AssetPaths.defaultRestImage, 'assets/pets/rest/dog_rest_01.png');
+      expect(
+        AssetPaths.defaultRestImage,
+        'assets/pets/v2/realistic/adult/dog/rest/rest_01.png',
+      );
       expect(AssetPaths.skinRestPrimary(PetSkin.guineaPig),
           'assets/pets/rest/guinea_pig_rest_01.png');
+      expect(
+        AssetPaths.skinRestPrimaryForStyle(
+          PetSkin.dog,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        'assets/pets/v2/realistic/adult/dog/rest/rest_01.png',
+      );
+    });
+
+    test('v2 realistic dog 圖包畫布、透明邊界與主體位置一致', () async {
+      final paths = <String>{
+        ...AssetPaths.talkingFramesForStyle(
+          PetSkin.dog,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        ...AssetPaths.restFramesForStyle(
+          PetSkin.dog,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        AssetPaths.listeningForStyle(
+          PetSkin.dog,
+          visualStyle: PetVisualStyle.realistic,
+        ),
+        for (final mode in PetMode.values)
+          if (mode != PetMode.talking &&
+              mode != PetMode.rest &&
+              mode != PetMode.listening)
+            AssetPaths.stateImageForStyle(
+              PetSkin.dog,
+              mode,
+              visualStyle: PetVisualStyle.realistic,
+            ),
+      };
+
+      expect(paths.length, 18);
+      for (final path in paths) {
+        final bounds = await _visibleBounds(path);
+        expect(bounds.canvasWidth, 1024, reason: path);
+        expect(bounds.canvasHeight, 1024, reason: path);
+        expect(bounds.visibleHeight, inInclusiveRange(848, 850), reason: path);
+        expect(bounds.centerX, closeTo(511.5, 1.0), reason: path);
+        expect(bounds.centerY, closeTo(511.5, 1.0), reason: path);
+        expect(bounds.minX, greaterThan(150), reason: path);
+        expect(bounds.minY, greaterThan(80), reason: path);
+      }
     });
   });
+}
+
+Future<
+    ({
+      int canvasWidth,
+      int canvasHeight,
+      int minX,
+      int minY,
+      int visibleHeight,
+      double centerX,
+      double centerY,
+    })> _visibleBounds(String path) async {
+  final codec = await ui.instantiateImageCodec(await File(path).readAsBytes());
+  final frame = await codec.getNextFrame();
+  final image = frame.image;
+  final canvasWidth = image.width;
+  final canvasHeight = image.height;
+  final pixels = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+  if (pixels == null) throw StateError('無法讀取圖片像素：$path');
+
+  final bytes = pixels.buffer.asUint8List();
+  var minX = image.width;
+  var minY = image.height;
+  var maxX = -1;
+  var maxY = -1;
+  for (var y = 0; y < image.height; y++) {
+    for (var x = 0; x < image.width; x++) {
+      final alpha = bytes[(y * image.width + x) * 4 + 3];
+      if (alpha == 0) continue;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  image.dispose();
+  codec.dispose();
+  if (maxX < minX || maxY < minY) throw StateError('圖片沒有可見內容：$path');
+
+  return (
+    canvasWidth: canvasWidth,
+    canvasHeight: canvasHeight,
+    minX: minX,
+    minY: minY,
+    visibleHeight: maxY - minY + 1,
+    centerX: (minX + maxX) / 2,
+    centerY: (minY + maxY) / 2,
+  );
 }

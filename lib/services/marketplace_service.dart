@@ -1,12 +1,12 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/app_config.dart';
 import '../models/cart_item.dart';
 import '../models/marketplace_order.dart';
 import '../models/marketplace_product.dart';
+import '../utils/app_log.dart';
 
 /// 商城 API 呼叫失敗時丟出的應用層例外（訊息已是白話，可直接顯示給長者）。
 class MarketplaceApiException implements Exception {
@@ -123,7 +123,7 @@ class MarketplaceService {
 
   MarketplaceApiException _friendly(Object error, String fallback) {
     if (error is MarketplaceApiException) return error;
-    debugPrint('[MARKETPLACE] API 失敗：$error');
+    AppLog.error('[MARKETPLACE] API 失敗', error);
     return MarketplaceApiException(fallback);
   }
 }

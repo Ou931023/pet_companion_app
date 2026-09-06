@@ -28,7 +28,7 @@ Care Alert 說明：
 Care Alert 是照護輔助提醒，不是醫療診斷，也不取代醫師、長照人員或緊急服務。App 不會宣稱診斷、治療或預測疾病；高風險提醒僅供授權照護者留意。
 
 登入方式：
-本版 production 只提供 Email login / Email register。Google / Apple 第三方登入入口在 production 隱藏，因此不觸發第三方登入必須同時提供 Sign in with Apple 的審查情境。
+本版 production 提供 Email、Google 與 Sign in with Apple。三種方式都會經 Firebase Authentication 驗證，再由正式後端建立使用者 session；Email 使用者也可由登入頁寄送密碼重設信。
 
 審查測試帳號：
 Resident account: [由 owner 在 App Store Connect 填入，不寫入 repo]

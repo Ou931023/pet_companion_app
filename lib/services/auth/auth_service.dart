@@ -58,6 +58,10 @@ class AuthService {
     return _createSessionFromFirebase(result);
   }
 
+  /// 寄送密碼重設信；Firebase 會處理信件內容與安全驗證。
+  Future<void> sendPasswordResetEmail(String email) =>
+      _firebaseAuthService.sendPasswordResetEmail(email);
+
   /// Email 註冊：建立 Firebase 帳號 → 拿 idToken 呼叫後端建立 session → 持久化。
   Future<AuthSession> registerWithEmail({
     required String email,
@@ -98,6 +102,12 @@ class AuthService {
   /// CR-0037 起，後端 session 失敗會丟 [SessionApiException]（不再捏造 session）。
   Future<AuthSession> signInWithGoogle() async {
     final result = await _firebaseAuthService.signInWithGoogle();
+    return _createSessionFromFirebase(result);
+  }
+
+  /// Apple/Firebase 驗證 → 既有 production session API → 持久化。
+  Future<AuthSession> signInWithApple() async {
+    final result = await _firebaseAuthService.signInWithApple();
     return _createSessionFromFirebase(result);
   }
 
@@ -163,35 +173,51 @@ class AuthService {
   /// 1. **重新驗證**（Firebase 對刪除等敏感操作要求近期登入）：
   ///    - [password] 有值（Email 帳號）→ 用密碼重新驗證。
   ///    - [provider] == 'google' → 重新跑一次 Google 登入驗證（使用者可取消）。
+  ///    - [provider] == 'apple' → 重新跑一次 Apple 登入驗證（使用者可取消）。
   /// 2. 取目前 Firebase user 的 uid + idToken，呼叫**後端刪除**該帳號的所有
-  ///    資料（使用者 / 長者 / 長期記憶 / Care Alert）。後端不可達時為 best-effort
-  ///    （不丟例外、不擋住帳號刪除）。
+  ///    資料（使用者 / 長者 / 長期記憶 / Care Alert）。只有後端確認完成後，
+  ///    才繼續刪除 Firebase 帳號；失敗時保留登入，讓使用者可以重試。
   /// 3. **刪除 Firebase 帳號**（讓同一個 Email 之後可以重新註冊）。
   /// 4. 清除本機 session。
   ///
   /// Demo / Firebase 不可用時：重新驗證與 `deleteCurrentUser` 皆為 no-op、
   /// 後端步驟略過（拿不到 uid），等同登出並清本機。
   Future<void> deleteAccount({String? password, String? provider}) async {
+    String? appleAuthorizationCode;
+
     // 1. 重新驗證（讓步驟 3 的刪除不會落入 requires-recent-login）。
     if (password != null && password.isNotEmpty) {
       await _firebaseAuthService.reauthenticateWithPassword(password);
     } else if (provider == 'google') {
       await _firebaseAuthService.reauthenticateWithGoogle();
+    } else if (provider == 'apple') {
+      appleAuthorizationCode =
+          await _firebaseAuthService.reauthenticateWithApple();
     }
 
-    // 2. 後端刪資料（best-effort：失敗只記錄，不擋住帳號刪除）。
+    // 2. 先確認後端資料已刪除。不能先刪 Firebase 身分，否則後端失敗時
+    // 使用者會失去再次登入重試的能力，形成無法自行刪除的孤兒資料。
     final authInfo = await _firebaseAuthService.currentUserAuthInfo();
     if (authInfo != null && authInfo.idToken.isNotEmpty) {
-      await _sessionApiService.deleteAccount(
+      final backendDeleted = await _sessionApiService.deleteAccount(
         firebaseUid: authInfo.uid,
         idToken: authInfo.idToken,
       );
+      if (!backendDeleted) {
+        throw const SessionApiException('account_delete_failed');
+      }
     }
 
-    // 3. 刪除 Firebase 帳號（失敗會丟 EmailAuthException）。
+    // 3. Apple 帳號需先撤銷 Sign in with Apple token，再刪 Firebase 帳號。
+    // authorization code 只留在記憶體中，絕不記錄或持久化。
+    if (appleAuthorizationCode != null) {
+      await _firebaseAuthService.revokeAppleToken(appleAuthorizationCode);
+    }
+
+    // 4. 刪除 Firebase 帳號（失敗會丟 EmailAuthException）。
     await _firebaseAuthService.deleteCurrentUser();
 
-    // 4. 清除本機 session。
+    // 5. 清除本機 session。
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(prefsKey);
   }

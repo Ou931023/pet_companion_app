@@ -12,7 +12,7 @@
 | 欄位 | 草稿值 | 備註 |
 |---|---|---|
 | App 正式名稱 | ✅ 中文「AI陪伴」/ 英文 "AI Companion"（CR-0061 owner 拍板；CR-0101B 對齊裝置顯示名） | iOS CFBundleDisplayName / Android label / 商店中文名皆使用 `AI陪伴` |
-| 開發者 / 發行者名稱 | ✅ 國立嘉義大學資訊管理學系專題第四組（CR-0061） | 機構 / 團隊正式名稱（商店後台 / 著作權顯示用） |
+| 開發者 / 發行者名稱 | 由 Apple Developer 帳號持有人的正式名稱顯示 | 不在 repo 使用組別名稱；商店後台以帳號法定資料為準 |
 | 主分類 | Health & Fitness 或 Medical（建議 Health & Fitness，避免醫療宣稱） | Care Alert 為「照護提醒」非醫療診斷 |
 | 次分類 | Lifestyle | |
 | 年齡分級 | 建議 4+（iOS）/ Everyone（Google）；最終依問卷 | 無暴力/成人內容；含使用者生成語音對話 |
@@ -43,7 +43,7 @@
 - **What's New（首版）**：草稿「首次推出：即時語音陪伴、長期記憶、關懷提醒。」
 - **審查備註 Review notes**：✅ 模板已備妥於 `docs/STORE_REVIEW_NOTES_TEMPLATE.md`；owner 需在 App Store Connect 填入測試帳號與正式 `API_BASE_URL`，不得寫入 repo。
 - **測試帳號策略（審查用）**：✅ 策略已定：提供一組「審查專用」Firebase resident 帳號 + 預先指派的住民資料，讓審查員能走完登入→語音→設定/刪除帳號；如需 caregiver_web 審查再另提供 caregiver / super_admin 測試帳號。**不可用 production super_admin token、不可 hardcode、不可寫進 repo**。
-- **Sign in with Apple**：若上架時提供第三方登入（Google），Apple 規範要求同時提供 Sign in with Apple。✅ CR-0101A 決策：Apple Sign in 完成前，production build 隱藏 Google / Apple 第三方登入入口，只保留 Email login / Email register；未完成入口不得出現在送審截圖或審查流程。
+- **Sign in with Apple**：✅ CR-0106 已完成 Google / Apple 的 Firebase 正式登入與 iOS entitlement；送審前 owner 仍須在 Apple Developer、Firebase Authentication 與 provisioning profile 啟用並完成真機登入 smoke。Email login / password reset 保留為共同備援。
 - **App Privacy 補充（CR-0097）**：隱私問卷需申報 App 活動 / 使用分析（App 開啟與使用時間、語音/打字互動、寵物互動、提醒/任務、照片驗證、小遊戲等）。用途限 App Functionality / Analytics / Product Personalization（若後台選項適用），不得填成 tracking 或 advertising。
 - **帳號刪除 / 支援備註（CR-0101A）**：設定頁提供「刪除帳號」入口與二次確認，文案說明會刪除伺服器帳號資料與本機 App 紀錄。審查備註可指出：登入後進入設定 → 帳號 → 刪除帳號。正式支援 URL / 客服信箱需由 `SUPPORT_URL` / `CONTACT_EMAIL` 注入並與商店後台一致。
 
@@ -108,7 +108,7 @@ App 名稱、描述、截圖、審查備註**不得宣稱**：已診斷 / 確診
 | iOS CFBundleDisplayName | `AI陪伴` | ✅ **CR-0101B 對齊正式中文名**；已寫入 `ios/Runner/Info.plist`。 |
 | Android android:label | `AI陪伴` | ✅ **CR-0101B 對齊正式中文名**；已寫入 `AndroidManifest.xml`。 |
 | App 中文名 | `AI陪伴` | ✅ **CR-0061 定值**（store metadata §1/§2/§3 用；已寫入 build 顯示名）。 |
-| 開發者 / 發行者 | 國立嘉義大學資訊管理學系專題第四組 | ✅ **CR-0061 定值**（商店後台 / 著作權顯示）。 |
+| 開發者 / 發行者 | Apple Developer 帳號持有人正式名稱 | ⛔ owner 需於 App Store Connect 確認；repo 不硬編組別名稱。 |
 | pubspec name | `pet_companion_app` | 🔵 套件名（非 store 名稱、改動會破壞 import），維持。 |
 | version | `1.0.0+1` | ✅ 首版可用。 |
 

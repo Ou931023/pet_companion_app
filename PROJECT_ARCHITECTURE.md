@@ -106,10 +106,10 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
 > **CR-0075**：上列所有記憶端點（`/api/memory/*`、`/api/memories/*`）已掛 `requireResidentCaller`（須住民 Firebase idToken；無→401、無效/未綁→401/403）。記憶 key 改取 **server 權威 `req.residentCaller.elderId`**（= `users.elder_id`，與 Flutter `currentElderId` 一致）；client 帶與其不符的 `userId`（body/query）→ 403 `forbidden_resident`。成功 response 形狀不變。
 
 | POST | `/api/web/search` `/api/search` | 網路 / 可信來源搜尋 | backend |
-| POST | `/api/crawl/refresh` | 重整爬取來源 | backend |
+| POST | `/api/crawl/refresh` | 非 production 資料建置工具；production 固定 404，不公開爬取入口 | backend |
 | POST | `/api/realtime/session` | Realtime 短期 session（含 rate limit） | backend + realtime |
 | POST | `/api/realtime/call` | Realtime SDP 轉送 | backend + realtime |
-| POST | `/api/auth/session` | 登入後建立 / 取回 user+elder（驗 Firebase ID Token，缺金鑰走 demo mock） | backend |
+| POST | `/api/auth/session` | 登入後建立 / 取回 user+elder；production 必須驗 Firebase ID Token，mock seam 僅限非 production 測試 | backend |
 | GET | `/api/admin/overview` | 健康後台 Dashboard 六指標總覽 | backend |
 | GET | `/api/admin/elders` | 長者列表（含最近活動 / 風險摘要） | backend |
 | GET | `/api/admin/elders/:elderId` | 單一長者完整分析（基本資料 / care alert / 生理 / 心理 / 情緒 / 遊戲） | backend |
@@ -121,14 +121,16 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
 | GET | `/api/admin/marketplace/orders` `/api/admin/marketplace/orders/:id` | 管理端訂單列表 / 詳情（requireAdmin）CR-0032 | backend |
 | PATCH | `/api/admin/marketplace/orders/:id/status` | 管理端更新訂單狀態 / 配送備註（requireAdmin）CR-0032 | backend |
 | DELETE | `/api/admin/marketplace/orders/:id` | 管理端刪除訂單並還原庫存（requireAdmin）**CR-0067** | backend |
-| GET | `/api/daily-care-tasks` | 長者端今日任務列表（?elderId/?status）CR-0025 | backend |
-| POST | `/api/daily-care-tasks` | 建立任務 CR-0025 | backend |
-| POST | `/api/daily-care-tasks/:id/submit` | 拍照完成上傳（multipart photo）+ AI Vision 驗證 + 記 submission CR-0025 | backend |
-| PATCH | `/api/daily-care-tasks/:id/status` | 更新任務狀態 CR-0025 | backend |
-| GET | `/api/daily-care-tasks/proof/:submissionId` | 取回完成證明圖片（本機檔）CR-0025 | backend |
-| GET | `/api/admin/daily-care-tasks` | 管理端任務 + 最新 submission（authz scope）CR-0025 | backend |
+| GET | `/api/daily-care-tasks` | 長者端今日任務列表（Firebase resident token；server 權威 elderId；選用 `?status`）CR-0025/CR-0104 | backend |
+| POST | `/api/daily-care-tasks` | 長者建立自己的任務（Firebase resident token；request elderId 不具授權效力）CR-0025/CR-0104 | backend |
+| POST | `/api/daily-care-tasks/:id/submit` | 長者上傳完成照片（multipart `photo`）+ AI Vision 驗證 + PostgreSQL submission CR-0025/CR-0104 | backend |
+| PATCH | `/api/daily-care-tasks/:id/status` | super_admin 或 active `primary` / `secondary` caregiver 人工更新任務狀態；`viewer` 固定唯讀 CR-0025/CR-0104 | backend |
+| GET | `/api/daily-care-tasks/proof/:submissionId` | super_admin 或任何 active 已指派 caregiver（含 `viewer`）讀取證明圖片；private/no-store CR-0025/CR-0104 | backend |
+| GET | `/api/admin/daily-care-tasks` | 管理端任務 + 最新 submission；caregiver 僅限已指派住民 CR-0025/CR-0104 | backend |
 
-> 註：daily-care-tasks 已於 **CR-0068** 由 JSON 平移到 PostgreSQL（migration 016：`daily_care_tasks` / `daily_care_task_submissions` 兩表）；DB-優先 + dev JSON 降級，response shape（camelCase）不變。完成證明圖片仍存 runtime 檔系統（proof_image_path 僅存 metadata）。
+> 註：daily-care-tasks 已於 **CR-0068** 由 JSON 平移到 PostgreSQL（migration 016：`daily_care_tasks` / `daily_care_task_submissions` 兩表）。**CR-0104 / migration 018** 新增 nullable `proof_image_bytes BYTEA` 與 `proof_mime_type TEXT`：production 新照片以 DB bytes 為唯一正式來源，不依賴 Render ephemeral disk；`proof_image_path` 只保留舊資料相容讀取。JSON + uploads fallback 僅允許非 production 開發／測試環境。
+>
+> Daily-care JSON response 統一使用 `{ success: boolean, ... }`；認證、授權與業務錯誤亦回 `{ success:false, error }`。所有 task/submission JSON 均不得包含 `proofImagePath` 或 `proofImageBytes`；只可回 `hasProofImage`、`proofMimeType`。照片只能透過上列受保護 proof endpoint 讀取。
 > 註：本表為現況快照；新增 / 修改路由時請同步維護。
 > auth / admin 路由為 CR-0006 / CR-0007 新增（見 `docs/CHANGE_REVIEW.md`），契約定義見 §10、§11。
 
@@ -253,24 +255,19 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
   - development / staging：維持 DB-優先 + JSON fallback。
   - production：DB-required，缺 `DATABASE_URL` 由啟動層 fail-fast（見 §7.1）擋下；runtime DB 例外回清楚錯誤，不降級 JSON 當權威。consent 既為 DB-only（§5.3 既有），維持不變。
 
-- **marketplace / dailyCareTask（JSON-only，無 DB 路徑）**
-  - 此兩 service **目前沒有 DB 路徑**，在 production 等同無持久化保證（PROD_AUDIT P1-4）。
-  - **裁決（依 CR-0034 §3.4.5）**：production 下以**清楚 guard 阻擋**，對使用者回長者友善訊息（例：「這個功能整備中，晚點再回來看看」），**不得**以 JSON-only 充當正式資料庫。列為 **CR-0042（PG 化）blocker**。
-  - 此為「production 暫時不提供 marketplace / daily care task」的**已知且已文件化限制**，需產品確認接受；dev/staging 不受影響。
-  - **CR-0057 wire 契約（production 停用回應收斂）**：production 直接打這些 API 時，所有會出現停用訊號（store throw `FeatureUnavailableInProductionError` 或回 `{error:"feature_unavailable_in_production"}`）的路由，HTTP 邊界**統一回 `501`**（不是 500/403/503），形狀保留各族 discriminator + 統一 error：
-    - marketplace：`{ ok:false, error:"not_enabled", message:<長者友善白話> }`
-    - daily-care：`{ success:false, error:"not_enabled", message:<長者友善白話> }`
-    - 內部碼 `feature_unavailable_in_production` 只在 HTTP 邊界映為 `not_enabled`（store 內部碼 / 語意不變）。回應**不含 stack / 檔案路徑 / 工程字眼**；停用屬「功能未開放」非錯誤，故不寫 `logError`（避免假警報）。
-    - **authz 優先序**：admin daily-care（`resolveAdminAuthContext`）的 authN（401）/ 跨住民 authz（403）仍**先於** store 停用訊號；501 只在 authN + authz 通過後由 store 觸發（caregiver 跨住民 → 仍 403；super_admin → 501）。
-    - helper：`config/env.js#isFeatureUnavailableError(errOrResult)`（同時涵蓋 throw 型 `.code` 與 return 型 `.error`）+ `server.js#respondFeatureDisabled(res,{key})`（`key='ok'|'success'`）。dev/test 行為位元不變（讀 JSON/seed、200/400/404）。
+- **marketplace / dailyCareTask（已 PostgreSQL 化）**
+  - marketplace 已由 migration 015 與 `marketplaceStore` 提供 PostgreSQL production 路徑；daily care 已由 migrations 016、018 提供任務、submission 與照片 bytes 的 PostgreSQL production 路徑。
+  - production 一律 DB-required，資料庫不可用時回清楚錯誤，不得降級 JSON 或 Render ephemeral disk 假成功。
+  - development / test 可保留 JSON fallback 供隔離測試；該 fallback 不具 production 權威性。
+  - `FeatureUnavailableInProductionError` / `respondFeatureDisabled` 僅保留舊版與防禦性相容，不代表這兩項正式功能目前停用。
 
 
 ---
 
 ## 6. 資料儲存
 
-- 現況：JSON store（`backend/stt_proxy/data/*.json`），屬 runtime 資料，**不進 git**（見 [[commit_hygiene]] 原則）。
-- 目標：PostgreSQL + pgvector；embedding 預設 `text-embedding-3-small`。
+- production 現況：PostgreSQL + pgvector 為 auth、memory、Care Alert、marketplace、daily care、usage analytics 等正式權威來源；embedding 預設 `text-embedding-3-small`。
+- development / test：部分 service 可使用 `backend/stt_proxy/data/*.json` fallback；這些 runtime 資料**不進 git**，也不得在 production 啟用。
 - migration：`backend/stt_proxy/db/migrate.js`（🔒 schema 變更需核准）。
 - 連線：`backend/stt_proxy/db/pool.js`、`postgres.js`。
 
@@ -300,10 +297,10 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
 - Telegram 長照通知：`TELEGRAM_BOT_TOKEN`、`TELEGRAM_CARE_CHAT_ID`
 - 資料庫：`DATABASE_URL`、`PGVECTOR_ENABLED`、`PG_POOL_MAX`、`PG_CONNECTION_TIMEOUT_MS`、`PG_IDLE_TIMEOUT_MS`
 - Rate limit：`RATE_LIMIT_WINDOW_MS`、`RATE_LIMIT_MAX_CALLS`、`REALTIME_RATE_LIMIT_WINDOW_MS`、`REALTIME_RATE_LIMIT_MAX`
-- Firebase ID Token 驗證（CR-0006，**全部缺省時走 demo mock 驗證，不 crash、不擋 Demo**）：
+- Firebase ID Token 驗證（CR-0006 / CR-0034，**production 必須設定並驗證；缺少服務帳戶時 fail-fast**）：
   - 服務帳戶（擇一）：`GOOGLE_APPLICATION_CREDENTIALS`（service account JSON 路徑）；或拆欄位 `FIREBASE_PROJECT_ID`、`FIREBASE_CLIENT_EMAIL`、`FIREBASE_PRIVATE_KEY`
   - 驗證 token audience：`FIREBASE_PROJECT_ID`
-  - `AUTH_ALLOW_MOCK`（預設 `true`；未設定 Firebase 時允許 mock session，正式上線可設 `false` 強制驗 token）
+  - `AUTH_ALLOW_MOCK`（僅非 production 開發 / 測試可用；production 無條件為 false）
 - 綁定邏輯：`BINDING_DEADLINE_DAYS`（預設 60）
 
 > Flutter 端 Firebase 設定（`google-services.json` / `GoogleService-Info.plist`、Google `REVERSED_CLIENT_ID`、Apple Service ID/Key）屬 client 平台設定檔，**不是後端 env、也不進 feature commit**。
@@ -362,16 +359,23 @@ Care Alert 共用資料結構、`pubspec.yaml` / `backend/stt_proxy/package.json
 ## 10. 身份與綁定模型（CR-0006，🔒 跨前後端契約）
 
 登入導入後，**每位長者都有固定 `userId` 與 `elderId`**；後續對話記憶、Care Alert、情緒分析、遊戲紀錄都綁定 `elderId`。
-登入供應商為 Firebase Authentication（Email / Google / Apple）；**Firebase 缺金鑰時走 demo mock 驗證**，登入系統不得阻擋 Demo。
+正式上架登入供應商為 Firebase Authentication Email、Google 與 Apple。Google / Apple 登入都必須取得 Firebase ID Token，並走同一個 production session API；不得只在前端建立假 session。production 缺 Firebase Admin 設定時後端拒絕啟動，不得走 mock；mock 只保留給 development / test。
 
 ### 10.1 登入流程（不破壞 Realtime / 不擋 Demo）
 
-1. Flutter 透過 Firebase 完成 Email / Google / Apple 登入，取得 `firebaseUid` + `idToken`。
+1. Flutter 透過 Firebase Email、Google 或 Apple 登入取得 `firebaseUid` + `idToken`；iOS 提供 Google / Apple，Android 提供 Google，Email 為兩平台共同備援。
 2. Flutter 呼叫 `POST /api/auth/session`（見下）。
-3. 後端驗證 ID Token（或 mock）→ upsert `users` / `elders` → 回 `{ userId, elderId, role, bindingStatus, bindingDeadline }`。
+3. 後端在 production 驗證 ID Token → upsert `users` / `elders` → 回 `{ userId, elderId, role, bindingStatus, bindingDeadline }`；mock 驗證僅限非 production。
 4. Flutter 把 `userId` / `elderId` 存進 secure storage，作為記憶 / care alert / 遊戲 / 情緒寫入時的綁定鍵。
-5. **未登入或 demo 模式**：fallback `elderId = "default_user"`（保留既有行為），Realtime 語音與既有流程照常運作。
-6. **紅線**：`lib/services/realtime_voice_service.dart` 主流程不得因登入而修改；登入只改「上層傳入的 userId / elderId 來源」。
+5. **未登入**：由 Auth Gate 阻擋正式主流程；`default_user` 僅保留給 development / test 的 mock 路徑與舊資料相容，不是 production 身分備援。
+
+### 10.1.1 帳號刪除順序（production 隱私契約）
+
+1. 使用者先依原登入方式以 Firebase 重新驗證並取得最新 ID Token（Email 密碼、Google 或 Apple）；Apple 重新驗證同時取得只留在記憶體中的 authorization code。
+2. App 呼叫 `POST /api/auth/delete`；後端以驗證後的 Firebase UID 為權威，刪除 user / elder / memory / Care Alert 等伺服器資料。
+3. **只有後端明確回傳成功後**，Apple 帳號才以 authorization code 呼叫 `revokeTokenWithAuthorizationCode` 撤銷 Apple token；接著刪除 Firebase 帳號與本機 session。Email / Google 帳號直接進入 Firebase 刪除步驟。
+4. 後端不可達或刪除失敗時，App 不得撤銷 Apple token 或刪除 Firebase 帳號；須保留登入狀態並提示重試，避免留下使用者無法自行刪除的孤兒資料。
+5. **紅線**：`lib/services/realtime_voice_service.dart` 主流程不得因登入而修改；登入只改「上層傳入的 userId / elderId 來源」。
 
 ### 10.2 `POST /api/auth/session` 契約
 
@@ -494,7 +498,7 @@ Response（200）：
 
 - 呼叫時機：`recordConsent(version)` 成功寫入本機（shared_preferences）**之後**，best-effort `POST /api/consent`（`consentType` 先固定 `privacy_terms` 對應目前單一 gate）。
 - 帶入：當前 `AuthController` 的 `firebaseUid` / `idToken` / `userId` / `elderId`。
-- 失敗行為：**非阻塞** — 後端失敗（離線 / 5xx / timeout）**不得影響本機已同意狀態**，使用者照常進入 App（比照 `deleteAccount` best-effort）；可在下次啟動 / 設定頁重試補送。本機 `consent.acceptedVersion` 仍是 App 內判斷是否需重新同意的唯一來源。
+- 失敗行為：**非阻塞** — 後端失敗（離線 / 5xx / timeout）**不得影響本機已同意狀態**，使用者照常進入 App；可在下次啟動 / 設定頁重試補送。本機 `consent.acceptedVersion` 仍是 App 內判斷是否需重新同意的唯一來源。此策略只適用同意紀錄補送，帳號刪除必須等待後端成功。
 
 #### 環境變數
 

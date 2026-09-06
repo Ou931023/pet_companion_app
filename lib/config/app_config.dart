@@ -1,12 +1,13 @@
 class AppConfig {
   /// 執行環境：`development` / `staging` / `production`。
   ///
-  /// production build 透過 `--dart-define=APP_ENV=production` 指定。
+  /// 正式產品預設即為 production；本機開發才需明確指定
+  /// `--dart-define=APP_ENV=development`。
   /// production 下會強制關閉開發面板、Demo 登入與 mock service 注入，
   /// 並要求 [apiBaseUrl] 指向正式網域（見 [isApiBaseUrlProductionSafe]）。
   static const String appEnv = String.fromEnvironment(
     'APP_ENV',
-    defaultValue: 'development',
+    defaultValue: 'production',
   );
 
   /// 是否為正式環境。集中判斷，避免各處各自比對字串。
@@ -15,13 +16,14 @@ class AppConfig {
   /// 正式對外 API base URL。
   ///
   /// 新命名 `API_BASE_URL` 為主；舊命名 `BACKEND_BASE_URL` 保留為可讀別名
-  /// （未設定 `API_BASE_URL` 時回退讀取），預設為本機開發位址。
+  /// （未設定 `API_BASE_URL` 時回退讀取）。預設為正式 Render 後端，避免
+  /// 從 Xcode Archive / Android Studio release 時漏帶 dart-define 而連到本機。
   /// UI 頁面一律從這裡取，不得硬編 base URL。
   static const String backendBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
     defaultValue: String.fromEnvironment(
       'BACKEND_BASE_URL',
-      defaultValue: 'http://127.0.0.1:3001',
+      defaultValue: 'https://ai-companion-api-1gm7.onrender.com',
     ),
   );
 
@@ -56,8 +58,8 @@ class AppConfig {
 
   /// 是否在登入頁顯示 Demo 快速登入按鈕（原始開關）。
   ///
-  /// **正式展示 / 截圖預設為 false**（登入頁只露 Google / Email / 建立帳號，
-  /// 不出現測試感按鈕）。開發 / 測試需要 Demo 備援時，用
+  /// **正式展示 / 截圖預設為 false**（登入頁只露 Google、Email、建立帳號，
+  /// iOS 另顯示 Apple；不出現測試感按鈕）。開發 / 測試需要 Demo 備援時，用
   /// `--dart-define=SHOW_DEMO_LOGIN=true` 開啟。
   /// 注意：即使隱藏，`AuthController.loginAsDemoUser()` 仍保留，能力不刪。
   /// 實際是否顯示請用 [demoLoginVisible]（production 一律隱藏）。
@@ -71,16 +73,15 @@ class AppConfig {
 
   /// 是否顯示第三方登入（Google / Apple）的原始開關。
   ///
-  /// 目前 Apple Sign in 尚未正式接線。為避免 App Store 審查看到未完成入口，
-  /// production 先只顯示 Email 登入 / 註冊；第三方登入待 Apple + Google 兩者皆完成
-  /// 後再另開 CR 開啟。
+  /// Google 與 Apple 已走 Firebase 正式登入；預設顯示，必要時可由 build flag
+  /// 暫停入口。production 不再強制隱藏，避免正式使用者只能依賴 Email。
   static const bool showSocialSignIn = bool.fromEnvironment(
     'SHOW_SOCIAL_SIGN_IN',
     defaultValue: true,
   );
 
-  /// Google / Apple 登入入口實際是否顯示：production 強制隱藏。
-  static bool get socialSignInVisible => showSocialSignIn && !isProduction;
+  /// Google / Apple 登入入口實際是否顯示。
+  static bool get socialSignInVisible => showSocialSignIn;
 
   /// 是否顯示「照護用品商城」入口（marketplace）的原始開關。
   ///
@@ -100,19 +101,18 @@ class AppConfig {
 
   /// 是否顯示「今日任務」入口（dailyCareTask）的原始開關。
   ///
-  /// CR-0056（裁決 B2）：每日照護任務能力保留，但正式版**完全隱藏入口**，
-  /// 理由同 marketplace（避免死路頁與 placeholder 風險）。
-  /// dev / test 預設可見；如需在開發時隱藏可用
+  /// 日常照護任務、照片驗證與正式 PostgreSQL API 已完成，因此 production
+  /// 可以顯示；如需在特定 build 暫停入口可用
   /// `--dart-define=SHOW_DAILY_CARE_TASKS=false`。
   /// 能力與路由（[AppRoute.dailyCareTasks]）不刪，僅隱藏入口。
-  /// 實際是否顯示請用 [dailyCareTasksVisible]（production 一律隱藏）。
+  /// 實際是否顯示請用 [dailyCareTasksVisible]。
   static const bool showDailyCareTasks = bool.fromEnvironment(
     'SHOW_DAILY_CARE_TASKS',
     defaultValue: true,
   );
 
-  /// 今日任務入口實際是否顯示：production 強制隱藏。
-  static bool get dailyCareTasksVisible => showDailyCareTasks && !isProduction;
+  /// 今日任務入口實際是否顯示；正式功能已完成時依 build flag 控制。
+  static bool get dailyCareTasksVisible => showDailyCareTasks;
 
   static const String defaultSttProxyUrl = '$backendBaseUrl/api/stt/transcribe';
   static const String realtimeSessionUrl =

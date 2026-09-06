@@ -46,6 +46,35 @@ void main() {
       expect(coordinator.isActiveTurn(second.turnId), isTrue);
     });
 
+    test(
+        'source item identity deduplicates one event but allows repeated words',
+        () {
+      final coordinator = RealtimeTurnCoordinator();
+      final now = DateTime(2026, 5, 15, 10);
+
+      final first = coordinator.acceptFinalTranscript(
+        '食飽未',
+        sourceId: 'item-a',
+        now: now,
+      );
+      final duplicate = coordinator.acceptFinalTranscript(
+        '食飽未',
+        sourceId: 'item-a',
+        now: now.add(const Duration(milliseconds: 100)),
+      );
+      final nextTurn = coordinator.acceptFinalTranscript(
+        '食飽未',
+        sourceId: 'item-b',
+        now: now.add(const Duration(milliseconds: 200)),
+      );
+
+      expect(first.accepted, isTrue);
+      expect(duplicate.accepted, isFalse);
+      expect(duplicate.reason, 'duplicate_source_item');
+      expect(nextTurn.accepted, isTrue);
+      expect(nextTurn.turnId, isNot(first.turnId));
+    });
+
     test('clears only the active turn', () {
       final coordinator = RealtimeTurnCoordinator();
       final now = DateTime(2026, 5, 15, 10);

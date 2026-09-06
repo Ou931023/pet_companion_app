@@ -4,7 +4,7 @@
 // 比照 admin_dashboard.test.js 以「來源靜態檢查」確保：
 //   - 日常任務分頁與統計、任務列表、AI 結果欄位不被誤刪
 //   - 使用實際存在的 /api/admin/daily-care-tasks 端點
-//   - 後端連不到時有 mock-safe fallback（不假裝有資料）
+//   - 後端連不到時顯示白話錯誤（不假裝有資料）
 //   - 既有照護提醒 / 健康分析顯示不被破壞
 //
 // 執行：node --test caregiver_web/daily_care_task_dashboard.test.js
@@ -89,8 +89,8 @@ test("AI 判斷文案不宣稱藥物 / 劑量正確（安全界線）", () => {
   assert.ok(appJs.includes("需人工確認"), "不確定用『需人工確認』");
 });
 
-test("後端連不到時有 mock-safe fallback", () => {
-  assert.ok(appJs.includes(".catch("), "loadDailyTasks 應有 catch fallback");
+test("後端連不到時顯示白話錯誤且不假裝有資料", () => {
+  assert.ok(appJs.includes(".catch("), "loadDailyTasks 應處理連線錯誤");
   assert.ok(appJs.includes("連不到後端"), "應有白話的連線失敗提示");
 });
 

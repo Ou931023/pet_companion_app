@@ -158,7 +158,10 @@ function postNotify(baseUrl, elderId, overrides = {}) {
 function postTask(baseUrl, elderId, title) {
   return fetch(`${baseUrl}/api/daily-care-tasks`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${RES_TOKENS[elderId]}`,
+    },
     body: JSON.stringify({ elderId, title, taskType: "medication" }),
   });
 }
@@ -511,7 +514,7 @@ test("daily-care-tasks 無 token → 401 missing_admin_token", async () => {
     const res = await fetch(`${baseUrl}/api/admin/daily-care-tasks`);
     const body = await res.json();
     assert.equal(res.status, 401);
-    assert.deepEqual(body, { ok: false, error: "missing_admin_token" });
+    assert.deepEqual(body, { success: false, error: "missing_admin_token" });
   } finally {
     server.close();
   }

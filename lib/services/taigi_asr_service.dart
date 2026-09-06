@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -10,6 +9,7 @@ import 'package:record/record.dart';
 import '../config/app_config.dart';
 import '../models/taigi_asr_result.dart';
 import '../models/taigi_asr_status.dart';
+import '../utils/app_log.dart';
 
 class TaigiAsrService {
   TaigiAsrService({
@@ -57,16 +57,14 @@ class TaigiAsrService {
     try {
       final apiBase = Uri.parse(AppConfig.apiBaseUrlForSttProxy(sttProxyUrl));
       uri = apiBase.replace(path: '${apiBase.path}/asr/taigi');
-      debugPrint('[TAIGI_ASR] transcribe url=$uri');
+      AppLog.debug('[TAIGI_ASR] transcribe started');
       final request = http.MultipartRequest('POST', uri)
         ..files.add(await http.MultipartFile.fromPath('audio', audioFile.path));
       final response = await _client.send(request).timeout(
             const Duration(seconds: 75),
           );
       final responseText = await response.stream.bytesToString();
-      debugPrint(
-        '[TAIGI_ASR] transcribe status=${response.statusCode} body=$responseText',
-      );
+      AppLog.debug('[TAIGI_ASR] transcribe status=${response.statusCode}');
       final decoded = jsonDecode(responseText) as Map<String, dynamic>;
       if (response.statusCode >= 400) {
         return TaigiAsrResult.unavailable();
@@ -77,7 +75,7 @@ class TaigiAsrService {
       }
       return result;
     } catch (error) {
-      debugPrint('[TAIGI_ASR] transcribe failed url=$uri error=$error');
+      AppLog.error('[TAIGI_ASR] transcribe failed', error);
       return TaigiAsrResult.unavailable();
     }
   }
@@ -88,17 +86,15 @@ class TaigiAsrService {
     Uri? uri;
     try {
       uri = _apiUri(sttProxyUrl, '/asr/taigi/status');
-      debugPrint('[TAIGI_ASR] status url=$uri');
+      AppLog.debug('[TAIGI_ASR] status requested');
       final response = await _client.get(uri).timeout(
             const Duration(seconds: 8),
           );
-      debugPrint(
-        '[TAIGI_ASR] status code=${response.statusCode} body=${response.body}',
-      );
+      AppLog.debug('[TAIGI_ASR] status code=${response.statusCode}');
       final decoded = jsonDecode(response.body) as Map<String, dynamic>;
       return TaigiAsrStatus.fromJson(decoded);
     } catch (error) {
-      debugPrint('[TAIGI_ASR] status failed url=$uri error=$error');
+      AppLog.error('[TAIGI_ASR] status failed', error);
       return TaigiAsrStatus.unavailable();
     }
   }

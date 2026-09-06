@@ -14,12 +14,12 @@ void main() {
           isNot(contains('<key>NSAllowsArbitraryLoads</key>\n\t\t<true/>')));
     });
 
-    test('Info.plist 保留 local networking 供本機與區網開發', () {
+    test('正式版不宣告 local networking 例外或權限', () {
       final plist = File('ios/Runner/Info.plist').readAsStringSync();
 
-      expect(plist, contains('<key>NSAllowsLocalNetworking</key>'));
+      expect(plist, isNot(contains('<key>NSAllowsLocalNetworking</key>')));
       expect(
-          plist, contains('<key>NSAllowsLocalNetworking</key>\n\t\t<true/>'));
+          plist, isNot(contains('<key>NSLocalNetworkUsageDescription</key>')));
     });
 
     test('iOS 權限文案不含 demo/debug/test/mock 工程字樣', () {
@@ -29,7 +29,6 @@ void main() {
 
       for (final key in <String>[
         'NSCameraUsageDescription',
-        'NSLocalNetworkUsageDescription',
         'NSMicrophoneUsageDescription',
         'NSPhotoLibraryAddUsageDescription',
         'NSPhotoLibraryUsageDescription',
@@ -47,6 +46,18 @@ void main() {
         expect(value, isNot(matches(banned)),
             reason: '$key should be store-safe');
       }
+    });
+
+    test('iPhone 鎖定直向，避免長者操作時版面意外旋轉', () {
+      final plist = File('ios/Runner/Info.plist').readAsStringSync();
+      final phoneStart =
+          plist.indexOf('<key>UISupportedInterfaceOrientations</key>');
+      final phoneEnd = plist.indexOf('</array>', phoneStart);
+      final phoneOrientations = plist.substring(phoneStart, phoneEnd);
+
+      expect(phoneOrientations, contains('UIInterfaceOrientationPortrait'));
+      expect(phoneOrientations,
+          isNot(contains('UIInterfaceOrientationLandscape')));
     });
   });
 }

@@ -25,10 +25,12 @@ void main() {
       expect(runbook, contains('screenshots'));
       expect(
         runbook,
-        contains('node scripts/check_caregiver_web_config.js caregiver_web/config.js'),
+        contains(
+            'node scripts/check_caregiver_web_config.js caregiver_web/config.js'),
       );
       expect(runbook, contains('app.js?v=20260821-cr0103'));
-      expect(runbook, contains('https://ai-companion-api-1gm7.onrender.com/api'));
+      expect(
+          runbook, contains('https://ai-companion-api-1gm7.onrender.com/api'));
       expect(runbook, contains('/runtime-config.js'));
       expect(runbook, contains('/app-config.generated.js'));
       expect(runbook, contains('No-Go'));
@@ -88,7 +90,8 @@ void main() {
       expect(renderYaml, contains('sync: false'));
     });
 
-    test('caregiver operations runbook covers analytics handoff and Telegram', () {
+    test('caregiver operations runbook covers analytics handoff and Telegram',
+        () {
       final runbook = _read('docs/CAREGIVER_OPERATIONS_RUNBOOK.md');
 
       expect(runbook, contains('Caregiver Operations Runbook'));
@@ -115,9 +118,9 @@ void main() {
       if (!AppConfig.isProduction) return;
 
       expect(AppConfig.demoLoginVisible, isFalse);
-      expect(AppConfig.socialSignInVisible, isFalse);
+      expect(AppConfig.socialSignInVisible, AppConfig.showSocialSignIn);
       expect(AppConfig.marketplaceVisible, isFalse);
-      expect(AppConfig.dailyCareTasksVisible, isFalse);
+      expect(AppConfig.dailyCareTasksVisible, isTrue);
       expect(AppConfig.devPanelsVisible, isFalse);
       expect(AppConfig.mockServicesEnabled, isFalse);
       expect(AppConfig.freeAllPetSkinsEnabled, isFalse);
@@ -161,6 +164,66 @@ void main() {
       expect(networkSecurity, contains('cleartextTrafficPermitted="false"'));
       expect(infoPlist, contains('<key>NSAllowsArbitraryLoads</key>'));
       expect(infoPlist, contains('<false/>'));
+    });
+
+    test('iOS Sign in with Apple capability is wired for every build mode', () {
+      final entitlements = _read('ios/Runner/Runner.entitlements');
+      final project = _read('ios/Runner.xcodeproj/project.pbxproj');
+
+      expect(entitlements, contains('com.apple.developer.applesignin'));
+      expect(entitlements, contains('<string>Default</string>'));
+      expect(project, contains('com.apple.SignInWithApple'));
+      expect(project, contains('enabled = 1'));
+      expect(
+        RegExp(r'CODE_SIGN_ENTITLEMENTS = Runner/Runner\.entitlements;')
+            .allMatches(project)
+            .length,
+        3,
+      );
+    });
+
+    test('Traditional Chinese typography is applied above all app routes', () {
+      final app = _read('lib/app.dart');
+      final consent = _read('lib/screens/consent_screen.dart');
+
+      expect(app, contains("Locale('zh', 'TW')"));
+      expect(app, contains("fontFamily: 'PingFang TC'"));
+      expect(app, contains("fontFamilyFallback: ['Noto Sans TC']"));
+      expect(consent, contains('fontWeight: FontWeight.w700'));
+    });
+
+    test('release documents describe the completed social sign-in contract',
+        () {
+      final documents = [
+        _read('docs/RELEASE_BUILD_SIGNING_CHECK.md'),
+        _read('docs/PRODUCTION_CONFIG_CHECKLIST.md'),
+        _read('docs/APP_STORE_METADATA.md'),
+        _read('docs/STORE_REVIEW_NOTES_TEMPLATE.md'),
+        _read('docs/STORE_SUBMISSION_RUNBOOK.md'),
+        _read('docs/INTERNAL_TESTING_SMOKE_RUNBOOK.md'),
+        _read('docs/FINAL_STORE_BLOCKER_BOARD.md'),
+      ];
+      final joined = documents.join('\n');
+
+      expect(joined, contains('Sign in with Apple'));
+      expect(joined, contains('iOS Apple'));
+      expect(joined, contains('password reset'));
+      expect(joined, contains('真機'));
+      expect(joined, isNot(contains('Apple Sign in 完成前，production 強制隱藏')));
+      expect(joined, isNot(contains('production 只提供 Email login')));
+      expect(joined, isNot(contains('第三方登入未完成時不顯示')));
+      expect(joined, isNot(contains('若未啟用第三方登入')));
+      expect(joined, isNot(contains('只出現 Email login / register')));
+      expect(joined, isNot(contains('unfinished social sign-in')));
+      expect(joined, isNot(contains('誤開 demo / social')));
+    });
+
+    test('architecture documents Apple token revocation delete order', () {
+      final architecture = _read('PROJECT_ARCHITECTURE.md');
+
+      expect(architecture, contains('revokeTokenWithAuthorizationCode'));
+      expect(architecture, contains('不得撤銷 Apple token'));
+      expect(architecture, contains('後端明確回傳成功後'));
     });
 
     test('icon readiness includes iOS and Android adaptive assets', () {
@@ -524,7 +587,8 @@ void main() {
       expect(template, contains('OpenAI Realtime'));
       expect(template, contains('Care Alert'));
       expect(template, contains('不是醫療診斷'));
-      expect(template, contains('Email login / Email register'));
+      expect(template, contains('Email、Google 與 Sign in with Apple'));
+      expect(template, contains('密碼重設'));
       expect(template, contains('帳號刪除'));
       expect(template, contains('Data Safety'));
       expect(template, contains('App Store Privacy'));

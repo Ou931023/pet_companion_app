@@ -58,6 +58,11 @@ test("redactObject 遞迴遮蔽敏感 key", () => {
       phone: "0912345789",
       databaseUrl: "postgres://u:p@h:5432/d",
       chatId: "123456789",
+      userId: "user-123",
+      elderId: "elder-456",
+      caregiverId: "caregiver-789",
+      firebaseUid: "firebase-uid",
+      petName: "小寶",
     },
     ok: true,
     count: 3,
@@ -66,6 +71,11 @@ test("redactObject 遞迴遮蔽敏感 key", () => {
   assert.equal(out.accessToken, REDACTED);
   assert.equal(out.nested.apiKey, REDACTED);
   assert.equal(out.nested.chatId, REDACTED);
+  assert.equal(out.nested.userId, REDACTED);
+  assert.equal(out.nested.elderId, REDACTED);
+  assert.equal(out.nested.caregiverId, REDACTED);
+  assert.equal(out.nested.firebaseUid, REDACTED);
+  assert.equal(out.nested.petName, REDACTED);
   assert.equal(out.nested.email, "el***@example.com");
   assert.ok(out.nested.phone.includes("***"));
   assert.equal(out.nested.databaseUrl, "postgres://***");
@@ -144,8 +154,8 @@ test("Care Alert summary / reason 不在 safe log 完整出現", () => {
     reason: fullReason,
   };
   const out = safeLogPayload(payload);
-  // 非敏感識別子可保留（供除錯）。
-  assert.equal(out.elderId, "elder-42");
+  // 住民識別子在 production log 也屬個資，必須遮蔽。
+  assert.equal(out.elderId, REDACTED);
   assert.equal(out.riskLevel, "high");
   // 自由文字內容不可完整出現（dev 僅保留短前綴 + truncated 標記）。
   assert.ok(!String(out.summary).includes(fullSummary), "summary 不可完整出現");

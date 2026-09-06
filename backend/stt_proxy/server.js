@@ -17,6 +17,9 @@ const {
   assertProductionEnvOrExit,
   describeMaskedConfig,
   resolveCorsOrigins,
+  resolveListenHost,
+  isCrawlerRefreshEnabled,
+  isProduction,
   isFeatureUnavailableError,
 } = require("./config/env");
 assertProductionEnvOrExit(process.env, console);
@@ -93,7 +96,7 @@ const {
 } = require("./services/appUsageEventStore");
 const {
   createSession,
-  deleteUserByFirebaseUid,
+  deleteAccountData,
   mockAllowed: authMockAllowed,
 } = require("./services/auth/sessionService");
 const authFirebaseAdmin = require("./services/auth/firebaseAdmin");
@@ -119,6 +122,7 @@ const requireAdmin = require("./services/admin/requireAdmin");
 const authz = require("./services/admin/authorizationService");
 const {
   resolveAdminAuthContext,
+  resolveDailyCareAdminAuthContext,
 } = require("./services/admin/adminAuthContext");
 // CR-0045 B2：/api/care-alerts/notify 的 resident-caller 驗證（長者本人；Firebase idToken →
 // users.elder_id）。server 權威推導 elderId 蓋寫在 alert 上。
@@ -145,6 +149,31 @@ const trustProxyHops =
 app.set("trust proxy", trustProxyHops);
 const port = process.env.PORT || 3001;
 const upload = multer({ dest: "uploads/" });
+const dailyCareProofUploadDir = path.join(
+  os.tmpdir(),
+  "pet_companion_daily_care_proofs",
+);
+fs.mkdirSync(dailyCareProofUploadDir, { recursive: true });
+const dailyCareProofUpload = multer({
+  dest: dailyCareProofUploadDir,
+  limits: { fileSize: 8 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, callback) => {
+    const allowed = new Set([
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/heic",
+      "image/heif",
+    ]);
+    callback(null, allowed.has(String(file.mimetype || "").toLowerCase()));
+  },
+});
+function receiveDailyCareProof(req, res, next) {
+  dailyCareProofUpload.single("photo")(req, res, (error) => {
+    if (!error) return next();
+    return res.status(400).json({ success: false, error: "invalid_photo" });
+  });
+}
 const taigiAsrUploadDir = path.join(os.tmpdir(), "pet_companion_taigi_asr");
 fs.mkdirSync(taigiAsrUploadDir, { recursive: true });
 const taigiAsrUpload = multer({
@@ -175,7 +204,7 @@ const taigiAsrUpload = multer({
     callback(new TaigiAsrError("TAIGI_ASR_INVALID_AUDIO", "Unsupported audio file", 400));
   },
 });
-const host = process.env.HOST || "127.0.0.1";
+const host = resolveListenHost(process.env);
 
 // CR-0064：單一 CORS middleware（取代先前重複 + hardcoded 的兩段）。
 // 白名單來源：CORS_ALLOWED_ORIGINS 優先，相容別名 ALLOWED_ORIGINS（見 config/env.js）。
@@ -878,8 +907,8 @@ app.patch("/api/care-alerts/:id/status", resolveAdminAuthContext, async (req, re
   }
 });
 
-// CR-0006 Batch 1：登入後建立 / 取回 user+elder。
-// 驗 Firebase ID Token；缺金鑰時走 demo mock（不 crash、不擋 Demo）。
+// CR-0006 / CR-0034：登入後建立 / 取回 user+elder。production 必須由
+// Firebase Admin 驗證 ID Token；mock 僅限非 production 開發與測試。
 // 契約見 PROJECT_ARCHITECTURE.md §10.2。
 app.post("/api/auth/session", async (req, res) => {
   const body = req.body || {};
@@ -909,9 +938,9 @@ app.post("/api/auth/session", async (req, res) => {
 
 // CR-0024：刪除帳號並清除該使用者後端所有資料（user / elder / 長期記憶 / Care
 // Alert）。驗證邏輯比照 /api/auth/session：firebase configured → 驗 idToken 取
-// 權威 uid；否則（允許 mock）採信傳入 firebaseUid。找不到 user → idempotent 回
-// 成功（deleted 全 0）。前端在使用者刪除帳號時呼叫，best-effort（前端不因此擋住
-// Firebase 帳號刪除）。只新增路由、不改既有路由形狀。
+// 權威 uid；僅非 production 且允許 mock 時採信傳入 firebaseUid。找不到 user →
+// idempotent 回成功（deleted 全 0）。前端只有在此端點確認成功後才刪除 Firebase
+// 帳號，失敗時保留登入供使用者重試。只新增路由、不改既有路由形狀。
 app.post("/api/auth/delete", async (req, res) => {
   const body = req.body || {};
   const rawUid =
@@ -945,28 +974,28 @@ app.post("/api/auth/delete", async (req, res) => {
         .json({ success: false, error: "invalid_id_token" });
     }
 
-    // 1. 刪 user + elder，取回被刪的 userId / elderId 以級聯刪除其資料。
-    const userResult = await deleteUserByFirebaseUid(firebaseUid);
-
-    // 2. 級聯刪除長期記憶（依 userId）與 Care Alert（依 elderId）。
-    //    找不到 user 時 userId/elderId 為 null → 級聯為 0（idempotent）。
-    let memories = 0;
-    let careAlerts = 0;
-    if (userResult.userId != null) {
-      memories = await deleteMemoriesByUserId(userResult.userId);
-    }
-    if (userResult.elderId != null) {
-      careAlerts = await deleteAlertsByElderId(userResult.elderId);
+    // Production 由單一 PostgreSQL transaction 完整刪除所有 user/elder 資料；
+    // 非 production JSON store 才沿用分散式本機清理流程。
+    const userResult = await deleteAccountData(firebaseUid);
+    let memories = userResult.memories ?? 0;
+    let careAlerts = userResult.careAlerts ?? 0;
+    if (userResult.provider === "json") {
+      if (userResult.userId != null) {
+        memories = await deleteMemoriesByUserId(userResult.userId);
+      }
+      if (userResult.elderId != null) {
+        careAlerts = await deleteAlertsByElderId(userResult.elderId);
+      }
     }
 
     // CR-P2B：帳號刪除為敏感操作 → best-effort 稽核。actorId/targetId 用內部
     // user_id（非 PII 明碼）；metadata 僅刪除計數；無 email / ip / token / 原文。
     recordAuditLog({
       actorType: "elder",
-      actorId: userResult.userId != null ? String(userResult.userId) : null,
+      actorId: null,
       action: "account_delete",
       targetType: "user",
-      targetId: userResult.userId != null ? String(userResult.userId) : null,
+      targetId: null,
       outcome: "success",
       metadata: {
         user: userResult.user,
@@ -1172,15 +1201,28 @@ app.get("/api/consent", async (req, res) => {
 
 // CR-0025 日常照護任務（Daily Care Task）：長者端拍照打卡 + AI 影像確認 +
 // 管理者端追蹤。與既有遊戲化 CareTask 不同功能，獨立 daily care task 命名。
-// 只新增路由，不改既有路由形狀。資料走 JSON store（runtime、不進版控）。
+// 正式資料走 PostgreSQL；JSON fallback 僅供非 production 開發環境。
+
+function dailyCareSubmissionForResponse(submission) {
+  if (!submission) return null;
+  const { proofImagePath, proofImageBytes, ...safe } = submission;
+  return safe;
+}
+
+function dailyCareTaskForResponse(task) {
+  if (!task) return task;
+  return {
+    ...task,
+    ...(Object.hasOwn(task, "latestSubmission")
+      ? { latestSubmission: dailyCareSubmissionForResponse(task.latestSubmission) }
+      : {}),
+  };
+}
 
 // 長者端：取得某長者的日常任務列表。
-app.get("/api/daily-care-tasks", async (req, res) => {
+app.get("/api/daily-care-tasks", requireResidentCaller, async (req, res) => {
   try {
-    const elderId =
-      typeof req.query.elderId === "string" && req.query.elderId.trim()
-        ? req.query.elderId.trim()
-        : null;
+    const elderId = req.residentCaller.elderId;
     const status =
       typeof req.query.status === "string" && req.query.status.trim()
         ? req.query.status.trim()
@@ -1199,14 +1241,17 @@ app.get("/api/daily-care-tasks", async (req, res) => {
 });
 
 // 建立任務（Agent / 管理者 / 種子資料可用）。
-app.post("/api/daily-care-tasks", async (req, res) => {
+app.post("/api/daily-care-tasks", requireResidentCaller, async (req, res) => {
   const body = req.body || {};
   const title = typeof body.title === "string" ? body.title.trim() : "";
   if (!title) {
     return res.status(400).json({ success: false, error: "invalid_payload" });
   }
   try {
-    const task = await createDailyCareTask(body);
+    const task = await createDailyCareTask({
+      ...body,
+      elderId: req.residentCaller.elderId,
+    });
     return res.json({ success: true, task });
   } catch (error) {
     if (isFeatureUnavailableError(error)) return respondFeatureDisabled(res, { key: "success" });
@@ -1223,20 +1268,25 @@ app.post("/api/daily-care-tasks", async (req, res) => {
 // AI 不確定 / 失敗 / 缺 key → needs_review（不 fake passed、不 crash）。
 app.post(
   "/api/daily-care-tasks/:id/submit",
-  upload.single("photo"),
+  requireResidentCaller,
+  receiveDailyCareProof,
   async (req, res) => {
     const taskId = req.params.id;
+    let keepLocalProof = false;
     const cleanup = () => {
-      // 驗證失敗或找不到任務時清掉暫存檔；成功時保留供管理者查看（uploads/ 不進版控）。
-      if (req.file) fs.unlink(req.file.path, () => {});
+      // PostgreSQL 已保存 bytes 後即可移除暫存檔；非 production JSON fallback
+      // 仍以 uploads/ 檔案作為實際 proof，因此成功時必須保留。
+      if (req.file && !keepLocalProof) fs.unlink(req.file.path, () => {});
     };
     try {
       const task = await getDailyCareTaskById(taskId);
       if (!task) {
-        cleanup();
         return res
           .status(404)
           .json({ success: false, error: "task_not_found" });
+      }
+      if (String(task.elderId || "") !== String(req.residentCaller.elderId)) {
+        return res.status(403).json({ success: false, error: "forbidden" });
       }
       if (!req.file) {
         return res
@@ -1249,21 +1299,23 @@ app.post(
         imagePath: req.file.path,
         mimeType: req.file.mimetype,
       });
+      const proofImageBytes = await fs.promises.readFile(req.file.path);
 
       const result = await recordDailyCareTaskSubmission(taskId, {
         proofImagePath: req.file.path,
+        proofImageBytes,
         proofMimeType: req.file.mimetype,
         verification,
         note: typeof req.body?.note === "string" ? req.body.note : "",
       });
+      keepLocalProof = result.submission?.proofImagePath === req.file.path;
 
       return res.json({
         success: true,
         task: result.task,
-        submission: result.submission,
+        submission: dailyCareSubmissionForResponse(result.submission),
       });
     } catch (error) {
-      cleanup();
       if (isFeatureUnavailableError(error)) return respondFeatureDisabled(res, { key: "success" });
       logError("daily care task submit exception", {
         error: error?.message || error,
@@ -1271,15 +1323,30 @@ app.post(
       return res
         .status(500)
         .json({ success: false, error: "daily_care_task_submit_failed" });
+    } finally {
+      cleanup();
     }
   },
 );
 
 // 管理者 / 系統：更新任務狀態（如人工查看後 completed / rejected）。
-app.patch("/api/daily-care-tasks/:id/status", async (req, res) => {
+app.patch("/api/daily-care-tasks/:id/status", resolveDailyCareAdminAuthContext, async (req, res) => {
   const status =
     typeof req.body?.status === "string" ? req.body.status.trim() : "";
   try {
+    const task = await getDailyCareTaskById(req.params.id);
+    if (!task) {
+      return res.status(404).json({ success: false, error: "not_found" });
+    }
+    if (!authz.isSuperAdmin(req.authContext)) {
+      const allowed = await authz.assertCanManageResident(
+        req.authContext,
+        task.elderId,
+      );
+      if (!allowed) {
+        return res.status(403).json({ success: false, error: "forbidden" });
+      }
+    }
     const result = await updateDailyCareTaskStatus(req.params.id, status);
     if (!result.success) {
       if (isFeatureUnavailableError(result)) return respondFeatureDisabled(res, { key: "success" });
@@ -1301,7 +1368,7 @@ app.patch("/api/daily-care-tasks/:id/status", async (req, res) => {
 // CR-0041 D2：套 resident scope（CR-0040 §14 Batch D 硬前置 BLOCKER）。
 //   - super_admin → 全量（行為零變更）。
 //   - caregiver   → 只見授權住民的任務；若帶 elderId 但非授權 → 403；無授權 → 空陣列。
-app.get("/api/admin/daily-care-tasks", resolveAdminAuthContext, async (req, res) => {
+app.get("/api/admin/daily-care-tasks", resolveDailyCareAdminAuthContext, async (req, res) => {
   try {
     const authContext = req.authContext;
     const elderId =
@@ -1315,7 +1382,7 @@ app.get("/api/admin/daily-care-tasks", resolveAdminAuthContext, async (req, res)
 
     if (authz.isSuperAdmin(authContext)) {
       const tasks = await listDailyCareTasksForAdmin({ elderId, status });
-      return res.json({ success: true, tasks });
+      return res.json({ success: true, tasks: tasks.map(dailyCareTaskForResponse) });
     }
 
     // caregiver：若指定 elderId，須在授權範圍內（跨住民 → 403）。
@@ -1325,7 +1392,7 @@ app.get("/api/admin/daily-care-tasks", resolveAdminAuthContext, async (req, res)
         return res.status(403).json({ success: false, error: "forbidden" });
       }
       const tasks = await listDailyCareTasksForAdmin({ elderId, status });
-      return res.json({ success: true, tasks });
+      return res.json({ success: true, tasks: tasks.map(dailyCareTaskForResponse) });
     }
 
     // 未指定 elderId：取全部後依授權住民過濾（無授權 → 空陣列，fail-closed）。
@@ -1336,7 +1403,7 @@ app.get("/api/admin/daily-care-tasks", resolveAdminAuthContext, async (req, res)
     const tasks = (all || []).filter(
       (task) => task && task.elderId != null && authorized.has(task.elderId),
     );
-    return res.json({ success: true, tasks });
+    return res.json({ success: true, tasks: tasks.map(dailyCareTaskForResponse) });
   } catch (error) {
     if (isFeatureUnavailableError(error)) return respondFeatureDisabled(res, { key: "success" });
     logError("admin daily care tasks exception", {
@@ -1348,13 +1415,44 @@ app.get("/api/admin/daily-care-tasks", resolveAdminAuthContext, async (req, res)
   }
 });
 
-// 照片證明檢視入口（長者預覽 / 管理者查看）。只回 uploads/ 內的安全路徑。
-app.get("/api/daily-care-tasks/proof/:submissionId", async (req, res) => {
+// 照片證明檢視入口（管理者 / 已授權照護人員）。正式資料由 PostgreSQL bytes 回傳；
+// 非 production JSON fallback 才會讀 uploads/ 內的安全路徑。
+app.get(
+  "/api/daily-care-tasks/proof/:submissionId",
+  resolveDailyCareAdminAuthContext,
+  async (req, res) => {
   try {
     const submission = await getDailyCareTaskSubmissionById(
       req.params.submissionId,
     );
-    if (!submission || !submission.proofImagePath) {
+    if (!submission) {
+      return res.status(404).json({ success: false, error: "proof_not_found" });
+    }
+    if (!authz.isSuperAdmin(req.authContext)) {
+      const allowed = await authz.assertCanAccessResident(
+        req.authContext,
+        submission.elderId,
+      );
+      if (!allowed) {
+        return res.status(403).json({ success: false, error: "forbidden" });
+      }
+    }
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    if (submission.proofImageBytes) {
+      const mime = new Set([
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/heic",
+        "image/heif",
+      ]).has(submission.proofMimeType)
+        ? submission.proofMimeType
+        : "application/octet-stream";
+      res.setHeader("Content-Type", mime);
+      return res.send(submission.proofImageBytes);
+    }
+    if (!submission.proofImagePath) {
       return res.status(404).json({ success: false, error: "proof_not_found" });
     }
     const resolved = path.resolve(submission.proofImagePath);
@@ -1376,7 +1474,8 @@ app.get("/api/daily-care-tasks/proof/:submissionId", async (req, res) => {
       .status(500)
       .json({ success: false, error: "daily_care_task_proof_failed" });
   }
-});
+  },
+);
 
 // CR-0007 Batch 2：健康後台 Admin API（契約見 PROJECT_ARCHITECTURE.md §11）。
 // 只新增路由，不改既有路由形狀。生理 / 情緒 / 遊戲指標為確定性產生器供給，
@@ -2848,7 +2947,9 @@ app.post("/api/search", async (req, res) => {
 });
 
 app.post("/api/crawl/refresh", async (req, res) => {
-  // DEV ONLY: protect this endpoint with authentication/authorization before production.
+  if (!isCrawlerRefreshEnabled(process.env)) {
+    return res.status(404).json({ success: false, error: "not_found" });
+  }
   try {
     const urls = Array.isArray(req.body?.urls) ? req.body.urls.map(String) : [];
     const result = await refreshCrawler({ urls });
@@ -3131,13 +3232,14 @@ async function startServer() {
     process.exit(1);
   }
 
-  // CR-0032：實際啟動 server 時，若商城商品檔為空，寫入 Demo 種子商品，
-  // 方便展示（測試以 require 載入 app，require.main !== module，不會觸發）。
-  marketplaceStore
-    .seedDefaultProducts()
-    .catch((error) =>
-      logError("marketplace seed failed", { error: error?.message || error }),
-    );
+  // 本機開發可補入範例商品；production 只使用 migration / 管理後台建立的正式資料。
+  if (!isProduction(process.env)) {
+    marketplaceStore
+      .seedDefaultProducts()
+      .catch((error) =>
+        logError("marketplace seed failed", { error: error?.message || error }),
+      );
+  }
   // CR-0034 B2：啟動時印「一律遮蔽」的設定摘要，方便維運確認敏感設定是否就緒，
   // 但絕不輸出任何完整 token / secret / DATABASE_URL / email（皆走 mask helper）。
   console.log("[config] effective config (masked)", describeMaskedConfig(process.env));

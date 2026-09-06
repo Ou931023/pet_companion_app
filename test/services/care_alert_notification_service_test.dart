@@ -4,10 +4,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:pet_companion_app/config/app_config.dart';
 import 'package:pet_companion_app/models/care_alert.dart';
 import 'package:pet_companion_app/services/care_alert_notification_service.dart';
 
-const _sttProxyUrl = 'http://192.168.99.99:3001/api/stt/transcribe';
+const _sttProxyUrl = AppConfig.defaultSttProxyUrl;
 
 CareAlert _sampleAlert() {
   return CareAlert(
@@ -39,8 +40,8 @@ void main() {
     expect(captured, isNotNull);
     expect(captured!.method, 'POST');
     expect(captured!.url.path, '/api/care-alerts/notify');
-    expect(captured!.url.host, '192.168.99.99');
-    expect(captured!.url.port, 3001);
+    expect(captured!.url.scheme, 'https');
+    expect(captured!.url.host, 'ai-companion-api-1gm7.onrender.com');
 
     // Authorization header 帶 token；server 由 token 推導 elderId。
     expect(captured!.headers['Authorization'], 'Bearer mock-id-token-default_user');

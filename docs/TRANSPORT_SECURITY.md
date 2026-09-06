@@ -16,7 +16,7 @@
 | 後端 | HTTPS 網域 + 有效 TLS 憑證 | 本機 / 區網 HTTP |
 | Flutter API base | `https://` 正式網域（localhost/空 → App 守門擋進主流程） | localhost / 10.0.2.2 / LAN HTTP |
 | caregiver_web | HTTPS 同源 `/api` 或正式 HTTPS API URL | 本機 HTTP |
-| iOS ATS | `NSAllowsArbitraryLoads=false`（無全域明文） | 走 `NSAllowsLocalNetworking` 允許 loopback/LAN |
+| iOS ATS | `NSAllowsArbitraryLoads=false`，無 local-network exception | 使用 staging HTTPS，不連明文 LAN |
 | Android cleartext | 禁止（release 無 `usesCleartextTraffic=true`） | debug 經 network security config 允許 loopback/LAN |
 | CORS | 僅正式 caregiver_web origin 白名單（**非 allow-all**） | 空清單→本機 allow-all |
 
@@ -26,7 +26,7 @@
 
 ## 2. 現況（CR-0054 盤點）
 
-- ✅ iOS `ios/Runner/Info.plist`：CR-0096S Batch 3 已將 `NSAllowsArbitraryLoads=false`，並保留 `NSAllowsLocalNetworking=true` 供本機 / 區網開發；正式公網 API 仍需 HTTPS。
+- ✅ iOS `ios/Runner/Info.plist`：`NSAllowsArbitraryLoads=false`，並已移除 `NSAllowsLocalNetworking` 與本機網路權限文案；release / staging API 一律 HTTPS。
 - ✅ Android `android/app/src/main/AndroidManifest.xml`：CR-0096S Batch 2 已移除 `android:usesCleartextTraffic="true"`，改掛 `@xml/network_security_config`；main/release config 禁明文，debug/profile resource overlay 保留本機開發 HTTP。
 - ✅ 後端 CORS（CR-0054 Batch 1 已修）：middleware 經 `resolveCorsOrigins` 取白名單，production 因 fail-fast 保證非空 → 不再 allow-all。
 - ✅ Flutter `AppConfig.isApiBaseUrlProductionSafe`：production base URL 為 localhost/空 → 友善守門畫面，不進主流程。
@@ -69,7 +69,7 @@
 
 > manifest 合併：debug build 以 `src/debug/res/xml/network_security_config.xml` 覆蓋 release 版（同名資源 debug 優先），故 debug 取得 LAN 明文、release 取得禁明文。**毋須** `tools:replace`（資源覆蓋層級即可），但若改採 debug manifest 覆蓋 `networkSecurityConfig` 屬性，則需在 debug manifest 的 `<application>` 加 `tools:replace="android:networkSecurityConfig"`。優先採「同名資源覆蓋」較單純。
 
-### 3.2 iOS — ATS 收斂 + 本機網路例外（已套用）
+### 3.2 iOS — ATS HTTPS-only（已套用）
 
 **改** `ios/Runner/Info.plist` 的 `NSAppTransportSecurity`：
 
@@ -78,16 +78,10 @@
 <dict>
     <key>NSAllowsArbitraryLoads</key>
     <false/>
-    <!-- 允許 loopback / *.local / 區網（RFC1918、link-local），供 dev 連本機 HTTP 後端；
-         正式後端走 HTTPS 不需任何 arbitrary load。 -->
-    <key>NSAllowsLocalNetworking</key>
-    <true/>
 </dict>
 ```
 
-> 採 `NSAllowsLocalNetworking=true`（架構裁決 D）：已涵蓋 loopback、`*.local`、RFC1918（10/8、172.16/12、192.168/16）與 link-local，dev LAN IP 後端**無需列舉動態 IP**。不採 xcconfig 驅動（避免引入變數替換 + per-config scheme 的結構性擴張）。
-> 取捨：`NSAllowsLocalNetworking` 在 release build 仍生效（無法用單一 plist 依 build config 關閉）。但它**只**放行本機 / 區網，**不**放行任意公網明文 → 正式對外流量仍強制 HTTPS，符合 App Store ATS 審查（Apple 對 local networking 例外是接受的）。若日後要求 release 完全無本機例外，再引 xcconfig（另開 CR）。
-> 權限文案不動（既有 `NSLocalNetworkUsageDescription` 已是長者友善中文、無 demo/test/mock 字樣）。
+> iOS 正式 target 不保留 localhost / LAN 明文能力，也不要求本機網路權限。開發與驗收使用 staging HTTPS；避免為本機便利擴大 release 網路權限。
 
 ---
 
@@ -106,7 +100,7 @@
 |---|---|---|
 | T1 | iOS release 連正式 HTTPS 後端 | App launch / login / API 正常 |
 | T2 | iOS Realtime 語音 | 開麥→SDP 交換→DataChannel→partial/final transcript 正常（WebRTC 不受 ATS 影響，但 SDP 走 HTTPS） |
-| T3 | iOS dev 連本機 HTTP 後端 | `NSAllowsLocalNetworking` 生效，dev 仍可連 |
+| T3 | iOS staging HTTPS | API / Realtime 正常，無 ATS 例外依賴 |
 | T4 | Android release 連正式 HTTPS | API / Realtime 正常，無 cleartext 被擋 |
 | T5 | Android debug 連 LAN/10.0.2.2 HTTP | debug network security config 生效，dev 仍可連 |
 | T6 | Care Alert medium/high/urgent | persist + (high/urgent) Telegram，medium 不推 |
@@ -123,7 +117,7 @@
 收斂改動全部可逆，且彼此獨立：
 
 - **Android**：主 manifest 還原 `android:usesCleartextTraffic="true"`、移除 `networkSecurityConfig` 屬性；刪 `res/xml/network_security_config.xml`（或保留檔案僅還原 manifest）。debug config 留著無害。
-- **iOS**：`NSAllowsArbitraryLoads` 還原為 `true`（或移除 `NSAllowsLocalNetworking`）。
+- **iOS**：不得以還原 `NSAllowsArbitraryLoads=true` 作為修復；應修正 staging / production TLS、網域或 API 設定。
 - **後端 CORS（CR-0054 Batch 1，已套用）**：非本批 rollback 範圍；如需，將 server.js CORS 來源還原為 `process.env.ALLOWED_ORIGINS`（不建議，會重開 allow-all 缺口）。
 
 建議套用時一個平台一個 commit，方便單獨 rollback。

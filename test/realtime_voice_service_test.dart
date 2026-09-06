@@ -119,7 +119,7 @@ void main() {
     });
 
     test(
-        'response audio transcript delta can update user partial before response',
+        'legacy response audio transcript stays assistant when response.created is delayed',
         () async {
       final service = RealtimeVoiceService();
       final events = <RealtimeVoiceEvent>[];
@@ -133,16 +133,174 @@ void main() {
         'type': 'response.audio_transcript.delta',
         'delta': '有點累',
       }));
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.done',
+      }));
+      await pumpEventQueue();
+
+      final userPartials = events
+          .where((event) => event.type == RealtimeEventType.partialTranscript)
+          .map((event) => event.payload)
+          .toList();
+      expect(
+        userPartials,
+        isEmpty,
+        reason: 'assistant transcript 不可因 response.created 延遲而歸到 user',
+      );
+      expect(
+        events
+            .where(
+                (event) => event.type == RealtimeEventType.assistantPartialText)
+            .map((event) => event.payload),
+        contains('我今天'),
+      );
+      expect(
+        events
+            .where((event) => event.type == RealtimeEventType.assistantText)
+            .map((event) => event.payload),
+        ['我今天有點累'],
+      );
+
+      await sub.cancel();
+      service.dispose();
+    });
+
+    test('CR-0105 event matrix keeps transcript ownership and final counts',
+        () async {
+      final service = RealtimeVoiceService();
+      final events = <RealtimeVoiceEvent>[];
+      final sub = service.events.listen(events.add);
+
+      // item-a 的 partial 只能暫時顯示；completed + conversation.item.done
+      // 是同一個 source item，final 必須只算一次。
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'conversation.item.input_audio_transcription.delta',
+        'item_id': 'item-a',
+        'delta': '食飽',
+      }));
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'conversation.item.input_audio_transcription.completed',
+        'item_id': 'item-a',
+        'transcript': '食飽未',
+      }));
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'conversation.item.done',
+        'item': {
+          'id': 'item-a',
+          'role': 'user',
+          'content': [
+            {'type': 'input_audio', 'transcript': '食飽未'},
+          ],
+        },
+      }));
+
+      // assistant item 即使相容 payload 帶 top-level transcript，也不可變 user final。
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'conversation.item.done',
+        'transcript': '我是寵物的回覆',
+        'item': {
+          'id': 'assistant-a',
+          'role': 'assistant',
+          'content': [
+            {'type': 'audio', 'transcript': '我是寵物的回覆'},
+          ],
+        },
+      }));
+
+      // 空白 final 為 0；不同 item 的相同句子則是合法下一輪，不可被文字去重誤殺。
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'conversation.item.input_audio_transcription.completed',
+        'item_id': 'item-blank',
+        'transcript': '   ',
+      }));
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'conversation.item.input_audio_transcription.completed',
+        'item_id': 'item-b',
+        'transcript': '食飽未',
+      }));
       await pumpEventQueue();
 
       final partials = events
           .where((event) => event.type == RealtimeEventType.partialTranscript)
           .map((event) => event.payload)
           .toList();
-      expect(partials, ['我今天', '我今天有點累']);
+      final finals = events
+          .where((event) => event.type == RealtimeEventType.finalTranscript)
+          .map((event) => event.payload)
+          .toList();
+
+      expect(partials, ['食飽']);
+      expect(finals, ['食飽未', '食飽未']);
+      expect(finals.where((text) => text.trim().isEmpty), isEmpty);
+      expect(finals.where((text) => text == '我是寵物的回覆'), isEmpty);
+
+      await sub.cancel();
+      service.dispose();
+    });
+
+    test('response.done prefers its complete transcript over an earlier delta',
+        () async {
+      final service = RealtimeVoiceService();
+      final events = <RealtimeVoiceEvent>[];
+      final sub = service.events.listen(events.add);
+
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.created',
+      }));
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.output_audio_transcript.delta',
+        'delta': '我在',
+      }));
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.done',
+        'response': {
+          'output': [
+            {
+              'role': 'assistant',
+              'content': [
+                {'type': 'audio', 'transcript': '我在這裡陪你。'},
+              ],
+            },
+          ],
+        },
+      }));
+      await pumpEventQueue();
+
       expect(
-        events.where((event) => event.type == RealtimeEventType.assistantText),
-        isEmpty,
+        events
+            .where((event) => event.type == RealtimeEventType.assistantText)
+            .map((event) => event.payload),
+        ['我在這裡陪你。'],
+      );
+
+      await sub.cancel();
+      service.dispose();
+    });
+
+    test(
+        'audio transcript done supplies the final assistant text without deltas',
+        () async {
+      final service = RealtimeVoiceService();
+      final events = <RealtimeVoiceEvent>[];
+      final sub = service.events.listen(events.add);
+
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.created',
+      }));
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.output_audio_transcript.done',
+        'transcript': '免煩惱，我陪你慢慢講。',
+      }));
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'response.done',
+      }));
+      await pumpEventQueue();
+
+      expect(
+        events
+            .where((event) => event.type == RealtimeEventType.assistantText)
+            .map((event) => event.payload),
+        ['免煩惱，我陪你慢慢講。'],
       );
 
       await sub.cancel();
