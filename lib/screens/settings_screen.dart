@@ -30,6 +30,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   late TextEditingController _petNameController;
   late FocusNode _petNameFocusNode;
+  bool _isDeletingAccount = false;
 
   @override
   void initState() {
@@ -580,11 +581,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
               SizedBox(
                 width: double.infinity,
                 child: TextButton.icon(
-                  onPressed: _handleDeleteAccount,
-                  icon: const Icon(Icons.delete_forever_outlined, size: 26),
-                  label: const Text(
-                    '刪除帳號',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                  onPressed: _isDeletingAccount ? null : _handleDeleteAccount,
+                  icon: _isDeletingAccount
+                      ? const SizedBox.square(
+                          dimension: 24,
+                          child: CircularProgressIndicator(strokeWidth: 3),
+                        )
+                      : const Icon(Icons.delete_forever_outlined, size: 26),
+                  label: Text(
+                    _isDeletingAccount ? '正在安全刪除，請稍候' : '刪除帳號',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
@@ -688,6 +697,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// 刪除帳號（二次確認以免誤刪）：兩次都按確定才會真的刪除。
   /// 成功後 AuthGate 會自動回到登入頁；失敗顯示白話訊息、維持登入。
   Future<void> _handleDeleteAccount() async {
+    if (_isDeletingAccount) return;
+
     // 第一次確認。
     final first = await showDialog<bool>(
       context: context,
@@ -770,22 +781,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (password == null || !mounted) return; // 取消輸入 → 中止，不刪。
     }
 
+    setState(() => _isDeletingAccount = true);
     final error = await auth.deleteAccount(password: password);
-    if (!mounted) return;
     if (error != null) {
       // 失敗（如密碼錯誤、需重新登入）：維持登入，給白話提示，不清本機資料。
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error, style: const TextStyle(fontSize: 18)),
-          duration: const Duration(seconds: 4),
-        ),
-      );
+      if (mounted) {
+        setState(() => _isDeletingAccount = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error, style: const TextStyle(fontSize: 18)),
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
       return;
     }
     // 只有真的刪除成功（已登出）才清本機資料；若使用者取消了 Google 重新驗證，
     // 狀態仍是登入中 → 不動本機資料。
     if (!auth.isAuthenticated) {
       await profile.clearAllData();
+    }
+    if (mounted) {
+      setState(() => _isDeletingAccount = false);
     }
   }
 

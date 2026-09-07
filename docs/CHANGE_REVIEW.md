@@ -4790,3 +4790,20 @@ Release signing 的 repo 端文件與自動檢查已可執行；真正送審仍�
 
 ### Production 邊界
 - 75 秒只降低免費主機冷啟動造成的登入失敗，不能取代正式 always-on hosting。公開上架前仍應把 backend 移至不休眠方案，Realtime Voice Agent 不可依賴每次冷啟動等待。
+
+---
+
+## CR-0106C — Production Account Deletion Reliability
+
+### Architecture Review
+**核准，風險等級 medium。** 本批跨 `backend-agent` 與 `frontend-ux-agent`，但不改 `/api/auth/delete` 的 request / response 契約、不改 DB schema、不改 Firebase 身分模型。修改限於既有刪除流程的 schema-version 相容、外部步驟 timeout、重複送出防護與長者友善進度提示。
+
+### 根因與修正範圍
+- Production transaction 原本無條件刪除 migration 010–018 的每張表。若 Neon 尚未套用某個後期 migration，PostgreSQL 會以 `undefined_table` 中止 transaction，導致 users / elders 與其他既有資料全部 rollback。
+- transaction 開始後先讀取目前 schema 實際存在的選配資料表；只對存在的表執行刪除。`users` / `elders` 仍為必要核心表，任何真正 SQL 失敗仍完整 rollback，絕不假裝成功。
+- Google 重新驗證、Firebase 帳號刪除與後端刪除皆設明確 timeout；刪除期間顯示不可重複操作的白話進度視窗，成功才清本機資料。
+- 診斷只記錄階段與錯誤類型，不記 Email、UID、Firebase token 或使用者資料。
+
+### 驗收
+- 後端 transaction：完整 schema、缺少後期選配表、任一既有表 SQL 失敗 rollback、帳號不存在冪等成功。
+- Flutter：Google 重新驗證 timeout 可回到設定頁；刪除中不能重複觸發；失敗保留登入與本機資料，成功回登入頁。

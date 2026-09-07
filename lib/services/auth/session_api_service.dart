@@ -196,7 +196,7 @@ class SessionApiService {
       final decoded = jsonDecode(response.body);
       return decoded is Map<String, dynamic> && decoded['success'] == true;
     } catch (error) {
-      AppLog.error('[AUTH_DELETE] 後端刪除失敗（已忽略，仍會清本機與 Firebase）', error);
+      AppLog.error('[AUTH_DELETE] 後端刪除失敗（保留帳號與本機資料）', error);
       return false;
     }
   }

@@ -397,8 +397,12 @@ class AuthController extends ChangeNotifier {
         return '密碼不太對喔，再輸入一次就可以刪除帳號。';
       case 'requires-recent-login':
         return '為了帳號安全，請先登出再重新登入一次，然後馬上刪除帳號喔。';
+      case 'interrupted':
+        return '剛剛的身分確認中斷了，帳號和資料都還保留著，請再試一次。';
+      case 'network':
+      case 'timeout':
       case 'network-request-failed':
-        return '現在網路好像不太穩，待會再試一次好嗎？';
+        return '目前連線沒有完成，帳號和資料都還保留著。請確認網路後再試一次。';
       case 'account_delete_failed':
         return '目前還沒刪除完整，請檢查網路後再試一次。你的帳號和資料都還保留著。';
       default:

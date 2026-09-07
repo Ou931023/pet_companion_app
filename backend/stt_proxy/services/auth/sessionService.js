@@ -332,6 +332,34 @@ function rowCount(result) {
   return Number(result && result.rowCount) || 0;
 }
 
+const ACCOUNT_DATA_TABLES = Object.freeze([
+  "notification_logs",
+  "consent_records",
+  "resident_caregiver_links",
+  "emotion_history",
+  "elder_health_metrics",
+  "game_cognitive_metrics",
+  "daily_care_task_submissions",
+  "daily_care_tasks",
+  "app_usage_events",
+  "care_alerts",
+  "marketplace_orders",
+  "memory_items",
+  "companion_memories",
+  "audit_logs",
+]);
+
+async function existingAccountDataTables(client) {
+  const result = await client.query(
+    `SELECT table_name
+       FROM information_schema.tables
+      WHERE table_schema = current_schema()
+        AND table_name = ANY($1::text[])`,
+    [ACCOUNT_DATA_TABLES],
+  );
+  return new Set((result.rows || []).map((row) => row.table_name));
+}
+
 // Production account deletion must be atomic. Every table containing the
 // account's user/elder identifier is cleaned on one PostgreSQL client before
 // users/elders are removed. Any failure rolls the whole operation back.
@@ -368,53 +396,96 @@ async function deleteAccountDataPostgres(firebaseUid, db = postgres) {
     const elderId = row.elder_id;
     const userKey = String(userId);
     const elderKey = elderId == null ? null : String(elderId);
+    const existingTables = await existingAccountDataTables(client);
+    const hasTable = (tableName) => existingTables.has(tableName);
 
     let careAlerts = 0;
     if (elderId != null) {
-      await client.query(
-        `DELETE FROM notification_logs
-         WHERE elder_id = $1
-            OR alert_id IN (SELECT id FROM care_alerts WHERE elder_id = $1)`,
-        [elderId],
-      );
-      await client.query(
-        `DELETE FROM consent_records WHERE elder_id = $1 OR user_id = $2`,
-        [elderId, userId],
-      );
-      await client.query(
-        `DELETE FROM resident_caregiver_links
-         WHERE elder_id = $1 OR caregiver_id = $2`,
-        [elderId, userId],
-      );
-      await client.query(`DELETE FROM emotion_history WHERE elder_id = $1`, [elderId]);
-      await client.query(`DELETE FROM elder_health_metrics WHERE elder_id = $1`, [elderId]);
-      await client.query(`DELETE FROM game_cognitive_metrics WHERE elder_id = $1`, [elderId]);
-      await client.query(`DELETE FROM daily_care_task_submissions WHERE elder_id = $1`, [elderKey]);
-      await client.query(`DELETE FROM daily_care_tasks WHERE elder_id = $1`, [elderKey]);
-      await client.query(`DELETE FROM app_usage_events WHERE elder_id = $1 OR user_id = $2`, [elderKey, userKey]);
-      const alertDelete = await client.query(
-        `DELETE FROM care_alerts WHERE elder_id = $1`,
-        [elderId],
-      );
-      careAlerts = rowCount(alertDelete);
+      if (hasTable("notification_logs")) {
+        const notificationWhere = hasTable("care_alerts")
+          ? `elder_id = $1 OR alert_id IN (SELECT id FROM care_alerts WHERE elder_id = $1)`
+          : `elder_id = $1`;
+        await client.query(
+          `DELETE FROM notification_logs WHERE ${notificationWhere}`,
+          [elderId],
+        );
+      }
+      if (hasTable("consent_records")) {
+        await client.query(
+          `DELETE FROM consent_records WHERE elder_id = $1 OR user_id = $2`,
+          [elderId, userId],
+        );
+      }
+      if (hasTable("resident_caregiver_links")) {
+        await client.query(
+          `DELETE FROM resident_caregiver_links
+           WHERE elder_id = $1 OR caregiver_id = $2`,
+          [elderId, userId],
+        );
+      }
+      for (const tableName of [
+        "emotion_history",
+        "elder_health_metrics",
+        "game_cognitive_metrics",
+      ]) {
+        if (hasTable(tableName)) {
+          await client.query(`DELETE FROM ${tableName} WHERE elder_id = $1`, [elderId]);
+        }
+      }
+      if (hasTable("daily_care_task_submissions")) {
+        await client.query(
+          `DELETE FROM daily_care_task_submissions WHERE elder_id = $1`,
+          [elderKey],
+        );
+      }
+      if (hasTable("daily_care_tasks")) {
+        await client.query(`DELETE FROM daily_care_tasks WHERE elder_id = $1`, [elderKey]);
+      }
+      if (hasTable("app_usage_events")) {
+        await client.query(
+          `DELETE FROM app_usage_events WHERE elder_id = $1 OR user_id = $2`,
+          [elderKey, userKey],
+        );
+      }
+      if (hasTable("care_alerts")) {
+        const alertDelete = await client.query(
+          `DELETE FROM care_alerts WHERE elder_id = $1`,
+          [elderId],
+        );
+        careAlerts = rowCount(alertDelete);
+      }
     } else {
-      await client.query(`DELETE FROM consent_records WHERE user_id = $1`, [userId]);
-      await client.query(`DELETE FROM resident_caregiver_links WHERE caregiver_id = $1`, [userId]);
-      await client.query(`DELETE FROM app_usage_events WHERE user_id = $1`, [userKey]);
+      if (hasTable("consent_records")) {
+        await client.query(`DELETE FROM consent_records WHERE user_id = $1`, [userId]);
+      }
+      if (hasTable("resident_caregiver_links")) {
+        await client.query(
+          `DELETE FROM resident_caregiver_links WHERE caregiver_id = $1`,
+          [userId],
+        );
+      }
+      if (hasTable("app_usage_events")) {
+        await client.query(`DELETE FROM app_usage_events WHERE user_id = $1`, [userKey]);
+      }
     }
 
-    await client.query(`DELETE FROM marketplace_orders WHERE user_id = $1`, [userKey]);
-    const legacyMemories = await client.query(`DELETE FROM memory_items WHERE user_id = $1`, [userKey]);
-    const companionMemories = await client.query(
-      `DELETE FROM companion_memories WHERE user_id = $1`,
-      [userKey],
-    );
-    await client.query(
-      `DELETE FROM audit_logs
-       WHERE (actor_type = 'elder' AND actor_id = $1)
-          OR (target_type = 'user' AND target_id = $1)`,
-      [userKey],
-    );
+    if (hasTable("marketplace_orders")) {
+      await client.query(`DELETE FROM marketplace_orders WHERE user_id = $1`, [userKey]);
+    }
+    const legacyMemories = hasTable("memory_items")
+      ? await client.query(`DELETE FROM memory_items WHERE user_id = $1`, [userKey])
+      : { rowCount: 0 };
+    const companionMemories = hasTable("companion_memories")
+      ? await client.query(`DELETE FROM companion_memories WHERE user_id = $1`, [userKey])
+      : { rowCount: 0 };
+    if (hasTable("audit_logs")) {
+      await client.query(
+        `DELETE FROM audit_logs
+         WHERE (actor_type = 'elder' AND actor_id = $1)
+            OR (target_type = 'user' AND target_id = $1)`,
+        [userKey],
+      );
+    }
 
     const userDelete = await client.query(`DELETE FROM users WHERE id = $1`, [userId]);
     let elderDelete = { rowCount: 0 };
