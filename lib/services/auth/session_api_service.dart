@@ -38,12 +38,26 @@ class SessionApiException implements Exception {
 ///     （帶可分類 code），由上層轉白話錯誤＋重試。
 /// - HTTP client 可注入，方便用 `package:http/testing.dart` 的 MockClient 測試。
 class SessionApiService {
-  SessionApiService({http.Client? client})
-      : _client = client ?? http.Client();
+  SessionApiService({
+    http.Client? client,
+    this.requestTimeout = defaultRequestTimeout,
+    this.retryTimeout = defaultRetryTimeout,
+    this.retryDelay = defaultRetryDelay,
+  }) : _client = client ?? http.Client();
 
   final http.Client _client;
 
-  static const Duration _timeout = Duration(seconds: 8);
+  /// Render free instances may need more than 50 seconds to wake from idle.
+  /// Keep authentication pending long enough for that first production request
+  /// instead of misreporting a healthy cold start as a network failure.
+  static const Duration defaultRequestTimeout = Duration(seconds: 60);
+  static const Duration defaultRetryTimeout = Duration(seconds: 20);
+  static const Duration defaultRetryDelay = Duration(milliseconds: 500);
+
+  /// Injectable so timeout behavior stays fast and deterministic in tests.
+  final Duration requestTimeout;
+  final Duration retryTimeout;
+  final Duration retryDelay;
 
   /// auth session 端點：`$backendBaseUrl/api/auth/session`。
   Uri get _sessionUri =>
@@ -65,20 +79,19 @@ class SessionApiService {
     // 正式帳號路徑改丟 typed 例外，不捏造 session。
     final isDemo = provider == 'mock';
     try {
-      final response = await _client
-          .post(
-            _sessionUri,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'firebaseUid': firebaseUid,
-              'idToken': idToken,
-              if (email != null) 'email': email,
-              if (displayName != null) 'displayName': displayName,
-              'provider': provider,
-              if (photoUrl != null) 'photoUrl': photoUrl,
-            }),
-          )
-          .timeout(_timeout);
+      final requestBody = jsonEncode({
+        'firebaseUid': firebaseUid,
+        'idToken': idToken,
+        if (email != null) 'email': email,
+        if (displayName != null) 'displayName': displayName,
+        'provider': provider,
+        if (photoUrl != null) 'photoUrl': photoUrl,
+      });
+      final response = await _postSessionWithColdStartRetry(
+        requestBody: requestBody,
+        provider: provider,
+        allowRetry: !isDemo,
+      );
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
         if (isDemo) {
@@ -89,7 +102,8 @@ class SessionApiService {
           return AuthSession.mockFallback();
         }
         // 正式帳號：401 視為登入憑證失效（需重新登入），其餘非 2xx 視為 server。
-        AppLog.debug('[AUTH_SESSION] non-2xx response: ${response.statusCode}（正式帳號，丟例外）。');
+        AppLog.debug(
+            '[AUTH_SESSION] non-2xx response: ${response.statusCode}（正式帳號，丟例外）。');
         throw SessionApiException(
           response.statusCode == 401 ? 'invalid_token' : 'server',
         );
@@ -98,7 +112,8 @@ class SessionApiService {
       final decoded = jsonDecode(response.body);
       if (decoded is! Map<String, dynamic> || decoded['success'] != true) {
         if (isDemo) {
-          AppLog.debug('[AUTH_SESSION] backend 回應非成功格式，改用 demo fallback session。');
+          AppLog.debug(
+              '[AUTH_SESSION] backend 回應非成功格式，改用 demo fallback session。');
           return AuthSession.mockFallback();
         }
         AppLog.debug('[AUTH_SESSION] backend 回應非成功格式（正式帳號，丟例外）。');
@@ -117,11 +132,39 @@ class SessionApiService {
     } catch (error) {
       // timeout / 連線錯誤等。
       if (isDemo) {
-        AppLog.error('[AUTH_SESSION] createSession 失敗，改用 demo fallback session', error);
+        AppLog.error(
+            '[AUTH_SESSION] createSession 失敗，改用 demo fallback session', error);
         return AuthSession.mockFallback();
       }
       throw const SessionApiException('network');
     }
+  }
+
+  Future<http.Response> _postSessionWithColdStartRetry({
+    required String requestBody,
+    required String provider,
+    required bool allowRetry,
+  }) async {
+    AppLog.debug('[AUTH_SESSION] stage=request attempt=1 provider=$provider');
+    try {
+      return await _postSession(requestBody, requestTimeout);
+    } catch (error) {
+      if (!allowRetry) rethrow;
+      AppLog.error('[AUTH_SESSION] stage=retry_after_transport_error', error);
+      await Future<void>.delayed(retryDelay);
+      AppLog.debug('[AUTH_SESSION] stage=request attempt=2 provider=$provider');
+      return _postSession(requestBody, retryTimeout);
+    }
+  }
+
+  Future<http.Response> _postSession(String requestBody, Duration timeout) {
+    return _client
+        .post(
+          _sessionUri,
+          headers: {'Content-Type': 'application/json'},
+          body: requestBody,
+        )
+        .timeout(timeout);
   }
 
   /// 呼叫後端 `POST /api/auth/delete`，移除該帳號在後端的所有資料
@@ -144,7 +187,7 @@ class SessionApiService {
               'idToken': idToken,
             }),
           )
-          .timeout(_timeout);
+          .timeout(requestTimeout);
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
         AppLog.debug('[AUTH_DELETE] 後端刪除回非 2xx：${response.statusCode}（已忽略）');

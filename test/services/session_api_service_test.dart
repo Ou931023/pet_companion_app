@@ -6,6 +6,13 @@ import 'package:http/testing.dart';
 import 'package:pet_companion_app/services/auth/session_api_service.dart';
 
 void main() {
+  test('正式 session timeout 可涵蓋 Render free cold start', () {
+    final service = SessionApiService();
+
+    expect(service.requestTimeout, const Duration(seconds: 60));
+    expect(service.retryTimeout, const Duration(seconds: 20));
+  });
+
   test('200 正確 JSON → 解析出 userId/elderId/authMode/isNewUser', () async {
     http.Request? captured;
     final service = SessionApiService(
@@ -156,6 +163,60 @@ void main() {
           isA<SessionApiException>().having((e) => e.code, 'code', 'network'),
         ),
       );
+    });
+
+    test('正式帳號超過設定 timeout → 丟 SessionApiException(network)', () async {
+      final service = SessionApiService(
+        requestTimeout: const Duration(milliseconds: 5),
+        retryTimeout: const Duration(milliseconds: 5),
+        retryDelay: Duration.zero,
+        client: MockClient((request) async {
+          await Future<void>.delayed(const Duration(milliseconds: 30));
+          return http.Response('{}', 200);
+        }),
+      );
+
+      await expectLater(
+        service.createSession(
+          firebaseUid: 'uid-1',
+          idToken: 'token-1',
+          provider: 'google',
+        ),
+        throwsA(
+          isA<SessionApiException>().having((e) => e.code, 'code', 'network'),
+        ),
+      );
+    });
+
+    test('正式帳號第一次 transport 失敗會自動重試且可成功', () async {
+      var attempts = 0;
+      final service = SessionApiService(
+        retryDelay: Duration.zero,
+        client: MockClient((request) async {
+          attempts += 1;
+          if (attempts == 1) throw const _FakeSocketException();
+          return http.Response(
+            jsonEncode({
+              'success': true,
+              'userId': 'user-123',
+              'elderId': 'elder-456',
+              'role': 'elder',
+              'authMode': 'firebase',
+            }),
+            200,
+          );
+        }),
+      );
+
+      final session = await service.createSession(
+        firebaseUid: 'uid-1',
+        idToken: 'token-1',
+        provider: 'google',
+      );
+
+      expect(attempts, 2);
+      expect(session.userId, 'user-123');
+      expect(session.elderId, 'elder-456');
     });
 
     test('正式帳號 JSON 解析失敗 → 丟 SessionApiException(server)', () async {
