@@ -83,6 +83,9 @@ class FirebaseSignInResult {
 /// 並把錯誤統一轉成 [EmailAuthException]。測試可子類覆寫 Email 方法注入 fake，
 /// 不需碰真 Firebase。
 class FirebaseAuthService {
+  static const Duration _credentialTimeout = Duration(seconds: 30);
+  static const Duration _interactiveSignInTimeout = Duration(minutes: 2);
+
   FirebaseAuthService({FirebaseInitializer? initializer})
       : _initializer = initializer ?? FirebaseInitializer.instance;
 
@@ -329,7 +332,9 @@ class FirebaseAuthService {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     try {
-      await user.delete();
+      await user.delete().timeout(_credentialTimeout);
+    } on TimeoutException {
+      throw const EmailAuthException('interrupted');
     } on FirebaseAuthException catch (error) {
       throw EmailAuthException(error.code);
     } catch (_) {
@@ -345,15 +350,25 @@ class FirebaseAuthService {
   ///
   /// **必須在 `deleteCurrentUser()` 之前呼叫**（帳號刪除後就拿不到 token）。
   /// 沒有目前使用者（Demo / 不可用）→ 回 null，上層只做本機 / 後端略過。
+  /// 有使用者但 token 取得失敗時必須丟錯，不能略過後端刪除後直接刪 Firebase。
   Future<({String uid, String idToken})?> currentUserAuthInfo() async {
     if (!_initializer.isAvailable) return null;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return null;
     try {
-      final idToken = await user.getIdToken() ?? '';
+      final idToken = await user.getIdToken().timeout(_credentialTimeout) ?? '';
+      if (idToken.isEmpty) {
+        throw const EmailAuthException('interrupted');
+      }
       return (uid: user.uid, idToken: idToken);
+    } on TimeoutException {
+      throw const EmailAuthException('interrupted');
+    } on FirebaseAuthException catch (error) {
+      throw EmailAuthException(error.code);
+    } on EmailAuthException {
+      rethrow;
     } catch (_) {
-      return null;
+      throw const EmailAuthException('unknown');
     }
   }
 
@@ -391,7 +406,11 @@ class FirebaseAuthService {
     try {
       final credential =
           EmailAuthProvider.credential(email: email, password: password);
-      await user.reauthenticateWithCredential(credential);
+      await user
+          .reauthenticateWithCredential(credential)
+          .timeout(_credentialTimeout);
+    } on TimeoutException {
+      throw const EmailAuthException('interrupted');
     } on FirebaseAuthException catch (error) {
       throw EmailAuthException(error.code);
     } catch (_) {
@@ -409,14 +428,20 @@ class FirebaseAuthService {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     try {
-      await _ensureGoogleInitialized();
-      final account = await GoogleSignIn.instance.authenticate();
+      await _ensureGoogleInitialized().timeout(_credentialTimeout);
+      final account = await GoogleSignIn.instance
+          .authenticate()
+          .timeout(_interactiveSignInTimeout);
       final googleIdToken = account.authentication.idToken;
       if (googleIdToken == null || googleIdToken.isEmpty) {
         throw const EmailAuthException('unknown');
       }
       final credential = GoogleAuthProvider.credential(idToken: googleIdToken);
-      await user.reauthenticateWithCredential(credential);
+      await user
+          .reauthenticateWithCredential(credential)
+          .timeout(_credentialTimeout);
+    } on TimeoutException {
+      throw const EmailAuthException('interrupted');
     } on GoogleSignInException catch (error) {
       final mapped = _mapGoogleCode(error.code);
       throw EmailAuthException(mapped == 'canceled' ? 'canceled' : 'unknown');
@@ -441,13 +466,17 @@ class FirebaseAuthService {
       final provider = AppleAuthProvider()
         ..addScope('email')
         ..addScope('name');
-      final credential = await user.reauthenticateWithProvider(provider);
+      final credential = await user
+          .reauthenticateWithProvider(provider)
+          .timeout(_interactiveSignInTimeout);
       final authorizationCode =
           credential.additionalUserInfo?.authorizationCode?.trim();
       if (authorizationCode == null || authorizationCode.isEmpty) {
         throw const EmailAuthException('apple-authorization-code-missing');
       }
       return authorizationCode;
+    } on TimeoutException {
+      throw const EmailAuthException('interrupted');
     } on FirebaseAuthException catch (error) {
       final mapped = _mapAppleCode(error.code);
       throw EmailAuthException(mapped == 'canceled' ? 'canceled' : mapped);
@@ -462,9 +491,11 @@ class FirebaseAuthService {
   Future<void> revokeAppleToken(String authorizationCode) async {
     if (!_initializer.isAvailable || authorizationCode.trim().isEmpty) return;
     try {
-      await FirebaseAuth.instance.revokeTokenWithAuthorizationCode(
-        authorizationCode.trim(),
-      );
+      await FirebaseAuth.instance
+          .revokeTokenWithAuthorizationCode(authorizationCode.trim())
+          .timeout(_credentialTimeout);
+    } on TimeoutException {
+      throw const EmailAuthException('interrupted');
     } on FirebaseAuthException catch (error) {
       throw EmailAuthException(error.code);
     } catch (_) {

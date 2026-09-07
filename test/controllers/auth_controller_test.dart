@@ -364,6 +364,22 @@ void main() {
       expect(controller.status, AuthStatus.authenticated);
     });
 
+    test('身分確認逾時 → 告知資料仍保留並維持登入', () async {
+      final service = _StubDeleteRecordingAuthService(
+        session: _googleSession,
+        throwError: const EmailAuthException('interrupted'),
+      );
+      final controller = AuthController(authService: service);
+      await controller.signInWithGoogle();
+
+      final result = await controller.deleteAccount();
+
+      expect(result, contains('身分確認中斷'));
+      expect(result, contains('帳號和資料都還保留著'));
+      expect(result, isNot(contains('interrupted')));
+      expect(controller.status, AuthStatus.authenticated);
+    });
+
     test('後端資料尚未刪除 → 白話提示、保留登入供重試', () async {
       final service = _StubDeleteRecordingAuthService(
         session: _firebaseSession,

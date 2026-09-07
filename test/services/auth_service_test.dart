@@ -26,6 +26,7 @@ class _FakeFirebaseAuthService extends FirebaseAuthService {
     this.deleteError,
     this.reauthError,
     this.authInfo,
+    this.authInfoError,
   });
 
   final FirebaseSignInResult? result;
@@ -34,6 +35,7 @@ class _FakeFirebaseAuthService extends FirebaseAuthService {
   final Object? error;
   final Object? deleteError;
   final Object? reauthError;
+  final Object? authInfoError;
 
   /// 若設定，`currentUserAuthInfo()` 會回傳它（模擬有登入中的 Firebase user）。
   final ({String uid, String idToken})? authInfo;
@@ -56,8 +58,10 @@ class _FakeFirebaseAuthService extends FirebaseAuthService {
   }
 
   @override
-  Future<({String uid, String idToken})?> currentUserAuthInfo() async =>
-      authInfo;
+  Future<({String uid, String idToken})?> currentUserAuthInfo() async {
+    if (authInfoError != null) throw authInfoError!;
+    return authInfo;
+  }
 
   @override
   Future<void> reauthenticateWithPassword(String password) async {
@@ -366,6 +370,39 @@ void main() {
           (error) => error.code,
           'code',
           'account_delete_failed',
+        ),
+      ),
+    );
+
+    expect(fakeFirebase.deleteCalled, isFalse);
+    expect(await service.restoreSession(), isNotNull);
+  });
+
+  test('deleteAccount token 取得中斷 → 不略過後端、不刪 Firebase、不清 session', () async {
+    final fakeFirebase = _FakeFirebaseAuthService(
+      result: _firebaseResult,
+      authInfoError: const EmailAuthException('interrupted'),
+    );
+    final service = AuthService(
+      sessionApiService: _apiReturning({
+        'success': true,
+        'userId': 'user-123',
+        'elderId': 'elder-456',
+        'bindingStatus': 'bound',
+        'isNewUser': false,
+        'authMode': 'firebase',
+      }),
+      firebaseAuthService: fakeFirebase,
+    );
+    await service.signInWithEmail(email: 'a@b.c', password: 'secret1');
+
+    await expectLater(
+      service.deleteAccount(password: 'pw', provider: 'email'),
+      throwsA(
+        isA<EmailAuthException>().having(
+          (error) => error.code,
+          'code',
+          'interrupted',
         ),
       ),
     );
