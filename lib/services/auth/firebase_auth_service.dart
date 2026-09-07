@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import '../../utils/app_log.dart';
 import 'firebase_init.dart';
 
 /// 應用層登入錯誤，**刻意不外洩 Firebase 的型別 / 訊息**。
@@ -172,19 +175,34 @@ class FirebaseAuthService {
     if (!_initializer.isAvailable) {
       throw const GoogleAuthException('unavailable');
     }
+    var stage = 'initialize';
     try {
-      await _ensureGoogleInitialized();
-      final account = await GoogleSignIn.instance.authenticate();
+      AppLog.debug('[AUTH_GOOGLE] stage=$stage');
+      await _ensureGoogleInitialized().timeout(const Duration(seconds: 15));
+      stage = 'account_picker';
+      AppLog.debug('[AUTH_GOOGLE] stage=$stage');
+      final account = await GoogleSignIn.instance
+          .authenticate()
+          .timeout(const Duration(minutes: 2));
       final googleIdToken = account.authentication.idToken;
       if (googleIdToken == null || googleIdToken.isEmpty) {
         throw const GoogleAuthException('unknown');
       }
+      stage = 'firebase_credential';
+      AppLog.debug('[AUTH_GOOGLE] stage=$stage');
       final credential = GoogleAuthProvider.credential(idToken: googleIdToken);
-      final userCredential =
-          await FirebaseAuth.instance.signInWithCredential(credential);
+      final userCredential = await FirebaseAuth.instance
+          .signInWithCredential(credential)
+          .timeout(const Duration(seconds: 30));
       final user = userCredential.user;
       if (user == null) throw const GoogleAuthException('unknown');
-      return _toResult(user, provider: 'google');
+      stage = 'firebase_token';
+      AppLog.debug('[AUTH_GOOGLE] stage=$stage');
+      return await _toResult(user, provider: 'google')
+          .timeout(const Duration(seconds: 30));
+    } on TimeoutException catch (error) {
+      AppLog.error('[AUTH_GOOGLE] stage_timeout stage=$stage', error);
+      throw const GoogleAuthException('interrupted');
     } on GoogleSignInException catch (error) {
       throw GoogleAuthException(_mapGoogleCode(error.code));
     } on FirebaseAuthException catch (error) {

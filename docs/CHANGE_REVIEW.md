@@ -4774,3 +4774,19 @@ Release signing 的 repo 端文件與自動檢查已可執行；真正送審仍�
 - Personal Team Debug build 可重新產生 provisioning profile；由於 iOS 14+ 的 Flutter Debug build 無法離開 tooling 從桌面獨立啟動，日常實機展示改裝 Profile build。
 - Release 仍有 `com.apple.developer.applesignin` entitlement；正式 TestFlight 必須改用付費 Apple Developer Team，並完成 Firebase Apple provider 與真機登入 smoke。
 - Debug / Profile 分流僅供本機實機驗證，不是送審產物；不得把 Personal Team build 上傳 App Store Connect。
+
+---
+
+## CR-0106B — Authentication Cold-start Resilience
+
+### 模式
+**Flutter auth 小範圍 production resilience 修正**。不改 Firebase 登入方式、不改後端 `/api/auth/session` request / response 契約、不加入假登入或失敗 fallback。
+
+### 根因與修正
+- Google / Firebase 驗證成功後，App 仍須呼叫正式後端建立 session。原本固定 8 秒 timeout 小於 Render free instance 可能超過 50 秒的 idle cold start，因此健康服務會被誤判為「網路不穩」。
+- 正式 session 第一次 request 等待 60 秒；transport error / timeout 後延遲 500ms 自動重試一次（20 秒）。`/api/auth/session` 為冪等的 user/elder create-or-read 流程，因此重試不會建立重複帳號。帳號刪除 request 等待 60 秒但不自動重試，避免使用者不確定刪除結果。
+- Google 初始化、帳號選擇與 Firebase credential exchange 各自有明確 timeout；Profile 診斷只記階段名稱，不記 Email、UID 或 token。non-2xx、無效 token 與真正 timeout 仍維持 typed error，絕不捏造 authenticated session。
+- timeout / retry 可由測試注入，補上預設值、超時分類與第一次 transport 失敗後成功 regression tests。
+
+### Production 邊界
+- 75 秒只降低免費主機冷啟動造成的登入失敗，不能取代正式 always-on hosting。公開上架前仍應把 backend 移至不休眠方案，Realtime Voice Agent 不可依賴每次冷啟動等待。
