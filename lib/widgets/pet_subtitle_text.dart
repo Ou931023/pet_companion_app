@@ -28,8 +28,8 @@ class PetSubtitleText extends StatefulWidget {
   final TextStyle textStyle;
 
   /// CR-0084：是否為「即時逐字串流中」。
-  /// - true（寵物正在說、字幕跟著語音逐字長出來）：分頁後**永遠顯示最新一頁**，
-  ///   不用計時器自動翻頁——翻頁完全由文字成長驅動，所以絕不會超前語音。
+  /// - true（寵物正在說、字幕跟著語音逐字長出來）：固定顯示第一頁正在累積的內容，
+  ///   不追著尚未播放的末頁跳動，也不使用切換動畫。
   /// - false（一般 / TTS / 最終靜態文字）：維持 CR-0080 的保守計時器分頁。
   final bool streaming;
 
@@ -46,8 +46,6 @@ class _PetSubtitleTextState extends State<PetSubtitleText> {
   List<String> _pages = const [];
   int _pageIndex = 0;
   Timer? _timer;
-  String _renderedText = '';
-  bool _wasStreaming = false;
 
   @override
   void initState() {
@@ -58,7 +56,8 @@ class _PetSubtitleTextState extends State<PetSubtitleText> {
   @override
   void didUpdateWidget(covariant PetSubtitleText oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.text != widget.text || oldWidget.streaming != widget.streaming) {
+    if (oldWidget.text != widget.text ||
+        oldWidget.streaming != widget.streaming) {
       _apply();
     }
   }
@@ -73,30 +72,17 @@ class _PetSubtitleTextState extends State<PetSubtitleText> {
     _timer?.cancel();
     final newText = widget.text.trim();
     _pages = _paginate(newText);
-    final lastIndex = _pages.isEmpty ? 0 : _pages.length - 1;
-
     if (widget.streaming) {
-      // 串流中：永遠停在最新一頁；翻頁由文字成長驅動，不排計時器（絕不超前語音）。
-      _pageIndex = lastIndex;
+      // Realtime transcript 常比實際音訊播放更快產生。追著最後一頁會讓字幕高速閃動，
+      // 並直接略過中間內容；串流期間先穩定保留第一頁，final 到達後再完整播放各頁。
+      _pageIndex = 0;
     } else {
-      // 「延續」：剛從串流結束、或文字是前一段的延伸（同一句最終落地）→ 停在最後一頁，
-      // 不要倒回第一頁重新用計時器跑（語音已念到那裡了）。
-      final continues = newText.isNotEmpty &&
-          _renderedText.isNotEmpty &&
-          newText.startsWith(_renderedText);
-      if (_wasStreaming || continues) {
-        _pageIndex = lastIndex;
-      } else {
-        // 全新的一段（例如打字 TTS 回覆）→ 從第一頁開始、保守計時器分頁。
-        _pageIndex = 0;
-        if (_pages.length > 1) {
-          _scheduleNext();
-        }
+      // final 一律從第一頁開始，確保中間句不會因 streaming/final handoff 被略過。
+      _pageIndex = 0;
+      if (_pages.length > 1) {
+        _scheduleNext();
       }
     }
-
-    _renderedText = newText;
-    _wasStreaming = widget.streaming;
   }
 
   void _scheduleNext() {
@@ -228,8 +214,9 @@ class _PetSubtitleTextState extends State<PetSubtitleText> {
     final out = <String>[];
     final runes = seg.runes.toList();
     for (var i = 0; i < runes.length; i += _maxCharsPerPage) {
-      final end =
-          (i + _maxCharsPerPage) > runes.length ? runes.length : i + _maxCharsPerPage;
+      final end = (i + _maxCharsPerPage) > runes.length
+          ? runes.length
+          : i + _maxCharsPerPage;
       out.add(String.fromCharCodes(runes.sublist(i, end)));
     }
     return out;

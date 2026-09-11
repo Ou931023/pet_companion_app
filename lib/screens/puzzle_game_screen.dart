@@ -11,6 +11,7 @@ import '../services/app_usage_tracking_service.dart';
 import '../services/photo_picker_service.dart';
 import '../widgets/puzzle_board.dart';
 import '../widgets/puzzle_tile_widget.dart';
+import '../widgets/ui/elder_feedback.dart';
 
 /// 回憶拼圖小遊戲：選一張照片 → 選難度 → 把下方打亂的 jigsaw 拼圖塊拖到上面正確位置。
 class PuzzleGameScreen extends StatefulWidget {
@@ -251,12 +252,11 @@ class _PuzzleGameScreenState extends State<PuzzleGameScreen> {
 
   void _showWrongHint() {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('位置不對，拼圖會回到下面喔'),
-        duration: Duration(milliseconds: 1200),
-      ),
+    ElderFeedback.show(
+      context,
+      '位置不對，拼圖會回到下面喔',
+      tone: ElderFeedbackTone.warning,
+      duration: const Duration(milliseconds: 1200),
     );
   }
 

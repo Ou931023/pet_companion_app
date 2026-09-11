@@ -7,6 +7,7 @@ import '../../models/cart_item.dart';
 import '../../services/marketplace_service.dart';
 import '../../widgets/marketplace/marketplace_ui.dart';
 import '../../widgets/ui/empty_state.dart';
+import '../../widgets/ui/elder_feedback.dart';
 import 'order_success_screen.dart';
 
 /// 購物車 + 結帳頁（CR-0032）。
@@ -39,8 +40,6 @@ class _CartScreenState extends State<CartScreen> {
     final service = context.read<MarketplaceService>();
     final auth = context.read<AuthController>();
     final items = List<CartItem>.from(cart.items);
-    final messenger = ScaffoldMessenger.of(context);
-
     try {
       final order = await service.createOrder(
         userId: auth.currentUserId,
@@ -57,14 +56,10 @@ class _CartScreenState extends State<CartScreen> {
       );
     } on MarketplaceApiException catch (error) {
       if (!mounted) return;
-      messenger.clearSnackBars();
-      messenger.showSnackBar(SnackBar(content: Text(error.friendlyMessage)));
+      ElderFeedback.showImportant(context, error.friendlyMessage);
     } catch (_) {
       if (!mounted) return;
-      messenger.clearSnackBars();
-      messenger.showSnackBar(
-        const SnackBar(content: Text('現在沒辦法送出訂單，待會再試一次好嗎？')),
-      );
+      ElderFeedback.showImportant(context, '現在沒辦法送出訂單，待會再試一次好嗎？');
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -95,21 +90,21 @@ class _CartScreenState extends State<CartScreen> {
                       ScrollViewKeyboardDismissBehavior.onDrag,
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                   children: [
-                  for (final item in cart.items) ...[
-                    _CartItemTile(
-                      key: ValueKey('cart-item-${item.product.id}'),
-                      item: item,
-                      onIncrease: () => cart.increment(item.product.id),
-                      onDecrease: () => cart.decrement(item.product.id),
-                      onRemove: () => cart.removeProduct(item.product.id),
+                    for (final item in cart.items) ...[
+                      _CartItemTile(
+                        key: ValueKey('cart-item-${item.product.id}'),
+                        item: item,
+                        onIncrease: () => cart.increment(item.product.id),
+                        onDecrease: () => cart.decrement(item.product.id),
+                        onRemove: () => cart.removeProduct(item.product.id),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                    const SizedBox(height: 8),
+                    _ContactFields(
+                      nameController: _nameController,
+                      noteController: _noteController,
                     ),
-                    const SizedBox(height: 10),
-                  ],
-                  const SizedBox(height: 8),
-                  _ContactFields(
-                    nameController: _nameController,
-                    noteController: _noteController,
-                  ),
                   ],
                 ),
               ),

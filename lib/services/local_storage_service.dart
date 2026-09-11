@@ -31,6 +31,8 @@ class LocalStorageService {
   static const _keyPetSkin = 'petSkin';
   static const _keyPetVisualStyle = 'petVisualStyle';
   static const _keyOwnedPetSkins = 'ownedPetSkins';
+  static const _keyStarterPetClaimed = 'starterPetClaimed';
+  static const _keyStarterPetClaimIntent = 'starterPetClaimIntent';
   static const _keyHomeCoachMarkDone = 'homeCoachMarkDone';
   // CR-0087：寵物關心提醒設定 + cooldown 紀錄（避免太頻繁打擾）。
   static const _keyConcernRemindersEnabled = 'concernRemindersEnabled';
@@ -303,6 +305,31 @@ class LocalStorageService {
     final prefs = await SharedPreferences.getInstance();
     final ids = {PetSkin.dog, ...skins}.map((s) => s.storageId).toList();
     await prefs.setStringList(_k(_keyOwnedPetSkins), ids);
+  }
+
+  /// 起始夥伴免費領取狀態；依 elderId 隔離，避免重進 onboarding 重複領取。
+  Future<bool> loadStarterPetClaimed() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_k(_keyStarterPetClaimed)) ?? false;
+  }
+
+  Future<void> saveStarterPetClaimed(bool claimed) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_k(_keyStarterPetClaimed), claimed);
+  }
+
+  /// 先保存長者最後確認的起始夥伴。若寫入途中 App 中斷，重試只能完成同一隻，
+  /// 不會把當下畫面上的另一隻預覽誤當成第二次免費領取。
+  Future<PetSkin?> loadStarterPetClaimIntent() async {
+    final prefs = await SharedPreferences.getInstance();
+    final id = prefs.getString(_k(_keyStarterPetClaimIntent));
+    if (id == null || id.trim().isEmpty) return null;
+    return PetSkinX.fromStorageId(id);
+  }
+
+  Future<void> saveStarterPetClaimIntent(PetSkin skin) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_k(_keyStarterPetClaimIntent), skin.storageId);
   }
 
   /// 首頁新手導覽（Coach Mark）是否已看過。依 [_k] 各帳號獨立，

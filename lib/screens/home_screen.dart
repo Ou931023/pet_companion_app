@@ -40,6 +40,7 @@ import '../widgets/pet_status_panel.dart';
 import '../widgets/source_reference_list.dart';
 import '../widgets/text_conversation_bar.dart';
 import '../widgets/ui/primary_action_button.dart';
+import '../widgets/ui/elder_feedback.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -226,9 +227,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     void openPetPlay(String source) {
       if (isDead) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('寵物需要復活後才能一起玩')),
-        );
+        ElderFeedback.showImportant(context, '寵物需要復活後才能一起玩');
         return;
       }
       _trackUsage(
@@ -247,9 +246,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     void patPet(String source) {
       if (isDead) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('寵物需要復活後才能互動')),
-        );
+        ElderFeedback.showImportant(context, '寵物需要復活後才能互動');
         return;
       }
       _playPetInteractionEffect(_PetInteractionEffect.pat);
@@ -293,12 +290,13 @@ class _HomeScreenState extends State<HomeScreen> {
                       }),
                       onOpenCalendarTap: () =>
                           _openCalendarDialog(context, checkInController),
-                      onPlayTap: () => openPetPlay('more_menu'),
+                      onPlayTap: () => openPetPlay('home_header'),
                       onChangeSkinTap: () => _openSkinPicker(context),
                       // 首頁「？」改為觸發 Spotlight 新手導覽（與首次進場相同）。
                       // 已在首頁，requestReplay 後 CoachMarkHost 會立即開始導覽。
                       onHelpTap: () =>
                           context.read<CoachMarkController>().requestReplay(),
+                      playButtonKey: coachKeys.playButtonKey,
                       moreButtonKey: coachKeys.moreButtonKey,
                       reminderKey: coachKeys.reminderKey,
                       // 更多功能 sheet 內仍保留 key，供未來分段導覽或測試使用。
@@ -443,11 +441,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                                 VoiceAgentState.idle &&
                                             voiceAgentController.state !=
                                                 VoiceAgentState.error) {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            const SnackBar(
-                                              content: Text('請先結束目前語音對話。'),
-                                            ),
+                                          ElderFeedback.showImportant(
+                                            context,
+                                            '請先結束目前語音對話。',
                                           );
                                           return;
                                         }
@@ -489,11 +485,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                               .isTaigiAsrRecording ||
                                           conversationController
                                               .isTaigiAsrProcessing) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          const SnackBar(
-                                            content: Text('請先完成台語短錄音。'),
-                                          ),
+                                        ElderFeedback.showImportant(
+                                          context,
+                                          '請先完成台語短錄音。',
                                         );
                                         return;
                                       }
@@ -536,11 +530,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                                 .isEmpty
                                             ? '咕咕'
                                             : profileController.petName.trim();
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          SnackBar(
-                                            content: Text('先聽$name說完，再換你說～'),
-                                          ),
+                                        ElderFeedback.show(
+                                          context,
+                                          '先聽$name說完，再換你說～',
+                                          tone: ElderFeedbackTone.warning,
                                         );
                                       } else if (voiceAgentController
                                           .isCapturingUserSpeech) {
@@ -713,9 +706,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }) async {
     if (item.isReviveItem) {
       if (!petStatsController.isDead) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('現在還不需要使用復活藥水')),
-        );
+        ElderFeedback.showImportant(context, '現在還不需要使用復活藥水');
         return;
       }
       final consumed = await inventoryController.consume(item.itemId);
@@ -723,7 +714,7 @@ class _HomeScreenState extends State<HomeScreen> {
       await petStatsController.revive();
       if (!context.mounted) return;
       _playPetInteractionEffect(_PetInteractionEffect.celebrate);
-      _showItemUsedSnackBar(context, item);
+      _showItemUsedFeedback(context, item);
       return;
     }
 
@@ -753,7 +744,7 @@ class _HomeScreenState extends State<HomeScreen> {
         'intimacy': petStatsController.intimacy,
       },
     );
-    _showItemUsedSnackBar(context, item);
+    _showItemUsedFeedback(context, item);
   }
 
   Future<void> _sendTextMessage(
@@ -779,7 +770,7 @@ class _HomeScreenState extends State<HomeScreen> {
     await conversationController.quickAction(normalized);
   }
 
-  void _showItemUsedSnackBar(BuildContext context, InventoryItem item) {
+  void _showItemUsedFeedback(BuildContext context, InventoryItem item) {
     final petName = context.read<ProfileController>().petName;
     final effects = <String>[
       if (item.intimacyDelta != 0) '親密 +${item.intimacyDelta}',
@@ -787,12 +778,10 @@ class _HomeScreenState extends State<HomeScreen> {
       if (item.moodDelta != 0) '心情 +${item.moodDelta}',
       if (item.isReviveItem) '復活',
     ];
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '$petName 使用了 ${item.name}${effects.isEmpty ? '' : '（${effects.join('、')}）'}',
-        ),
-      ),
+    ElderFeedback.show(
+      context,
+      '$petName 使用了 ${item.name}${effects.isEmpty ? '' : '（${effects.join('、')}）'}',
+      tone: ElderFeedbackTone.success,
     );
   }
 
@@ -1004,12 +993,10 @@ class _CheckInCalendarDialogState extends State<_CheckInCalendarDialog> {
     if (!context.mounted) return;
     // 簽到後把選取日跳回今天，下方獎勵列同步顯示今天領到的內容。
     setState(() => _selectedDay = _now.day);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          ok ? _successMessage(controller.lastClaim) : '今天已經簽到過囉。',
-        ),
-      ),
+    ElderFeedback.show(
+      context,
+      ok ? _successMessage(controller.lastClaim) : '今天已經簽到過囉。',
+      tone: ok ? ElderFeedbackTone.success : ElderFeedbackTone.info,
     );
   }
 
@@ -1148,6 +1135,7 @@ class _HomeHeader extends StatelessWidget {
     required this.onPlayTap,
     required this.onChangeSkinTap,
     required this.onHelpTap,
+    required this.playButtonKey,
     required this.moreButtonKey,
     required this.reminderKey,
     required this.dailyCheckInKey,
@@ -1164,6 +1152,7 @@ class _HomeHeader extends StatelessWidget {
   final VoidCallback onPlayTap;
   final VoidCallback onChangeSkinTap;
   final VoidCallback onHelpTap;
+  final Key playButtonKey;
   final Key moreButtonKey;
   final Key reminderKey;
   final Key dailyCheckInKey;
@@ -1217,49 +1206,56 @@ class _HomeHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 頂部列只保留寵物名稱與一個次要入口，讓首頁重心回到寵物和語音。
-    return MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.0,
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  petName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
+    final petNameLabel = Text(
+      petName,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
+    );
+    final playButton = KeyedSubtree(
+      key: playButtonKey,
+      child: Tooltip(
+        message: '玩遊戲',
+        child: OutlinedButton.icon(
+          onPressed: onPlayTap,
+          icon: const Icon(Icons.extension_outlined, size: 22),
+          label: const Text(
+            '玩遊戲',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
           ),
-          KeyedSubtree(
-            key: moreButtonKey,
-            child: Tooltip(
-              message: '更多功能',
-              child: Semantics(
-                button: true,
-                label: '更多功能',
-                child: IconButton.filledTonal(
-                  onPressed: () => _openQuickActions(context),
-                  icon: const Icon(Icons.more_horiz),
-                  iconSize: 30,
-                  style: IconButton.styleFrom(
-                    minimumSize: const Size(56, 56),
-                    tapTargetSize: MaterialTapTargetSize.padded,
-                  ),
-                ),
-              ),
-            ),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(0, 52),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
           ),
-        ],
+        ),
       ),
+    );
+    final moreButton = KeyedSubtree(
+      key: moreButtonKey,
+      child: Tooltip(
+        message: '更多功能',
+        child: FilledButton.tonalIcon(
+          onPressed: () => _openQuickActions(context),
+          icon: const Icon(Icons.grid_view_rounded, size: 22),
+          label: const Text(
+            '更多',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+          ),
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(0, 52),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+          ),
+        ),
+      ),
+    );
+
+    return Row(
+      children: [
+        Expanded(child: petNameLabel),
+        playButton,
+        const SizedBox(width: 8),
+        moreButton,
+      ],
     );
   }
 }

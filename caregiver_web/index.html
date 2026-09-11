@@ -86,11 +86,23 @@
       </section>
 
       <div id="authenticated-content" class="hidden">
-      <!-- 分頁：照護提醒 / 健康分析 -->
-      <nav class="view-tabs" role="tablist" aria-label="檢視切換">
+      <!-- 四個工作區先決定目的，再顯示該區內的功能，避免十個入口同時擠在一起。 -->
+      <nav class="view-tabs primary-view-tabs" role="tablist" aria-label="主要工作區">
         <button id="tab-workspace" class="view-tab is-active" type="button" role="tab">
           工作台
         </button>
+        <button id="tab-care-section" class="view-tab" type="button" role="tab">
+          照護
+        </button>
+        <button id="tab-insights-section" class="view-tab" type="button" role="tab">
+          分析
+        </button>
+        <button id="tab-management-section" class="view-tab" type="button" role="tab">
+          管理
+        </button>
+      </nav>
+
+      <nav id="secondary-view-tabs" class="view-tabs secondary-view-tabs hidden" role="tablist" aria-label="目前工作區功能">
         <button id="tab-alerts" class="view-tab" type="button" role="tab">
           照護提醒
         </button>

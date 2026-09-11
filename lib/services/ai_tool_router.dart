@@ -244,7 +244,8 @@ class AiToolRouter {
     return const AiToolResult(
       toolName: 'capabilityHelp',
       success: true,
-      message: '你可以直接跟我說：提醒我晚上八點吃藥、我今天心情不好、想聽放鬆音樂，或問我健康、防詐、地方新聞。',
+      message:
+          '你可以直接說「提醒我晚上八點吃藥」、「我今天心情不好」，或「找地方新聞」。想玩拼圖或換外觀，也可以按首頁的「玩遊戲」和「更多」。',
       petMode: PetMode.listening,
       shouldSpeak: true,
     );

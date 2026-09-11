@@ -43,6 +43,7 @@ class PetController extends ChangeNotifier {
   PetVisualStyle _currentVisualStyle = PetVisualStyle.realistic;
   final PetGrowthStage _currentGrowthStage = PetGrowthStage.adult;
   Set<PetSkin> _ownedSkins;
+  bool _starterSkinClaimed = false;
 
   PetState get state => _state;
   PetMode get mode => _state.mode;
@@ -104,6 +105,7 @@ class PetController extends ChangeNotifier {
     final owned = await storage.loadOwnedPetSkins();
     final skin = await storage.loadPetSkin();
     final visualStyle = await storage.loadPetVisualStyle();
+    _starterSkinClaimed = await storage.loadStarterPetClaimed();
     _ownedSkins = {
       PetSkin.dog,
       ...owned,
@@ -162,10 +164,62 @@ class PetController extends ChangeNotifier {
     return true;
   }
 
-  /// 新手導覽「選夥伴」：免費把選到的外觀設成起始夥伴（解鎖 + 套用），不扣點。
-  Future<void> selectStarterSkin(PetSkin skin) async {
-    await _unlock(skin);
-    await changeSkin(skin);
+  /// 新手設定中的暫時預覽。只更新記憶體中的外觀，不解鎖也不寫入儲存。
+  /// 使用者可以放心來回比較，最後由 [claimStarterSkin] 只取得選定的一位夥伴。
+  void previewStarterSkin(PetSkin skin) {
+    final nextStyle = AssetPaths.supportsVisualStyle(
+      skin,
+      _currentVisualStyle,
+      growthStage: _currentGrowthStage,
+    )
+        ? _currentVisualStyle
+        : PetVisualStyle.cute;
+    if (skin == _currentSkin && nextStyle == _currentVisualStyle) return;
+    _currentSkin = skin;
+    _currentVisualStyle = nextStyle;
+    notifyListeners();
+  }
+
+  /// 完成新手設定時，把目前暫選的夥伴登記為唯一一次免費起始夥伴並保存。
+  /// 已領過時維持原本保存的夥伴，回傳 false，不會再次增加擁有清單。
+  Future<bool> claimStarterSkin() async {
+    final storage = _storageService;
+    final existingIntent = await storage?.loadStarterPetClaimIntent();
+    if (existingIntent != null && storage != null) {
+      final savedStyle = await storage.loadPetVisualStyle();
+      _currentSkin = existingIntent;
+      _currentVisualStyle = AssetPaths.supportsVisualStyle(
+        existingIntent,
+        savedStyle,
+        growthStage: _currentGrowthStage,
+      )
+          ? savedStyle
+          : PetVisualStyle.cute;
+      await _unlock(existingIntent);
+      await saveSkin();
+      _starterSkinClaimed = true;
+      await storage.saveStarterPetClaimed(true);
+      notifyListeners();
+      return false;
+    }
+    final alreadyClaimed = _starterSkinClaimed ||
+        (await storage?.loadStarterPetClaimed() ?? false);
+    if (alreadyClaimed) {
+      if (!_ownedSkins.contains(_currentSkin) && storage != null) {
+        final saved = await storage.loadPetSkin();
+        _currentSkin = _ownedSkins.contains(saved) ? saved : PetSkin.dog;
+        _currentVisualStyle = await storage.loadPetVisualStyle();
+        notifyListeners();
+      }
+      _starterSkinClaimed = true;
+      return false;
+    }
+    await storage?.saveStarterPetClaimIntent(_currentSkin);
+    await _unlock(_currentSkin);
+    await saveSkin();
+    _starterSkinClaimed = true;
+    await storage?.saveStarterPetClaimed(true);
+    return true;
   }
 
   /// 購買並套用未擁有的外觀：用注入的 [spendCoins] 扣點（沿用既有 wallet）。

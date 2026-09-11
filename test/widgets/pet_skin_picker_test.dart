@@ -10,6 +10,7 @@ import 'package:pet_companion_app/models/pet_skin.dart';
 import 'package:pet_companion_app/models/pet_visual_profile.dart';
 import 'package:pet_companion_app/services/local_storage_service.dart';
 import 'package:pet_companion_app/widgets/pet_skin_picker.dart';
+import 'package:pet_companion_app/widgets/ui/elder_feedback.dart';
 
 /// 可控點數的假錢包（覆寫 coins / spendCoins，不碰真實 profile / 儲存）。
 class _FakeWallet extends WalletController {
@@ -59,6 +60,7 @@ Future<void> _pump(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  tearDown(ElderFeedback.hide);
 
   testWidgets('已擁有的狗狗標「使用中」，未擁有的顯示解鎖點數', (tester) async {
     await _pump(tester, pet: PetController(), wallet: _FakeWallet(0));
@@ -97,7 +99,8 @@ void main() {
 
     expect(pet.currentSkin, PetSkin.fox);
     expect(pet.isOwned(PetSkin.fox), isTrue);
-    expect(find.textContaining('已經幫你換上狐狸'), findsOneWidget);
+    expect(find.text('已換上狐狸'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 3));
   });
 
   testWidgets('成功換上外觀後才觸發 onSkinApplied，重複點使用中不觸發', (tester) async {
@@ -120,6 +123,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(selected, [PetSkin.fox]);
+    await tester.pump(const Duration(seconds: 3));
   });
 
   testWidgets('狗狗顯示 Q版 / 真實版選項，切換真實版會觸發追蹤 callback', (tester) async {
@@ -142,7 +146,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(selected, [PetSkin.dog]);
-    expect(find.text('已換成真實版狗狗。'), findsOneWidget);
+    expect(find.text('已換成真實版狗狗'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 3));
   });
 
   testWidgets('非狗狗不顯示真實版入口，避免正式版出現未完成選項', (tester) async {
@@ -171,7 +176,7 @@ void main() {
     expect(pet.isOwned(PetSkin.fox), isFalse);
   });
 
-  testWidgets('新手導覽模式（purchasable:false）→ 免費直接挑起始夥伴、無確認視窗', (tester) async {
+  testWidgets('新手導覽模式只暫選，不提前解鎖或顯示購買視窗', (tester) async {
     final pet = PetController();
     await _pump(
       tester,
@@ -185,6 +190,6 @@ void main() {
 
     expect(find.text('解鎖狐狸'), findsNothing); // 沒有購買確認
     expect(pet.currentSkin, PetSkin.fox);
-    expect(pet.isOwned(PetSkin.fox), isTrue);
+    expect(pet.isOwned(PetSkin.fox), isFalse);
   });
 }

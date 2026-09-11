@@ -75,13 +75,21 @@ void main() {
     final keys = CoachMarkKeys();
     final steps = buildHomeCoachMarkSteps(keys);
     expect(steps[7].targetKey, keys.moreButtonKey);
-    expect(steps[7].text, contains('更多功能'));
+    expect(steps[7].text, contains('更多'));
     expect(steps[7].text, contains('每日簽到'));
     expect(steps[7].text, contains('提醒'));
     expect(steps[7].text, contains('背包'));
     expect(steps[8].targetKey, keys.moreButtonKey);
     expect(steps[8].text, contains('金幣'));
     expect(steps[8].text, contains('寵物外觀'));
+  });
+
+  test('Step 7 指向常駐遊戲按鈕，不再誤導點寵物會進遊戲', () {
+    final keys = CoachMarkKeys();
+    final steps = buildHomeCoachMarkSteps(keys);
+    expect(steps[6].targetKey, keys.playButtonKey);
+    expect(steps[6].text, contains('玩遊戲'));
+    expect(steps[6].text, isNot(contains('點一下寵物')));
   });
 
   test('CR-0092 跨頁：商城(idx9,tab1) / 紀錄(idx10,tab2) / 搜尋(idx11,tab2) 切到該頁高亮頁內目標',
@@ -123,6 +131,7 @@ void main() {
       keys.petKey,
       keys.voiceButtonKey,
       keys.statusKey,
+      keys.playButtonKey,
       keys.moreButtonKey,
       keys.reminderKey,
       keys.navBarKey,

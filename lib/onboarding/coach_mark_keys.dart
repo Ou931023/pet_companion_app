@@ -13,6 +13,7 @@ class CoachMarkKeys {
   final GlobalKey petKey = GlobalKey(debugLabel: 'coach_pet');
   final GlobalKey voiceButtonKey = GlobalKey(debugLabel: 'coach_voice');
   final GlobalKey statusKey = GlobalKey(debugLabel: 'coach_status');
+  final GlobalKey playButtonKey = GlobalKey(debugLabel: 'coach_play_button');
   final GlobalKey moreButtonKey = GlobalKey(debugLabel: 'coach_more_button');
   final GlobalKey reminderKey = GlobalKey(debugLabel: 'coach_reminder');
 
@@ -78,7 +79,7 @@ Rect settingsRightQuarter(Rect raw, {double bottomInset = 0}) =>
 /// 首頁新手導覽的步驟，共 **16 步**（單一完整導覽，CR-0092 改為「實際帶走一遍」跨頁）：
 ///
 /// 首頁：1 寵物 → 2 說話 → 3 先聽牠說完 → 4 狀態 → 5 親密度 → 6 飽足感 →
-/// 7 點寵物玩遊戲 → 8 更多功能 → 9 簽到 / 金幣 / 提醒入口 →
+/// 7 玩遊戲 → 8 更多功能 → 9 簽到 / 金幣 / 提醒入口 →
 /// 商城頁：10 商城 →
 /// 紀錄頁：11 紀錄 → 12 搜尋紀錄 →
 /// 設定頁：13 換造型 → 14 家人聯絡人 → 15 重看導覽 →
@@ -126,16 +127,16 @@ List<CoachMarkStep> buildHomeCoachMarkSteps(
       targetKey: keys.statusKey,
       text: '寵物餓的時候可以餵牠，餵食能提升這裡的飽足感，讓牠保持好心情。',
     ),
-    // 7：點擊寵物可以進入遊戲。
+    // 7：首頁常駐遊戲入口；點寵物本身仍是摸摸互動。
     CoachMarkStep(
-      targetKey: keys.petKey,
-      text: '輕輕點一下寵物，可以玩記憶小遊戲，動動腦也很有趣。',
+      targetKey: keys.playButtonKey,
+      text: '想動動腦時，按「玩遊戲」就能和寵物一起玩拼圖。',
     ),
     // 8：更多功能是次要入口 → 高亮右上角更多功能。
     CoachMarkStep(
       targetKey: keys.moreButtonKey,
       radius: 14,
-      text: '右上角的「更多功能」放著每日簽到、提醒、背包和更換外觀。',
+      text: '右上角的「更多」放著每日簽到、提醒、背包和更換外觀。',
     ),
     // 9：說明簽到與金幣也在更多功能裡，不再指向已搬家的首頁小按鈕。
     CoachMarkStep(

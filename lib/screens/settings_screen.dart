@@ -19,6 +19,7 @@ import '../services/realtime_voice_service.dart';
 import 'legal_document_screen.dart';
 import '../widgets/companion_debug_panel.dart';
 import '../widgets/pet_skin_picker.dart';
+import '../widgets/ui/elder_feedback.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -31,6 +32,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late TextEditingController _petNameController;
   late FocusNode _petNameFocusNode;
   bool _isDeletingAccount = false;
+  int _settingsCategory = 0;
 
   @override
   void initState() {
@@ -58,6 +60,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final profile = context.watch<ProfileController>();
+    final coachMark = context.watch<CoachMarkController?>();
+    final coachKeys = context.read<CoachMarkKeys>();
+    final coachTarget = coachMark?.currentStep?.targetKey;
+    if (coachTarget == coachKeys.settingsAppearanceKey) {
+      _settingsCategory = 0;
+    } else if (coachTarget == coachKeys.settingsContactKey ||
+        coachTarget == coachKeys.settingsReplayKey) {
+      _settingsCategory = 3;
+    }
     if (!_petNameFocusNode.hasFocus &&
         _petNameController.text != profile.petName) {
       _petNameController.text = profile.petName;
@@ -65,546 +76,598 @@ class _SettingsScreenState extends State<SettingsScreen> {
           TextSelection.collapsed(offset: _petNameController.text.length);
     }
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text(
-          '設定',
-          style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 16),
-        _SettingsSection(
-          title: '寵物名字',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextField(
-                controller: _petNameController,
-                focusNode: _petNameFocusNode,
-                textInputAction: TextInputAction.done,
-                decoration: const InputDecoration(
-                  labelText: '想怎麼叫牠？',
-                  border: OutlineInputBorder(),
-                ),
-                onSubmitted: (_) => _confirmRenamePet(context, profile),
-              ),
-              const SizedBox(height: 10),
-              FilledButton.icon(
-                onPressed: () => _confirmRenamePet(context, profile),
-                icon: const Icon(Icons.check),
-                label: const Text('更新名字'),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        // CR-0092：新手導覽切到設定頁時高亮「換造型」。
-        KeyedSubtree(
-          key: context.read<CoachMarkKeys>().settingsAppearanceKey,
-          child: const _SettingsSection(
-            title: '換一隻陪你的夥伴',
-            child: PetSkinPicker(),
-          ),
-        ),
-        const SizedBox(height: 14),
-        _SettingsSection(
-          title: '看得更舒服',
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 16, 8, 10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                _fontScaleLabel(profile.fontScale),
-                style:
-                    const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              const Text(
+                '設定',
+                style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800),
               ),
-              Slider(
-                value: profile.fontScale,
-                min: 0.9,
-                max: 1.3,
-                divisions: 4,
-                label: _fontScaleLabel(profile.fontScale),
-                onChanged: profile.setFontScale,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        _SettingsSection(
-          title: '寵物聲音',
-          child: Column(
-            children: [
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                value: profile.ttsEnabled,
-                title: const Text('讓寵物出聲說話'),
-                onChanged: profile.setTtsEnabled,
-              ),
-              Row(
-                children: [
-                  const Icon(Icons.volume_down),
-                  Expanded(
-                    child: Slider(
-                      value: profile.petVolume,
-                      min: 0,
-                      max: 1,
-                      divisions: 10,
-                      label: '${(profile.petVolume * 100).round()}%',
-                      onChanged:
-                          profile.ttsEnabled ? profile.setPetVolume : null,
-                    ),
-                  ),
-                  const Icon(Icons.volume_up),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        _SettingsSection(
-          title: '說話方式',
-          child: SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(value: 'gentle', label: Text('溫柔')),
-              ButtonSegment(value: 'calm', label: Text('慢慢說')),
-              ButtonSegment(value: 'bright', label: Text('有精神')),
-            ],
-            selected: {profile.speechStyle},
-            onSelectionChanged: (values) =>
-                profile.setSpeechStyle(values.first),
-          ),
-        ),
-        const SizedBox(height: 14),
-        _SettingsSection(
-          title: '語音輸入方式',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SegmentedButton<VoiceLanguageMode>(
-                segments: const [
-                  ButtonSegment(
-                    value: VoiceLanguageMode.defaultOpenAiRealtime,
-                    label: Text('中文即時語音'),
-                  ),
-                  ButtonSegment(
-                    value: VoiceLanguageMode.taigiRealtime,
-                    label: Text('台語即時語音'),
-                  ),
-                ],
-                selected: {
-                  profile.voiceLanguageMode == VoiceLanguageMode.taigiRealtime
-                      ? VoiceLanguageMode.taigiRealtime
-                      : VoiceLanguageMode.defaultOpenAiRealtime,
-                },
-                onSelectionChanged: (values) {
-                  context
-                      .read<ConversationController>()
-                      .clearPendingTaigiAsrTranscript();
-                  profile.setVoiceLanguageMode(values.first);
-                },
-              ),
-              const SizedBox(height: 8),
-              Text(
-                switch (profile.voiceLanguageMode) {
-                  VoiceLanguageMode.taigiRealtime =>
-                    '台語即時語音對話會使用原本即時語音連線，可以直接用台語或台語混中文跟寵物說話。',
-                  _ => '中文即時語音對話會使用原本的 Realtime 連線。',
-                },
-                style: TextStyle(
-                  color: Colors.black.withValues(alpha: 0.58),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              if (profile.voiceLanguageMode ==
-                  VoiceLanguageMode.manualOverride) ...[
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  initialValue: profile.manualAsrStrategy,
-                  decoration: const InputDecoration(
-                    labelText: '手動指定 ASR strategy',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: [
-                    const DropdownMenuItem(
-                      value: 'defaultOpenAiRealtime',
-                      child: Text('OpenAI Realtime'),
-                    ),
-                    // CR-0048：mockTaigiAsr 僅在 dev / test 顯示。production 不注入
-                    // MockTaigiAsrStrategy，此選項在正式版會被解析成 OpenAI Realtime，
-                    // 故正式版直接隱藏，避免殘留無實效的 mock 選項。
-                    if (AppConfig.mockServicesEnabled)
-                      const DropdownMenuItem(
-                        value: 'mockTaigiAsr',
-                        child: Text('台語 ASR adapter'),
-                      ),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) {
-                      profile.setManualAsrStrategy(value);
-                    }
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: _SettingsCategoryBar(
+                  selectedIndex: _settingsCategory,
+                  onSelected: (index) {
+                    setState(() => _settingsCategory = index);
                   },
                 ),
-              ],
+              ),
             ],
           ),
         ),
-        const SizedBox(height: 14),
-        _SettingsSection(
-          title: '喜歡聽的內容',
-          child: Column(
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
             children: [
-              _PreferenceTile(
-                value: 'story',
-                title: '喜歡聽故事',
-                profile: profile,
-              ),
-              _PreferenceTile(
-                value: 'news',
-                title: '喜歡聽新聞',
-                profile: profile,
-              ),
-              _PreferenceTile(
-                value: 'healthTip',
-                title: '喜歡健康提醒',
-                profile: profile,
-              ),
-              _PreferenceTile(
-                value: 'lifeTip',
-                title: '喜歡生活小知識',
-                profile: profile,
-              ),
-              _PreferenceTile(
-                value: 'spiritual',
-                title: '喜歡心靈鼓勵',
-                profile: profile,
-              ),
-              _PreferenceTile(
-                value: 'nostalgicStory',
-                title: '喜歡懷舊話題',
-                profile: profile,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        _SettingsSection(
-          title: '日常提醒',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // CR-0087：寵物關心提醒開關。關閉後不發送此類陪伴提醒，
-              // 但每日簽到等必要提醒不受影響。
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                value: profile.concernRemindersEnabled,
-                title: const Text('寵物關心提醒'),
-                subtitle: const Text(
-                  '在你較少互動，或寵物有點低落、肚子餓時，溫和提醒你回來陪牠',
-                ),
-                onChanged: profile.setConcernRemindersEnabled,
-              ),
-              const SizedBox(height: 4),
-              // CR-0025：今日任務（吃藥 / 喝水 / 運動，拍照完成）。
-              // CR-0056（B2）：今日任務入口正式版完全隱藏（能力/路由保留）。
-              if (AppConfig.dailyCareTasksVisible) ...[
-                FilledButton.icon(
-                  onPressed: () =>
-                      Navigator.of(context).pushNamed(AppRoute.dailyCareTasks),
-                  icon: const Icon(Icons.checklist_rtl),
-                  label: const Text('今日任務'),
-                ),
-                const SizedBox(height: 10),
-              ],
-              OutlinedButton.icon(
-                onPressed: () =>
-                    Navigator.of(context).pushNamed(AppRoute.reminders),
-                icon: const Icon(Icons.alarm),
-                label: const Text('管理提醒'),
-              ),
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: () =>
-                    Navigator.of(context).pushNamed(AppRoute.memories),
-                icon: const Icon(Icons.psychology_alt_outlined),
-                label: const Text('管理長期記憶'),
-              ),
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: () =>
-                    Navigator.of(context).pushNamed(AppRoute.careAlerts),
-                icon: const Icon(Icons.favorite_outline),
-                label: const Text('今日關心紀錄'),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        KeyedSubtree(
-          // 新手導覽 Step 13 跨頁高亮用：切到設定頁時 spotlight「家人聯絡人」入口。
-          key: context.read<CoachMarkKeys>().settingsContactKey,
-          child: _SettingsSection(
-            title: '家人聯絡人',
-            child: _FamilyContactsEditor(profile: profile),
-          ),
-        ),
-        if (AppConfig.devPanelsVisible) ...[
-          const SizedBox(height: 14),
-          Container(
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.black12),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Theme(
-              data: Theme.of(context).copyWith(
-                dividerColor: Colors.transparent,
-              ),
-              child: ExpansionTile(
-                initiallyExpanded: false,
-                tilePadding: const EdgeInsets.symmetric(horizontal: 14),
-                childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-                expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
-                title: const Text(
-                  '進階診斷（開發人員）',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-                ),
-                subtitle: const Text(
-                  '開發人員診斷資訊，僅在啟用 SHOW_DEV_PANELS 時顯示',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                children: [
-                  const Text(
-                    'Realtime Diagnostics',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              if (_settingsCategory == 0) ...[
+                _SettingsSection(
+                  title: '寵物名字',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TextField(
+                        controller: _petNameController,
+                        focusNode: _petNameFocusNode,
+                        textInputAction: TextInputAction.done,
+                        decoration: const InputDecoration(
+                          labelText: '想怎麼叫牠？',
+                          border: OutlineInputBorder(),
+                        ),
+                        onSubmitted: (_) => _confirmRenamePet(context, profile),
+                      ),
+                      const SizedBox(height: 10),
+                      FilledButton.icon(
+                        onPressed: () => _confirmRenamePet(context, profile),
+                        icon: const Icon(Icons.check),
+                        label: const Text('更新名字'),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 12),
-                  Consumer3<VoiceAgentController, RealtimeVoiceService,
-                      ConversationController>(
-                    builder: (context, voice, realtime, conversation, _) {
-                      return _RealtimeDiagnosticsPanel(
-                        voiceController: voice,
-                        realtimeService: realtime,
-                        conversationController: conversation,
+                ),
+                const SizedBox(height: 14),
+                // CR-0092：新手導覽切到設定頁時高亮「換造型」。
+                KeyedSubtree(
+                  key: coachKeys.settingsAppearanceKey,
+                  child: const _SettingsSection(
+                    title: '換一隻陪你的夥伴',
+                    child: PetSkinPicker(),
+                  ),
+                ),
+              ],
+              if (_settingsCategory == 1) ...[
+                const SizedBox(height: 14),
+                _SettingsSection(
+                  title: '看得更舒服',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _fontScaleLabel(profile.fontScale),
+                        style: const TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.w700),
+                      ),
+                      Slider(
+                        value: profile.fontScale,
+                        min: 0.9,
+                        max: 1.3,
+                        divisions: 4,
+                        label: _fontScaleLabel(profile.fontScale),
+                        onChanged: profile.setFontScale,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _SettingsSection(
+                  title: '寵物聲音',
+                  child: Column(
+                    children: [
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        value: profile.ttsEnabled,
+                        title: const Text('讓寵物出聲說話'),
+                        onChanged: profile.setTtsEnabled,
+                      ),
+                      Row(
+                        children: [
+                          const Icon(Icons.volume_down),
+                          Expanded(
+                            child: Slider(
+                              value: profile.petVolume,
+                              min: 0,
+                              max: 1,
+                              divisions: 10,
+                              label: '${(profile.petVolume * 100).round()}%',
+                              onChanged: profile.ttsEnabled
+                                  ? profile.setPetVolume
+                                  : null,
+                            ),
+                          ),
+                          const Icon(Icons.volume_up),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _SettingsSection(
+                  title: '說話方式',
+                  child: SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(value: 'gentle', label: Text('溫柔')),
+                      ButtonSegment(value: 'calm', label: Text('慢慢說')),
+                      ButtonSegment(value: 'bright', label: Text('有精神')),
+                    ],
+                    selected: {profile.speechStyle},
+                    onSelectionChanged: (values) =>
+                        profile.setSpeechStyle(values.first),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _SettingsSection(
+                  title: '語音輸入方式',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SegmentedButton<VoiceLanguageMode>(
+                        segments: const [
+                          ButtonSegment(
+                            value: VoiceLanguageMode.defaultOpenAiRealtime,
+                            label: Text('中文即時語音'),
+                          ),
+                          ButtonSegment(
+                            value: VoiceLanguageMode.taigiRealtime,
+                            label: Text('台語即時語音'),
+                          ),
+                        ],
+                        selected: {
+                          profile.voiceLanguageMode ==
+                                  VoiceLanguageMode.taigiRealtime
+                              ? VoiceLanguageMode.taigiRealtime
+                              : VoiceLanguageMode.defaultOpenAiRealtime,
+                        },
+                        onSelectionChanged: (values) {
+                          context
+                              .read<ConversationController>()
+                              .clearPendingTaigiAsrTranscript();
+                          profile.setVoiceLanguageMode(values.first);
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        switch (profile.voiceLanguageMode) {
+                          VoiceLanguageMode.taigiRealtime =>
+                            '台語即時語音對話會使用原本即時語音連線，可以直接用台語或台語混中文跟寵物說話。',
+                          _ => '中文即時語音對話會使用原本的 Realtime 連線。',
+                        },
+                        style: TextStyle(
+                          color: Colors.black.withValues(alpha: 0.58),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (profile.voiceLanguageMode ==
+                          VoiceLanguageMode.manualOverride) ...[
+                        const SizedBox(height: 10),
+                        DropdownButtonFormField<String>(
+                          initialValue: profile.manualAsrStrategy,
+                          decoration: const InputDecoration(
+                            labelText: '手動指定 ASR strategy',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: [
+                            const DropdownMenuItem(
+                              value: 'defaultOpenAiRealtime',
+                              child: Text('OpenAI Realtime'),
+                            ),
+                            // CR-0048：mockTaigiAsr 僅在 dev / test 顯示。production 不注入
+                            // MockTaigiAsrStrategy，此選項在正式版會被解析成 OpenAI Realtime，
+                            // 故正式版直接隱藏，避免殘留無實效的 mock 選項。
+                            if (AppConfig.mockServicesEnabled)
+                              const DropdownMenuItem(
+                                value: 'mockTaigiAsr',
+                                child: Text('台語 ASR adapter'),
+                              ),
+                          ],
+                          onChanged: (value) {
+                            if (value != null) {
+                              profile.setManualAsrStrategy(value);
+                            }
+                          },
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+              if (_settingsCategory == 2) ...[
+                const SizedBox(height: 14),
+                _SettingsSection(
+                  title: '喜歡聽的內容',
+                  child: Column(
+                    children: [
+                      _PreferenceTile(
+                        value: 'story',
+                        title: '喜歡聽故事',
                         profile: profile,
-                      );
-                    },
+                      ),
+                      _PreferenceTile(
+                        value: 'news',
+                        title: '喜歡聽新聞',
+                        profile: profile,
+                      ),
+                      _PreferenceTile(
+                        value: 'healthTip',
+                        title: '喜歡健康提醒',
+                        profile: profile,
+                      ),
+                      _PreferenceTile(
+                        value: 'lifeTip',
+                        title: '喜歡生活小知識',
+                        profile: profile,
+                      ),
+                      _PreferenceTile(
+                        value: 'spiritual',
+                        title: '喜歡心靈鼓勵',
+                        profile: profile,
+                      ),
+                      _PreferenceTile(
+                        value: 'nostalgicStory',
+                        title: '喜歡懷舊話題',
+                        profile: profile,
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 18),
-                  const Text(
-                    'Companion Debug Panel',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 14),
+                _SettingsSection(
+                  title: '日常提醒',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // CR-0087：寵物關心提醒開關。關閉後不發送此類陪伴提醒，
+                      // 但每日簽到等必要提醒不受影響。
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        value: profile.concernRemindersEnabled,
+                        title: const Text('寵物關心提醒'),
+                        subtitle: const Text(
+                          '在你較少互動，或寵物有點低落、肚子餓時，溫和提醒你回來陪牠',
+                        ),
+                        onChanged: profile.setConcernRemindersEnabled,
+                      ),
+                      const SizedBox(height: 4),
+                      // CR-0025：今日任務（吃藥 / 喝水 / 運動，拍照完成）。
+                      // CR-0056（B2）：今日任務入口正式版完全隱藏（能力/路由保留）。
+                      if (AppConfig.dailyCareTasksVisible) ...[
+                        FilledButton.icon(
+                          onPressed: () => Navigator.of(context)
+                              .pushNamed(AppRoute.dailyCareTasks),
+                          icon: const Icon(Icons.checklist_rtl),
+                          label: const Text('今日任務'),
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+                      OutlinedButton.icon(
+                        onPressed: () =>
+                            Navigator.of(context).pushNamed(AppRoute.reminders),
+                        icon: const Icon(Icons.alarm),
+                        label: const Text('管理提醒'),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: () =>
+                            Navigator.of(context).pushNamed(AppRoute.memories),
+                        icon: const Icon(Icons.psychology_alt_outlined),
+                        label: const Text('管理長期記憶'),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: () => Navigator.of(context)
+                            .pushNamed(AppRoute.careAlerts),
+                        icon: const Icon(Icons.favorite_outline),
+                        label: const Text('今日關心紀錄'),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 12),
-                  Consumer<ConversationController>(
-                    builder: (context, conversation, _) {
-                      return CompanionDebugPanel(
-                        info: conversation.latestCompanionDebugInfo,
-                      );
-                    },
+                ),
+              ],
+              if (_settingsCategory == 3) ...[
+                const SizedBox(height: 14),
+                KeyedSubtree(
+                  // 新手導覽 Step 13 跨頁高亮用：切到設定頁時 spotlight「家人聯絡人」入口。
+                  key: coachKeys.settingsContactKey,
+                  child: _SettingsSection(
+                    title: '家人聯絡人',
+                    child: _FamilyContactsEditor(profile: profile),
+                  ),
+                ),
+                if (AppConfig.devPanelsVisible) ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.black12),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Theme(
+                      data: Theme.of(context).copyWith(
+                        dividerColor: Colors.transparent,
+                      ),
+                      child: ExpansionTile(
+                        initiallyExpanded: false,
+                        tilePadding: const EdgeInsets.symmetric(horizontal: 14),
+                        childrenPadding:
+                            const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                        expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+                        title: const Text(
+                          '進階診斷（開發人員）',
+                          style: TextStyle(
+                              fontSize: 22, fontWeight: FontWeight.w800),
+                        ),
+                        subtitle: const Text(
+                          '開發人員診斷資訊，僅在啟用 SHOW_DEV_PANELS 時顯示',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        children: [
+                          const Text(
+                            'Realtime Diagnostics',
+                            style: TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 12),
+                          Consumer3<VoiceAgentController, RealtimeVoiceService,
+                              ConversationController>(
+                            builder:
+                                (context, voice, realtime, conversation, _) {
+                              return _RealtimeDiagnosticsPanel(
+                                voiceController: voice,
+                                realtimeService: realtime,
+                                conversationController: conversation,
+                                profile: profile,
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 18),
+                          const Text(
+                            'Companion Debug Panel',
+                            style: TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 12),
+                          Consumer<ConversationController>(
+                            builder: (context, conversation, _) {
+                              return CompanionDebugPanel(
+                                info: conversation.latestCompanionDebugInfo,
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ],
-              ),
-            ),
-          ),
-        ],
-        const SizedBox(height: 14),
-        _SettingsSection(
-          title: '新手導覽',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                '想再認識一次首頁的功能嗎？可以從這裡重新看一遍導覽。',
-                style: TextStyle(fontSize: 16, height: 1.4),
-              ),
-              const SizedBox(height: 12),
-              // CR-0092：新手導覽最後幾步會高亮這顆「重看導覽」按鈕。
-              KeyedSubtree(
-                key: context.read<CoachMarkKeys>().settingsReplayKey,
-                child: OutlinedButton.icon(
-                  onPressed: () => _replayCoachMark(context),
-                  icon: const Icon(Icons.menu_book_outlined, size: 24),
-                  label: const Text(
-                    '重新觀看新手導覽',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        _SettingsSection(
-          title: '隱私與條款',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                '想再看一次我們怎麼保護你的資料、以及使用規則嗎？可以從這裡隨時查看。',
-                style: TextStyle(fontSize: 16, height: 1.4),
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => LegalDocumentScreen.privacyPolicy(),
+                const SizedBox(height: 14),
+                _SettingsSection(
+                  title: '新手導覽',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        '想再認識一次首頁的功能嗎？可以從這裡重新看一遍導覽。',
+                        style: TextStyle(fontSize: 16, height: 1.4),
+                      ),
+                      const SizedBox(height: 12),
+                      // CR-0092：新手導覽最後幾步會高亮這顆「重看導覽」按鈕。
+                      KeyedSubtree(
+                        key: coachKeys.settingsReplayKey,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _replayCoachMark(context),
+                          icon: const Icon(Icons.menu_book_outlined, size: 24),
+                          label: const Text(
+                            '重新觀看新手導覽',
+                            style: TextStyle(
+                                fontSize: 20, fontWeight: FontWeight.w700),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                icon: const Icon(Icons.privacy_tip_outlined, size: 24),
-                label: const Text(
-                  '隱私權政策',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-                ),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-              ),
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => LegalDocumentScreen.termsOfService(),
+                const SizedBox(height: 14),
+                _SettingsSection(
+                  title: '隱私與條款',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        '想再看一次我們怎麼保護你的資料、以及使用規則嗎？可以從這裡隨時查看。',
+                        style: TextStyle(fontSize: 16, height: 1.4),
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => LegalDocumentScreen.privacyPolicy(),
+                          ),
+                        ),
+                        icon: const Icon(Icons.privacy_tip_outlined, size: 24),
+                        label: const Text(
+                          '隱私權政策',
+                          style: TextStyle(
+                              fontSize: 20, fontWeight: FontWeight.w700),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                LegalDocumentScreen.termsOfService(),
+                          ),
+                        ),
+                        icon: const Icon(Icons.description_outlined, size: 24),
+                        label: const Text(
+                          '服務條款',
+                          style: TextStyle(
+                              fontSize: 20, fontWeight: FontWeight.w700),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: _handleReviewConsent,
+                        icon: const Icon(Icons.fact_check_outlined, size: 24),
+                        label: const Text(
+                          '重新檢視同意項目',
+                          style: TextStyle(
+                              fontSize: 20, fontWeight: FontWeight.w700),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Divider(height: 1),
+                      const SizedBox(height: 12),
+                      const Text(
+                        '需要幫忙或想詢問資料刪除，也可以透過正式支援管道聯絡我們。',
+                        style: TextStyle(fontSize: 16, height: 1.4),
+                      ),
+                      if (!LegalConfig.isPlaceholder(
+                          LegalConfig.supportUrl)) ...[
+                        const SizedBox(height: 10),
+                        OutlinedButton.icon(
+                          onPressed: () => _openExternalUri(
+                            LegalConfig.supportUrl,
+                            '支援頁暫時打不開，請稍後再試一次。',
+                          ),
+                          icon: const Icon(Icons.help_outline, size: 24),
+                          label: const Text(
+                            '聯絡支援',
+                            style: TextStyle(
+                                fontSize: 20, fontWeight: FontWeight.w700),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                        ),
+                      ],
+                      if (!LegalConfig.isPlaceholder(
+                          LegalConfig.contactEmail)) ...[
+                        const SizedBox(height: 10),
+                        OutlinedButton.icon(
+                          onPressed: () => _openExternalUri(
+                            'mailto:${LegalConfig.contactEmail}',
+                            '信箱暫時打不開，請稍後再試一次。',
+                          ),
+                          icon: const Icon(Icons.mail_outline, size: 24),
+                          label: const Text(
+                            '寫信給客服',
+                            style: TextStyle(
+                                fontSize: 20, fontWeight: FontWeight.w700),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-                icon: const Icon(Icons.description_outlined, size: 24),
-                label: const Text(
-                  '服務條款',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-                ),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-              ),
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: _handleReviewConsent,
-                icon: const Icon(Icons.fact_check_outlined, size: 24),
-                label: const Text(
-                  '重新檢視同意項目',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-                ),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Divider(height: 1),
-              const SizedBox(height: 12),
-              const Text(
-                '需要幫忙或想詢問資料刪除，也可以透過正式支援管道聯絡我們。',
-                style: TextStyle(fontSize: 16, height: 1.4),
-              ),
-              if (!LegalConfig.isPlaceholder(LegalConfig.supportUrl)) ...[
-                const SizedBox(height: 10),
-                OutlinedButton.icon(
-                  onPressed: () => _openExternalUri(
-                    LegalConfig.supportUrl,
-                    '支援頁暫時打不開，請稍後再試一次。',
+                const SizedBox(height: 14),
+                _SettingsSection(
+                  title: '帳號',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        '登出後會回到一開始的畫面，下次再進來就好。',
+                        style: TextStyle(fontSize: 16, height: 1.4),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _handleLogout,
+                          icon: const Icon(Icons.logout, size: 26),
+                          label: const Text(
+                            '登出',
+                            style: TextStyle(
+                                fontSize: 22, fontWeight: FontWeight.w700),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            foregroundColor: const Color(0xFFC2410C),
+                            side: const BorderSide(
+                                color: Color(0xFFC2410C), width: 1.5),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      const Divider(height: 1),
+                      const SizedBox(height: 16),
+                      const Text(
+                        '刪除帳號會清除伺服器上的帳號資料，以及這台手機裡的寵物、記憶與提醒紀錄。'
+                        '刪除後無法復原，之後需要時可以重新註冊。',
+                        style: TextStyle(fontSize: 16, height: 1.4),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: TextButton.icon(
+                          onPressed:
+                              _isDeletingAccount ? null : _handleDeleteAccount,
+                          icon: _isDeletingAccount
+                              ? const SizedBox.square(
+                                  dimension: 24,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 3),
+                                )
+                              : const Icon(Icons.delete_forever_outlined,
+                                  size: 26),
+                          label: Text(
+                            _isDeletingAccount ? '正在安全刪除，請稍候' : '刪除帳號',
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            foregroundColor: const Color(0xFFB91C1C),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  icon: const Icon(Icons.help_outline, size: 24),
-                  label: const Text(
-                    '聯絡支援',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
                 ),
+                const SizedBox(height: 24),
               ],
-              if (!LegalConfig.isPlaceholder(LegalConfig.contactEmail)) ...[
-                const SizedBox(height: 10),
-                OutlinedButton.icon(
-                  onPressed: () => _openExternalUri(
-                    'mailto:${LegalConfig.contactEmail}',
-                    '信箱暫時打不開，請稍後再試一次。',
-                  ),
-                  icon: const Icon(Icons.mail_outline, size: 24),
-                  label: const Text(
-                    '寫信給客服',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                ),
-              ],
             ],
           ),
         ),
-        const SizedBox(height: 14),
-        _SettingsSection(
-          title: '帳號',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                '登出後會回到一開始的畫面，下次再進來就好。',
-                style: TextStyle(fontSize: 16, height: 1.4),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _handleLogout,
-                  icon: const Icon(Icons.logout, size: 26),
-                  label: const Text(
-                    '登出',
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    foregroundColor: const Color(0xFFC2410C),
-                    side:
-                        const BorderSide(color: Color(0xFFC2410C), width: 1.5),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 18),
-              const Divider(height: 1),
-              const SizedBox(height: 16),
-              const Text(
-                '刪除帳號會清除伺服器上的帳號資料，以及這台手機裡的寵物、記憶與提醒紀錄。'
-                '刪除後無法復原，之後需要時可以重新註冊。',
-                style: TextStyle(fontSize: 16, height: 1.4),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: TextButton.icon(
-                  onPressed: _isDeletingAccount ? null : _handleDeleteAccount,
-                  icon: _isDeletingAccount
-                      ? const SizedBox.square(
-                          dimension: 24,
-                          child: CircularProgressIndicator(strokeWidth: 3),
-                        )
-                      : const Icon(Icons.delete_forever_outlined, size: 26),
-                  label: Text(
-                    _isDeletingAccount ? '正在安全刪除，請稍候' : '刪除帳號',
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    foregroundColor: const Color(0xFFB91C1C),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 24),
       ],
     );
   }
@@ -787,12 +850,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // 失敗（如密碼錯誤、需重新登入）：維持登入，給白話提示，不清本機資料。
       if (mounted) {
         setState(() => _isDeletingAccount = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(error, style: const TextStyle(fontSize: 18)),
-            duration: const Duration(seconds: 5),
-          ),
-        );
+        ElderFeedback.showImportant(context, error);
       }
       return;
     }
@@ -821,27 +879,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _openExternalUri(String value, String fallbackMessage) async {
     final uri = Uri.tryParse(value);
     if (uri == null) {
-      _showSnackBar(fallbackMessage);
+      _showImportantFeedback(fallbackMessage);
       return;
     }
     try {
       final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!opened) {
-        _showSnackBar(fallbackMessage);
+        _showImportantFeedback(fallbackMessage);
       }
     } catch (_) {
-      _showSnackBar(fallbackMessage);
+      _showImportantFeedback(fallbackMessage);
     }
   }
 
-  void _showSnackBar(String message) {
+  void _showImportantFeedback(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message, style: const TextStyle(fontSize: 18)),
-        duration: const Duration(seconds: 3),
-      ),
-    );
+    ElderFeedback.showImportant(context, message);
   }
 
   Future<void> _confirmRenamePet(
@@ -850,16 +903,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   ) async {
     final newName = _petNameController.text.trim();
     if (newName.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('還沒有幫寵物取名唷')),
-      );
+      ElderFeedback.showImportant(context, '還沒有幫寵物取名唷');
       return;
     }
 
     if (newName == profile.petName) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('名字沒有變更')),
-      );
+      ElderFeedback.show(context, '名字沒有變更');
       return;
     }
 
@@ -886,8 +935,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!context.mounted) return;
     context.read<PetController>().setMessage('好呀，以後我就叫$newName。');
     _petNameFocusNode.unfocus();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已更新為 $newName')),
+    ElderFeedback.show(
+      context,
+      '已更新為 $newName',
+      tone: ElderFeedbackTone.success,
     );
   }
 
@@ -1083,6 +1134,72 @@ class _PreferenceTile extends StatelessWidget {
       title: Text(title),
       onChanged: (checked) =>
           profile.setContentPreference(value, checked ?? false),
+    );
+  }
+}
+
+class _SettingsCategoryBar extends StatelessWidget {
+  const _SettingsCategoryBar({
+    required this.selectedIndex,
+    required this.onSelected,
+  });
+
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+
+  static const _labels = ['寵物', '看與聽', '陪伴', '帳號'];
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        border: Border.all(color: colors.outlineVariant),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          for (var index = 0; index < _labels.length; index++)
+            Expanded(
+              child: Semantics(
+                button: true,
+                selected: selectedIndex == index,
+                child: InkWell(
+                  onTap: () => onSelected(index),
+                  child: Container(
+                    alignment: Alignment.center,
+                    constraints: const BoxConstraints(minHeight: 52),
+                    decoration: BoxDecoration(
+                      color: selectedIndex == index
+                          ? colors.primaryContainer
+                          : colors.surface,
+                      border: index == 0
+                          ? null
+                          : Border(
+                              left: BorderSide(color: colors.outlineVariant),
+                            ),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                    child: Text(
+                      _labels[index],
+                      maxLines: 1,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: selectedIndex == index
+                            ? FontWeight.w800
+                            : FontWeight.w600,
+                        color: selectedIndex == index
+                            ? colors.onPrimaryContainer
+                            : colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

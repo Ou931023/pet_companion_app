@@ -668,6 +668,14 @@
   };
   var workspaceLoaded = false;
 
+  // 四區導覽：保留原本各 view 與 API，只在畫面上一次呈現同一類工作。
+  var elN = {
+    secondary: document.getElementById("secondary-view-tabs"),
+    care: document.getElementById("tab-care-section"),
+    insights: document.getElementById("tab-insights-section"),
+    management: document.getElementById("tab-management-section"),
+  };
+
   // ========== 健康分析 Dashboard（CR-0007 Batch 4）==========
   // 使用後端 6 條 /api/admin/* 端點；只對應實際 response 欄位，不假造欄位。
   var elH = {
@@ -935,6 +943,7 @@
       }
       if (entry.tab) entry.tab.classList.toggle("is-active", active);
     });
+    syncNavigationForView(name);
     if (name === "workspace" && !workspaceLoaded) {
       workspaceLoaded = true;
       loadWorkspace();
@@ -971,6 +980,37 @@
     if (name === "assignments" && !assignmentsLoaded) {
       assignmentsLoaded = true;
       loadAssignments();
+    }
+  }
+
+  function navigationSectionForView(name) {
+    if (name === "workspace") return "workspace";
+    if (name === "alerts" || name === "tasks") return "care";
+    if (name === "analytics" || name === "health") return "insights";
+    return "management";
+  }
+
+  function syncNavigationForView(name) {
+    var section = navigationSectionForView(name);
+    if (elW.tab) elW.tab.classList.toggle("is-active", section === "workspace");
+    if (elN.care) elN.care.classList.toggle("is-active", section === "care");
+    if (elN.insights) {
+      elN.insights.classList.toggle("is-active", section === "insights");
+    }
+    if (elN.management) {
+      elN.management.classList.toggle("is-active", section === "management");
+    }
+    if (elN.secondary) {
+      elN.secondary.classList.toggle("hidden", section === "workspace");
+      Array.prototype.forEach.call(
+        elN.secondary.querySelectorAll(".view-tab"),
+        function (tab) {
+          var tabSection = "management";
+          if (tab === elH.tabAlerts || tab === elT.tabTasks) tabSection = "care";
+          if (tab === elAN.tab || tab === elH.tabHealth) tabSection = "insights";
+          tab.classList.toggle("is-context-hidden", tabSection !== section);
+        }
+      );
     }
   }
 
@@ -1164,6 +1204,7 @@
   function applyAuthModeUi() {
     var caregiver = isCaregiverMode();
     if (elW.adminSetup) elW.adminSetup.classList.toggle("hidden", caregiver);
+    if (elN.management) elN.management.classList.toggle("hidden", caregiver);
     [
       elU && elU.tabUsers,
       elP && elP.tabProducts,
@@ -4819,6 +4860,25 @@
     if (elW.tab) {
       elW.tab.addEventListener("click", function () {
         showView("workspace");
+      });
+    }
+    if (elN.care) {
+      elN.care.addEventListener("click", function () {
+        var current = currentViewName();
+        showView(current === "tasks" ? "tasks" : "alerts");
+      });
+    }
+    if (elN.insights) {
+      elN.insights.addEventListener("click", function () {
+        var current = currentViewName();
+        showView(current === "health" ? "health" : "analytics");
+      });
+    }
+    if (elN.management) {
+      elN.management.addEventListener("click", function () {
+        var current = currentViewName();
+        var managementViews = ["users", "products", "orders", "caregivers", "assignments"];
+        showView(managementViews.indexOf(current) >= 0 ? current : "users");
       });
     }
     if (elW.refresh) elW.refresh.addEventListener("click", loadWorkspace);

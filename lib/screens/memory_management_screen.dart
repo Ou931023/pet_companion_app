@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../controllers/memory_controller.dart';
 import '../widgets/memory_card.dart';
+import '../widgets/ui/elder_feedback.dart';
 
 class MemoryManagementScreen extends StatefulWidget {
   const MemoryManagementScreen({super.key});
@@ -87,9 +88,15 @@ class _MemoryManagementScreenState extends State<MemoryManagementScreen> {
     final ok = await context.read<MemoryController>().archiveMemory(id);
     if (!mounted) return;
     setState(() => _forgettingIds.remove(id.toString()));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(ok ? '已忘記這筆記憶' : '暫時無法忘記這筆記憶')),
-    );
+    if (ok) {
+      ElderFeedback.show(
+        context,
+        '已忘記這筆記憶',
+        tone: ElderFeedbackTone.success,
+      );
+    } else {
+      ElderFeedback.showImportant(context, '暫時無法忘記這筆記憶');
+    }
   }
 }
 

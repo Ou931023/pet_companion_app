@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import 'package:pet_companion_app/controllers/pet_controller.dart';
 import 'package:pet_companion_app/controllers/profile_controller.dart';
+import 'package:pet_companion_app/models/pet_skin.dart';
 import 'package:pet_companion_app/screens/onboarding_screen.dart';
 import 'package:pet_companion_app/services/local_storage_service.dart';
 
@@ -48,12 +49,15 @@ Future<void> _pumpOnboarding(
   WidgetTester tester, {
   required ProfileController profile,
   required LocalStorageService storage,
+  PetController? pet,
 }) async {
   await tester.pumpWidget(
     MultiProvider(
       providers: [
         ChangeNotifierProvider<ProfileController>.value(value: profile),
-        ChangeNotifierProvider<PetController>(create: (_) => PetController()),
+        ChangeNotifierProvider<PetController>.value(
+          value: pet ?? PetController(),
+        ),
         Provider<LocalStorageService>.value(value: storage),
       ],
       child: const MaterialApp(home: OnboardingScreen()),
@@ -70,8 +74,7 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
   }
 
-  testWidgets('三步驟順序為 選夥伴 → 取名 → 設定關心你的人 → 完成註冊，且無重複的選外觀步驟',
-      (tester) async {
+  testWidgets('三步驟順序為 選夥伴 → 取名 → 設定關心你的人 → 完成註冊，且無重複的選外觀步驟', (tester) async {
     useTallView(tester);
     final storage = _FakeStorage();
     final profile = _FakeProfileController(storage);
@@ -138,6 +141,40 @@ void main() {
     expect(find.text('還沒有幫牠取名字唷'), findsOneWidget);
     expect(find.text('幫牠取一個名字'), findsOneWidget);
     expect(profile.completedName, isNull);
+  });
+
+  testWidgets('比較多隻夥伴不會提前解鎖，開始使用時只取得最後選定的一隻', (tester) async {
+    useTallView(tester);
+    final storage = _FakeStorage();
+    final profile = _FakeProfileController(storage);
+    final pet = PetController();
+    await _pumpOnboarding(
+      tester,
+      profile: profile,
+      storage: storage,
+      pet: pet,
+    );
+
+    await tester.tap(find.text('天竺鼠'));
+    await tester.pump();
+    await tester.tap(find.text('狐狸'));
+    await tester.pump();
+    expect(pet.currentSkin.name, 'fox');
+    expect(pet.ownedSkins.length, 1);
+
+    await tester.tap(find.text('下一步'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, '小福');
+    await tester.tap(find.text('下一步'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('完成設定'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('開始使用'));
+    await tester.pump();
+
+    expect(pet.isOwned(PetSkin.fox), isTrue);
+    expect(pet.isOwned(PetSkin.guineaPig), isFalse);
+    expect(pet.ownedSkins, {PetSkin.dog, PetSkin.fox});
   });
 
   testWidgets('填了家人聯絡 → 透過既有 setFamilyContacts 保存', (tester) async {

@@ -10,6 +10,7 @@ const {
   hasEventCue,
   isTiredContent,
   isAmbiguous,
+  recentReplyInstruction,
 } = require("./next_strategy_planner");
 
 function analyze(transcript, extra = {}) {
@@ -221,4 +222,33 @@ test("urgent 保留完整安全提醒，不套一般 1–3 句裁切", () => {
   assert.match(result.nextStrategy.instruction, /安不安全/);
   assert.match(result.nextStrategy.instruction, /立刻聯絡家人/);
   assert.match(result.nextStrategy.instruction, /緊急 \/ 醫療電話/);
+});
+
+test("最近寵物回覆會進入避重指引，空值與重複內容會被清理", () => {
+  const hint = recentReplyInstruction([
+    { petReply: "聽起來你今天有點累，我在這裡陪你。" },
+    { petReply: "聽起來你今天有點累，我在這裡陪你。" },
+    { petReply: "那我們慢慢說，今天發生什麼事了？" },
+    { petReply: "" },
+  ]);
+
+  assert.match(hint, /最近幾次已經回過/);
+  assert.match(hint, /聽起來你今天有點累/);
+  assert.match(hint, /那我們慢慢說/);
+  assert.match(hint, /不要逐字重複上述開頭或完整句子/);
+  assert.equal((hint.match(/聽起來你今天有點累/g) || []).length, 1);
+});
+
+test("一般情境帶最近回覆避重，urgent 不讓去重干擾必要安全話術", () => {
+  const recentTurns = [
+    { userText: "我好累", petReply: "我在這裡陪你，慢慢說。" },
+  ];
+  const ordinary = analyze("今天還是很累", { recentTurns });
+  assert.match(ordinary.nextStrategy.instruction, /最近幾次已經回過/);
+  assert.match(ordinary.nextStrategy.instruction, /不要重新自我介紹/);
+
+  const urgent = analyze("我胸口很痛，喘不過氣", { recentTurns });
+  assert.equal(urgent.nextStrategy.mode, "safety_check");
+  assert.doesNotMatch(urgent.nextStrategy.instruction, /最近幾次已經回過/);
+  assert.match(urgent.nextStrategy.instruction, /立刻聯絡家人/);
 });

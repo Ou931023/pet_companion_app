@@ -7,6 +7,7 @@ import '../controllers/auth_controller.dart';
 import '../routes/app_routes.dart';
 import '../widgets/auth/auth_provider_button.dart';
 import '../widgets/auth/auth_visuals.dart';
+import '../widgets/ui/elder_feedback.dart';
 import 'legal_document_screen.dart';
 
 /// 登入頁。
@@ -208,17 +209,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _showFriendlyMessage(String message) {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          message,
-          style: const TextStyle(fontSize: 18),
-        ),
-        duration: const Duration(seconds: 3),
-      ),
-    );
+    ElderFeedback.show(context, message);
   }
 
   @override

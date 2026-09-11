@@ -43,6 +43,20 @@ function memoryInstruction(retrievedMemories = []) {
   return ` 可自然參考使用者過去提到的「${summary}」，但不要說出「記憶」或「資料庫」。`;
 }
 
+function recentReplyInstruction(recentTurns = []) {
+  if (!Array.isArray(recentTurns) || !recentTurns.length) return "";
+  const replies = [];
+  for (const turn of recentTurns) {
+    const reply = compact(turn?.petReply, 52);
+    if (!reply || replies.includes(reply)) continue;
+    replies.push(reply);
+    if (replies.length === 3) break;
+  }
+  if (!replies.length) return "";
+  const examples = replies.map((reply) => `「${reply}」`).join("、");
+  return ` 最近幾次已經回過：${examples}。這次要承接使用者最新一句，換一個自然開頭與說法；不要逐字重複上述開頭或完整句子，也不要重新自我介紹。`;
+}
+
 // ---- 意圖偵測（deterministic，方便單元測試）----
 
 // 明確的生活工具需求：提醒 / 鬧鐘 / 吃藥 / 喝水 / 回診 等。
@@ -113,18 +127,26 @@ function planNextStrategy({
   retrievedMemories = [],
   searchIntent,
   sourceReferences = [],
+  recentTurns = [],
   languageHint = "zh",
   transcript = "",
 }) {
   const text = (transcript || "").toString();
   const memoryHint = memoryInstruction(retrievedMemories);
+  const recentReplyHint = recentReplyInstruction(recentTurns);
   const taigiHint =
     languageHint === "taigi"
       ? " 使用台灣長者自然聽得懂的語氣，不要硬翻成不自然台語；若 transcript 不完整，溫和追問確認。"
       : "";
-  const finish = (mode, instruction, { applyNormalCadence = true } = {}) => ({
+  const finish = (
     mode,
-    instruction: `${instruction}${applyNormalCadence ? ` ${NORMAL_VOICE_CADENCE}` : ""}${memoryHint}${taigiHint}`,
+    instruction,
+    { applyNormalCadence = true, applyRecentAvoidance = true } = {},
+  ) => ({
+    mode,
+    instruction: `${instruction}${applyNormalCadence ? ` ${NORMAL_VOICE_CADENCE}` : ""}${
+      applyRecentAvoidance ? recentReplyHint : ""
+    }${memoryHint}${taigiHint}`,
   });
 
   // 1) 高風險優先：安全 / 情緒危機凌駕一般聊天與一般工具。
@@ -132,7 +154,7 @@ function planNextStrategy({
     return finish(
       "safety_check",
       "使用者可能遇到危急狀況。先用一句話冷靜接住他剛剛說的，簡短確認他現在安不安全，並溫和鼓勵他立刻聯絡家人或撥打緊急 / 醫療電話。語氣關心、不慌張，不要說教、不要做醫療診斷。",
-      { applyNormalCadence: false },
+      { applyNormalCadence: false, applyRecentAvoidance: false },
     );
   }
   if (safety?.riskLevel === "high") {
@@ -239,4 +261,5 @@ module.exports = {
   hasEventCue,
   isTiredContent,
   isAmbiguous,
+  recentReplyInstruction,
 };

@@ -6,6 +6,7 @@ import '../../controllers/marketplace_controller.dart';
 import '../../models/marketplace_product.dart';
 import '../../widgets/marketplace/marketplace_ui.dart';
 import '../../widgets/ui/empty_state.dart';
+import '../../widgets/ui/elder_feedback.dart';
 import 'cart_screen.dart';
 import 'product_detail_screen.dart';
 
@@ -138,21 +139,18 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   void _addToCart(BuildContext context, MarketplaceProduct product) {
     final cart = context.read<CartController>();
     final ok = cart.addProduct(product);
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.clearSnackBars();
     if (ok) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('已加入購物車：${product.name}')),
+      ElderFeedback.show(
+        context,
+        '已加入購物車：${product.name}',
+        tone: ElderFeedbackTone.success,
       );
     } else if (!product.inStock) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('這個商品剛好售完了，先看看其他用品吧。')),
-      );
+      ElderFeedback.showImportant(context, '這個商品剛好售完了，先看看其他用品吧。');
     } else {
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text('一次只能訂同一間照護中心的商品，請先結帳或清空購物車。'),
-        ),
+      ElderFeedback.showImportant(
+        context,
+        '一次只能訂同一間照護中心的商品，請先結帳或清空購物車。',
       );
     }
   }

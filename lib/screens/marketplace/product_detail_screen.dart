@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../controllers/cart_controller.dart';
 import '../../models/marketplace_product.dart';
 import '../../widgets/marketplace/marketplace_ui.dart';
+import '../../widgets/ui/elder_feedback.dart';
 import 'cart_screen.dart';
 
 /// 商品詳情頁（CR-0032）：圖片、名稱、價格、分類、庫存、說明 + 數量選擇 + 加入購物車。
@@ -23,35 +24,31 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   void _changeQuantity(int delta) {
     setState(() {
-      _quantity = (_quantity + delta).clamp(1, _product.stock <= 0 ? 1 : _product.stock);
+      _quantity = (_quantity + delta)
+          .clamp(1, _product.stock <= 0 ? 1 : _product.stock);
     });
   }
 
   void _addToCart() {
     final cart = context.read<CartController>();
     final ok = cart.addProduct(_product, quantity: _quantity);
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.clearSnackBars();
     if (!ok) {
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text('一次只能訂同一間照護中心的商品，請先結帳或清空購物車。'),
-        ),
+      ElderFeedback.showImportant(
+        context,
+        '一次只能訂同一間照護中心的商品，請先結帳或清空購物車。',
       );
       return;
     }
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text('已加入購物車：${_product.name}'),
-        action: SnackBarAction(
-          label: '去結帳',
-          onPressed: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const CartScreen()),
-            );
-          },
-        ),
-      ),
+    ElderFeedback.show(
+      context,
+      '已加入購物車：${_product.name}',
+      tone: ElderFeedbackTone.success,
+      actionLabel: '去結帳',
+      onAction: () {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const CartScreen()),
+        );
+      },
     );
   }
 
@@ -129,8 +126,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               _QuantityStepper(
                 quantity: _quantity,
                 onDecrease: _quantity > 1 ? () => _changeQuantity(-1) : null,
-                onIncrease:
-                    _quantity < _product.stock ? () => _changeQuantity(1) : null,
+                onIncrease: _quantity < _product.stock
+                    ? () => _changeQuantity(1)
+                    : null,
               ),
             ],
           ],

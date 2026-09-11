@@ -4807,3 +4807,237 @@ Release signing 的 repo 端文件與自動檢查已可執行；真正送審仍�
 ### 驗收
 - 後端 transaction：完整 schema、缺少後期選配表、任一既有表 SQL 失敗 rollback、帳號不存在冪等成功。
 - Flutter：Google 重新驗證 timeout 可回到設定頁；刪除中不能重複觸發；失敗保留登入與本機資料，成功回登入頁。
+
+---
+
+## CR-0107 — Realtime 字幕、寵物解鎖、功能可發現性與雙端資訊架構收斂（2026-09-08 提案）
+
+### Architecture Review
+
+**裁決：條件式核准，整體風險 high。** 本案同時跨 `realtime-voice-agent`、`companion-memory-agent`、`backend-agent` 與 `frontend-ux-agent`，不得合成一個大改 commit。只核准依下列 B1→B6 小批次執行與逐批 checkpoint；任何批次超出允許檔案或改到契約，須停下重新提案。
+
+本提案本身只更新審查文件，尚未核准直接切換 production 模型，也沒有核准 API / DB / Care Alert 結構變更。現階段不需更新 `PROJECT_ARCHITECTURE.md`，因為規劃維持既有路由、request / response、DB schema、Care Alert 四級與 WebRTC transport；若後續需要改 `/api/realtime/*`、`/api/companion/chat` 契約或 production 預設模型，必須先更新 `PROJECT_ARCHITECTURE.md` 再動程式。
+
+### 影響範圍與 owner
+
+- Realtime assistant transcript：`realtime-voice-agent` 主導事件累積、final 與 lifecycle；`frontend-ux-agent` 負責字幕呈現；`conversation_controller.dart` 為共享邊界。
+- Onboarding 寵物選擇 / 解鎖：`frontend-ux-agent` 主導，不得延伸成後端購買或 DB schema 變更。
+- 遊戲與小功能可發現性、長者提示泡泡、Flutter 設定、`caregiver_web` 導覽：`frontend-ux-agent` 主導。
+- 國語模型與重複回覆：`realtime-voice-agent` 負責語音 baseline；`companion-memory-agent` 負責 persona / 回覆策略與評測語料；`backend-agent` 只負責既有 model config seam 與 server 內接線。
+- `architecture-agent`：逐批檢查鎖定檔、契約、測試與真機證據；不代替 owner 大量修改業務程式。
+
+### 🔒 觸及與明確限制
+
+- 可能觸及 🔒 `lib/services/realtime_voice_service.dart`：**僅 B1 事件重播證明 service 層確有 delta / final 累積缺陷時**，才准由 `realtime-voice-agent` 做最小修正。現況程式已有 `_assistantBuffer` 累積與 `response.done` final，首選先修顯示層；frontend 不得為了方便直接改此檔。
+- 可能觸及 🔒 `backend/stt_proxy/server.js`：B5 只允許 persona / model config 的既有 seam 與測試；**不准**新增、刪除或改名路由，不准改 request / response 形狀，不准改 auth / Care Alert side-channel。
+- 本案**不核准**修改 `backend/stt_proxy/db/migrate.js`、任何 migration / DB schema、Care Alert 共用欄位或 `pubspec.yaml` / `package.json` 依賴。
+- 不改 WebRTC SDP、ICE、PeerConnection、DataChannel 建立與 `/api/realtime/session`、`/api/realtime/call` 契約；不加 mock、demo-only fallback 或假成功。
+- 不讀取、修改、輸出 `.env`、token、key、secret、Firebase private config 或 runtime `backend/stt_proxy/data/*.json`。
+- repo 可能同時有其他 agent 工作；每批動工前重查 `git status` / diff，只挑本 CR 檔案，不回退、不格式化、不覆蓋他人無關變更。
+
+### 現況實證
+
+- assistant delta 在 `RealtimeVoiceService` 會累積成 `_assistantBuffer`，並以節流的 `assistantPartialText` 對外送出；`response.done` 再送唯一 final。現有 service test 已驗證兩段 delta 可得到完整文字。
+- `PetSubtitleText` 在 `streaming=true` 時刻意把 `_pageIndex` 固定在最後一頁；streaming 轉 final 時又因 `_wasStreaming` 保留最後一頁。這會讓長回覆視覺上只剩末句；高頻 text / streaming 狀態切換也是閃爍風險來源。
+- onboarding 使用 `PetSkinPicker(purchasable:false)`；每次點選都呼叫 `selectStarterSkin()` 並永久 `_unlock()`。使用者可在完成 onboarding 前依序點遍所有付費 skin，造成全部免費解鎖；production 的 `freeAllSkins` 雖已強制關閉，仍擋不住此路徑。
+- 新手導覽宣稱「點寵物可以玩記憶小遊戲」，但首頁寵物 `onTap` 現況只做拍摸效果；真正遊戲入口藏在右上角「更多功能」bottom sheet，導覽與行為不一致。
+- `lib/` 仍有多處 `ScaffoldMessenger.showSnackBar`，涵蓋 onboarding、首頁語音狀態、商城、設定、記憶與遊戲；底部訊息可能被導覽列 / sheet 遮擋，且連續操作後會排隊殘留。
+- 國語 Realtime 預設讀 `REALTIME_MODEL`，source fallback 為 `gpt-realtime`；文字聊天依序讀 `COMPANION_CHAT_MODEL`、`MEMORY_MODEL`，source fallback 為 `gpt-4o-mini`。兩條 persona 已有「不要重複固定開場」指示，文字聊天也會帶最近 6 輪 history，因此不可先假設只換模型就能解決重複回覆。
+- Flutter 設定頁目前約 11 個連續大區塊；`caregiver_web` 有 10 個頂層 tab。後者已具 role / feature flag 隱藏與 `showView()` lazy-load，資訊架構可在前端收斂而不改 API。
+
+### B1 — Realtime assistant transcript 穩定與完整（high）
+
+**核准 owner：`realtime-voice-agent` + `frontend-ux-agent`，先測試後小修。**
+
+允許範圍：
+- 事件 / 狀態：`lib/services/realtime_voice_service.dart`（符合上述條件才可改）、`lib/controllers/voice_agent_controller.dart`、`lib/controllers/conversation_controller.dart`。
+- 顯示：`lib/widgets/pet_subtitle_text.dart`、`speech_bubble.dart`、`conversation_bubble_stack.dart`、`lib/screens/home_screen.dart` 的字幕接線。
+- 對應 Realtime / controller / widget tests。
+
+驗收規則：
+- streaming 更新必須是同一則 assistant 回覆的累積文字，不可把 delta 當獨立句覆蓋；final 必須完整且只落 history 一次。
+- 長回覆在說話中不得因 AnimatedSwitcher、分頁 key 或 streaming/final handoff 高頻閃爍；不得用「只保留最後一頁」掩蓋。
+- 語音播完後，長者仍能看到或自行查看完整 final，不可永久只剩末句；無需自動快速翻頁。
+- assistant 不得落到 user transcript；user partial 不得進 history；空 final 不建立訊息；`response.done` 早於 playback stopped 時仍保留字幕至真正播完。
+- iOS 實機至少跑 10 輪國語長短句，確認無卡住、無重建 warm session、無末句截斷。無真機證據時只可標記 automated checkpoint，不可宣告體驗問題完全結案。
+
+**退回條件：** 修改 SDP / ICE / DataChannel transport、刪掉 partial transcript、以固定延遲猜語音進度、或為過測移除既有 lifecycle tests。
+
+#### B1 Checkpoint Review（architecture-agent，2026-09-08）
+
+**裁決：Approve（automated checkpoint），無 P0/P1 merge blocker。** 實際變更僅 `lib/widgets/pet_subtitle_text.dart` 與 `test/widgets/pet_subtitle_text_test.dart`；未觸及 🔒 `realtime_voice_service.dart`、controller、WebRTC transport、後端契約、DB、Care Alert 或依賴，風險由 high 收斂為 low。
+
+- streaming 不再追逐最後一頁：固定第一頁且不使用切換動畫；final handoff 會從第一頁重新開始，沿用既有保守計時器依序顯示中間與最後頁，消除「只剩末句」路徑。
+- 既有 `_assistantBuffer`、partial / final 事件與 history 落地完全未改；本批是純顯示層修正，不以 UI hack 改寫 Realtime 主流程。
+- 獨立驗證：`flutter test test/widgets/pet_subtitle_text_test.dart` **8/8 passed**；`flutter test test/widgets/conversation_bubble_stack_test.dart test/home_screen_layout_test.dart` **21/21 passed**；`flutter analyze lib/widgets/pet_subtitle_text.dart test/widgets/pet_subtitle_text_test.dart` **No issues found**。
+- iOS 實機 10 輪國語長短句 smoke 尚未執行，因此「實機無閃爍 / 音訊同步體驗」仍列 release 驗證事項，不偽稱完成；不阻擋此小範圍顯示層變更合併或 B2 開始。
+
+### B2 — Onboarding 首隻免費 entitlement（medium）
+
+**核准 owner：`frontend-ux-agent`。架構決策：新使用者可免費選一位起始夥伴，但只能取得一個 starter entitlement；其餘 skin 繼續依既有金幣解鎖。**
+
+- 點選 onboarding skin 只做「預覽 / 暫選」，不得立刻永久 `_unlock()`；在完成 onboarding 時才一次性 commit 最終選擇。
+- 文案明示「第一位夥伴免費，之後可用金幣解鎖其他夥伴」，避免與設定 / 商城的解鎖語義衝突。
+- 返回、重選、連點不同 skin 不得累積 owned skins；既有使用者的 owned list 不可被刪除或降級。
+- starter claimed 狀態如需持久化，只能使用既有 `LocalStorageService` elderId namespace；本批不開 DB / API。`freeAllPetSkinsEnabled` 的 non-production 行為維持，production 仍強制 false。
+
+建議允許檔案：`onboarding_screen.dart`、`pet_skin_picker.dart`、`pet_controller.dart`、`local_storage_service.dart` 與 onboarding / skin / storage tests。若無法在不新增後端 entitlement 的前提下保證一次性，先停在 UI pending selection，不得假裝已具伺服器端購買保障。
+
+#### B2 Checkpoint Review（architecture-agent，2026-09-08）
+
+**裁決：Changes requested（1 個 merge blocker）。** 預覽與最終選擇的分離方向正確，但目前尚未滿足本批「唯一一次免費 starter entitlement」的必要條件。
+
+- 通過項目：`PetSkinPicker(purchasable:false)` 僅呼叫記憶體內的 `previewStarterSkin()`；來回點選不再提前寫入 owned skins。`OnboardingScreen` 只在「開始使用」呼叫 `claimStarterSkin()`，文案也明示第一位夥伴免費。現有 owned list 採增量解鎖，沒有刪除或降級。
+- **阻擋原因：** `claimStarterSkin()` 目前沒有 elderId 隔離且持久化的一次性 claim guard，只是 `_unlock(_currentSkin)` 後保存外觀；而 `_startUsing()` 又先 claim、後 `completeOnboarding()`。若兩步之間失敗、App 終止或流程重入，使用者可重新預覽另一隻並再次呼叫 claim，讓 owned skins 累積第二隻免費夥伴。方法註解所稱「唯一一次」因此尚未由程式狀態保證。
+- 必要修正：使用既有 `LocalStorageService` 的 elderId namespace 記錄可恢復、冪等的 starter claim（不開 DB / API），使同帳號重複呼叫或中斷後重試只能完成原 claim，不能免費增加另一隻；並補 controller / onboarding 測試覆蓋「第一次 claim 後重載或重入、改選另一隻再 claim，owned 仍只增加一個 starter」。不得影響 `freeAllPetSkinsEnabled` 的既有非 production 行為。
+- 獨立驗證：`flutter test test/controllers/pet_controller_skin_test.dart test/widgets/pet_skin_picker_test.dart test/screens/onboarding_screen_test.dart` **33/33 passed**；針對六個 B2 code/test 檔執行 `flutter analyze` 為 **No issues found**；`git diff --check` 通過。這些測試證明正常單次流程，但尚未覆蓋上述跨重入的一次性條件。
+- 邊界：本批未觸及 🔒 Realtime、後端 API、DB、Care Alert、依賴或 `PROJECT_ARCHITECTURE.md`；修正仍限 frontend-ux-agent 與既有本機儲存範圍。完成 blocker 並補測後再送 B2 checkpoint。
+
+#### B2 Checkpoint Re-review（architecture-agent，2026-09-08）
+
+**裁決：Changes requested（原 blocker 已大幅收斂，仍有 1 個 crash-consistency merge blocker）。** elderId 隔離與一般重入冪等已補齊，但目前的多 key 寫入順序仍未達前次要求的「中斷後重試只能完成原 claim」。
+
+- 已確認改善：`starterPetClaimed` 透過既有 `_k(...)` namespace 依 elderId 保存；`loadSkin()` 載入 claim 狀態；完成 claim 後重載、預覽另一隻未擁有寵物再 claim 會回傳 false、恢復已保存外觀，且不增加 owned skins。preview / onboarding final commit 與既有 owned list 增量語義維持正確。
+- **剩餘阻擋原因：** 首次 claim 目前依序寫入 owned skins、目前 skin / visual style，最後才寫 `starterPetClaimed=true`。若 App 或儲存操作在最後一步前中斷，前面的新 owned skin 已持久化、claim flag 卻仍為 false；重啟後改選另一隻仍可再次 claim，累積第二隻免費寵物。現有 reload 測試只覆蓋完整成功後重入，未覆蓋這個 partial-write 狀態。
+- 必要修正：把「已選 starter 的 skin identity / claim intent」做成 elderId 隔離的 durable record，重試時永遠 reconcile 並完成同一隻，而不是重新接受當前 preview；補一個模擬 claim 在 owned/skin 已寫入、final marker 未完成時重啟的測試。仍限 `LocalStorageService`，不開 DB / API。
+- 獨立驗證：`flutter test test/controllers/pet_controller_skin_test.dart test/services/pet_skin_storage_test.dart test/widgets/pet_skin_picker_test.dart test/screens/onboarding_screen_test.dart` **47/47 passed**；上述八個指定檔案 `flutter analyze` 為 **No issues found**。結果支持一般成功與成功後重入路徑，但不消除 partial-write blocker。
+- 範圍：本次只審查 B2 指定 controller / storage / picker / onboarding 與對應 tests；同檔案中並行的 B4 feedback hunks 不在本裁決範圍。未發現 🔒 Realtime、後端契約、DB、Care Alert 或依賴變更。
+
+#### B2 Final Checkpoint（architecture-agent，2026-09-08）
+
+**裁決：Approve，前次 crash-consistency blocker 已解除；B2 checkpoint 關閉。** 風險由 medium 收斂為 low，無 P0/P1 merge blocker。
+
+- `starterPetClaimIntent` 在 owned skins、目前 skin / visual style 與 claimed flag 之前，先透過既有 `_k(...)` namespace 持久化；因此 intent、partial owned、partial current skin 或尚未 claimed 等中斷狀態，都能在重啟後固定回復同一隻 starter。
+- `claimStarterSkin()` 優先 reconcile 已存在的 intent，忽略後來不同的 preview，重複執行 `_unlock()` / `saveSkin()` 後才標記 claimed；流程具冪等性，不會免費累積第二隻。既有 owned skins 採聯集保存，沒有刪除或降級。
+- 測試已直接涵蓋 intent 的 elderId 隔離、完整 claim 後重入改選，以及模擬 owned/current 已部分寫入但 claimed 尚未完成的 restart；前兩次 checkpoint 的必要條件均已具體覆蓋。
+- 獨立驗證：B2 四檔 targeted tests（controller、storage、picker、onboarding）**49/49 passed**；八個指定 implementation/test 檔案 `flutter analyze` 為 **No issues found**；指定範圍 `git diff --check` 通過。另記錄 owner 申報 combined affected suite **69/69 passed**，但 architecture-agent 本次獨立重跑範圍為 B2 的 49 tests。
+- 邊界維持：只使用本機 `LocalStorageService`，未改 🔒 Realtime、WebRTC、後端 API、DB、Care Alert、依賴或 `PROJECT_ARCHITECTURE.md`。這是裝置端 onboarding entitlement 一致性保障，不宣稱具伺服器端購買防護；同檔案中的 B4 feedback 改動仍須依 B4 checkpoint 另行審查。
+
+### B3 — 遊戲 / 小功能可發現性（low）
+
+**核准 owner：`frontend-ux-agent`。** 首頁仍以寵物與大麥克風為主，但需保留一個常駐、帶文字的「玩遊戲」入口，並把右上角純三點入口改成長者看得懂的「更多功能」文字 / 圖示組合；提醒、簽到、背包等仍可留在 sheet，避免首頁塞滿按鈕。
+
+- 新手導覽必須與實際行為一致：若點寵物仍是摸摸，就改寫導覽；不得再聲稱點寵物會進遊戲。
+- 不新增 route、不複製遊戲實作；沿用 `AppRoute.puzzle` 與既有 tracking。
+- 320px / 390px / 430px、文字 1.3 倍不可 overflow；按鈕觸控區至少 48px，顯示名稱不能只靠 tooltip。
+
+#### B3 Checkpoint Review（architecture-agent，2026-09-09）
+
+**裁決：Changes requested（1 個 accessibility merge blocker）。** 常駐入口與導覽語義已對齊，但尚未完整符合本批長者字級驗收。
+
+- 通過項目：首頁 header 已同時提供帶文字、52px 高的「玩遊戲」與「更多」按鈕；遊戲沿用既有 `AppRoute.puzzle`，沒有複製功能或新增 route。Coach mark step 7 改指向真實 `playButtonKey`，不再宣稱點寵物會進遊戲；capability help 也同步兩個入口。
+- **阻擋原因：** `_HomeHeader` 以 `MediaQuery.withClampedTextScaling(maxScaleFactor: 1.0)` 包住新按鈕，使用者選擇 1.3 倍字級時，寵物名稱與兩個關鍵入口仍被強制維持 1.0。現有 320×568 / 1.3 測試雖無 overflow，實際是藉由停用該區文字放大通過，與 CR-0107 的長者可及性意圖不符。
+- 必要修正：讓 header 尊重至少 1.3 倍文字縮放，必要時以自適應換行、縮短間距或窄版 layout 避免 overflow；測試需同時斷言 320px 下無例外，且「玩遊戲／更多」的 effective text scale 未被降回 1.0。現有 `onPlayTap` tracking source 仍標為 `more_menu`，建議一併改成可辨識的 header source，但此項不單獨阻擋。
+- 測試證據：獨立執行 `flutter test test/home_screen_layout_test.dart test/onboarding/coach_mark_steps_test.dart` **36/36 passed**；包含入口存在、coach target 與 320×568 / 1.3 無 overflow，但尚未覆蓋「字級確實放大」。全專案 `flutter analyze` 為 **No issues found**。
+- 邊界：未觸及 🔒 Realtime、WebRTC、後端 API、DB、Care Alert 或依賴。owner 修正後仍需在 iOS 實機以 320 / 390 / 430 等效寬度與 1.3 字級確認按鈕可讀、可點且 spotlight 對位，再送 B3 re-review。
+
+#### B3 Final Checkpoint（architecture-agent，2026-09-09）
+
+**裁決：Approve，前次 accessibility blocker 已解除；B3 checkpoint 關閉。** 無 P0/P1 merge blocker，風險收斂為 low。
+
+- `_HomeHeader` 已移除 `MediaQuery.withClampedTextScaling(maxScaleFactor: 1.0)`，保留 Expanded 寵物名稱並縮窄兩個按鈕的水平 padding；「玩遊戲／更多」仍為同列帶文字入口且維持 52px 最小高度。
+- 320×568、1.3 倍字級測試不只驗證無 overflow，也直接從「玩遊戲」文字 context 讀取 effective scaler：17px × 1.3 = **22.1px**，證明不再以關閉文字放大換取測試通過。既有寵物尺寸 stability 與長回覆 layout tests 仍通過。
+- header 遊戲入口沿用 `AppRoute.puzzle`，tracking source 已由錯誤的 `more_menu` 修正為 `home_header`；Coach mark 仍指向實際 `playButtonKey`，點寵物仍只做摸摸互動。
+- 獨立驗證：`flutter test test/home_screen_layout_test.dart test/onboarding/coach_mark_steps_test.dart` **36/36 passed**；四個指定 implementation/test 檔案 `flutter analyze` 為 **No issues found**；指定範圍 `git diff --check` 通過。
+- 邊界：未修改 🔒 Realtime、WebRTC、後端 API、DB、Care Alert、依賴或 `PROJECT_ARCHITECTURE.md`。iOS 實機 320 / 390 / 430 等效寬度、1.3 字級與 spotlight 對位仍列 release smoke，但不阻擋此 automated checkpoint。
+
+### B4 — 長者友善回饋泡泡，移除底部 SnackBar（medium）
+
+**核准 owner：`frontend-ux-agent`，分兩個 micro-batch。**
+
+- B4a：新增零依賴共用 feedback presenter / widget，支援：①短暫訊息（成功、已套用等，自動消失且同時只顯示一則）；②需確認訊息（錯誤、下一步或會阻斷流程者，有清楚「知道了」按鈕）。
+- B4b：先遷移 onboarding、首頁、設定、寵物外觀、遊戲等核心長者路徑，再遷移商城、記憶與紀錄頁；完成後 `lib/` 不應再直接建立底部 `SnackBar`。
+- 泡泡不得貼底被 bottom navigation / keyboard / sheet 擋住；route 切換或新訊息到達要取消舊 transient，不得排隊殘留。
+- 需有 `Semantics(liveRegion:true)`、大字、足夠對比與至少 48px 確認按鈕；危險操作仍沿用既有確認 dialog，不可改成會自動消失的提示。
+- 不用第三方 toast 套件、不改業務成功 / 失敗判定、不把工程 exception 顯示給長者。
+
+#### B4 Checkpoint Review（architecture-agent，2026-09-09）
+
+**裁決：Approve（automated checkpoint），無 merge blocker。** 風險由 medium 收斂為 low；B4 implementation 可合併，但實機輔助使用 smoke 仍是 release gate。
+
+- `ElderFeedback` 使用 root overlay 顯示上方 transient，新訊息先移除舊 entry、timer 到期或點擊即清除；以來源 `ModalRoute.isCurrent` 的 post-frame lifecycle 檢查，在 route push / switch 後移除上一頁提示，不會跨頁殘留或排隊。
+- important 路徑沿用 modal dialog，內容具 `Semantics(liveRegion:true)`，並提供最小高度 52px 的「知道了」按鈕；刪除帳號等危險操作仍保留既有確認 dialog，沒有改成自動消失提示。成功、警告與需確認錯誤的業務判定未被改寫。
+- 全 `lib/**/*.dart` 搜尋 `ScaffoldMessenger|SnackBar` **0 matches**；首頁、onboarding、設定、外觀、遊戲、商城、記憶、紀錄與登入註冊等既有呼叫點均已遷移，未新增第三方依賴。
+- 測試證據：`flutter test test/widgets/elder_feedback_test.dart` **3/3 passed**，直接覆蓋單一訊息替換、important live region / 確認按鈕與 route switch 清除；architecture-agent 的 Flutter UX central suite **47/47 passed**，owner 另申報 combined UX suite **50/50 passed**；全專案 `flutter analyze` 無問題、`git diff --check` 通過。
+- 邊界：純 Flutter presentation / feedback 層，未改後端結果、Realtime lifecycle、API、DB、Care Alert 或依賴。owner-run：iOS VoiceOver 實測 live-region 宣告、瀏海 / Dynamic Island、鍵盤、bottom sheet 與快速連續導頁下的位置及清除行為；未完成前不可宣稱輔助使用體驗已完全結案。
+
+### B5 — 國語模型與重複回覆評測 / 改善（high）
+
+**只核准 benchmark 與 prompt / config 小批次；production model switch 暫不核准。**
+
+- B5a（read-only baseline）：固定國語 corpus，至少涵蓋日常閒聊、重複近義輸入、孤單 / 低落、記憶引用、工具意圖與 urgent safety；分別記錄語音 / 文字的完整回覆、首句型態、句數、問題數、延遲與工具結果。測試資料不得含真實長者 PII。
+- B5b（companion-memory）：先消除 prompt / planner 重複來源。最近 assistant 回覆必須可供「避免同開場 / 同完整句」判斷；一般回覆維持 1–3 句、最多一問；urgent 安全固定語句、法定投資提醒與必要工具確認不列為不當重複，也不可被去重器刪掉。
+- B5c（model A/B）：語音 baseline `gpt-realtime` 可與官方當期 Realtime 候選做同 corpus A/B；文字 baseline `gpt-4o-mini` 可與官方當期低延遲文字候選做 A/B。只可透過既有 `REALTIME_MODEL` / `COMPANION_CHAT_MODEL` 設定測試，不讀 `.env`；需由 owner 手動提供變數名稱對應的執行環境。
+- production 切換門檻：重複開場率、完整句重複率、國語自然度、p50 / p95 首音延遲、工具成功率與 urgent safety 全部有對照結果；不能只因「新模型較強」就切換。建議門檻為一般 corpus 連續三輪同開場 0、完整回覆重複 0、90% 回覆 1–3 句、95% 最多一問，且安全 / 工具 regression 為 0。
+- 若核准改 source default 或 Realtime persona，先更新 `PROJECT_ARCHITECTURE.md` 的模型 / persona 現況並另做 architecture checkpoint；部署時沿用既有環境變數，不新增 secret、不改 API response。
+
+官方資料確認（2026-09-08）：OpenAI model catalog 將 `gpt-realtime` 定義為 WebRTC / WebSocket / SIP 的一般可用即時音訊模型；`gpt-realtime-2` 頁面標示為更強的 Realtime voice 候選並提醒 reasoning effort 會增加延遲 / token。此資訊只支持列入 A/B，不代表本案已核准 production 遷移：
+- https://developers.openai.com/api/docs/models/gpt-realtime
+- https://developers.openai.com/api/docs/models/gpt-realtime-2
+
+#### B5 Checkpoint Review（architecture-agent，2026-09-09）
+
+**裁決：Approve（planner / offline corpus automated checkpoint），無本批 code merge blocker；production model switch 仍未核准。** 離線變更風險收斂為 medium，線上模型品質風險仍為 high。
+
+- `companion_engine` 僅把既有 `recentTurns` 傳入 planner；Flutter 端提供的 `conversationController.history.take(4)` 是 newest-first，因此 `recentReplyInstruction()` 取得最近三個非空、非重複 `petReply`，要求一般回覆避開相同開頭、完整句與重新自介。
+- urgent / high safety 分支優先於一般策略；urgent 明確設 `applyRecentAvoidance:false`，必要安全話術不會被去重提示稀釋。既有 `{mode, instruction}`、Care Alert 四級與 engine structured result schema 均未改。
+- 無 PII 的固定國語 corpus 涵蓋日常聊天、近義重複、孤單、記憶引用、工具意圖與 urgent safety；它驗證 deterministic mode / risk / prompt guard，不偽稱已量到模型自然度、完整回覆重複率或延遲。
+- 測試證據：`node --test backend/companion/next_strategy_planner.test.js backend/companion/companion_engine.test.js backend/companion/mandarin_quality_corpus.test.js` **49/49 passed**；urgent isolation、schema、最近回覆清理與六類 corpus 全通過；`git diff --check` 通過。
+- 邊界：未修改 `server.js` 路由或 response、production model default、Realtime transport、DB、Care Alert 欄位、依賴或任何 env 檔。owner-run 仍必須以真 API / iOS 對語音與文字跑同 corpus A/B，記錄完整輸出、首句、句數／問句數、重複率、工具成功率、urgent regression 與 p50 / p95 首音延遲；未達原門檻維持現有模型。若要切 production model，需先更新 `PROJECT_ARCHITECTURE.md` 並另送 architecture checkpoint。
+
+### B6 — Flutter 設定與 caregiver_web 導覽收斂（medium）
+
+**核准 owner：`frontend-ux-agent`。純資訊架構調整，不改 API、auth scope 或 feature flags。**
+
+Flutter 設定收斂為四個心智群組，常用選項先顯示、低頻項目進二級頁 / 展開區：
+- 「寵物」：名字、夥伴 / 外觀。
+- 「看與聽」：字體、聲音、說話方式、國語 / 台語輸入。
+- 「陪伴與提醒」：內容偏好、關心提醒、提醒、記憶與今日關心紀錄。
+- 「家人、隱私與帳號」：聯絡人、新手導覽、條款、登入 / 刪除帳號。
+
+`caregiver_web` 頂層由 10 個 tab 收斂為四個主入口；既有 view id、`showView()` lazy-load、API 呼叫與 role / feature flag 授權判斷保留：
+- 「工作台」。
+- 「照護」：照護提醒、日常任務。
+- 「分析」：長者狀態分析、健康分析。
+- 「管理」（super_admin-only）：使用者、照護人員、住民授權、商品、訂單，以頁內次導覽切換。
+
+caregiver 身分不得因分組看到 super_admin-only 入口；hidden feature 仍不可被新群組重新露出。既有 DOM view 可移入群組但不得刪能力或改 response 消費方式；所有既有 caregiver_web tests 應更新為驗證「能力仍在、頂層入口已收斂、角色隔離不變」。
+
+#### B6 Checkpoint Review（architecture-agent，2026-09-09）
+
+**裁決：Approve（automated checkpoint），無 merge blocker。** 資訊架構風險由 medium 收斂為 low；Flutter 與 caregiver web 可各自依現有 rollback 邊界合併。
+
+- Flutter 設定以「寵物／看與聽／陪伴／帳號」四個常駐分類切換原有內容；名字、外觀、字體、聲音、語言、偏好、提醒、記憶、聯絡人、導覽、條款與帳號能力均保留。Coach mark 到設定頁時會選到外觀或帳號對應分類；320×568、1.3 字級可 render，窄寬 `PetSkinPicker` 會把 badge 改排到下一列。
+- caregiver_web 頂層收斂為「工作台／照護／分析／管理」，原九個次功能 tab、view IDs 與 `showView()` lazy loaders 均保留；`syncNavigationForView()` 只切換目前群組的次選單。caregiver 模式隱藏 management 與五個 super_admin-only tabs，若原本停在管理 view 會退回工作台；既有 marketplace / dailyCareTasks feature flags 仍各自隱藏入口並在 loader 早退。
+- 測試證據：`node --test caregiver_web/*.test.js` **121/121 passed**，涵蓋既有 API 消費、role、feature flags、lazy-load 與新增四群組 source checks；Flutter UX central suite **47/47 passed**，包含設定 320×568 / 1.3、分類切換相關回歸與窄版 picker render；全專案 `flutter analyze` 無問題、`git diff --check` 通過。
+- 邊界：未修改 caregiver API、auth scope、response 消費、role 定義、feature flag 預設、Flutter backend 行為、Realtime、DB、Care Alert 或依賴；`PROJECT_ARCHITECTURE.md` 不需更新。B6 rollback 只回復導覽分組，不刪除 underlying views / routes / API。
+- owner-run：在真瀏覽器以 caregiver / super_admin × marketplace / dailyCareTasks 開關矩陣逐一點擊四群組與次選單，確認無隱藏能力重新露出、無非預期 fetch，並做鍵盤 / screen reader tab-state smoke；iOS 實機確認四個設定分類在 320 / 390 / 430 等效寬度與 1.3 字級可點擊、可捲動。這些不阻擋 automated checkpoint，但屬 release 驗證事項。
+
+### 批次順序與 checkpoint
+
+1. B1 先處理字幕，因它直接影響核心 Realtime 可用性。
+2. B2 單獨修 onboarding entitlement，避免與其他 UI 重排混在一起。
+3. B3 建立可發現入口並同步 coach mark。
+4. B4a 建共用泡泡，再以 B4b 分頁遷移。
+5. B5 先 baseline / corpus，再做 prompt 與 model A/B；未過門檻維持現有 model。
+6. B6 最後做資訊架構收斂，避免前述功能入口在重排中遺失。
+
+每批完成後回到本 CR 增補「修改檔案 / 測試結果 / 注意事項 / rollback」，architecture-agent 明確標記 Approve 或 Changes requested 後才能進下一批。不得以全套測試通過取代該批行為驗收。
+
+### 最低測試門檻
+
+- B1：Realtime service / lifecycle / conversation controller / subtitle / bubble widget targeted tests；Flutter analyze；iOS 實機國語 smoke。
+- B2：onboarding、pet picker、pet controller、local storage isolation；覆蓋「連點所有 skin 最終只多一個 owned」。
+- B3：home layout、coach-mark steps / host；小螢幕與 1.3 倍字級。
+- B4：共用 feedback widget 的單一訊息、替換、timeout、確認、route dispose、semantics tests；`rg` 確認 `lib/` 無直接 `SnackBar`。
+- B5：backend persona / planner / companion chat tests、Realtime instruction tests、離線 corpus evaluator；需要真 API 的 A/B 與 iOS 首音延遲另列 owner-run，不得偽稱自動通過。
+- B6：Flutter 設定 widget / coach-mark 回歸、caregiver_web 全套 tests、caregiver / super_admin role matrix、feature flag matrix。
+- 每批：`git diff --check`；受影響端 targeted suite 通過後，收尾再跑 `flutter analyze`、完整 Flutter tests、backend `npm run check` / `npm test`（若 B5 動 backend）與 caregiver_web 全套 tests（若 B6 動 web）。
+
+### Rollback
+
+- B1–B6 必須各自獨立 commit / checkpoint，可逐批回復。
+- B1 rollback 不可關閉 Realtime 或改走 mock；退回到既有累積事件流程。
+- B2 rollback 保留既有 owned skins，不做反向刪除；只退回新的 pending / claim 接線。
+- B5 model A/B 若品質、延遲、成本或工具 / safety regression 任一不符，立即保留現有 production model；prompt 與 model config 分開提交，避免綁死回滾。
+- B6 rollback 只回復導覽 / 分組，不回復或刪除 underlying view、API 與資料。

@@ -119,6 +119,8 @@ void main() {
 
     expect(find.text('更換外觀'), findsNothing);
     expect(find.text('陪寵物玩'), findsNothing);
+    expect(find.widgetWithText(OutlinedButton, '玩遊戲'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, '更多'), findsOneWidget);
     expect(find.byTooltip('更多功能'), findsOneWidget);
 
     await tester.tap(find.byTooltip('更多功能'));
@@ -416,7 +418,17 @@ void main() {
       '我在這裡陪你，慢慢說就好。今天如果覺得心裡悶，我們可以先不用急著解決。',
     );
 
-    await _pumpHomeScreen(tester, harness, textScale: 1.3);
+    await tester.pumpWidget(_homeHost(harness, textScale: 1.3));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+
+    final playContext = tester.element(find.text('玩遊戲'));
+    final effectiveFontSize = MediaQuery.textScalerOf(playContext).scale(17);
+    expect(effectiveFontSize, closeTo(22.1, 0.01));
+
+    await tester.pump(const Duration(seconds: 9));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('SettingsScreen hides dev panels when SHOW_DEV_PANELS is off',
@@ -427,6 +439,9 @@ void main() {
     await tester.pumpWidget(_settingsHost(harness));
     await tester.pumpAndSettle();
 
+    await tester.tap(find.text('帳號'));
+    await tester.pumpAndSettle();
+
     // SHOW_DEV_PANELS 預設為 false：開發用面板不應出現在使用者設定頁。
     expect(tester.takeException(), isNull);
     expect(find.text('進階診斷（開發人員）'), findsNothing);
@@ -435,11 +450,30 @@ void main() {
     expect(find.text('AI Agent 工具測試'), findsNothing);
   });
 
+  testWidgets('設定頁在小螢幕與 1.3 倍字級維持四個清楚分類', (tester) async {
+    await binding.setSurfaceSize(const Size(320, 568));
+    addTearDown(() => binding.setSurfaceSize(null));
+    final harness = await _HomeHarness.create();
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(_settingsHost(harness, textScale: 1.3));
+    await tester.pumpAndSettle();
+
+    expect(find.text('寵物'), findsOneWidget);
+    expect(find.text('看與聽'), findsOneWidget);
+    expect(find.text('陪伴'), findsOneWidget);
+    expect(find.text('帳號'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('SettingsScreen「今日任務」入口依正式功能旗標顯示', (tester) async {
     final harness = await _HomeHarness.create();
     addTearDown(harness.dispose);
 
     await tester.pumpWidget(_settingsHost(harness));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('陪伴'));
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
@@ -509,6 +543,9 @@ void main() {
     await tester.pumpWidget(_settingsHostWithCoach(harness, coachController));
     await tester.pumpAndSettle();
 
+    await tester.tap(find.text('帳號'));
+    await tester.pumpAndSettle();
+
     // 設定頁存在「重新觀看新手導覽」按鈕（在 ListView 下方，需捲動帶出）。
     await tester.scrollUntilVisible(
       find.text('重新觀看新手導覽'),
@@ -535,6 +572,9 @@ void main() {
     addTearDown(auth.dispose);
 
     await tester.pumpWidget(_settingsHostWithAuth(harness, auth));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('帳號'));
     await tester.pumpAndSettle();
 
     await tester.scrollUntilVisible(
@@ -568,6 +608,9 @@ void main() {
     await tester.pumpWidget(_settingsHostWithAuth(harness, auth));
     await tester.pumpAndSettle();
 
+    await tester.tap(find.text('帳號'));
+    await tester.pumpAndSettle();
+
     await tester.scrollUntilVisible(
       find.widgetWithText(TextButton, '刪除帳號'),
       300,
@@ -598,6 +641,9 @@ void main() {
     addTearDown(auth.dispose);
 
     await tester.pumpWidget(_settingsHostWithAuth(harness, auth));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('帳號'));
     await tester.pumpAndSettle();
 
     await tester.scrollUntilVisible(
@@ -758,7 +804,7 @@ Widget _homeHost(
   );
 }
 
-Widget _settingsHost(_HomeHarness harness) {
+Widget _settingsHost(_HomeHarness harness, {double textScale = 1.0}) {
   return MultiProvider(
     providers: [
       ChangeNotifierProvider<ProfileController>.value(
@@ -778,8 +824,15 @@ Widget _settingsHost(_HomeHarness harness) {
       ),
       Provider<CoachMarkKeys>(create: (_) => CoachMarkKeys()),
     ],
-    child: const MaterialApp(
-      home: Scaffold(
+    child: MaterialApp(
+      builder: (context, child) {
+        final mediaQuery = MediaQuery.of(context);
+        return MediaQuery(
+          data: mediaQuery.copyWith(textScaler: TextScaler.linear(textScale)),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
+      home: const Scaffold(
         body: SettingsScreen(),
       ),
     ),

@@ -7,6 +7,7 @@ import '../models/pet_skin.dart';
 import '../models/pet_status.dart';
 import '../models/pet_visual_profile.dart';
 import '../utils/asset_paths.dart';
+import 'ui/elder_feedback.dart';
 
 /// 長者友善的寵物外觀選擇器：每個選項一張預覽圖 + 中文名稱。
 ///
@@ -15,7 +16,7 @@ import '../utils/asset_paths.dart';
 ///   點數不足會顯示長者看得懂的提醒，不會直接扣點。
 ///
 /// 用於設定頁與首頁「更換外觀」彈出視窗（[purchasable] 預設 true）。
-/// 新手導覽「選夥伴」用 [purchasable] = false：免費挑一隻起始夥伴。
+/// 新手導覽「選夥伴」用 [purchasable] = false：只暫選，完成設定時才取得一隻免費夥伴。
 class PetSkinPicker extends StatelessWidget {
   const PetSkinPicker({
     super.key,
@@ -27,7 +28,7 @@ class PetSkinPicker extends StatelessWidget {
   /// 緊湊模式：略縮預覽圖與卡片內距，給空間有限的場合（如首頁 bottom sheet）。
   final bool compact;
 
-  /// 是否走「購買 / 解鎖」流程。false → 免費挑起始夥伴（新手導覽用）。
+  /// 是否走「購買 / 解鎖」流程。false → 只預覽起始夥伴（新手導覽用）。
   final bool purchasable;
 
   /// 成功換上新外觀後呼叫。重複點目前使用中的外觀不會觸發。
@@ -37,9 +38,9 @@ class PetSkinPicker extends StatelessWidget {
     final pet = context.read<PetController>();
     final previous = pet.currentSkin;
 
-    // 新手導覽：免費挑起始夥伴，不走購買。
+    // 新手導覽：只暫選，不在使用者比較外觀時累積解鎖。
     if (!purchasable) {
-      await pet.selectStarterSkin(skin);
+      pet.previewStarterSkin(skin);
       if (pet.currentSkin != previous) onSkinApplied?.call(pet.currentSkin);
       return;
     }
@@ -72,7 +73,6 @@ class PetSkinPicker extends StatelessWidget {
     if (confirmed != true || !context.mounted) return;
 
     final wallet = context.read<WalletController>();
-    final messenger = ScaffoldMessenger.of(context);
     final result = await pet.purchaseAndApplySkin(
       skin,
       spendCoins: wallet.spendCoins,
@@ -82,12 +82,18 @@ class PetSkinPicker extends StatelessWidget {
         result != SkinPurchaseResult.insufficientCoins) {
       onSkinApplied?.call(pet.currentSkin);
     }
-    final message = switch (result) {
-      SkinPurchaseResult.insufficientCoins => '點數還不夠喔，可以先完成每日任務再來解鎖。',
-      SkinPurchaseResult.purchasedAndApplied => '已經幫你換上${skin.label}了。',
-      SkinPurchaseResult.applied => '已換上${skin.label}。',
-    };
-    messenger.showSnackBar(SnackBar(content: Text(message)));
+    if (result == SkinPurchaseResult.insufficientCoins) {
+      ElderFeedback.showImportant(
+        context,
+        '點數還不夠喔，可以先完成每日任務再來解鎖。',
+      );
+      return;
+    }
+    ElderFeedback.show(
+      context,
+      '已換上${skin.label}',
+      tone: ElderFeedbackTone.success,
+    );
   }
 
   Future<void> _handleStyleTap(
@@ -103,8 +109,10 @@ class PetSkinPicker extends StatelessWidget {
       return;
     }
     onSkinApplied?.call(pet.currentSkin);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已換成${visualStyle.label}狗狗。')),
+    ElderFeedback.show(
+      context,
+      '已換成${visualStyle.label}狗狗',
+      tone: ElderFeedbackTone.success,
     );
   }
 
@@ -188,47 +196,68 @@ class _SkinOptionTile extends StatelessWidget {
                 width: selected ? 2.5 : 1,
               ),
             ),
-            child: Row(
-              children: [
-                _SkinPreview(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final preview = _SkinPreview(
                   skin: skin,
                   selected: selected,
                   visualStyle: visualStyle,
                   compact: compact,
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        skin.label,
-                        style: const TextStyle(
-                          fontSize: 21,
-                          fontWeight: FontWeight.w800,
-                        ),
+                );
+                final description = Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      skin.label,
+                      style: const TextStyle(
+                        fontSize: 21,
+                        fontWeight: FontWeight.w800,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        owned ? skin.tagline : '需要 ${skin.unlockCost} 點解鎖',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black.withValues(alpha: 0.55),
-                        ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      owned ? skin.tagline : '需要 ${skin.unlockCost} 點解鎖',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black.withValues(alpha: 0.55),
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                _StatusBadge(
+                    ),
+                  ],
+                );
+                final badge = _StatusBadge(
                   selected: selected,
                   owned: owned,
                   cost: skin.unlockCost,
                   primary: primary,
-                ),
-              ],
+                );
+                if (constraints.maxWidth < 280) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          preview,
+                          const SizedBox(width: 12),
+                          Expanded(child: description),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Align(alignment: Alignment.centerRight, child: badge),
+                    ],
+                  );
+                }
+                return Row(
+                  children: [
+                    preview,
+                    const SizedBox(width: 14),
+                    Expanded(child: description),
+                    const SizedBox(width: 8),
+                    badge,
+                  ],
+                );
+              },
             ),
           ),
         ),
@@ -311,7 +340,7 @@ class _StyleChoiceButton extends StatelessWidget {
         onTap: onTap,
         child: Container(
           constraints: const BoxConstraints(minHeight: 52),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
           decoration: BoxDecoration(
             color: selected ? primary : Colors.white,
             borderRadius: BorderRadius.circular(999),

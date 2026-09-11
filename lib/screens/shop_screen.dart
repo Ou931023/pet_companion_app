@@ -11,6 +11,7 @@ import '../services/shop_service.dart';
 import '../widgets/coin_badge.dart';
 import '../widgets/shop_item_card.dart';
 import '../widgets/ui/section_card.dart';
+import '../widgets/ui/elder_feedback.dart';
 
 class ShopScreen extends StatelessWidget {
   const ShopScreen({super.key});
@@ -25,60 +26,62 @@ class ShopScreen extends StatelessWidget {
     return SafeArea(
       bottom: false,
       child: ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      children: [
-        // CR-0092：新手導覽切到商城頁時高亮這裡。
-        KeyedSubtree(
-          key: context.read<CoachMarkKeys>().shopKey,
-          child: _ShopHeader(coins: wallet.coins),
-        ),
-        const SizedBox(height: 16),
-        // CR-0056（A2）：marketplace 入口正式版完全隱藏（能力/路由保留）。
-        if (AppConfig.marketplaceVisible) ...[
-          _LongTermCareShopCard(
-            onTap: () => Navigator.of(context).pushNamed(AppRoute.marketplace),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        children: [
+          // CR-0092：新手導覽切到商城頁時高亮這裡。
+          KeyedSubtree(
+            key: context.read<CoachMarkKeys>().shopKey,
+            child: _ShopHeader(coins: wallet.coins),
           ),
-          const SizedBox(height: 22),
-        ],
-        Text(
-          '寵物用品',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w900,
-              ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          '餵牠吃點東西、陪牠玩，親密和心情都會變好。',
-          style: TextStyle(
-            color: Colors.black.withValues(alpha: 0.55),
-            fontWeight: FontWeight.w600,
+          const SizedBox(height: 16),
+          // CR-0056（A2）：marketplace 入口正式版完全隱藏（能力/路由保留）。
+          if (AppConfig.marketplaceVisible) ...[
+            _LongTermCareShopCard(
+              onTap: () =>
+                  Navigator.of(context).pushNamed(AppRoute.marketplace),
+            ),
+            const SizedBox(height: 22),
+          ],
+          Text(
+            '寵物用品',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w900,
+                ),
           ),
-        ),
-        const SizedBox(height: 12),
-        for (final item in items) ...[
-          ShopItemCard(
-            key: ValueKey('shop-item-${item.id}'),
-            item: item,
-            canBuy: wallet.coins >= item.price &&
-                (!item.onlyWhenDead || petStats.isDead),
-            onBuy: () async {
-              final ok = await wallet.spendCoins(item.price);
-              if (!ok || !context.mounted) return;
-              await inventory.addFromShop(item);
+          const SizedBox(height: 4),
+          Text(
+            '餵牠吃點東西、陪牠玩，親密和心情都會變好。',
+            style: TextStyle(
+              color: Colors.black.withValues(alpha: 0.55),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (final item in items) ...[
+            ShopItemCard(
+              key: ValueKey('shop-item-${item.id}'),
+              item: item,
+              canBuy: wallet.coins >= item.price &&
+                  (!item.onlyWhenDead || petStats.isDead),
+              onBuy: () async {
+                final ok = await wallet.spendCoins(item.price);
+                if (!ok || !context.mounted) return;
+                await inventory.addFromShop(item);
 
-              if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('已放入背包：${item.name}')),
-              );
-            },
-          ),
-          const SizedBox(height: 10),
+                if (!context.mounted) return;
+                ElderFeedback.show(
+                  context,
+                  '已放入背包：${item.name}',
+                  tone: ElderFeedbackTone.success,
+                );
+              },
+            ),
+            const SizedBox(height: 10),
+          ],
         ],
-      ],
       ),
     );
   }
-
 }
 
 class _ShopHeader extends StatelessWidget {

@@ -151,4 +151,28 @@ void main() {
       expect(await storage.loadPetVisualStyle(), PetVisualStyle.realistic);
     });
   });
+
+  group('起始夥伴一次性領取狀態', () {
+    test('依 elderId 隔離並可持久化', () async {
+      final storage = LocalStorageService();
+      storage.setUserId('elder-A');
+      expect(await storage.loadStarterPetClaimed(), isFalse);
+      await storage.saveStarterPetClaimed(true);
+      expect(await storage.loadStarterPetClaimed(), isTrue);
+
+      storage.setUserId('elder-B');
+      expect(await storage.loadStarterPetClaimed(), isFalse);
+      expect(await storage.loadStarterPetClaimIntent(), isNull);
+    });
+
+    test('claim intent 依 elderId 隔離並保存原本選擇', () async {
+      final storage = LocalStorageService();
+      storage.setUserId('elder-A');
+      await storage.saveStarterPetClaimIntent(PetSkin.fox);
+      expect(await storage.loadStarterPetClaimIntent(), PetSkin.fox);
+
+      storage.setUserId('elder-B');
+      expect(await storage.loadStarterPetClaimIntent(), isNull);
+    });
+  });
 }

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../controllers/auth_controller.dart';
 import '../widgets/auth/auth_visuals.dart';
+import '../widgets/ui/elder_feedback.dart';
 
 /// 註冊頁（CR-0006 Batch 3b UI / Batch 4b 接上 Email 註冊）。
 ///
@@ -111,14 +112,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   void _showFriendlyMessage(String message) {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(message, style: const TextStyle(fontSize: 18)),
-        duration: const Duration(seconds: 3),
-      ),
-    );
+    ElderFeedback.show(context, message);
   }
 
   @override

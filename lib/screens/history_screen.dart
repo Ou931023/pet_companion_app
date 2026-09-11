@@ -8,6 +8,7 @@ import '../routes/app_routes.dart';
 import '../utils/conversation_history_display.dart';
 import '../widgets/conversation_session_tile.dart';
 import '../widgets/ui/empty_state.dart';
+import '../widgets/ui/elder_feedback.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -181,8 +182,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
     if (confirmed != true) return;
     final ok = await controller.deleteConversationSession(summary.sessionId);
     if (!context.mounted || ok) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('沒辦法刪除這則，請再試一次。')),
-    );
+    ElderFeedback.showImportant(context, '沒辦法刪除這則，請再試一次。');
   }
 }

@@ -67,11 +67,9 @@ void main() {
     // 無多頁 → 不排計時器；測試結束不應有 pending timer。
   });
 
-  testWidgets('串流中：文字逐步長出時，顯示「最新一頁」且不靠計時器翻頁 (CR-0084)',
-      (tester) async {
+  testWidgets('串流中：文字逐步長出時固定第一頁，不跳到末句或閃動 (CR-0107)', (tester) async {
     const part1 = '阿明早安，今天天氣晴朗，很適合出門走走。';
-    const full =
-        '阿明早安，今天天氣晴朗，很適合出門走走。記得帶水，傍晚去散步看夕陽，晚上早點休息，有我陪著你。';
+    const full = '阿明早安，今天天氣晴朗，很適合出門走走。記得帶水，傍晚去散步看夕陽。回家之後先休息一下，晚上早點睡，有我陪著你。';
     final pages = PetSubtitleText.paginateForTest(full);
     expect(pages.length, greaterThan(1), reason: '完整文字應分成多頁');
 
@@ -90,11 +88,45 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('阿明早安'), findsOneWidget);
 
-    // 文字長到完整：串流模式應直接顯示「最後一頁」（含結尾「有我陪著你」），
-    // 不需要等計時器（串流模式不排計時器，pumpAndSettle 不會卡在 pending timer）。
+    // 文字長到完整：串流模式仍穩定顯示第一頁，不直接跳去結尾。
     await tester.pumpWidget(host(full));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(find.textContaining('有我陪著你'), findsOneWidget);
+    expect(find.textContaining('阿明早安'), findsOneWidget);
+    expect(find.textContaining('有我陪著你'), findsNothing);
+  });
+
+  testWidgets('串流轉 final 後從第一頁開始，依序顯示中間與最後一頁 (CR-0107)', (tester) async {
+    const full =
+        '阿明早安，今天天氣晴朗，很適合出門走走。記得帶水，傍晚去散步看夕陽。回家之後先休息一下，喝杯溫水。晚上早點睡，有我陪著你。';
+    final pages = PetSubtitleText.paginateForTest(full);
+    expect(pages.length, greaterThanOrEqualTo(3));
+
+    Widget host({required bool streaming}) => MaterialApp(
+          home: Scaffold(
+            body: PetSubtitleText(
+              text: full,
+              streaming: streaming,
+              textStyle: const TextStyle(fontSize: 18),
+            ),
+          ),
+        );
+
+    await tester.pumpWidget(host(streaming: true));
+    expect(find.text(pages.first), findsOneWidget);
+
+    await tester.pumpWidget(host(streaming: false));
+    await tester.pump(const Duration(milliseconds: 220));
+    expect(find.text(pages.first), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 9));
+    await tester.pump(const Duration(milliseconds: 220));
+    expect(find.text(pages[1]), findsOneWidget);
+
+    for (var index = 1; index < pages.length; index++) {
+      await tester.pump(const Duration(seconds: 9));
+      await tester.pump(const Duration(milliseconds: 220));
+    }
+    expect(find.text(pages.last), findsOneWidget);
   });
 }

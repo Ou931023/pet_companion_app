@@ -11,6 +11,7 @@ import '../services/app_usage_tracking_service.dart';
 import '../utils/asset_paths.dart';
 import '../widgets/auth/auth_visuals.dart';
 import '../widgets/pet_skin_picker.dart';
+import '../widgets/ui/elder_feedback.dart';
 
 /// 首次飼主設定流程。
 ///
@@ -125,7 +126,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       children: [
         const _StepHeader(
           title: '選一位陪伴你的夥伴',
-          subtitle: '先挑一個喜歡的樣子，之後也可以在設定中更換。',
+          subtitle: '第一位夥伴免費。先挑一個喜歡的，之後也能在設定中更換。',
         ),
         const SizedBox(height: 12),
         Center(
@@ -140,7 +141,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        // 新手導覽「選夥伴」：免費挑一隻起始夥伴（不走購買 / 解鎖）。
+        // 這裡只暫選；按下完成儀式的「開始使用」後才登記唯一免費夥伴。
         PetSkinPicker(
           purchasable: false,
           onSkinApplied: _trackStarterSkinSelected,
@@ -290,9 +291,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   void _handlePrimary() {
     // 第二步（取名）必須先有名字才能往下，否則完成畫面與首頁會沒有名字可用。
     if (_step == 1 && _nameController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('還沒有幫牠取名字唷')),
-      );
+      ElderFeedback.showImportant(context, '還沒有幫牠取名字唷');
       return;
     }
     if (_step < _stepCount - 1) {
@@ -448,6 +447,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   Future<void> _startUsing() async {
     if (_isSubmitting) return;
     setState(() => _isSubmitting = true);
+    await context.read<PetController>().claimStarterSkin();
+    if (!mounted) return;
     final profile = context.read<ProfileController>();
     // 完成帳號設定後**不**預先標記「已看過」：讓新帳號首次進首頁時，由 CoachMarkHost
     // 自動播放一次新手導覽（Spotlight），導覽播完才會自行記錄已看過。

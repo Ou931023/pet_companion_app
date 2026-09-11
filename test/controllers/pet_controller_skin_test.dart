@@ -57,7 +57,8 @@ void main() {
     test('已擁有的外觀可以套用（dog）', () async {
       final controller = PetController();
       // 先免費取得 fox 當起始夥伴 → 已擁有 → 可在 dog / fox 間切換。
-      await controller.selectStarterSkin(PetSkin.fox);
+      controller.previewStarterSkin(PetSkin.fox);
+      await controller.claimStarterSkin();
       final ok = await controller.changeSkin(PetSkin.dog);
       expect(ok, isTrue);
       expect(controller.currentSkin, PetSkin.dog);
@@ -71,11 +72,56 @@ void main() {
       expect(controller.isOwned(PetSkin.fox), isFalse);
     });
 
-    test('selectStarterSkin：免費解鎖並套用（新手導覽選夥伴）', () async {
+    test('新手設定可來回預覽，完成時只解鎖最後選定的一隻', () async {
       final controller = PetController();
-      await controller.selectStarterSkin(PetSkin.guineaPig);
-      expect(controller.currentSkin, PetSkin.guineaPig);
-      expect(controller.isOwned(PetSkin.guineaPig), isTrue);
+      controller.previewStarterSkin(PetSkin.guineaPig);
+      controller.previewStarterSkin(PetSkin.fox);
+      controller.previewStarterSkin(PetSkin.mochi);
+
+      expect(controller.currentSkin, PetSkin.mochi);
+      expect(controller.isOwned(PetSkin.guineaPig), isFalse);
+      expect(controller.isOwned(PetSkin.fox), isFalse);
+      expect(controller.isOwned(PetSkin.mochi), isFalse);
+
+      await controller.claimStarterSkin();
+
+      expect(controller.isOwned(PetSkin.mochi), isTrue);
+      expect(controller.ownedSkins, {PetSkin.dog, PetSkin.mochi});
+    });
+
+    test('起始夥伴領取後重載再改選，不會免費解鎖第二隻', () async {
+      final storage = LocalStorageService();
+      storage.setUserId('elder-A');
+      final first = PetController(storageService: storage);
+      first.previewStarterSkin(PetSkin.fox);
+      expect(await first.claimStarterSkin(), isTrue);
+
+      final reentered = PetController(storageService: storage);
+      await reentered.loadSkin();
+      reentered.previewStarterSkin(PetSkin.guineaPig);
+      expect(await reentered.claimStarterSkin(), isFalse);
+
+      expect(reentered.currentSkin, PetSkin.fox);
+      expect(reentered.ownedSkins, {PetSkin.dog, PetSkin.fox});
+      expect(reentered.isOwned(PetSkin.guineaPig), isFalse);
+    });
+
+    test('起始夥伴寫入中斷後重啟，只會完成原本選定的一隻', () async {
+      final storage = LocalStorageService();
+      storage.setUserId('elder-A');
+      await storage.saveStarterPetClaimIntent(PetSkin.fox);
+      await storage.saveOwnedPetSkins({PetSkin.dog, PetSkin.fox});
+      await storage.savePetSkin(PetSkin.fox);
+
+      final restarted = PetController(storageService: storage);
+      await restarted.loadSkin();
+      restarted.previewStarterSkin(PetSkin.guineaPig);
+
+      expect(await restarted.claimStarterSkin(), isFalse);
+      expect(restarted.currentSkin, PetSkin.fox);
+      expect(restarted.ownedSkins, {PetSkin.dog, PetSkin.fox});
+      expect(restarted.isOwned(PetSkin.guineaPig), isFalse);
+      expect(await storage.loadStarterPetClaimed(), isTrue);
     });
 
     test('currentVisualProfile 會跟著目前外觀更新，供 tracking 使用', () async {
@@ -84,7 +130,7 @@ void main() {
       expect(controller.currentVisualProfile.toTrackingMetadata()['petType'],
           'dog');
 
-      await controller.selectStarterSkin(PetSkin.mochi);
+      controller.previewStarterSkin(PetSkin.mochi);
       expect(controller.currentVisualProfile.skin, PetSkin.mochi);
       expect(controller.currentVisualProfile.toTrackingMetadata()['petType'],
           'mochi');
@@ -152,7 +198,8 @@ void main() {
 
     test('purchaseAndApplySkin：已擁有 → 直接套用、不再扣點', () async {
       final controller = PetController();
-      await controller.selectStarterSkin(PetSkin.fox);
+      controller.previewStarterSkin(PetSkin.fox);
+      await controller.claimStarterSkin();
       await controller.changeSkin(PetSkin.dog);
       var spendCalled = false;
       final result = await controller.purchaseAndApplySkin(
@@ -207,7 +254,8 @@ void main() {
       final controller = PetController(storageService: storage);
 
       storage.setUserId('elder-A');
-      await controller.selectStarterSkin(PetSkin.fox);
+      controller.previewStarterSkin(PetSkin.fox);
+      await controller.claimStarterSkin();
 
       // elder-B：沒解鎖過 → 只有狗狗、目前狗狗。
       storage.setUserId('elder-B');

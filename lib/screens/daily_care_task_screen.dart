@@ -13,6 +13,7 @@ import '../routes/app_routes.dart';
 import '../services/photo_picker_service.dart';
 import '../services/text_to_speech_service.dart';
 import '../widgets/daily_care_task_card.dart';
+import '../widgets/ui/elder_feedback.dart';
 
 /// CR-0025 長者端「今日任務」頁：吃藥 / 喝水 / 運動，拍照完成 → AI 確認 → 更新狀態。
 class DailyCareTaskScreen extends StatefulWidget {
@@ -337,9 +338,7 @@ class _DailyCareTaskScreenState extends State<DailyCareTaskScreen> {
   }
 
   void _showSnack(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message, style: const TextStyle(fontSize: 17))),
-    );
+    ElderFeedback.showImportant(context, message);
   }
 }
 
