@@ -49,27 +49,32 @@ Widget _app({
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('首次進首頁（未看過 + petKey 就緒）會自動開始 16 步導覽', (tester) async {
+  testWidgets('首次進首頁會自動開始 production 15 步導覽', (tester) async {
     final controller = CoachMarkController();
     final keys = CoachMarkKeys();
     final nav = AppNavigationController();
     final storage = _FakeStorage(false);
 
-    await tester.pumpWidget(_app(
-      controller: controller,
-      keys: keys,
-      nav: nav,
-      storage: storage,
-      homeVisible: true,
-      // 掛上 petKey，讓 host 判定首頁已繪製、可以開始。
-      child: KeyedSubtree(key: keys.petKey, child: const SizedBox(width: 100, height: 100)),
-    ));
+    await tester.pumpWidget(
+      _app(
+        controller: controller,
+        keys: keys,
+        nav: nav,
+        storage: storage,
+        homeVisible: true,
+        // 掛上 petKey，讓 host 判定首頁已繪製、可以開始。
+        child: KeyedSubtree(
+          key: keys.petKey,
+          child: const SizedBox(width: 100, height: 100),
+        ),
+      ),
+    );
     await tester.pump(); // postFrame 自動開始
     await tester.pump();
 
     expect(controller.isActive, isTrue);
-    expect(controller.stepCount, 16);
-    expect(find.text('第 1 步 / 共 16 步'), findsOneWidget);
+    expect(controller.stepCount, 15);
+    expect(find.text('第 1 步 / 共 15 步'), findsOneWidget);
   });
 
   testWidgets('已看過則不自動開始導覽', (tester) async {
@@ -78,36 +83,44 @@ void main() {
     final nav = AppNavigationController();
     final storage = _FakeStorage(true);
 
-    await tester.pumpWidget(_app(
-      controller: controller,
-      keys: keys,
-      nav: nav,
-      storage: storage,
-      homeVisible: true,
-      child: KeyedSubtree(key: keys.petKey, child: const SizedBox(width: 100, height: 100)),
-    ));
+    await tester.pumpWidget(
+      _app(
+        controller: controller,
+        keys: keys,
+        nav: nav,
+        storage: storage,
+        homeVisible: true,
+        child: KeyedSubtree(
+          key: keys.petKey,
+          child: const SizedBox(width: 100, height: 100),
+        ),
+      ),
+    );
     await tester.pump();
     await tester.pump();
 
     expect(controller.isActive, isFalse);
   });
 
-  testWidgets(
-      'CR-0092 跨頁：host 依步驟把分頁切到 商城(1)/紀錄(2)/設定(3)，最後回首頁(0) 並記錄已看過',
-      (tester) async {
+  testWidgets('CR-0092 跨頁：host 依步驟把分頁切到 商城(1)/紀錄(2)/設定(3)，最後回首頁(0) 並記錄已看過', (
+    tester,
+  ) async {
     final controller = CoachMarkController();
     final keys = CoachMarkKeys();
-    final nav = AppNavigationController()..selectShellIndex(0);
+    final nav = AppNavigationController(showMarketplace: true)
+      ..selectShellIndex(0);
     final storage = _FakeStorage(true); // 跳過自動開始，改手動 start 精準控制
 
-    await tester.pumpWidget(_app(
-      controller: controller,
-      keys: keys,
-      nav: nav,
-      storage: storage,
-      homeVisible: true,
-      child: const SizedBox(),
-    ));
+    await tester.pumpWidget(
+      _app(
+        controller: controller,
+        keys: keys,
+        nav: nav,
+        storage: storage,
+        homeVisible: true,
+        child: const SizedBox(),
+      ),
+    );
     await tester.pump();
 
     final steps = buildHomeCoachMarkSteps(keys);

@@ -42,15 +42,26 @@ final class NativeHomeBarView: NSObject, FlutterPlatformView, UITabBarDelegate {
       name: "pet_companion/native_home_bar",
       binaryMessenger: messenger
     )
-    items = [
+    let params = args as? [String: Any]
+    let showMarketplace = params?["showMarketplace"] as? Bool ?? false
+    var visibleItems = [
       UITabBarItem(title: "首頁", image: UIImage(systemName: "pawprint"), tag: 0),
-      UITabBarItem(title: "商城", image: UIImage(systemName: "storefront"), tag: 1),
-      UITabBarItem(title: "紀錄", image: UIImage(systemName: "clock.arrow.circlepath"), tag: 2),
-      UITabBarItem(title: "設定", image: UIImage(systemName: "gearshape"), tag: 3),
     ]
+    if showMarketplace {
+      visibleItems.append(
+        UITabBarItem(title: "商城", image: UIImage(systemName: "storefront"), tag: visibleItems.count)
+      )
+    }
+    visibleItems.append(
+      UITabBarItem(title: "紀錄", image: UIImage(systemName: "clock.arrow.circlepath"), tag: visibleItems.count)
+    )
+    visibleItems.append(
+      UITabBarItem(title: "設定", image: UIImage(systemName: "gearshape"), tag: visibleItems.count)
+    )
+    items = visibleItems
     super.init()
 
-    let selectedIndex = (args as? [String: Any])?["selectedIndex"] as? Int ?? 0
+    let selectedIndex = params?["selectedIndex"] as? Int ?? 0
     tabBar.items = items
     tabBar.selectedItem = items.indices.contains(selectedIndex) ? items[selectedIndex] : items[0]
     tabBar.delegate = self

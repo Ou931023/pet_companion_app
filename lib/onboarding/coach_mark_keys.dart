@@ -18,8 +18,9 @@ class CoachMarkKeys {
   final GlobalKey reminderKey = GlobalKey(debugLabel: 'coach_reminder');
 
   // 更多功能 sheet 內：每日簽到 / 日曆、金幣區。
-  final GlobalKey dailyCheckInKey =
-      GlobalKey(debugLabel: 'coach_daily_checkin');
+  final GlobalKey dailyCheckInKey = GlobalKey(
+    debugLabel: 'coach_daily_checkin',
+  );
   final GlobalKey coinKey = GlobalKey(debugLabel: 'coach_coin');
 
   /// 底部導覽列（整條）的 key。掛在 MainShell 底部列的外層 KeyedSubtree 上，
@@ -29,28 +30,33 @@ class CoachMarkKeys {
   final GlobalKey navBarKey = GlobalKey(debugLabel: 'coach_nav_bar');
 
   /// 設定頁「家人聯絡人」入口的 key（跨頁高亮用）。
-  final GlobalKey settingsContactKey =
-      GlobalKey(debugLabel: 'coach_settings_contact');
+  final GlobalKey settingsContactKey = GlobalKey(
+    debugLabel: 'coach_settings_contact',
+  );
 
   // CR-0092：跨頁導覽真正切到該頁並高亮頁內目標（不再只亮底部分頁按鈕）。
   /// 商城頁頂部（切到商城分頁時高亮）。
   final GlobalKey shopKey = GlobalKey(debugLabel: 'coach_shop');
 
   /// 紀錄頁標題（切到紀錄分頁時高亮）。
-  final GlobalKey historyTitleKey =
-      GlobalKey(debugLabel: 'coach_history_title');
+  final GlobalKey historyTitleKey = GlobalKey(
+    debugLabel: 'coach_history_title',
+  );
 
   /// 紀錄頁搜尋框（CR-0091）；無紀錄時搜尋框不顯示 → overlay 自動降級置中卡。
-  final GlobalKey historySearchKey =
-      GlobalKey(debugLabel: 'coach_history_search');
+  final GlobalKey historySearchKey = GlobalKey(
+    debugLabel: 'coach_history_search',
+  );
 
   /// 設定頁「換一隻陪你的夥伴 / 更換外觀」入口（切到設定分頁時高亮）。
-  final GlobalKey settingsAppearanceKey =
-      GlobalKey(debugLabel: 'coach_settings_appearance');
+  final GlobalKey settingsAppearanceKey = GlobalKey(
+    debugLabel: 'coach_settings_appearance',
+  );
 
   /// 設定頁「重新觀看新手導覽」入口。
-  final GlobalKey settingsReplayKey =
-      GlobalKey(debugLabel: 'coach_settings_replay');
+  final GlobalKey settingsReplayKey = GlobalKey(
+    debugLabel: 'coach_settings_replay',
+  );
 }
 
 /// 取底部導覽列第 [index] 格（共 [total] 格）的高亮框。
@@ -96,7 +102,10 @@ Rect settingsRightQuarter(Rect raw, {double bottomInset = 0}) =>
 List<CoachMarkStep> buildHomeCoachMarkSteps(
   CoachMarkKeys keys, {
   double bottomNavInset = 0,
+  bool showMarketplace = true,
 }) {
+  final historyTabIndex = showMarketplace ? 2 : 1;
+  final settingsTabIndex = showMarketplace ? 3 : 2;
   return [
     // 1：這是你的 AI 寵物。
     CoachMarkStep(
@@ -109,14 +118,9 @@ List<CoachMarkStep> buildHomeCoachMarkSteps(
       text: '想說話就按這裡，聊天、提醒、說說心情，都可以直接講。',
     ),
     // 3：先聽寵物說完（行為提示，無對應元件 → 置中卡片）。
-    const CoachMarkStep(
-      text: '寵物在說話時，先聽牠說完，再換你說，這樣聊起來更順。',
-    ),
+    const CoachMarkStep(text: '寵物在說話時，先聽牠說完，再換你說，這樣聊起來更順。'),
     // 4：看看寵物狀態。
-    CoachMarkStep(
-      targetKey: keys.statusKey,
-      text: '這裡可以看寵物的狀態，包含心情、飽足和親密度。',
-    ),
+    CoachMarkStep(targetKey: keys.statusKey, text: '這裡可以看寵物的狀態，包含心情、飽足和親密度。'),
     // 5：聊天可以增加親密度（仍指著狀態面板，文字換成親密度）。
     CoachMarkStep(
       targetKey: keys.statusKey,
@@ -145,40 +149,41 @@ List<CoachMarkStep> buildHomeCoachMarkSteps(
       text: '每天回來簽到可以拿金幣，金幣能用來解鎖新的寵物外觀。',
     ),
     // 10：CR-0092 切到「商城」分頁，高亮商城頁本身（不再只亮底部按鈕）。
-    CoachMarkStep(
-      targetKey: keys.shopKey,
-      shellTabIndex: 1,
-      text: '這是「商城」，可以用金幣幫寵物解鎖外觀或買點東西。',
-    ),
+    if (showMarketplace)
+      CoachMarkStep(
+        targetKey: keys.shopKey,
+        shellTabIndex: 1,
+        text: '這是「商城」，可以用金幣幫寵物解鎖外觀或買點東西。',
+      ),
     // 11：切到「紀錄」分頁，高亮紀錄頁標題。
     CoachMarkStep(
       targetKey: keys.historyTitleKey,
-      shellTabIndex: 2,
+      shellTabIndex: historyTabIndex,
       text: '這是「紀錄」，可以回顧你和寵物聊過的話。',
     ),
     // 12：仍在紀錄頁，高亮搜尋框（CR-0091）。無紀錄時搜尋框未顯示 → 安全降級置中卡。
     CoachMarkStep(
       targetKey: keys.historySearchKey,
-      shellTabIndex: 2,
+      shellTabIndex: historyTabIndex,
       text: '想找以前聊過的內容，可以在這裡搜尋。',
     ),
     // 13：切到「設定」分頁，高亮「換一隻夥伴 / 更換外觀」。
     CoachMarkStep(
       targetKey: keys.settingsAppearanceKey,
-      shellTabIndex: 3,
+      shellTabIndex: settingsTabIndex,
       text: '在「設定」可以幫寵物換造型，狗狗、天竺鼠、狐狸、麻吉都能挑。',
     ),
     // 14：仍在設定頁，高亮「家人聯絡人」入口（沿用既有）。
     CoachMarkStep(
       targetKey: keys.settingsContactKey,
-      shellTabIndex: 3,
+      shellTabIndex: settingsTabIndex,
       radius: 14,
       text: '在「設定」裡還能新增家人或照護人員，需要時更方便聯絡。',
     ),
     // 15：仍在設定頁，高亮「重新觀看新手導覽」，告訴長者之後可重看。
     CoachMarkStep(
       targetKey: keys.settingsReplayKey,
-      shellTabIndex: 3,
+      shellTabIndex: settingsTabIndex,
       text: '以後想再看一次導覽，從這裡就能重新看一遍。',
     ),
     // 16：切回首頁，高亮寵物，結束導覽。

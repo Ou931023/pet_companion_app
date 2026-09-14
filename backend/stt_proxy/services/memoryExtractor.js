@@ -7,9 +7,15 @@ const {
 } = require("../repositories/memoryRepository");
 const { safeErrorMessage } = require("./privacy/redaction");
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+let client;
+
+function getClient() {
+  if (!process.env.OPENAI_API_KEY) return null;
+  if (!client) {
+    client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return client;
+}
 
 const LOW_VALUE_PATTERNS = [
   /^你好[啊呀]?$/,
@@ -97,6 +103,16 @@ const summarySchema = {
 const validateSummary = ajv.compile(summarySchema);
 
 async function summarizeMemoryWithLLM({ userText, aiReply, emotion }) {
+  const openai = getClient();
+  if (!openai) {
+    return {
+      shouldRemember: false,
+      memoryType: 'episodic',
+      summary: '',
+      importance: 0.5,
+      tags: [],
+    };
+  }
   const prompt = `
 你是陪伴型 AI 的記憶萃取器。請只輸出 JSON，不要多餘文字。
 輸入內容：
@@ -115,7 +131,7 @@ async function summarizeMemoryWithLLM({ userText, aiReply, emotion }) {
 `;
 
   try {
-    const response = await client.chat.completions.create({
+    const response = await openai.chat.completions.create({
       model: process.env.MEMORY_MODEL || "gpt-4o-mini",
       temperature: 0.2,
       response_format: { type: "json_object" },

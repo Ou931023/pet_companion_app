@@ -215,7 +215,7 @@ void main() {
   });
 
   test('open app route uses navigation whitelist', () async {
-    final navigation = AppNavigationController();
+    final navigation = AppNavigationController(showMarketplace: true);
     final service = NativeToolExecutorService(launch: (_, __) async => true);
     final result = await service.execute(
       intent: _intent(
@@ -230,6 +230,26 @@ void main() {
 
     expect(result.success, isTrue, reason: result.message);
     expect(navigation.currentShellRoute, AppRoute.shop);
+  });
+
+  test('open app route does not claim hidden production shop was opened',
+      () async {
+    final navigation = AppNavigationController(showMarketplace: false);
+    final service = NativeToolExecutorService(launch: (_, __) async => true);
+    final result = await service.execute(
+      intent: _intent(
+        'open_app_route',
+        arguments: {'route': AppRoute.shop},
+      ),
+      reminderController: _FakeReminderController(),
+      searchService: SearchService(),
+      navigationController: navigation,
+      memoryController: _memoryController(),
+    );
+
+    expect(result.success, isFalse);
+    expect(result.message, contains('目前沒有開放'));
+    expect(navigation.currentShellRoute, AppRoute.home);
   });
 
   test('open app route can navigate to puzzle from voice agent intent',

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../config/app_config.dart';
 import '../controllers/app_navigation_controller.dart';
 import '../services/local_storage_service.dart';
 import 'coach_mark_controller.dart';
@@ -92,8 +93,9 @@ class _CoachMarkHostState extends State<CoachMarkHost> {
     if (replay) {
       _controller.consumeReplayRequest();
     } else {
-      final done =
-          await context.read<LocalStorageService>().loadHomeCoachMarkDone();
+      final done = await context
+          .read<LocalStorageService>()
+          .loadHomeCoachMarkDone();
       if (done) return;
     }
     if (!mounted || !widget.homeVisible || _controller.isActive) return;
@@ -101,7 +103,11 @@ class _CoachMarkHostState extends State<CoachMarkHost> {
     // 把底部 safe area（home indicator）高度傳進去，底部 tab 高亮框才能排除它、對齊 tab。
     final bottomInset = MediaQuery.of(context).padding.bottom;
     _controller.start(
-      buildHomeCoachMarkSteps(keys, bottomNavInset: bottomInset),
+      buildHomeCoachMarkSteps(
+        keys,
+        bottomNavInset: bottomInset,
+        showMarketplace: AppConfig.marketplaceVisible,
+      ),
     );
   }
 
@@ -248,8 +254,8 @@ class _CoachMarkOverlayState extends State<CoachMarkOverlay> {
     final safeTop = media.padding.top + 16;
     final safeBottom = media.padding.bottom + 16;
     // 卡片最高不超過可用高度的一半，避免小螢幕 / 放大字體時溢出安全區。
-    final maxCardHeight =
-        ((media.size.height - safeTop - safeBottom) * 0.5).clamp(150.0, 420.0);
+    final maxCardHeight = ((media.size.height - safeTop - safeBottom) * 0.5)
+        .clamp(150.0, 420.0);
     return Positioned(
       left: 20,
       right: 20,
@@ -388,7 +394,8 @@ class _SpotlightPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final full = Offset.zero & size;
     // 暖色半透明遮罩（深褐而非純黑），柔和、不冰冷。
-    final scrim = Paint()..color = const Color(0xFF2A1E12).withValues(alpha: 0.66);
+    final scrim = Paint()
+      ..color = const Color(0xFF2A1E12).withValues(alpha: 0.66);
     final localHole = hole;
     if (localHole == null) {
       canvas.drawRect(full, scrim);

@@ -87,7 +87,7 @@ flutter run                # iOS 實機 / 模擬器
 | `PGVECTOR_ENABLED` | **必須＝`true`** | 雙重閘門之一；不是 `true` 一律走 JSON fallback。 |
 | `OPENAI_API_KEY` | 非必須、**建議設** | 不設仍可走 DB，但 embedding 會退成 deterministic mock（語意檢索品質下降）。要真語意搜尋就要設。 |
 | `EMBEDDING_MODEL` | 選用 | 預設 `text-embedding-3-small`（1536 維，與 schema 相符），通常不用動。 |
-| `PG_POOL_MAX` / `PG_IDLE_TIMEOUT_MS` / `PG_CONNECTION_TIMEOUT_MS` | 選用 | 皆有預設（10 / 30000 / 2000ms），Demo 不用設。 |
+| `PG_POOL_MAX` / `PG_IDLE_TIMEOUT_MS` / `PG_CONNECTION_TIMEOUT_MS` | 選用 | 皆有預設（10 / 30000 / 10000ms），通常不用另設。 |
 
 > migration 與後端都需要明確的 `DATABASE_URL`；不提供時必須失敗，不能使用內建本機密碼或把 JSON fallback 當正式資料庫。
 

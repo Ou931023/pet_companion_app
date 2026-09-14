@@ -144,7 +144,8 @@ class NativeToolExecutorService {
   Future<AgentToolExecutionResult> _playMusic(AgentToolIntent intent) async {
     final rawQuery = _stringArg(intent, 'query');
     final query = rawQuery.isEmpty ? _stringArg(intent, 'text') : rawQuery;
-    if (_isBroadMusicQuery(query) || (query.isEmpty && intent.arguments.isEmpty)) {
+    if (_isBroadMusicQuery(query) ||
+        (query.isEmpty && intent.arguments.isEmpty)) {
       return AgentToolExecutionResult.succeeded(
         toolName: intent.toolName,
         message: '想聽誰的歌，還是想聽什麼類型呢？',
@@ -170,7 +171,8 @@ class NativeToolExecutorService {
   static bool _isBroadMusicQuery(String text) {
     final normalized = text.replaceAll(RegExp(r'[\s，。！？!?、,.]'), '');
     if (normalized.isEmpty) return true;
-    if (RegExp(r'台語|老歌|放鬆|白噪音|輕音樂|雨聲|助眠|懷舊|自然音|歌手|周杰倫|江蕙|鄧麗君|費玉清|蔡琴|五月天|鳳飛飛|望春風|雨夜花|月亮代表我的心')
+    if (RegExp(
+            r'台語|老歌|放鬆|白噪音|輕音樂|雨聲|助眠|懷舊|自然音|歌手|周杰倫|江蕙|鄧麗君|費玉清|蔡琴|五月天|鳳飛飛|望春風|雨夜花|月亮代表我的心')
         .hasMatch(normalized)) {
       return false;
     }
@@ -341,6 +343,12 @@ class NativeToolExecutorService {
     AppNavigationController navigationController,
   ) async {
     final route = _normalizeRoute(_stringArg(intent, 'route'));
+    if (!navigationController.canNavigateTo(route)) {
+      return AgentToolExecutionResult.failed(
+        toolName: intent.toolName,
+        message: '這個頁面目前沒有開放，我們繼續在首頁聊聊吧。',
+      );
+    }
     navigationController.navigateTo(route);
     return AgentToolExecutionResult.succeeded(
       toolName: intent.toolName,

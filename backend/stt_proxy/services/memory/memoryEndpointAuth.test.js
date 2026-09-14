@@ -3,8 +3,8 @@
 // CR-0075：記憶端點身分驗證測試。
 // 驗：所有記憶端點掛 requireResidentCaller（無 token → 401）、有效 token 通過、
 // client 帶與 caller.elderId 不符的 userId → 403 forbidden_resident（防讀寫他人記憶）。
-// 用 installResidentCallerStub（同 companionChatEndpoint.test.js）；無 OPENAI key / 無 DB
-// 走 JSON fallback，MEMORY_DATA_DIR 指向 temp 避免污染正式 data。
+// 用 installResidentCallerStub（同 companionChatEndpoint.test.js）；server 載入時使用明確的
+// 測試用 placeholder，載入完成後移除，讓記憶流程在無 OPENAI key / 無 DB 下走安全 fallback。
 
 const assert = require("node:assert/strict");
 const { test, beforeEach, afterEach } = require("node:test");
@@ -14,12 +14,13 @@ const path = require("node:path");
 
 process.env.NODE_ENV = "test";
 process.env.MEMORY_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "mem_auth_"));
-delete process.env.OPENAI_API_KEY;
+process.env.OPENAI_API_KEY = "test-only-placeholder";
 delete process.env.DATABASE_URL;
 process.env.PGVECTOR_ENABLED = "false";
 delete process.env.TELEGRAM_BOT_TOKEN;
 
 const app = require("../../server");
+delete process.env.OPENAI_API_KEY;
 const {
   installResidentCallerStub,
 } = require("../auth/residentCallerContext.testsupport");

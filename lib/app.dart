@@ -283,14 +283,15 @@ class PetCompanionApp extends StatelessWidget {
         // 這些 callback 對應的工具皆 requiresConfirmation=true，只有使用者確認後才被呼叫。
         Provider<NativeToolExecutorService>(
           create: (context) => NativeToolExecutorService(
-            contactLookup:
-                ContactLookupService(context.read<ProfileController>()),
+            contactLookup: ContactLookupService(
+              context.read<ProfileController>(),
+            ),
             onLogout: () => context.read<AuthController>().logout(),
             onNotifyCaregiver: ({required reason, required riskLevel}) async {
               // 先同步取出所需服務，避免 await 後再用 context。
               final careAlertController = context.read<CareAlertController>();
-              final notifyService =
-                  context.read<CareAlertNotificationService>();
+              final notifyService = context
+                  .read<CareAlertNotificationService>();
               final sttProxyUrl = context.read<ProfileController>().sttProxyUrl;
               final alert = CareAlert(
                 id: 'agent_notify_${DateTime.now().microsecondsSinceEpoch}',
@@ -310,11 +311,12 @@ class PetCompanionApp extends StatelessWidget {
               return true;
             },
             storyProvider: (topic) async {
-              final result =
-                  await context.read<CompanionContentService>().createContent(
-                userText: topic.isEmpty ? '說個故事' : '說一個關於$topic的故事',
-                preferences: const ['story'],
-              );
+              final result = await context
+                  .read<CompanionContentService>()
+                  .createContent(
+                    userText: topic.isEmpty ? '說個故事' : '說一個關於$topic的故事',
+                    preferences: const ['story'],
+                  );
               return result.message;
             },
           ),
@@ -334,12 +336,13 @@ class PetCompanionApp extends StatelessWidget {
         // 因該 mock 在 production 已不注入；STT 仍依 mockServicesEnabled 條件選用
         // 正式 OpenAiSpeechToTextService（production）或 mock（dev/test）。
         ChangeNotifierProxyProvider5<
-            ProfileController,
-            PetController,
-            AiToolRouter,
-            TextToSpeechService,
-            SearchService,
-            ConversationController>(
+          ProfileController,
+          PetController,
+          AiToolRouter,
+          TextToSpeechService,
+          SearchService,
+          ConversationController
+        >(
           create: (context) => ConversationController(
             profileController: context.read<ProfileController>(),
             petController: context.read<PetController>(),
@@ -361,8 +364,8 @@ class PetCompanionApp extends StatelessWidget {
             emotionFusionService: context.read<EmotionFusionService>(),
             petEmotionMapper: context.read<PetEmotionMapper>(),
             memoryController: context.read<MemoryController>(),
-            companionReplyStrategy:
-                context.read<CompanionReplyStrategyService>(),
+            companionReplyStrategy: context
+                .read<CompanionReplyStrategyService>(),
             languageRoutingService: context.read<LanguageRoutingService>(),
             taigiAsrService: context.read<TaigiAsrService>(),
             coachMarkController: context.read<CoachMarkController>(),
@@ -376,9 +379,7 @@ class PetCompanionApp extends StatelessWidget {
                 ttsService: tts,
                 sttService: AppConfig.mockServicesEnabled
                     ? context.read<MockSpeechToTextService>()
-                    : OpenAiSpeechToTextService(
-                        proxyUrl: profile.sttProxyUrl,
-                      ),
+                    : OpenAiSpeechToTextService(proxyUrl: profile.sttProxyUrl),
                 storageService: context.read<LocalStorageService>(),
                 searchService: search,
                 petStatsController: context.read<PetStatsController>(),
@@ -388,21 +389,22 @@ class PetCompanionApp extends StatelessWidget {
                 emotionFusionService: context.read<EmotionFusionService>(),
                 petEmotionMapper: context.read<PetEmotionMapper>(),
                 memoryController: context.read<MemoryController>(),
-                companionReplyStrategy:
-                    context.read<CompanionReplyStrategyService>(),
+                companionReplyStrategy: context
+                    .read<CompanionReplyStrategyService>(),
                 languageRoutingService: context.read<LanguageRoutingService>(),
                 taigiAsrService: context.read<TaigiAsrService>(),
                 coachMarkController: context.read<CoachMarkController>(),
               ),
         ),
         ChangeNotifierProxyProvider6<
-            ProfileController,
-            PetController,
-            PetStatsController,
-            ConversationController,
-            RealtimeVoiceService,
-            AppNavigationController,
-            VoiceAgentController>(
+          ProfileController,
+          PetController,
+          PetStatsController,
+          ConversationController,
+          RealtimeVoiceService,
+          AppNavigationController,
+          VoiceAgentController
+        >(
           create: (context) => VoiceAgentController(
             profileController: context.read<ProfileController>(),
             petController: context.read<PetController>(),
@@ -417,31 +419,42 @@ class PetCompanionApp extends StatelessWidget {
             trackingService: context.read<AppUsageTrackingService>(),
             agentToolController: context.read<AgentToolController>(),
             careAlertController: context.read<CareAlertController>(),
-            careAlertNotificationService:
-                context.read<CareAlertNotificationService>(),
+            careAlertNotificationService: context
+                .read<CareAlertNotificationService>(),
             coachMarkController: context.read<CoachMarkController>(),
           ),
-          update: (context, profile, pet, petStats, conversation,
-                  realtimeService, navigation, controller) =>
-              controller ??
-              VoiceAgentController(
-                profileController: profile,
-                petController: pet,
-                petStatsController: petStats,
-                conversationController: conversation,
-                realtimeVoiceService: realtimeService,
-                companionEngineService: context.read<CompanionEngineService>(),
-                languageRoutingService: context.read<LanguageRoutingService>(),
-                memoryController: context.read<MemoryController>(),
-                navigationService: context.read<AiNavigationService>(),
-                navigationController: navigation,
-                trackingService: context.read<AppUsageTrackingService>(),
-                agentToolController: context.read<AgentToolController>(),
-                careAlertController: context.read<CareAlertController>(),
-                careAlertNotificationService:
-                    context.read<CareAlertNotificationService>(),
-                coachMarkController: context.read<CoachMarkController>(),
-              ),
+          update:
+              (
+                context,
+                profile,
+                pet,
+                petStats,
+                conversation,
+                realtimeService,
+                navigation,
+                controller,
+              ) =>
+                  controller ??
+                  VoiceAgentController(
+                    profileController: profile,
+                    petController: pet,
+                    petStatsController: petStats,
+                    conversationController: conversation,
+                    realtimeVoiceService: realtimeService,
+                    companionEngineService: context
+                        .read<CompanionEngineService>(),
+                    languageRoutingService: context
+                        .read<LanguageRoutingService>(),
+                    memoryController: context.read<MemoryController>(),
+                    navigationService: context.read<AiNavigationService>(),
+                    navigationController: navigation,
+                    trackingService: context.read<AppUsageTrackingService>(),
+                    agentToolController: context.read<AgentToolController>(),
+                    careAlertController: context.read<CareAlertController>(),
+                    careAlertNotificationService: context
+                        .read<CareAlertNotificationService>(),
+                    coachMarkController: context.read<CoachMarkController>(),
+                  ),
         ),
       ],
       child: Consumer<ProfileController>(
@@ -685,8 +698,9 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
 
     final now = DateTime.now();
     final history = conversation.history; // 最新在前
-    final DateTime? lastInteraction =
-        history.isNotEmpty ? history.first.timestamp : null;
+    final DateTime? lastInteraction = history.isNotEmpty
+        ? history.first.timestamp
+        : null;
     String? latestEmotion;
     for (final turn in history) {
       if (turn.emotionTag != 'neutral') {
@@ -816,10 +830,7 @@ class _AuthLoadingView extends StatelessWidget {
             SizedBox(height: 24),
             Text(
               '正在準備你的陪伴空間…',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w600,
-              ),
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
             ),
           ],
         ),
@@ -885,18 +896,15 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
-  final _pages = const [
-    HomeScreen(),
-    ShopScreen(),
-    HistoryScreen(),
-    SettingsScreen(),
-  ];
+  List<Widget> get _pages => AppConfig.marketplaceVisible
+      ? const [HomeScreen(), ShopScreen(), HistoryScreen(), SettingsScreen()]
+      : const [HomeScreen(), HistoryScreen(), SettingsScreen()];
 
   @override
   Widget build(BuildContext context) {
     final navigation = context.watch<AppNavigationController>();
-    final index =
-        navigation.currentShellIndex < 0 ? 0 : navigation.currentShellIndex;
+    final rawIndex = navigation.currentShellIndex;
+    final index = rawIndex >= 0 && rawIndex < _pages.length ? rawIndex : 0;
     final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
     final bottomContentPadding = supportsLiquidGlassHomeBar && !keyboardOpen
         ? _kNativeHomeBarHeight + MediaQuery.paddingOf(context).bottom
@@ -937,12 +945,18 @@ class _HomeNavigationBar extends StatefulWidget {
 class _HomeNavigationBarState extends State<_HomeNavigationBar> {
   static const _channel = MethodChannel('pet_companion/native_home_bar');
 
-  static const _destinations = [
-    NavigationDestination(icon: Icon(Icons.pets), label: '首頁'),
-    NavigationDestination(icon: Icon(Icons.storefront), label: '商城'),
-    NavigationDestination(icon: Icon(Icons.history), label: '紀錄'),
-    NavigationDestination(icon: Icon(Icons.settings), label: '設定'),
-  ];
+  List<NavigationDestination> get _destinations => AppConfig.marketplaceVisible
+      ? const [
+          NavigationDestination(icon: Icon(Icons.pets), label: '首頁'),
+          NavigationDestination(icon: Icon(Icons.storefront), label: '商城'),
+          NavigationDestination(icon: Icon(Icons.history), label: '紀錄'),
+          NavigationDestination(icon: Icon(Icons.settings), label: '設定'),
+        ]
+      : const [
+          NavigationDestination(icon: Icon(Icons.pets), label: '首頁'),
+          NavigationDestination(icon: Icon(Icons.history), label: '紀錄'),
+          NavigationDestination(icon: Icon(Icons.settings), label: '設定'),
+        ];
 
   @override
   void initState() {
@@ -989,7 +1003,10 @@ class _HomeNavigationBarState extends State<_HomeNavigationBar> {
       child: UiKitView(
         key: ValueKey('native_home_bar_${widget.selectedIndex}'),
         viewType: 'native_home_bar',
-        creationParams: {'selectedIndex': widget.selectedIndex},
+        creationParams: {
+          'selectedIndex': widget.selectedIndex,
+          'showMarketplace': AppConfig.marketplaceVisible,
+        },
         creationParamsCodec: const StandardMessageCodec(),
       ),
     );

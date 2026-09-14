@@ -22,7 +22,7 @@ class CoachMarkStep {
   final double radius;
   final double padding;
 
-  /// 這一步需要切換到哪個底部分頁（0 首頁 / 1 商城 / 2 紀錄 / 3 設定）才看得到 target。
+  /// 這一步需要切換到哪個「目前可見」的底部分頁才看得到 target。
   ///
   /// 預設 null＝不切頁，留在目前分頁。用於跨頁導覽（例如最後一步切到設定頁、
   /// 高亮「家人聯絡人」入口）。實際切頁由 CoachMarkHost 負責，找不到 target 時
@@ -50,8 +50,8 @@ class CoachMarkController extends ChangeNotifier {
 
   CoachMarkStep? get currentStep =>
       (_active && _index >= 0 && _index < _steps.length)
-          ? _steps[_index]
-          : null;
+      ? _steps[_index]
+      : null;
 
   /// 開始導覽。空步驟不啟動。
   void start(List<CoachMarkStep> steps) {

@@ -104,7 +104,7 @@ GitHub Pages
 
 ### 2.5 選用調校（有預設值，可不設）
 
-`PG_POOL_MAX`（預設 10）、`PG_IDLE_TIMEOUT_MS`（30000）、`PG_CONNECTION_TIMEOUT_MS`（2000）、`REALTIME_MODEL`（`gpt-realtime`）、`TAIGI_ASR_MAX_UPLOAD_BYTES`（10MB）。
+`PG_POOL_MAX`（預設 10）、`PG_IDLE_TIMEOUT_MS`（30000）、`PG_CONNECTION_TIMEOUT_MS`（10000；容許 Render / Neon 閒置後重新喚醒）、`REALTIME_MODEL`（`gpt-realtime`）、`TAIGI_ASR_MAX_UPLOAD_BYTES`（10MB）。
 
 > 完整三環境對照見 `docs/ENVIRONMENT_SETUP.md §3`；本表為 Render/Railway 部署精簡版。
 

@@ -9,6 +9,29 @@ void main() {
     expect(steps.length, 16);
   });
 
+  test('production 隱藏商城時，導覽省略商城並重映射紀錄與設定', () {
+    final keys = CoachMarkKeys();
+    final steps = buildHomeCoachMarkSteps(keys, showMarketplace: false);
+
+    expect(steps, hasLength(15));
+    expect(steps.any((step) => step.targetKey == keys.shopKey), isFalse);
+    expect(steps.any((step) => step.text.contains('商城')), isFalse);
+    expect(
+      steps
+          .where((step) => step.targetKey == keys.historyTitleKey)
+          .single
+          .shellTabIndex,
+      1,
+    );
+    expect(
+      steps
+          .where((step) => step.targetKey == keys.settingsAppearanceKey)
+          .single
+          .shellTabIndex,
+      2,
+    );
+  });
+
   test('navBarSlot 高亮框排除 bottom safe area、不往下多出一截（CR-0023）', () {
     // 整條底部列：高度 120 含 34 的 home indicator / safe area。
     const raw = Rect.fromLTWH(0, 700, 400, 120);
@@ -92,31 +115,35 @@ void main() {
     expect(steps[6].text, isNot(contains('點一下寵物')));
   });
 
-  test('CR-0092 跨頁：商城(idx9,tab1) / 紀錄(idx10,tab2) / 搜尋(idx11,tab2) 切到該頁高亮頁內目標',
-      () {
-    final keys = CoachMarkKeys();
-    final steps = buildHomeCoachMarkSteps(keys);
-    expect(steps[9].targetKey, keys.shopKey);
-    expect(steps[9].shellTabIndex, 1);
-    expect(steps[10].targetKey, keys.historyTitleKey);
-    expect(steps[10].shellTabIndex, 2);
-    expect(steps[11].targetKey, keys.historySearchKey);
-    expect(steps[11].shellTabIndex, 2);
-    // 不再用底部列按鈕的 rectTransform 切格。
-    expect(steps[9].rectTransform, isNull);
-  });
+  test(
+    'CR-0092 跨頁：商城(idx9,tab1) / 紀錄(idx10,tab2) / 搜尋(idx11,tab2) 切到該頁高亮頁內目標',
+    () {
+      final keys = CoachMarkKeys();
+      final steps = buildHomeCoachMarkSteps(keys);
+      expect(steps[9].targetKey, keys.shopKey);
+      expect(steps[9].shellTabIndex, 1);
+      expect(steps[10].targetKey, keys.historyTitleKey);
+      expect(steps[10].shellTabIndex, 2);
+      expect(steps[11].targetKey, keys.historySearchKey);
+      expect(steps[11].shellTabIndex, 2);
+      // 不再用底部列按鈕的 rectTransform 切格。
+      expect(steps[9].rectTransform, isNull);
+    },
+  );
 
-  test('CR-0092 跨頁設定段：換造型(idx12) / 聯絡人(idx13) / 重看導覽(idx14) 皆 shellTabIndex=3',
-      () {
-    final keys = CoachMarkKeys();
-    final steps = buildHomeCoachMarkSteps(keys);
-    expect(steps[12].targetKey, keys.settingsAppearanceKey);
-    expect(steps[12].shellTabIndex, 3);
-    expect(steps[13].targetKey, keys.settingsContactKey);
-    expect(steps[13].shellTabIndex, 3);
-    expect(steps[14].targetKey, keys.settingsReplayKey);
-    expect(steps[14].shellTabIndex, 3);
-  });
+  test(
+    'CR-0092 跨頁設定段：換造型(idx12) / 聯絡人(idx13) / 重看導覽(idx14) 皆 shellTabIndex=3',
+    () {
+      final keys = CoachMarkKeys();
+      final steps = buildHomeCoachMarkSteps(keys);
+      expect(steps[12].targetKey, keys.settingsAppearanceKey);
+      expect(steps[12].shellTabIndex, 3);
+      expect(steps[13].targetKey, keys.settingsContactKey);
+      expect(steps[13].shellTabIndex, 3);
+      expect(steps[14].targetKey, keys.settingsReplayKey);
+      expect(steps[14].shellTabIndex, 3);
+    },
+  );
 
   test('CR-0092 導覽涵蓋所有分頁切換（home/shop/history/settings 都有）', () {
     final steps = buildHomeCoachMarkSteps(CoachMarkKeys());
