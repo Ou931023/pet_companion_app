@@ -7,12 +7,13 @@ import 'package:flutter/material.dart';
 /// 問題：較長的寵物回覆若一次塞滿字幕、或用過快的計時器翻頁，會讓字幕跟語音
 /// 對不上——常常寵物第一段話還沒念完，字幕就跳到下一頁。
 ///
-/// 設計（與語音同步、且「絕不提前翻頁」）：
+/// 設計（與語音同步、且可由使用者自行翻頁）：
 /// - 把回覆依中文／台語標點切成自然短句，再合併成「最多兩、三行、長者好讀」的短頁
 ///   （每頁約 [_maxCharsPerPage] 字）。
-/// - 每頁停留時間用「保守估算」：以略慢於語音念稿的速度（約每秒 [_charsPerSecond] 字、
-///   且至少 [_minPageDuration]）來估，確保字幕只會「跟在語音後面」，不會搶在寵物
-///   還沒念完就翻頁。
+/// - Realtime 文字增長時保留目前頁與既有計時器，不會因每個 delta 都跳回第一頁。
+/// - 每頁停留時間依長者友善語速估算；final 文字接手時延續目前頁，不重播第一頁。
+/// - 多頁字幕提供上一頁／下一頁與頁碼。使用者手動翻頁後，本輪停止自動翻頁，
+///   避免正在閱讀舊頁時被畫面搶走。
 /// - 只有「需要分頁的長回覆」才會啟動計時器；短回覆只有一頁、行為與過去相同、
 ///   不會留下待處理的計時器。
 /// - 新的一輪回覆（text 改變）會從第一頁重新開始。
@@ -28,9 +29,9 @@ class PetSubtitleText extends StatefulWidget {
   final TextStyle textStyle;
 
   /// CR-0084：是否為「即時逐字串流中」。
-  /// - true（寵物正在說、字幕跟著語音逐字長出來）：固定顯示第一頁正在累積的內容，
-  ///   不追著尚未播放的末頁跳動，也不使用切換動畫。
-  /// - false（一般 / TTS / 最終靜態文字）：維持 CR-0080 的保守計時器分頁。
+  /// - true（寵物正在說、字幕跟著語音逐字長出來）：保留目前頁與自動翻頁進度，
+  ///   不因高頻文字更新而閃動或重設。
+  /// - false（一般 / TTS / 最終靜態文字）：延續目前頁，並保留手動翻頁能力。
   final bool streaming;
 
   @override
@@ -46,11 +47,12 @@ class _PetSubtitleTextState extends State<PetSubtitleText> {
   List<String> _pages = const [];
   int _pageIndex = 0;
   Timer? _timer;
+  bool _manualNavigation = false;
 
   @override
   void initState() {
     super.initState();
-    _apply();
+    _apply(resetProgress: true);
   }
 
   @override
@@ -58,7 +60,14 @@ class _PetSubtitleTextState extends State<PetSubtitleText> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.text != widget.text ||
         oldWidget.streaming != widget.streaming) {
-      _apply();
+      final previousText = oldWidget.text.trim();
+      final nextText = widget.text.trim();
+      final sameResponse = previousText.isNotEmpty &&
+          nextText.isNotEmpty &&
+          (oldWidget.streaming ||
+              nextText.startsWith(previousText) ||
+              previousText.startsWith(nextText));
+      _apply(resetProgress: !sameResponse);
     }
   }
 
@@ -68,29 +77,46 @@ class _PetSubtitleTextState extends State<PetSubtitleText> {
     super.dispose();
   }
 
-  void _apply() {
-    _timer?.cancel();
+  void _apply({required bool resetProgress}) {
     final newText = widget.text.trim();
-    _pages = _paginate(newText);
-    if (widget.streaming) {
-      // Realtime transcript 常比實際音訊播放更快產生。追著最後一頁會讓字幕高速閃動，
-      // 並直接略過中間內容；串流期間先穩定保留第一頁，final 到達後再完整播放各頁。
+    final nextPages = _paginate(newText);
+
+    if (resetProgress) {
+      _timer?.cancel();
+      _timer = null;
+      _pageIndex = 0;
+      _manualNavigation = false;
+    } else if (nextPages.isEmpty) {
       _pageIndex = 0;
     } else {
-      // final 一律從第一頁開始，確保中間句不會因 streaming/final handoff 被略過。
-      _pageIndex = 0;
-      if (_pages.length > 1) {
-        _scheduleNext();
-      }
+      _pageIndex = _pageIndex.clamp(0, nextPages.length - 1);
+    }
+
+    _pages = nextPages;
+    if (!_manualNavigation && _timer == null && _pages.length > 1) {
+      _scheduleNext();
     }
   }
 
   void _scheduleNext() {
-    if (_pageIndex >= _pages.length - 1) return;
+    if (_manualNavigation || _pageIndex >= _pages.length - 1) return;
     _timer = Timer(_durationFor(_pages[_pageIndex]), () {
       if (!mounted) return;
+      _timer = null;
+      if (_manualNavigation || _pageIndex >= _pages.length - 1) return;
       setState(() => _pageIndex++);
       _scheduleNext();
+    });
+  }
+
+  void _selectPage(int index) {
+    if (_pages.isEmpty) return;
+    final target = index.clamp(0, _pages.length - 1);
+    _timer?.cancel();
+    _timer = null;
+    setState(() {
+      _manualNavigation = true;
+      _pageIndex = target;
     });
   }
 
@@ -129,7 +155,15 @@ class _PetSubtitleTextState extends State<PetSubtitleText> {
           ),
         if (showIndicator) ...[
           const SizedBox(height: 6),
-          _PageDots(count: _pages.length, active: _pageIndex),
+          _PageControls(
+            pageIndex: _pageIndex,
+            pageCount: _pages.length,
+            onPrevious:
+                _pageIndex > 0 ? () => _selectPage(_pageIndex - 1) : null,
+            onNext: _pageIndex < _pages.length - 1
+                ? () => _selectPage(_pageIndex + 1)
+                : null,
+          ),
         ],
       ],
     );
@@ -140,12 +174,12 @@ class _PetSubtitleTextState extends State<PetSubtitleText> {
   /// 每頁字數上限（長者友善：約兩行）。
   static const int _maxCharsPerPage = 28;
 
-  /// 念稿速度保守估每秒約 3.2 字——刻意比實際語音（約每秒 4 字）慢，
-  /// 讓字幕只會落在語音後面，不會提前翻頁。
-  static const double _charsPerSecond = 3.2;
+  /// Realtime 中文語音約每秒 4 字；略留閱讀緩衝，但不能慢到語音已進下一句、
+  /// 字幕仍停在上一頁。
+  static const double _charsPerSecond = 4.0;
 
   /// 每頁最短停留時間，避免極短句一閃而過。
-  static const Duration _minPageDuration = Duration(milliseconds: 2800);
+  static const Duration _minPageDuration = Duration(milliseconds: 2200);
 
   /// 斷句標點（中文 / 台語常用），標點留在前一段尾端。
   static const String _breakers = '。！？，、；：';
@@ -223,30 +257,57 @@ class _PetSubtitleTextState extends State<PetSubtitleText> {
   }
 }
 
-/// 分頁指示點：讓長者一眼看出字幕還有後續、目前在第幾頁。
-class _PageDots extends StatelessWidget {
-  const _PageDots({required this.count, required this.active});
+/// 長者友善分頁控制：大按鈕、明確頁碼，並提供語意標籤給 VoiceOver。
+class _PageControls extends StatelessWidget {
+  const _PageControls({
+    required this.pageIndex,
+    required this.pageCount,
+    required this.onPrevious,
+    required this.onNext,
+  });
 
-  final int count;
-  final int active;
+  final int pageIndex;
+  final int pageCount;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
 
   @override
   Widget build(BuildContext context) {
-    final color = Colors.indigo.shade300;
+    final color = Colors.indigo.shade500;
     return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: List.generate(count, (index) {
-        final isActive = index == active;
-        return Container(
-          margin: const EdgeInsets.only(right: 5),
-          width: isActive ? 9 : 7,
-          height: isActive ? 9 : 7,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: isActive ? color : color.withValues(alpha: 0.3),
+      children: [
+        IconButton(
+          key: const ValueKey('pet-subtitle-previous-page'),
+          tooltip: '上一頁字幕',
+          onPressed: onPrevious,
+          constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+          padding: EdgeInsets.zero,
+          icon: const Icon(Icons.chevron_left, size: 32),
+        ),
+        Expanded(
+          child: Semantics(
+            label: '字幕第 ${pageIndex + 1} 頁，共 $pageCount 頁',
+            child: Text(
+              '${pageIndex + 1} / $pageCount',
+              key: const ValueKey('pet-subtitle-page-label'),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: color,
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
           ),
-        );
-      }),
+        ),
+        IconButton(
+          key: const ValueKey('pet-subtitle-next-page'),
+          tooltip: '下一頁字幕',
+          onPressed: onNext,
+          constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+          padding: EdgeInsets.zero,
+          icon: const Icon(Icons.chevron_right, size: 32),
+        ),
+      ],
     );
   }
 }

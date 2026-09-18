@@ -67,7 +67,7 @@ void main() {
     // 無多頁 → 不排計時器；測試結束不應有 pending timer。
   });
 
-  testWidgets('串流中：文字逐步長出時固定第一頁，不跳到末句或閃動 (CR-0107)', (tester) async {
+  testWidgets('串流中：文字增長不重設計時器，第一頁念完會接到第二頁', (tester) async {
     const part1 = '阿明早安，今天天氣晴朗，很適合出門走走。';
     const full = '阿明早安，今天天氣晴朗，很適合出門走走。記得帶水，傍晚去散步看夕陽。回家之後先休息一下，晚上早點睡，有我陪著你。';
     final pages = PetSubtitleText.paginateForTest(full);
@@ -85,15 +85,19 @@ void main() {
 
     // 串流第一段（短）：只有一頁，顯示它。
     await tester.pumpWidget(host(part1));
-    await tester.pumpAndSettle();
+    await tester.pump();
     expect(find.textContaining('阿明早安'), findsOneWidget);
 
-    // 文字長到完整：串流模式仍穩定顯示第一頁，不直接跳去結尾。
+    // 文字長到完整：先穩定留在第一頁，不直接跳去結尾。
     await tester.pumpWidget(host(full));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 100));
     expect(tester.takeException(), isNull);
-    expect(find.textContaining('阿明早安'), findsOneWidget);
+    expect(find.text(pages.first), findsOneWidget);
     expect(find.textContaining('有我陪著你'), findsNothing);
+
+    // 第一頁依語速時間念完後，串流尚未結束也會接著顯示第二頁。
+    await tester.pump(const Duration(seconds: 8));
+    expect(find.text(pages[1]), findsOneWidget);
   });
 
   testWidgets('串流轉 final 後從第一頁開始，依序顯示中間與最後一頁 (CR-0107)', (tester) async {
@@ -128,5 +132,99 @@ void main() {
       await tester.pump(const Duration(milliseconds: 220));
     }
     expect(find.text(pages.last), findsOneWidget);
+  });
+
+  testWidgets('串流已翻到第二頁時，final 接手不會跳回第一頁', (tester) async {
+    const full =
+        '阿明早安，今天天氣晴朗，很適合出門走走。記得帶水，傍晚去散步看夕陽。回家之後先休息一下，喝杯溫水。晚上早點睡，有我陪著你。';
+    final pages = PetSubtitleText.paginateForTest(full);
+
+    Widget host({required bool streaming}) => MaterialApp(
+          home: Scaffold(
+            body: PetSubtitleText(
+              text: full,
+              streaming: streaming,
+              textStyle: const TextStyle(fontSize: 18),
+            ),
+          ),
+        );
+
+    await tester.pumpWidget(host(streaming: true));
+    await tester.pump(const Duration(seconds: 8));
+    expect(find.text(pages[1]), findsOneWidget);
+
+    await tester.pumpWidget(host(streaming: false));
+    await tester.pump(const Duration(milliseconds: 220));
+    expect(find.text(pages[1]), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 90));
+  });
+
+  testWidgets('串流修正前文中的字時仍保留目前頁', (tester) async {
+    const original = '阿明早安，今天天氣晴朗，很適合出門走走。記得帶水，傍晚去散步看夕陽。回家之後先休息一下，喝杯溫水。';
+    const corrected = '阿美早安，今天天氣晴朗，很適合出門走走。記得帶水，傍晚去散步看夕陽。回家之後先休息一下，喝杯溫水。';
+    final correctedPages = PetSubtitleText.paginateForTest(corrected);
+
+    Widget host(String text) => MaterialApp(
+          home: Scaffold(
+            body: PetSubtitleText(
+              text: text,
+              streaming: true,
+              textStyle: const TextStyle(fontSize: 18),
+            ),
+          ),
+        );
+
+    await tester.pumpWidget(host(original));
+    await tester.pump(const Duration(seconds: 8));
+    expect(find.text(PetSubtitleText.paginateForTest(original)[1]),
+        findsOneWidget);
+
+    await tester.pumpWidget(host(corrected));
+    await tester.pump();
+    expect(find.text(correctedPages[1]), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 90));
+  });
+
+  testWidgets('箭頭可自由切換字幕頁，手動翻頁後本輪不再自動搶頁', (tester) async {
+    const full =
+        '阿明早安，今天天氣晴朗，很適合出門走走。記得帶水，傍晚去散步看夕陽。回家之後先休息一下，喝杯溫水。晚上早點睡，有我陪著你。';
+    final pages = PetSubtitleText.paginateForTest(full);
+    expect(pages.length, greaterThanOrEqualTo(3));
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: PetSubtitleText(
+            text: full,
+            textStyle: TextStyle(fontSize: 18),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('1 / ${pages.length}'), findsOneWidget);
+    final previousAtStart = tester.widget<IconButton>(
+      find.byKey(const ValueKey('pet-subtitle-previous-page')),
+    );
+    expect(previousAtStart.onPressed, isNull);
+
+    await tester.tap(
+      find.byKey(const ValueKey('pet-subtitle-next-page')),
+    );
+    await tester.pump(const Duration(milliseconds: 220));
+    expect(find.text(pages[1]), findsOneWidget);
+    expect(find.text('2 / ${pages.length}'), findsOneWidget);
+
+    // 手動選頁後，即使超過自動翻頁時間也停在使用者正在看的頁面。
+    await tester.pump(const Duration(seconds: 30));
+    expect(find.text(pages[1]), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('pet-subtitle-previous-page')),
+    );
+    await tester.pump(const Duration(milliseconds: 220));
+    expect(find.text(pages.first), findsOneWidget);
   });
 }
