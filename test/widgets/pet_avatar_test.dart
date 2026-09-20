@@ -11,6 +11,16 @@ String _firstAssetName(WidgetTester tester) {
   return provider.assetName;
 }
 
+double _motionY(WidgetTester tester) {
+  final transform = tester.widget<Transform>(
+    find.byKey(const ValueKey('pet-avatar-motion')),
+  );
+  return transform.transform.getTranslation().y;
+}
+
+Future<void> _finishImageTransition(WidgetTester tester) =>
+    tester.pump(kPetImageTransitionDuration + const Duration(milliseconds: 1));
+
 void main() {
   Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
 
@@ -18,7 +28,7 @@ void main() {
     await tester.pumpWidget(wrap(const PetAvatar(mode: PetMode.talking)));
     expect(
       _firstAssetName(tester),
-      startsWith('assets/pets/v2/realistic/adult/dog/talk/talk_'),
+      'assets/pets/v2/realistic/adult/dog/rest/rest_01.png',
     );
   });
 
@@ -31,6 +41,7 @@ void main() {
     await tester.pumpWidget(
       wrap(const PetAvatar(mode: PetMode.normal, skin: PetSkin.fox)),
     );
+    await _finishImageTransition(tester);
     expect(_firstAssetName(tester), 'assets/pets/states/fox_normal.png');
   });
 
@@ -44,7 +55,7 @@ void main() {
     );
     expect(
       _firstAssetName(tester),
-      startsWith('assets/pets/v2/realistic/adult/dog/talk/talk_'),
+      'assets/pets/v2/realistic/adult/dog/rest/rest_01.png',
     );
 
     await tester.pumpWidget(
@@ -54,6 +65,7 @@ void main() {
         visualStyle: PetVisualStyle.realistic,
       )),
     );
+    await _finishImageTransition(tester);
     expect(
       _firstAssetName(tester),
       'assets/pets/v2/realistic/adult/dog/rest/rest_01.png',
@@ -66,6 +78,7 @@ void main() {
         visualStyle: PetVisualStyle.realistic,
       )),
     );
+    await _finishImageTransition(tester);
     expect(
       _firstAssetName(tester),
       'assets/pets/v2/realistic/adult/dog/states/happy.png',
@@ -78,6 +91,7 @@ void main() {
         visualStyle: PetVisualStyle.realistic,
       )),
     );
+    await _finishImageTransition(tester);
     expect(
       _firstAssetName(tester),
       'assets/pets/v2/realistic/adult/dog/states/excited.png',
@@ -90,26 +104,52 @@ void main() {
         visualStyle: PetVisualStyle.realistic,
       )),
     );
+    await _finishImageTransition(tester);
     expect(
       _firstAssetName(tester),
       'assets/pets/v2/realistic/adult/dog/listening/listening.png',
     );
   });
 
-  testWidgets('guineaPig talking 只有 3 frame，連續動畫超過 3 張不會 crash',
-      (tester) async {
+  testWidgets('talking 使用固定角色主圖，不再輪播全身 frame', (tester) async {
     await tester.pumpWidget(
       wrap(const PetAvatar(mode: PetMode.talking, skin: PetSkin.guineaPig)),
     );
-    // 推進超過 3 個 talk frame 週期（CR-0093 放慢後）。
+    final initialAsset = _firstAssetName(tester);
+    expect(initialAsset, 'assets/pets/rest/guinea_pig_rest_01.png');
+
     for (var i = 0; i < 6; i++) {
       await tester.pump(kTalkFrameDuration);
+      expect(_firstAssetName(tester), initialAsset);
     }
     expect(tester.takeException(), isNull);
-    expect(
-      _firstAssetName(tester),
-      startsWith('assets/pets/talk/guinea_pig_talk_'),
-    );
+  });
+
+  for (final skin in PetSkin.values) {
+    testWidgets('${skin.storageId} talking 全程不讀取 full-body talk frame',
+        (tester) async {
+      await tester.pumpWidget(
+        wrap(PetAvatar(mode: PetMode.talking, skin: skin)),
+      );
+      final initialAsset = _firstAssetName(tester);
+
+      expect(initialAsset, contains('/rest/'));
+      expect(initialAsset, isNot(contains('/talk/')));
+      await tester.pump(kPetTalkingMotionDuration * 2);
+      expect(_firstAssetName(tester), initialAsset);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('talking 保持同一張圖，但有連續說話律動', (tester) async {
+    await tester.pumpWidget(wrap(const PetAvatar(mode: PetMode.talking)));
+    final initialAsset = _firstAssetName(tester);
+    final initialY = _motionY(tester);
+
+    await tester.pump(kPetTalkingMotionDuration ~/ 4);
+
+    expect(_firstAssetName(tester), initialAsset);
+    expect(_motionY(tester), isNot(equals(initialY)));
   });
 
   testWidgets('listening 依 skin 取對應圖', (tester) async {
@@ -119,24 +159,16 @@ void main() {
     expect(_firstAssetName(tester), 'assets/pets/listening/fox_listening.png');
   });
 
-  testWidgets('CR-0093 rest 動畫 ping-pong 播放、停在 rest frame、不 crash',
-      (tester) async {
+  testWidgets('rest 使用固定主圖搭配呼吸律動，不切換睡眠姿勢', (tester) async {
     await tester.pumpWidget(
       wrap(const PetAvatar(mode: PetMode.rest, skin: PetSkin.dog)),
     );
-    // 起始為第一張 rest frame。
-    expect(
-      _firstAssetName(tester),
-      'assets/pets/v2/realistic/adult/dog/rest/rest_01.png',
-    );
-    // 推進多個 rest frame 週期，全程不 crash、且都還在 rest frames 內。
+    final initialAsset = _firstAssetName(tester);
+    expect(initialAsset, 'assets/pets/v2/realistic/adult/dog/rest/rest_01.png');
     for (var i = 0; i < 8; i++) {
       await tester.pump(kRestFrameDuration);
       expect(tester.takeException(), isNull);
-      expect(
-        _firstAssetName(tester),
-        startsWith('assets/pets/v2/realistic/adult/dog/rest/rest_'),
-      );
+      expect(_firstAssetName(tester), initialAsset);
     }
   });
 

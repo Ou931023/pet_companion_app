@@ -1,4 +1,4 @@
-import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -21,9 +21,20 @@ int pingPongFrameIndex(int counter, int frameCount) {
   return pos < frameCount ? pos : period - pos;
 }
 
-/// CR-0093：動畫節奏放慢，讓待機與說話看起來更柔和（原本固定 220ms）。
+/// 舊版 full-frame 動畫的測試相容常數。
+///
+/// CR-0100F 起，正式 renderer 不再依這兩個間隔切換整張角色圖，避免臉型、
+/// 身形與腳底基準線在說話時閃爍。角色改由固定主圖搭配連續 motion 動畫。
+@Deprecated('PetAvatar now uses continuous motion instead of full-frame swaps.')
 const Duration kTalkFrameDuration = Duration(milliseconds: 320);
+@Deprecated('PetAvatar now uses continuous motion instead of full-frame swaps.')
 const Duration kRestFrameDuration = Duration(milliseconds: 480);
+
+const Duration kPetImageTransitionDuration = Duration(milliseconds: 220);
+const Duration kPetTalkingMotionDuration = Duration(milliseconds: 720);
+const Duration kPetListeningMotionDuration = Duration(milliseconds: 1200);
+const Duration kPetExcitedMotionDuration = Duration(milliseconds: 820);
+const Duration kPetBreathingMotionDuration = Duration(milliseconds: 2400);
 
 class PetAvatar extends StatefulWidget {
   const PetAvatar({
@@ -45,62 +56,58 @@ class PetAvatar extends StatefulWidget {
   State<PetAvatar> createState() => _PetAvatarState();
 }
 
-class _PetAvatarState extends State<PetAvatar> {
-  int _frameIndex = 0;
-  Timer? _timer;
+class _PetAvatarState extends State<PetAvatar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _motionController;
 
   @override
   void initState() {
     super.initState();
-    _setupAnimationTimer();
+    _motionController = AnimationController(vsync: this);
+    _configureMotion(restart: true);
   }
 
   @override
   void didUpdateWidget(covariant PetAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 換外觀或換狀態都要從第一張重新播，避免沿用上一隻寵物的 frame index。
     if (widget.mode != oldWidget.mode ||
         widget.skin != oldWidget.skin ||
         widget.visualStyle != oldWidget.visualStyle ||
         widget.growthStage != oldWidget.growthStage) {
-      _frameIndex = 0;
-      _setupAnimationTimer();
+      _configureMotion(restart: true);
     }
   }
 
-  void _setupAnimationTimer() {
-    _timer?.cancel();
-    // CR-0093：talk / rest 動畫放慢；其餘狀態為單張靜態圖、不需計時器。
-    final Duration? frameDuration = switch (widget.mode) {
-      PetMode.talking => kTalkFrameDuration,
-      PetMode.rest => kRestFrameDuration,
-      _ => null,
+  void _configureMotion({required bool restart}) {
+    _motionController.duration = switch (widget.mode) {
+      PetMode.talking => kPetTalkingMotionDuration,
+      PetMode.listening => kPetListeningMotionDuration,
+      PetMode.happy ||
+      PetMode.smile ||
+      PetMode.excited =>
+        kPetExcitedMotionDuration,
+      _ => kPetBreathingMotionDuration,
     };
-    if (frameDuration == null) return;
-    _timer = Timer.periodic(frameDuration, (_) {
-      if (!mounted) return;
-      setState(() => _frameIndex++);
-    });
+    if (restart) _motionController.value = 0;
+    _motionController.repeat(reverse: true);
   }
 
   String _imagePath() {
     if (widget.mode == PetMode.talking) {
-      final frames = AssetPaths.talkingFramesForStyle(
+      // 說話時固定角色主圖，只做連續律動。舊版輪播不同全身姿勢會造成
+      // 臉型、四肢與比例閃動，對長者尤其干擾。
+      return AssetPaths.skinRestPrimaryForStyle(
         widget.skin,
         visualStyle: widget.visualStyle,
         growthStage: widget.growthStage,
       );
-      // 用取餘數，guineaPig 只有 3 張也能安全循環，不會越界。
-      return frames[_frameIndex % frames.length];
     }
     if (widget.mode == PetMode.rest) {
-      final frames = AssetPaths.restFramesForStyle(
+      return AssetPaths.skinRestPrimaryForStyle(
         widget.skin,
         visualStyle: widget.visualStyle,
         growthStage: widget.growthStage,
       );
-      // CR-0093：ping-pong 來回播放（不讓最後一張直接跳回第一張）。
-      return frames[pingPongFrameIndex(_frameIndex, frames.length)];
     }
     if (widget.mode == PetMode.listening) {
       return AssetPaths.listeningForStyle(
@@ -119,60 +126,119 @@ class _PetAvatarState extends State<PetAvatar> {
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _motionController.dispose();
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final path = _imagePath();
+  ({double scale, double translateY, double rotation}) _motionAt(
+    double rawValue,
+  ) {
+    final value = Curves.easeInOut.transform(rawValue);
+    final wave = math.sin(value * math.pi);
+    return switch (widget.mode) {
+      PetMode.talking => (
+          scale: 1 + (wave * 0.018),
+          translateY: -widget.size * wave * 0.012,
+          rotation: math.sin(value * math.pi * 2) * 0.004,
+        ),
+      PetMode.listening => (
+          scale: 1 + (wave * 0.008),
+          translateY: -widget.size * wave * 0.004,
+          rotation: (value - 0.5) * 0.024,
+        ),
+      PetMode.happy || PetMode.smile || PetMode.excited => (
+          scale: 1 + (wave * 0.014),
+          translateY: -widget.size * wave * 0.018,
+          rotation: math.sin(value * math.pi * 2) * 0.006,
+        ),
+      _ => (
+          scale: 1 + (wave * 0.010),
+          translateY: widget.size * wave * 0.006,
+          rotation: 0,
+        ),
+    };
+  }
+
+  Widget _buildImage(String path) {
     return Image.asset(
       path,
+      key: ValueKey('pet-avatar-image-$path'),
       width: widget.size,
       height: widget.size,
       fit: BoxFit.contain,
       filterQuality: FilterQuality.high,
       gaplessPlayback: true,
       errorBuilder: (_, __, ___) {
-        // 第一層 fallback：維持該寵物目前風格的 rest_01。
+        final styleFallback = AssetPaths.skinRestPrimaryForStyle(
+          widget.skin,
+          visualStyle: widget.visualStyle,
+          growthStage: widget.growthStage,
+        );
         return Image.asset(
-          AssetPaths.skinRestPrimaryForStyle(
-            widget.skin,
-            visualStyle: widget.visualStyle,
-            growthStage: widget.growthStage,
-          ),
+          path == styleFallback ? AssetPaths.defaultRestImage : styleFallback,
           width: widget.size,
           height: widget.size,
           fit: BoxFit.contain,
           filterQuality: FilterQuality.high,
           gaplessPlayback: true,
-          errorBuilder: (_, __, ___) {
-            // 第二層 fallback：永遠存在的狗狗 rest_01。
-            return Image.asset(
-              AssetPaths.defaultRestImage,
+          errorBuilder: (_, __, ___) => Image.asset(
+            AssetPaths.defaultRestImage,
+            width: widget.size,
+            height: widget.size,
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => Container(
               width: widget.size,
               height: widget.size,
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) {
-                // 真的全缺時才顯示白話提示（不顯示任何 asset path）。
-                return Container(
-                  width: widget.size,
-                  height: widget.size,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade200,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Text(
-                    '寵物圖片載入中',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                  ),
-                );
-              },
-            );
-          },
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Text(
+                '寵物圖片載入中',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
         );
       },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final path = _imagePath();
+    return RepaintBoundary(
+      child: SizedBox.square(
+        dimension: widget.size,
+        child: AnimatedBuilder(
+          animation: _motionController,
+          builder: (context, child) {
+            final motion = _motionAt(_motionController.value);
+            return Transform.translate(
+              key: const ValueKey('pet-avatar-motion'),
+              offset: Offset(0, motion.translateY),
+              child: Transform.rotate(
+                angle: motion.rotation,
+                child: Transform.scale(scale: motion.scale, child: child),
+              ),
+            );
+          },
+          child: AnimatedSwitcher(
+            duration: kPetImageTransitionDuration,
+            switchInCurve: Curves.easeOut,
+            switchOutCurve: Curves.easeIn,
+            layoutBuilder: (currentChild, previousChildren) => Stack(
+              alignment: Alignment.center,
+              children: [
+                ...previousChildren,
+                if (currentChild != null) currentChild
+              ],
+            ),
+            child: _buildImage(path),
+          ),
+        ),
+      ),
     );
   }
 }
