@@ -58,15 +58,17 @@ void main() {
     expect(launched?.path, '0912345678');
   });
 
-  test('play_music：已知類型直接開 YouTube 影片播放（watch），不是搜尋頁', () async {
-    final cases = <String, String>{
-      '台語老歌 放鬆': 'aRrXwHP0v4A',
-      '懷舊老歌': 'aRrXwHP0v4A',
-      '白噪音': '-ERFwSSqg1Y',
-      '放鬆音樂': 'Qes9vypXOlE',
-      '輕音樂': 'Qes9vypXOlE',
-    };
-    for (final entry in cases.entries) {
+  test('play_music：歌名與歌手不被類型關鍵字替換成固定影片', () async {
+    const cases = [
+      '江蕙 台語老歌',
+      '鄧麗君 望春風',
+      '雨夜花',
+      '周杰倫 放鬆歌單',
+      '白噪音',
+      '輕音樂',
+      'Simon & Garfunkel',
+    ];
+    for (final query in cases) {
       Uri? launched;
       final service = NativeToolExecutorService(
         launch: (uri, mode) async {
@@ -76,18 +78,18 @@ void main() {
         },
       );
       final result = await service.execute(
-        intent: _intent('play_music', arguments: {'query': entry.key}),
+        intent: _intent('play_music', arguments: {'query': query}),
         reminderController: _FakeReminderController(),
         searchService: SearchService(),
         navigationController: AppNavigationController(),
         memoryController: _memoryController(),
       );
       expect(result.success, isTrue, reason: result.message);
-      expect(result.message, contains('播放'), reason: '「${entry.key}」應回播放訊息');
+      expect(result.message, contains('搜尋'));
+      expect(result.message, isNot(contains('播放音樂了')));
       expect(launched?.host, 'www.youtube.com');
-      expect(launched?.path, '/watch', reason: '「${entry.key}」應開 watch 播放頁');
-      expect(launched?.queryParameters['v'], entry.value,
-          reason: '「${entry.key}」應對應到精選影片 ${entry.value}');
+      expect(launched?.path, '/results');
+      expect(launched?.queryParameters['search_query'], query);
     }
   });
 

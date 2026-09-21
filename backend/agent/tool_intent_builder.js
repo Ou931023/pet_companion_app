@@ -3,9 +3,14 @@
 // 偵測順序：高影響 / 語義明確的意圖先判，避免被廣義規則（如 navigate / save_memory）吃掉。
 // 每個意圖回傳 { toolName, arguments, userFacingMessage }；高影響操作的最終確認文字
 // 由 tool_policy 的 defaultUserFacingMessage 統一把關（這裡給的是友善起手語）。
+const { buildShopIntent } = require("./virtual_shop_intent");
+
 function buildIntentDraft({ userText = "", petName = "陪伴寶" } = {}) {
   const text = userText.toString().trim();
   if (!text) return null;
+
+  const shop = buildShopIntent(text);
+  if (shop.handled) return shop.intent;
 
   // 1) 登出（高影響：改變身分狀態）
   if (/登出|登出帳號|我要登出|幫我登出|幫我登出帳號/.test(text)) {
@@ -86,7 +91,7 @@ function buildIntentDraft({ userText = "", petName = "陪伴寶" } = {}) {
     return {
       toolName: "play_music",
       arguments: { query: extractMusicQuery(text) },
-      userFacingMessage: "好的，幫你播放音樂。",
+      userFacingMessage: "我幫你找這首歌或歌手。",
     };
   }
 
@@ -165,7 +170,12 @@ function normalizeIntentText(text) {
 }
 
 function isMusicRequest(text) {
-  return MUSIC_REQUEST_RE.test(text || "");
+  if (/不要|不想|毋愛|免播|別播|別放|記住|記得|喜歡/.test(text)) return false;
+  if (/故事|新聞|笑話|講古|聽你|聽我|說話|講話|聽說/.test(text)) return false;
+  if (/^(?:請|麻煩)?(?:幫我|替我)?(?:在\s*YouTube\s*)?(?:搜尋|搜索|找|查找)/i.test(text) &&
+      /YouTube|歌手|歌曲|的歌|周杰倫|江蕙|鄧麗君|費玉清|蔡琴|五月天|鳳飛飛|望春風|雨夜花|月亮代表我的心/i.test(text)) return true;
+  return MUSIC_REQUEST_RE.test(text || "") ||
+    /^(?:請|麻煩)?(?:幫我|替我|我想|我欲|我愛)?\s*(?:播放|播|放|想聽|欲聽|聽|予我聽|給我聽)\s*\S+/.test(text);
 }
 
 function isBroadMusicRequest(text) {
@@ -195,15 +205,14 @@ function isBroadNewsRequest(text) {
 }
 
 function extractMusicQuery(text) {
-  if (/台語老歌|台語歌|台語/.test(text)) return "台語老歌 放鬆";
-  if (/老歌/.test(text)) return "懷舊老歌";
-  if (/放鬆/.test(text)) return "放鬆音樂";
-  if (/白噪音/.test(text)) return "白噪音";
-  return (
-    text
-      .replace(/幫我|播放|播|放|聽|音樂|歌曲|我想|我欲|想聽|欲聽|予我|給我/g, "")
-      .trim() || "放鬆音樂"
-  );
+  // Strip command boundaries only: words such as 聽/放 can belong to a song title.
+  return text
+    .split(/[，。；;\n]/, 1)[0]
+    .replace(/^(?:請|麻煩)?(?:幫我|替我)?(?:在\s*YouTube\s*)?(?:搜尋|搜索|找|查找)\s*(?:歌手\s*)?/i, "")
+    .replace(/^(?:請|麻煩)?(?:幫我|替我|我想|我欲|我愛)?\s*(?:播放|想聽|欲聽|予我聽|給我聽|播|放|聽)\s*/, "")
+    .replace(/(?:予我聽|給我聽|來聽)(?:一下)?[吧啦喔。！!？?]*$/, "")
+    .replace(/[。！!？?]+$/, "")
+    .trim();
 }
 
 const CONTACT_NAMES = [

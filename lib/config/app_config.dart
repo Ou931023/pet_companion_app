@@ -93,6 +93,18 @@ class AppConfig {
     defaultValue: true,
   );
 
+  /// 是否顯示寵物用品商城分頁。
+  ///
+  /// 這個分頁使用 App 內取得的金幣照顧寵物，不涉及真實金流，正式版預設
+  /// 顯示。它和下方的「長照用品訂單」是不同能力，不能因為真實交易尚未
+  /// 開放而一起隱藏。
+  static const bool showPetShop = bool.fromEnvironment(
+    'SHOW_PET_SHOP',
+    defaultValue: true,
+  );
+
+  static bool get petShopVisible => showPetShop;
+
   /// 是否顯示「照護用品商城」入口（marketplace）的原始開關。
   ///
   /// CR-0056（裁決 A2）：marketplace 能力保留，但正式版**完全隱藏入口**，
@@ -100,7 +112,8 @@ class AppConfig {
   /// dev / test 預設可見；如需在開發時隱藏可用
   /// `--dart-define=SHOW_MARKETPLACE=false`。
   /// 能力與路由（[AppRoute.marketplace]）不刪，僅隱藏入口。
-  /// 實際是否顯示請用 [marketplaceVisible]（production 一律隱藏）。
+  /// 實際是否顯示請用 [marketplaceVisible]（production 一律隱藏）。寵物用品
+  /// 商城分頁請改用 [petShopVisible]，避免兩種不同交易能力再次互相牽連。
   static const bool showMarketplace = bool.fromEnvironment(
     'SHOW_MARKETPLACE',
     defaultValue: true,

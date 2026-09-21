@@ -141,6 +141,37 @@ Widget _wrap(
 }
 
 void main() {
+  testWidgets('task editor prefills content and rejects blank title',
+      (tester) async {
+    final controller = DailyCareTaskController(
+      apiService: _FakeApi(tasks: [_task('t1', '喝水')]),
+    );
+    await tester.pumpWidget(_wrap(controller));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('修改喝水的內容與時間'));
+    await tester.pumpAndSettle();
+    expect(find.text('修改今日任務'), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, '喝水'), findsOneWidget);
+    await tester.enterText(find.byType(TextFormField).first, ' ');
+    await tester.ensureVisible(find.text('儲存任務'));
+    await tester.tap(find.text('儲存任務'));
+    await tester.pumpAndSettle();
+    expect(find.text('請填寫任務內容。'), findsOneWidget);
+    expect(controller.tasks.first.title, '喝水');
+  });
+
+  testWidgets('completed task cannot open editor', (tester) async {
+    final controller = DailyCareTaskController(
+      apiService: _FakeApi(
+          tasks: [_task('t1', '喝水', status: DailyCareTaskStatus.completed)]),
+    );
+    await tester.pumpWidget(_wrap(controller));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('修改喝水的內容與時間'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(find.text('修改今日任務'), findsNothing);
+  });
+
   setUp(() {
     SharedPreferences.setMockInitialValues({});
   });

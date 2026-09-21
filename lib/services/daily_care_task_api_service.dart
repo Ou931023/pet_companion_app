@@ -10,8 +10,10 @@ import 'care_alert_notification_service.dart' show AuthTokenProvider;
 
 /// 日常照護任務 API 呼叫失敗時丟出的應用層例外（訊息已是白話，可直接顯示）。
 class DailyCareTaskApiException implements Exception {
-  const DailyCareTaskApiException(this.friendlyMessage);
+  const DailyCareTaskApiException(this.friendlyMessage,
+      {this.requiresRefresh = false});
   final String friendlyMessage;
+  final bool requiresRefresh;
   @override
   String toString() => 'DailyCareTaskApiException($friendlyMessage)';
 }
@@ -111,6 +113,50 @@ class DailyCareTaskApiService {
       );
     } catch (error) {
       throw _friendly(error, '照片上傳沒成功，待會再試一次好嗎？');
+    }
+  }
+
+  Future<DailyCareTask> updateTask({
+    required String taskId,
+    required String title,
+    required String description,
+    required String scheduledTime,
+  }) async {
+    final uri =
+        Uri.parse('$_base/api/daily-care-tasks/${Uri.encodeComponent(taskId)}');
+    try {
+      final response = await _client
+          .patch(
+            uri,
+            headers: await _headers(json: true),
+            body: jsonEncode({
+              'title': title.trim(),
+              'description': description.trim(),
+              'scheduledTime': scheduledTime,
+            }),
+          )
+          .timeout(_timeout);
+      if (response.statusCode == 409 || response.statusCode == 404) {
+        Object? details;
+        try {
+          details = jsonDecode(response.body);
+        } on FormatException {
+          details = null;
+        }
+        if (details is Map && details['error'] == 'task_schedule_conflict') {
+          throw const DailyCareTaskApiException(
+            '這項任務已有指定日期，時間暫時不能更改。請保留原時間，或請照護人員協助。',
+          );
+        }
+        throw const DailyCareTaskApiException(
+          '這項任務已經有變動，請關閉後重新查看再修改。',
+          requiresRefresh: true,
+        );
+      }
+      final decoded = _decodeOk(response);
+      return DailyCareTask.fromJson(decoded['task'] as Map<String, dynamic>);
+    } catch (error) {
+      throw _friendly(error, '任務還沒儲存成功，請稍後再試一次。');
     }
   }
 

@@ -5,7 +5,7 @@ import '../routes/app_routes.dart';
 
 class AppNavigationController extends ChangeNotifier {
   AppNavigationController({bool? showMarketplace})
-      : _showMarketplace = showMarketplace ?? AppConfig.marketplaceVisible;
+      : _showMarketplace = showMarketplace ?? AppConfig.petShopVisible;
 
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
   final bool _showMarketplace;

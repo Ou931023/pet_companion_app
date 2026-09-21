@@ -698,11 +698,16 @@
     physioBody: document.getElementById("physio-body"),
     psychBody: document.getElementById("psych-body"),
     emotionBody: document.getElementById("emotion-body"),
+    diaryStatus: document.getElementById("mood-diary-status"),
+    diaryEntries: document.getElementById("mood-diary-entries"),
+    diaryRefresh: document.getElementById("mood-diary-refresh"),
     gameBody: document.getElementById("game-body"),
     healthAlertsBody: document.getElementById("health-alerts-body"),
   };
   var healthLoaded = false;
   var activeElderId = null;
+  var residentDetailRevision = 0;
+  var moodDiaryRevision = 0;
 
   // CR-0086 長者狀態分析 view 的元素參照與狀態。
   var elAN = {
@@ -1067,6 +1072,7 @@
 
   // CR-0042：從 localStorage 還原身分狀態。
   function loadAuthState() {
+    resetResidentDetail();
     var mode = (localStorage.getItem(AUTH_MODE_KEY) || "").trim();
     if (mode !== "super_admin" && mode !== "caregiver") {
       // 向後相容：舊版只有 super_admin 共享 token、無 authMode 記錄。
@@ -1121,6 +1127,8 @@
   // CR-0042：收到 401 → 標記 session 失效、提示重新登入、停止後續請求。
   function handleSessionExpired() {
     sessionInvalid = true;
+    resetResidentDetail();
+    if (elH.healthStatus) elH.healthStatus.textContent = SESSION_EXPIRED_MSG;
     showAuthMessage(SESSION_EXPIRED_MSG, true);
     var bar = document.getElementById("auth-bar");
     if (bar && bar.scrollIntoView) {
@@ -2328,6 +2336,7 @@
 
   // GET /api/admin/elders → 長者列表（caregiver-capable，後端依授權住民過濾）。
   function loadElderList() {
+    resetResidentDetail();
     if (
       !ensureCanFetch(function (msg) {
         elH.elderListStatus.textContent = msg;
@@ -2431,6 +2440,9 @@
 
   // GET /api/admin/elders/:elderId → 個人完整分析
   function loadElderAnalysis(elderId) {
+    resetResidentDetail();
+    activeElderId = elderId;
+    var isCurrent = residentDetailGuard();
     elH.elderAnalysis.classList.add("hidden");
     if (sessionInvalid || !hasActiveToken()) {
       elH.healthStatus.textContent = sessionInvalid
@@ -2439,10 +2451,11 @@
       return;
     }
     elH.healthStatus.textContent = "載入中…";
-    fetch(adminUrl("/elders/" + encodeURIComponent(elderId)), {
+    return fetch(adminUrl("/elders/" + encodeURIComponent(elderId)), {
       headers: authHeaders(),
     })
       .then(function (r) {
+        if (!isCurrent()) return null;
         if (r.status === 401) {
           handleSessionExpired();
           throw new Error("session_expired");
@@ -2452,6 +2465,7 @@
         return r.json();
       })
       .then(function (a) {
+        if (!isCurrent() || !a) return;
         elH.healthStatus.textContent = "";
         renderProfile(a.profile || {});
         renderPhysio(a.physio || {});
@@ -2460,8 +2474,10 @@
         renderGame(a.gameMetrics || {});
         renderHealthAlerts(a.careAlerts || []);
         elH.elderAnalysis.classList.remove("hidden");
+        loadMoodDiary(elderId);
       })
       .catch(function (err) {
+        if (!isCurrent()) return;
         if (err && err.message === "session_expired") {
           elH.healthStatus.textContent = SESSION_EXPIRED_MSG;
         } else if (err && err.message === "forbidden") {
@@ -2472,6 +2488,100 @@
             "暫時讀不到這位長者的健康分析，請稍後再試。";
         }
       });
+  }
+
+  // Invalidate pending private content before changing resident or identity.
+  function resetResidentDetail() {
+    residentDetailRevision += 1;
+    moodDiaryRevision += 1;
+    activeElderId = null;
+    if (elH.elderAnalysis) elH.elderAnalysis.classList.add("hidden");
+    if (elH.healthStatus) elH.healthStatus.textContent = "請選擇一位長者，查看完整健康分析。";
+    if (elH.diaryEntries) elH.diaryEntries.innerHTML = "";
+    setMoodDiaryStatus("", false, false);
+  }
+
+  function residentDetailGuard() {
+    var revision = residentDetailRevision;
+    var residentId = activeElderId;
+    var mode = authState.authMode;
+    var credential = getActiveToken();
+    var base = adminUrl("");
+    return function () {
+      return revision === residentDetailRevision && residentId === activeElderId &&
+        mode === authState.authMode && credential === getActiveToken() &&
+        base === adminUrl("") && !sessionInvalid && hasActiveToken();
+    };
+  }
+
+  function setMoodDiaryStatus(message, isError, loading) {
+    if (elH.diaryStatus) {
+      elH.diaryStatus.textContent = message;
+      elH.diaryStatus.classList.toggle("error", !!isError);
+    }
+    if (elH.diaryEntries) {
+      elH.diaryEntries.setAttribute("aria-busy", loading ? "true" : "false");
+    }
+    if (elH.diaryRefresh) elH.diaryRefresh.disabled = !!loading;
+  }
+
+  function renderMoodDiary(entries) {
+    var moodLabels = { happy: "開心", okay: "還好", low: "低落", worried: "擔心" };
+    var shared = entries.filter(function (entry) {
+      return entry && entry.sharedWithCaregiver === true;
+    });
+    elH.diaryEntries.innerHTML = shared.map(function (entry) {
+      var date = new Date(entry.createdAt);
+      var time = entry.createdAt && Number.isFinite(date.getTime())
+        ? formatTime(entry.createdAt) : "日期未提供";
+      return '<li class="mood-diary-entry"><div class="mood-diary-meta"><strong>' +
+        escapeHtml(Object.prototype.hasOwnProperty.call(moodLabels, entry.mood)
+          ? moodLabels[entry.mood] : (entry.mood || "未填寫心情")) + '</strong><span>' +
+        escapeHtml(time) + '</span></div><p class="mood-diary-content">' +
+        escapeHtml(entry.content || "（未填寫文字）") + '</p></li>';
+    }).join("");
+    setMoodDiaryStatus(shared.length ? "" : "目前沒有已分享的心情日記。", false, false);
+  }
+
+  function loadMoodDiary(elderId) {
+    if (!elH.diaryEntries || elderId !== activeElderId || !elderId) return;
+    var request = ++moodDiaryRevision;
+    var isCurrentDetail = residentDetailGuard();
+    function isCurrent() {
+      return request === moodDiaryRevision && isCurrentDetail();
+    }
+    elH.diaryEntries.innerHTML = "";
+    if (!ensureCanFetch(function (msg) { setMoodDiaryStatus(msg, true, false); })) return;
+    if (!isCaregiverMode() && !isSuperAdminMode()) {
+      setMoodDiaryStatus(FORBIDDEN_MSG, true, false);
+      return;
+    }
+    setMoodDiaryStatus("正在讀取心情日記…", false, true);
+    return fetch(adminUrl("/residents/" + encodeURIComponent(elderId) + "/mood-diary"), {
+      headers: authHeaders(),
+      cache: "no-store",
+    }).then(function (response) {
+      if (!isCurrent()) return null;
+      if (response.status === 401) {
+        handleSessionExpired();
+        setMoodDiaryStatus(SESSION_EXPIRED_MSG, true, false);
+        return null;
+      }
+      if (response.status === 403) throw new Error("forbidden");
+      if (!response.ok) throw new Error("diary_unavailable");
+      return response.json();
+    }).then(function (body) {
+      if (!isCurrent()) return;
+      if (!body || body.success !== true || !Array.isArray(body.entries)) {
+        throw new Error("diary_unavailable");
+      }
+      renderMoodDiary(body.entries);
+    }).catch(function (err) {
+      if (!isCurrent()) return;
+      elH.diaryEntries.innerHTML = "";
+      setMoodDiaryStatus(err && err.message === "forbidden" ? FORBIDDEN_MSG :
+        "暫時無法讀取心情日記，請稍後重新整理。", true, false);
+    });
   }
 
   // CR-0030：資料真實性標籤。reference=示範參考、measured=真實紀錄、其餘不顯示。
@@ -4934,6 +5044,11 @@
       loadHealthOverview();
       loadElderList();
     });
+    if (elH.diaryRefresh) {
+      elH.diaryRefresh.addEventListener("click", function () {
+        loadMoodDiary(activeElderId);
+      });
+    }
 
     // CR-0086 長者狀態分析分頁。
     if (elAN.tab) {

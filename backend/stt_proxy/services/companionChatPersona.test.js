@@ -4,7 +4,10 @@ const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
 process.env.NODE_ENV = "test";
-// require server 會載入 .env；此測試只驗證 prompt 字串組裝，完全不打 OpenAI。
+// Block legacy dotenv loading before requiring server; this test must never read
+// workstation credentials and only verifies prompt assembly.
+require("dotenv").config = () => ({ parsed: {} });
+// 此測試只驗證 prompt 字串組裝，完全不打 OpenAI。
 // 使用 dummy key 只讓 OpenAI client 初始化；本測試只驗證 prompt 字串，不做外呼。
 process.env.OPENAI_API_KEY = "test-key-for-prompt-unit-test";
 delete process.env.TELEGRAM_BOT_TOKEN;
@@ -236,15 +239,15 @@ test("CR-0090 語音 persona：陪伴優先 + 抗重複 + 工具表只在明確�
   );
 });
 
-test("CR-0101 語音 persona：工具確認短，陪伴聊天可自然延展且不假裝完成", () => {
+test("CR-0108 語音 persona：一般陪伴短句即停，且工具不假裝完成", () => {
   const voice = buildRealtimeInstructions("小白", [], "", "", {});
   assert.ok(
-    voice.includes("工具確認可以短，陪伴聊天可以 1~3 句"),
-    "語音 persona 不應把所有陪伴都硬壓成一句",
+    voice.includes("一般語音回覆控制在 1–3 句，預設一兩個短句就停"),
+    "一般陪伴應在回答後停下，避免寵物繼續自言自語",
   );
   assert.ok(
-    voice.includes("每次最多自然問一個問題；不要盤問"),
-    "允許自然追問，但不可盤問",
+    voice.includes("整段最多一個問題") && voice.includes("不例行追問"),
+    "只在有需要時追問，而且每輪最多一題",
   );
   assert.ok(
     voice.includes("【真正陪伴 / 降低孤單】"),

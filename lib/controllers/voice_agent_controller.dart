@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../config/app_config.dart';
+import '../models/agent_tool_execution_result.dart';
+import '../models/agent_tool_intent.dart';
 import '../models/care_alert.dart';
 import '../models/companion_analysis_result.dart';
 import '../models/conversation_turn.dart';
@@ -104,6 +106,8 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   int _responsePairingSequence = 0;
   int _finalTranscriptRoutesInFlight = 0;
   String _latestCompanionTurnId = '';
+  int _voiceInputGeneration = 0;
+  final Set<String> _routedVoiceToolTurns = {};
   // CR-0089：字幕 / talk 狀態保留到「語音真的播完」才收。
   // _currentTurnHadAudio：本輪是否有播語音（assistantAudioStart 設）。
   // _awaitingAudioStop：response.done 已到、正在等 assistantAudioPlaybackStopped。
@@ -222,9 +226,24 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     if (_state == VoiceAgentState.idle &&
         !_isConnecting &&
         realtimeVoiceService.isConnectionUsable) {
-      realtimeVoiceService.resumeMicInput();
-      await realtimeVoiceService.startListening();
-      _transition(VoiceAgentState.listening, 'turn_based_next_turn');
+      final generation = _invalidateVoiceToolSpeech();
+      _isConnecting = true;
+      _currentLanguageRoute = _realtimeStartRoute();
+      try {
+        await realtimeVoiceService
+            .updateCompanionContext(_companionContextPrompt());
+        if (generation != _voiceInputGeneration || !_userRequestedRealtime) {
+          return;
+        }
+        realtimeVoiceService.resumeMicInput();
+        await realtimeVoiceService.startListening();
+        if (generation != _voiceInputGeneration || !_userRequestedRealtime) {
+          return;
+        }
+        _transition(VoiceAgentState.listening, 'turn_based_next_turn');
+      } finally {
+        if (generation == _voiceInputGeneration) _isConnecting = false;
+      }
       return;
     }
     if (_isConnecting || realtimeVoiceService.isConnecting) {
@@ -241,6 +260,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     final attemptId = ++_connectionAttemptId;
+    _invalidateVoiceToolSpeech();
     _isConnecting = true;
     _reconnectAttempts = 0;
     _lastError = '';
@@ -327,6 +347,14 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     }
     final transcript = decision.transcript;
     final turnId = decision.turnId;
+    final generation = _invalidateVoiceToolSpeech();
+    _currentLanguageRoute = _withVoiceLanguagePreference(
+      languageRoutingService.previewRouteFromText(
+        mode: profileController.voiceLanguageMode,
+        manualStrategyName: profileController.manualAsrStrategy,
+        text: transcript,
+      ),
+    );
     _cancelTurnTimeouts();
 
     // 與語音 final transcript 一致：顯示使用者氣泡、記錄 user turn，
@@ -367,12 +395,18 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     _startTimeout(RealtimeTimeoutType.responseTimeout, turnId: turnId);
     unawaited(_analyzeCompanionTranscript(transcript, turnId));
 
+    await realtimeVoiceService
+        .updateCompanionContext(_companionContextPrompt());
+    if (generation != _voiceInputGeneration || !_userRequestedRealtime) {
+      return true;
+    }
     await realtimeVoiceService.sendUserText(transcript);
     notifyListeners();
     return true;
   }
 
   Future<void> stopRealtimeConversation() async {
+    _invalidateVoiceToolSpeech();
     _userRequestedRealtime = false;
     _isConnecting = false;
     _reconnectAttempts = 0;
@@ -756,11 +790,12 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     _finalTranscriptRoutesInFlight += 1;
     late final LanguageRouteResult route;
     try {
-      route = await languageRoutingService.routeTranscript(
+      route = _withVoiceLanguagePreference(
+          await languageRoutingService.routeTranscript(
         mode: profileController.voiceLanguageMode,
         manualStrategyName: profileController.manualAsrStrategy,
         realtimeTranscript: normalizedRealtimeTranscript,
-      );
+      ));
     } finally {
       _finalTranscriptRoutesInFlight -= 1;
     }
@@ -935,15 +970,17 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   LanguageRouteResult _realtimeStartRoute() {
-    if (profileController.voiceLanguageMode ==
-        VoiceLanguageMode.taigiRealtime) {
-      return const LanguageRouteResult(
+    if (_prefersTaigiReply) {
+      return LanguageRouteResult(
         strategyName: 'openai-realtime',
         languageHint: TranscriptLanguageHint.taigi,
-        routeReason: 'taigi_realtime_mode',
+        routeReason: profileController.voiceLanguageMode ==
+                VoiceLanguageMode.taigiRealtime
+            ? 'taigi_realtime_mode'
+            : 'taigi_manual_mode',
         isFallback: false,
         transcript: '',
-        replyLanguage: ReplyLanguage.mixedZhTaigi,
+        replyLanguage: ReplyLanguage.taigi,
       );
     }
     return const LanguageRouteResult(
@@ -956,7 +993,44 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     );
   }
 
+  bool get _prefersTaigiReply =>
+      profileController.voiceLanguageMode == VoiceLanguageMode.taigiRealtime ||
+      profileController.voiceLanguageMode == VoiceLanguageMode.taigiPreferred ||
+      (profileController.voiceLanguageMode ==
+              VoiceLanguageMode.manualOverride &&
+          profileController.manualAsrStrategy.toLowerCase().contains('taigi'));
+
+  LanguageRouteResult _withVoiceLanguagePreference(LanguageRouteResult route) {
+    if (!_prefersTaigiReply) return route;
+    return LanguageRouteResult(
+      strategyName: route.strategyName,
+      languageHint: route.languageHint,
+      routeReason: route.routeReason,
+      isFallback: route.isFallback,
+      transcript: route.transcript,
+      replyLanguage: ReplyLanguage.taigi,
+    );
+  }
+
+  int _invalidateVoiceToolSpeech() {
+    _routedVoiceToolTurns.clear();
+    realtimeVoiceService.invalidateToolOutcomes();
+    return ++_voiceInputGeneration;
+  }
+
+  void _speakToolOutcomeForInput(
+      String line, int generation, String outcomeId) {
+    if (generation != _voiceInputGeneration ||
+        !_userRequestedRealtime ||
+        !realtimeVoiceService.isConnectionUsable) {
+      return;
+    }
+    unawaited(
+        realtimeVoiceService.speakToolOutcome(line, outcomeId: outcomeId));
+  }
+
   Future<void> _handleLocalRealtimeCommand(String text, String turnId) async {
+    final generation = _voiceInputGeneration;
     try {
       // 本地工具路由（簽到 / 設定 / 找新聞 / 查資訊…）。
       final result = await conversationController.toolRouter.route(text);
@@ -964,7 +1038,8 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       // 聲音把結果念出來，使用者才知道有查到（不再「沒聽懂」）。speakToolOutcome 會等
       // 寵物把當下回覆講完再念，不會與正在播放的回覆撞在一起。
       if (result.shouldSpeak && result.message.trim().isNotEmpty) {
-        unawaited(realtimeVoiceService.speakToolOutcome(result.message.trim()));
+        _speakToolOutcomeForInput(
+            result.message.trim(), generation, '$turnId:local');
       }
     } catch (_) {}
   }
@@ -1098,11 +1173,12 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   }) async {
     final normalized = toTraditional(realtimeTranscript.trim());
     if (normalized.isEmpty) return;
-    final route = await languageRoutingService.routeTranscript(
+    final route = _withVoiceLanguagePreference(
+        await languageRoutingService.routeTranscript(
       mode: profileController.voiceLanguageMode,
       manualStrategyName: profileController.manualAsrStrategy,
       realtimeTranscript: normalized,
-    );
+    ));
     _recordLateUserFinalForCompletedResponse(
       route.transcript,
       pairingTurnId: pairingTurnId,
@@ -1178,19 +1254,19 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   /// - 本地指令路由（簽到 / 設定 / 找新聞 / 查資訊…）→ 需要時用語音念出結果。
   /// 主流程與「寵物回覆中擷取」路徑共用，確保不管何時說指令都會被理解與執行。
   void _routeToolsForTranscript(String transcript, String turnId) {
-    if (_tryHandlePendingToolVoiceDecision(transcript)) {
+    final generation = _voiceInputGeneration;
+    if (!_routedVoiceToolTurns.add(turnId)) return;
+    if (_tryHandlePendingToolVoiceDecision(transcript, turnId)) {
       return;
     }
     if (_isBroadMusicRequest(transcript)) {
-      unawaited(
-        realtimeVoiceService.speakToolOutcome('想聽誰的歌，還是想聽什麼類型呢？'),
-      );
+      _speakToolOutcomeForInput(
+          '想聽誰的歌，還是想聽什麼類型呢？', generation, '$turnId:music-clarification');
       return;
     }
     if (WebSearchService.isBroadNewsRequest(transcript)) {
-      unawaited(
-        realtimeVoiceService.speakToolOutcome('你想聽哪一類新聞呢？像是健康、防詐、地方，還是國際新聞？'),
-      );
+      _speakToolOutcomeForInput('你想聽哪一類新聞呢？像是健康、防詐、地方，還是國際新聞？', generation,
+          '$turnId:news-clarification');
       return;
     }
     // 本地能處理（簽到 / 設定 / 找新聞 / 查資訊…）就走本地，並念出結果；走本地就不再
@@ -1200,7 +1276,11 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     // 其餘（播音樂 / 打電話 / 其他工具）交給後端 agent 路由，完成後用語音念出結果或確認問句。
-    final routing = agentToolController?.routeFromUserText(
+    final tools = agentToolController;
+    if (tools == null || tools.isRouting) return;
+    final previousResult = tools.executionResult;
+    final previousIntent = tools.pendingIntent;
+    final routing = tools.routeFromUserText(
       transcript,
       sessionId: conversationController.activeSessionId,
       turnId: turnId,
@@ -1222,9 +1302,12 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
         };
       }).toList(),
     );
-    if (routing != null) {
-      unawaited(routing.then((_) => _maybeSpeakToolOutcome()));
-    }
+    unawaited(routing.then((_) => _maybeSpeakToolOutcome(
+          generation,
+          turnId: turnId,
+          previousResult: previousResult,
+          previousIntent: previousIntent,
+        )));
   }
 
   static bool _isBroadMusicRequest(String text) {
@@ -1240,7 +1323,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     ).hasMatch(normalized);
   }
 
-  bool _tryHandlePendingToolVoiceDecision(String transcript) {
+  bool _tryHandlePendingToolVoiceDecision(String transcript, String turnId) {
     final controller = agentToolController;
     final pending = controller?.pendingIntent;
     if (controller == null ||
@@ -1251,12 +1334,21 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     final text = transcript.trim();
     if (_isVoiceToolCancel(text)) {
       controller.cancelIntent();
-      unawaited(realtimeVoiceService.speakToolOutcome('好，這個動作先取消。'));
+      _speakToolOutcomeForInput(
+          '好，這個動作先取消。', _voiceInputGeneration, '$turnId:cancel');
       return true;
     }
     if (_isVoiceToolConfirm(text)) {
+      final generation = _voiceInputGeneration;
+      final previousResult = controller.executionResult;
+      final previousIntent = controller.pendingIntent;
       unawaited(
-        controller.confirmAndExecute().then((_) => _maybeSpeakToolOutcome()),
+        controller.confirmAndExecute().then((_) => _maybeSpeakToolOutcome(
+              generation,
+              turnId: turnId,
+              previousResult: previousResult,
+              previousIntent: previousIntent,
+            )),
       );
       return true;
     }
@@ -1342,25 +1434,36 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   /// 生活工具（找新聞 / 播音樂等）在語音模式自動執行後，讓寵物用語音把結果念出來，
   /// 使用者才不會覺得寵物沒聽懂。只處理「已成功執行的低風險工具」；需使用者確認的高影響
   /// 工具仍走確認 UI，不在此自動朗讀。純附加，不影響 Realtime 連線 / SDP / 純語音主流程。
-  void _maybeSpeakToolOutcome() {
+  void _maybeSpeakToolOutcome(
+    int generation, {
+    required String turnId,
+    required AgentToolExecutionResult? previousResult,
+    required AgentToolIntent? previousIntent,
+  }) {
+    if (generation != _voiceInputGeneration || !_userRequestedRealtime) return;
     final controller = agentToolController;
     if (controller == null) return;
     // 1) 低風險工具（找新聞 / 播音樂…）已自動執行 → 用語音念出結果。
     final result = controller.executionResult;
-    if (result != null && result.success) {
+    if (result != null &&
+        result.success &&
+        !identical(result, previousResult)) {
       final line = result.message.trim();
       if (line.isNotEmpty) {
-        unawaited(realtimeVoiceService.speakToolOutcome(line));
+        _speakToolOutcomeForInput(line, generation, '$turnId:agent-result');
       }
       return;
     }
     // 2) 需確認的高影響工具（打電話 / 傳訊息…）不自動執行 → 用語音念出確認問句，
     //    讓寵物有回應；實際動作仍由確認 UI 完成（安全閘門不變）。
     final pending = controller.pendingIntent;
-    if (pending != null && pending.requiresConfirmation) {
+    if (pending != null &&
+        pending.requiresConfirmation &&
+        !identical(pending, previousIntent)) {
       final ask = pending.userFacingMessage.trim();
       if (ask.isNotEmpty) {
-        unawaited(realtimeVoiceService.speakToolOutcome(ask));
+        _speakToolOutcomeForInput(
+            ask, generation, '$turnId:confirm:${pending.id}');
       }
     }
   }
@@ -1582,6 +1685,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     String turnId,
   ) async {
     if (turnId.isNotEmpty && !_isActiveTurn(turnId)) return;
+    _invalidateVoiceToolSpeech();
     _cancelTimeout(RealtimeTimeoutType.responseTimeout);
     _lastError = RealtimeFailureType.responseTimeout.message;
     final fallback = plan.fallbackReply;
@@ -2022,6 +2126,8 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     required String message,
   }) async {
     if (!_userRequestedRealtime) return;
+    _invalidateVoiceToolSpeech();
+    _currentLanguageRoute = _realtimeStartRoute();
     _connectionAttemptId += 1;
     _isConnecting = true;
     _cancelAllTimeouts();
@@ -2050,6 +2156,10 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
         companionContext: _companionContextPrompt(),
         languageHint: _currentLanguageRoute.languageHint.value,
         replyLanguage: _currentLanguageRoute.replyLanguage.value,
+        mode: profileController.voiceLanguageMode ==
+                VoiceLanguageMode.taigiRealtime
+            ? 'taigi_realtime'
+            : '',
       );
       if (attemptId != _connectionAttemptId) {
         AppLog.debug(
@@ -2138,6 +2248,8 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _invalidateVoiceToolSpeech();
+    _userRequestedRealtime = false;
     WidgetsBinding.instance.removeObserver(this);
     _cancelAllTimeouts();
     _timeouts.dispose();

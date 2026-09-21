@@ -1081,6 +1081,40 @@ code {
   flex-direction: column;
   gap: 16px;
 }
+.mood-diary {
+  min-width: 0;
+  padding: 16px 0;
+  border-top: 1px solid var(--border);
+}
+.mood-diary .list-head {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.mood-diary .btn {
+  min-height: 44px;
+  white-space: normal;
+}
+.mood-diary-entries {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mood-diary-entry {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.mood-diary-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: baseline;
+}
+.mood-diary-content {
+  white-space: pre-wrap;
+  line-height: 1.7;
+  margin: 12px 0 0;
+}
 .analysis-title {
   margin: 0 0 12px;
   font-size: 18px;

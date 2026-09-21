@@ -333,6 +333,7 @@ function rowCount(result) {
 }
 
 const ACCOUNT_DATA_TABLES = Object.freeze([
+  "mood_diary_entries",
   "notification_logs",
   "consent_records",
   "resident_caregiver_links",
@@ -398,6 +399,13 @@ async function deleteAccountDataPostgres(firebaseUid, db = postgres) {
     const elderKey = elderId == null ? null : String(elderId);
     const existingTables = await existingAccountDataTables(client);
     const hasTable = (tableName) => existingTables.has(tableName);
+
+    if (hasTable("mood_diary_entries")) {
+      await client.query(
+        `DELETE FROM mood_diary_entries WHERE user_id = $1 OR elder_id = $2`,
+        [userId, elderId],
+      );
+    }
 
     let careAlerts = 0;
     if (elderId != null) {

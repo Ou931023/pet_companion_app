@@ -288,40 +288,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               if (_settingsCategory == 2) ...[
                 const SizedBox(height: 14),
                 _SettingsSection(
-                  title: '喜歡聽的內容',
-                  child: Column(
-                    children: [
-                      _PreferenceTile(
-                        value: 'story',
-                        title: '喜歡聽故事',
-                        profile: profile,
-                      ),
-                      _PreferenceTile(
-                        value: 'news',
-                        title: '喜歡聽新聞',
-                        profile: profile,
-                      ),
-                      _PreferenceTile(
-                        value: 'healthTip',
-                        title: '喜歡健康提醒',
-                        profile: profile,
-                      ),
-                      _PreferenceTile(
-                        value: 'lifeTip',
-                        title: '喜歡生活小知識',
-                        profile: profile,
-                      ),
-                      _PreferenceTile(
-                        value: 'spiritual',
-                        title: '喜歡心靈鼓勵',
-                        profile: profile,
-                      ),
-                      _PreferenceTile(
-                        value: 'nostalgicStory',
-                        title: '喜歡懷舊話題',
-                        profile: profile,
-                      ),
-                    ],
+                  title: '心情小日記',
+                  child: FilledButton.icon(
+                    onPressed: () =>
+                        Navigator.of(context).pushNamed(AppRoute.moodDiary),
+                    icon: const Icon(Icons.book_outlined),
+                    label: const Text('心情小日記'),
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -358,20 +330,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             Navigator.of(context).pushNamed(AppRoute.reminders),
                         icon: const Icon(Icons.alarm),
                         label: const Text('管理提醒'),
-                      ),
-                      const SizedBox(height: 10),
-                      OutlinedButton.icon(
-                        onPressed: () =>
-                            Navigator.of(context).pushNamed(AppRoute.memories),
-                        icon: const Icon(Icons.psychology_alt_outlined),
-                        label: const Text('管理長期記憶'),
-                      ),
-                      const SizedBox(height: 10),
-                      OutlinedButton.icon(
-                        onPressed: () => Navigator.of(context)
-                            .pushNamed(AppRoute.careAlerts),
-                        icon: const Icon(Icons.favorite_outline),
-                        label: const Text('今日關心紀錄'),
                       ),
                     ],
                   ),
@@ -493,6 +451,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      OutlinedButton.icon(
+                        onPressed: () =>
+                            Navigator.of(context).pushNamed(AppRoute.memories),
+                        icon: const Icon(Icons.psychology_alt_outlined),
+                        label: const Text('管理長期記憶'),
+                      ),
+                      const SizedBox(height: 12),
                       const Text(
                         '想再看一次我們怎麼保護你的資料、以及使用規則嗎？可以從這裡隨時查看。',
                         style: TextStyle(fontSize: 16, height: 1.4),
@@ -1111,29 +1076,6 @@ class _DiagnosticLine extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(fontWeight: FontWeight.w700),
       ),
-    );
-  }
-}
-
-class _PreferenceTile extends StatelessWidget {
-  const _PreferenceTile({
-    required this.value,
-    required this.title,
-    required this.profile,
-  });
-
-  final String value;
-  final String title;
-  final ProfileController profile;
-
-  @override
-  Widget build(BuildContext context) {
-    return CheckboxListTile(
-      contentPadding: EdgeInsets.zero,
-      value: profile.contentPreferences.contains(value),
-      title: Text(title),
-      onChanged: (checked) =>
-          profile.setContentPreference(value, checked ?? false),
     );
   }
 }

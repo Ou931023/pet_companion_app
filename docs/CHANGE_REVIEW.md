@@ -60,6 +60,69 @@
 
 ## 提案紀錄（Change Requests）
 
+### CR-0108：精簡陪伴、台語持續、音樂路由、語音購物、心情日記與任務編輯
+
+- 提出 / 核准 agent：`architecture-agent`。
+- 日期：2026-09-21。
+- 依據：使用者明確要求跨邊界修正；已閱讀 `AGENTS.md`、`PROJECT_ARCHITECTURE.md`、`docs/TEAM_AGENTS.md`。本輪僅修改本紀錄，未做業務程式審查或實作，未讀取 `.env` / secrets。
+- 風險：**high**（日記隱私、購買副作用、住民授權）；回覆與導覽為 medium。
+- 裁決：**Approve with constraints：核准以下範圍與 owner 分批實作，不代表完成驗收或准予發布。** 非受保護且不改契約的修正可先做；涉及 Realtime 核心、API 路由 / request / response、DB schema 的批次，須先由 architecture-agent 更新 `PROJECT_ARCHITECTURE.md` 並記錄精確契約核准才可動工。本輪「只改本檔」不豁免該前置門檻。
+- 完成狀態：提案 / 條件核准完成；功能實作與驗證未開始。
+
+#### 精簡核准摘要（使用者要求繼續，2026-09-21）
+
+#### 隱私文案核准與後端靜態審查（2026-09-21）
+
+- **APPROVED：Parent** 可小範圍同步 `lib/config/legal_content.dart`、`store_legal_site/privacy.html`、`docs/APP_STORE_METADATA.md`，保留三檔既有 dirty changes。限說明日記主動儲存、預設私人、獨立未預勾分享選項、有效授權照護者 / 管理員僅可讀已分享內容、撤回分享、單筆與帳號刪除；不宣稱 AI 自動寫日記，不混同長期記憶與 Care Alert。這是產品揭露範圍核准，不是法律合規認證。
+- 不需為未改變的既有功能強制全域 consent reset；不得因文案同步一併升級會觸發全域重同意的 consent gate。新日記仍以明確保存動作與獨立分享選項取得功能內同意，不繼承舊一般 consent 作分享授權；撤回不影響既有陪伴功能。若實作實際扩大蒐集 / 用途，須另審，不能沿用本裁決。
+- 已靜態閱讀日記 routes / store、migration019、server 接線、resident / staff auth、authorizationService 與 sessionService 帳號刪除區段：目前未發現跨住民或未分享日記可被 staff 讀取的路徑。resident 查詢 / 修改綁 userId + elderId，另查 active elder；staff SQL 固定 shared=true 並在查詢內重查 caregiver active assignment / status，super_admin 亦保留 shared=true；分享修改限本人，帳號刪除同 transaction 刪 rows 且有 FK cascade。無 AI ingestion 或 JSON fallback 出現在本次審查的日記程式。
+- **P2 待修：** 新日記 / 任務路由在 `server.js` 的 `app.use(globalLimiter)` 之前註冊，成功請求會繞過既有全域限流。backend owner 應只移動新增註冊區塊至 limiter 後，保留現有 auth / private,no-store；不更改其他路由。此為防濫用缺口，非未分享資料授權繞過。
+- 審查僅針對當前工作樹靜態路徑；尚未跑授權矩陣、撤回分享與刪除整合測試，不能宣稱最終全後端無隱私漏洞。未執行 Flutter tests / build、未讀 env / secrets。
+
+**architecture-agent：APPROVED WITH CONSTRAINTS。** 明確核准六項跨邊界工作：①精簡陪伴、不無請求續講；②台語偏好跨輪與重啟持續；③YouTube 歌手 / 歌曲正確路由；④沿用既有商城、確認後才語音下單；⑤偏好設定入口改為心情日記，僅對同意分享且獲授權的 caregiver / admin 可見；⑥編輯每日任務內容與時間。各 owner 依下列批次執行，不授權任意跨檔修改。
+
+**必要條件：** 後端逐筆驗證住民與角色權限；私人對話不得自動寫入日記，儲存 / 分享須明確同意並可撤回；保留記憶管理與刪除能力；購買確認綁定訂單且防重送；任務編輯保留完成證據與時區語義。維持正式 WebRTC、不造假成功。受保護 Realtime / API / DB 改動仍須先完成架構文件與精確契約核准；本次只補本 CR，不改其他檔案、不讀取 env / secrets。此為實作範圍核准，非測試通過或發布核准。
+
+#### 範圍與責任
+
+#### 精確契約放行（2026-09-21，取代下方初稿衝突部分）
+
+**APPROVED，立即可依範圍實作。** 使用者已明確授權本輪修改 `PROJECT_ARCHITECTURE.md`；§4.1–4.3 已同步日記 API / schema、任務 PATCH 與 Realtime 的精確契約，前述「先更新架構」門檻對本次列明範圍已滿足，不需再開 CR 或重複等核准。
+
+- **Parent**：核准新增 Flutter diary model / service / screen / 對應 tests，及 `lib/app.dart` provider / route 接線、`lib/routes/app_routes.dart`；只改本功能所需區塊，保留既有 dirty `app.dart` 變更。日記保存與未預勾的分享 checkbox 分離；本人可刪日記、撤回分享；保留記憶刪除入口。
+- **Feynman / backend-agent**：核准五條日記 endpoints、PostgreSQL migration 019（被占用則下一空號）、新日記 store / repository / tests、server scoped 接線，以及既有 `services/auth/sessionService.js` 同 transaction 刪除 / tests。entry、驗證、分頁、錯誤、active caregiver / super_admin 只讀 shared rows，均依架構 §4.1；不允許 AI 自動寫入或私人逐字稿轉存。
+- **每日任務**：同時核准 resident 與 admin 的兩條 PATCH、既有 `dailyCareTaskStore.js` scoped edit / tests，依 §4.2。viewer 不可寫；dueAt 非 null 的時間修改回 409，完成任務不可改，保留 proof。此次接受欄位級 PATCH + row lock、同欄位最後提交者生效，不要求新增 revision schema；取代初稿強制版本衝突條件。
+- **realtime-voice-agent**：核准 §4.3 限定 service instructions、turn / call 去重、stale outcome invalidation、playback-aware queue，及 controller 明確台語 / reconnect mode / async generation guard 與 owned tests；不改 transport / VAD，manual commit race 另審。profile persistence 仍由 frontend owner 負責。
+- **商店修正**：B4 正確範圍為本機 gold wallet 的虛擬寵物商店，由 Hegel 診斷、owner 接既有購買能力；不接 marketplace orders、不新增外部付款 / 物流。初稿 B4 的後端庫存 / commerce 要求不適用，仍須明確確認、帳號隔離、餘額驗證與防重扣。
+- 本輪只修改本 CR 與架構文件，不執行 Flutter tests / build、不讀 env / secrets；核准實作不等於已測試或准予發布。各批可按相依性並行，不必等待其他無關批次完成。
+- Feynman 追問裁決：核准新 resident endpoints 的 DB elder-role / identity guard、新 task PATCH DB-only；pending 且無 submission 才可編輯。v1 不新增 entry.elderId、requestId、If-Match 或 428，維持使用者指定 entry shape 與欄位級最後提交規則；dueAt 時間衝突回 409。UI 帳號 generation guard / 防連點 / 未知 POST 結果先重讀，不能宣稱 POST 冪等；Flutter 負責取消 / 重設本機提醒。此為確定契約，可直接動工。
+
+1. **B1 精簡陪伴、不自行續講**：companion-memory-agent 主導 `backend/companion/**`、既有 companion reply services 與測試；realtime-voice-agent 負責語音 instructions 接線。一般回覆預設 1–3 短句，不例行追問、不自動換話題；回覆結束等待新使用者輸入，不由 timeout、重複事件或工具完成再啟動無請求續講。保留使用者明確要求的長回答、必要澄清 / 工具結果 / 確認與 urgent 安全內容；不可截字幕假裝回答變短，也不可停用 Care Alert。
+2. **B2 台語選擇持續有效**：realtime-voice-agent 主導 `language_routing_service.dart`、`voice_agent_controller.dart` 與必要 Realtime instructions；frontend-ux-agent 接設定與帳號隔離儲存，companion-memory-agent 對齊文字回覆。明確選擇台語後，跨輪、工具回覆、重連與 App 重啟仍沿用，直到使用者明確改選；短暫國語輸入、ASR 誤判或混合語句不得覆蓋明確偏好。依 elderId 儲存，登出 / 換帳號清除 session 殘留；不保證尚未實測的台語發音品質。`realtime_voice_service.dart` 僅 realtime-voice-agent 可改，限核准的語言 / 回覆 instructions 與必要去重，不改 SDP、ICE、DataChannel 或傳輸架構。
+3. **B3 YouTube 歌手 / 歌曲路由**：backend-agent 主導 `backend/agent/**` 與既有搜尋服務；frontend-ux-agent 接既有開啟 / 播放能力，realtime-voice-agent 僅接 intent。把歌手與曲名保留為結構化查詢，音樂要求不得誤路由為一般知識回答；同名 / 不明確時簡短澄清。僅使用驗證過的 YouTube URL / ID，正確編碼查詢，不拼任意 URI、不把私人聊天或日記附入搜尋。找不到 / 開啟失敗如實說明；僅打開搜尋頁不得聲稱已播放特定歌曲。不得新增未核准依賴或繞過現有外部動作確認政策。
+4. **B4 現有商城語音購買**：backend-agent 主導 Agent Router、既有 marketplace service / repository；frontend-ux-agent 接現有商城與確認 UI，realtime-voice-agent 接語音意圖。先核對現有商城商品 ID、規格、數量、價格 / 幣別與必要配送資訊，再明確詢問確認；含糊肯定、背景語音、assistant 回音或普通聊天不得下單。確認必須綁定當前住民、待確認訂單內容與有效期，變更商品 / 數量 / 價格需重新確認；取消、過期、換帳號即失效。後端重新驗證身分、商品、價格、庫存，使用原子操作與冪等保護，重送 / 重連不得重複扣庫存或建單。沿用現有訂單真實流程，不另造商城、不擴充付款系統；只有後端成功才說已建立訂單，未付款不得說已付款。
+5. **B5 偏好設定入口改為心情日記**：frontend-ux-agent 主導設定 / 日記畫面、`caregiver_web/**`；backend-agent 主導授權與持久化；companion-memory-agent 僅提供使用者確認的摘要草稿。替換指定偏好 UI，不刪既有偏好資料 / 相容讀取，不移除語言與必要隱私控制。日記是明確建立的獨立資料，不把 emotion_history、Care Alert 或記憶列表直接重新命名為日記。新增 API / schema 先提精確方法、欄位、權限、刪除與遷移方案，過前置門檻後才能實作。
+6. **B6 每日任務內容 / 時間編輯**：backend-agent 主導 daily-care service / repository；frontend-ux-agent 主導長者端與 caregiver_web 編輯 UI。既有 `/api/daily-care-tasks/:id/status` 只改狀態，不偷塞內容編輯。若無既有編輯契約，另提 additive PATCH 契約，白名單只允許任務文字與排程欄位；禁止改 elderId、完成證據、驗證結果。住民只能改自己的可編輯任務，照護端限 super_admin 或 active primary / secondary 的已授權住民，viewer 不可寫。明確驗證文字長度、日期、時區（預設 Asia/Taipei）及有效時間；保留完成 / submission 歷史，完成任務不原地改寫。排程更新取消舊提醒且不重複觸發，併發編輯要偵測版本衝突，不默默覆蓋。
+
+#### 日記隱私與存取：必要放行條件
+
+- **不可默默把私人對話寫成日記**：僅使用者主動輸入，或明確要求產生草稿並預覽確認後儲存；不自動回填歷史對話、不預設儲存逐字稿、不因開啟頁面開始側錄。摘要可編輯，取消不產生日記。
+- 儲存與分享分開說明；預設私人，使用者明確同意分享後，才對當下有效授權的 caregiver / admin 可見。現有一般 AI / 麥克風 / Care Alert 同意不等於日記分享同意。撤回分享後下一次請求立即拒絕，清除相關前端快取；管理者也不能藉 role 略過日記分享政策。
+- 後端每筆讀寫檢查已驗證身分、server 權威 elderId、active assignment 與分享狀態；路徑或 body elderId 不是授權。沿用實際既有 role，不能把任意 `admin` 字串當 super_admin。caregiver 僅讀已指派且分享的住民日記，viewer 至多唯讀；不授權 caregiver 修改長者日記，super_admin 讀取亦依已揭露分享政策。
+- 列表、詳情、搜尋與統計都套相同資料範圍，不能只隱藏前端入口。日記不放公開 URL、不進一般 log / analytics / 通知；敏感 response 使用 private/no-store，網頁內容當純文字顯示以防 XSS。稽核只記 actor / target / action / outcome，不記日記原文。
+- 保留明確可找到的**記憶管理與刪除 / 忘記能力**，不能因替換偏好頁移除；日記刪除、取消分享、記憶刪除三者語義分清楚。日記須可自行刪除，帳號刪除涵蓋日記與分享設定；不得把已刪資料從聊天快取重新生成。日記不自動加入向量記憶；需另行明確同意與刪除連動設計才可納入。
+
+#### 共同邊界、驗收與回滾
+
+- 本案不核准模型切換、依賴升級、治理變更、Care Alert 四級 / 共用 schema 改動、production JSON fallback 或 mock 成功；不讀寫 `.env`、secret 或 runtime JSON。共享 `conversation_controller.dart`、帳號隔離儲存與 app 接線須先記錄精確檔案及單一主責 owner，不得多人覆寫同段。
+- 順序：B1/B2 → B3 → B4 → B5 → B6；每批獨立 checkpoint。B4–B6 的 API / DB / 授權契約先審，未核准的批次不阻擋其他已核准範圍。所有 owner 動工前核對現有程式，不能把此文件當成已證實現況。
+- B1/B2：測試無新輸入不續講、重複 tool event 不雙回覆、安全內容保留，以及台語跨輪 / 重連 / 重啟 / 混合輸入 / 換帳號隔離；另跑 iPhone 真 WebRTC / 台語實測。
+- B3/B4：涵蓋歌手 / 曲名 / 歧義 / 無結果 / 無效 URL；未確認零建單、取消 / 過期 / 改價需重確認、跨住民拒絕、重播冪等、庫存競爭與失敗不報成功。只能用隔離測試資料，不替使用者真的下單。
+- B5/B6：涵蓋未登入、跨住民、未指派 / 已撤銷、viewer、primary / secondary、super_admin 權限矩陣；未確認不寫日記、未分享不可讀、撤回 / 刪除 / 帳號刪除與 XSS；任務非法时间、版本衝突、舊提醒取消、完成證據保留。UI 驗證小螢幕、1.3 倍字級與大按鈕。
+- 執行測試前確認不會載入 `.env`，使用隔離 fixture / 注入依賴；每批跑受影響 tests、靜態分析與 `git diff --check`，真服務 / iOS 未測須明列，不得以 prompt 字串測試宣稱模型行為通過。
+- 回滾按批次停用新接線並保留原能力，不刪既有偏好、記憶、日記、訂單、任務或 submission；DB 採 additive migration，資料回退另審。授權收緊、確認保護與隱私刪除能力不得隨 UI 回滾一起撤掉。
+- 本輪驗證：僅文件變更與差異檢查；未執行功能測試，未宣稱上述驗收已通過。
+
 ### CR-0101A：App Store Readiness Foundation — 登入與 production 入口收斂 — ✅ 完成（2026-08-07）
 - 提出 agent：architecture-agent / frontend-ux-agent
 - 日期：2026-08-07

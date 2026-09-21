@@ -54,6 +54,11 @@ const {
   buildMemoryGreeting,
 } = require("./services/memory/memoryContextService");
 const { analyzeCompanionTurn } = require("../companion/companion_engine");
+const {
+  COMPANIONSHIP_VOICE_POLICY,
+  TOOL_TRUTH_POLICY,
+  outputLanguageInstruction,
+} = require("../companion/voice_prompt_policy");
 const { retrieveRelevantMemories } = require("../memory/memory_retriever");
 const { storeCompanionMemoryCandidate } = require("../memory/memory_policy");
 const { classifySearchIntent } = require("../search/search_intent_classifier");
@@ -108,6 +113,7 @@ const {
   recordSubmission: recordDailyCareTaskSubmission,
   getSubmissionById: getDailyCareTaskSubmissionById,
   listTasksForAdmin: listDailyCareTasksForAdmin,
+  editTask: editDailyCareTask,
 } = require("./services/dailyCareTask/dailyCareTaskStore");
 const {
   verifyProof: verifyDailyCareTaskProof,
@@ -249,6 +255,17 @@ const globalLimiter = rateLimit({
 });
 app.use(globalLimiter);
 
+require("./services/moodDiary/moodDiaryRoutes").registerMoodDiaryRoutes(app, {
+  requireResidentCaller,
+  staffAuth: resolveDailyCareAdminAuthContext,
+  authz,
+});
+require("./services/dailyCareTask/dailyCareTaskEditRoutes").registerDailyCareTaskEditRoutes(app, {
+  requireResidentCaller,
+  staffAuth: resolveDailyCareAdminAuthContext,
+  editTask: editDailyCareTask,
+});
+
 // Per-route limiter for realtime endpoints (more strict)
 const realtimeLimiter = rateLimit({
   windowMs: Number(process.env.REALTIME_RATE_LIMIT_WINDOW_MS) || 60 * 1000,
@@ -313,8 +330,8 @@ const REALTIME_INSTRUCTIONS = `你是長者陪伴寵物，不是一般助理。
 使用者不一定會直接說出「孤單、難過、焦慮」等字眼，你要從語意中理解可能的陪伴需求。
 當使用者提到安靜、一個人、大家都很忙、沒事做、以前很熱鬧、睡不好、算了沒關係等內容時，要用溫柔方式接住感受。
 不要武斷地說「你就是孤單」。
-回覆要自然、像陪在身邊的寵物；工具確認可以短，陪伴聊天可以 1~3 句。
-每次最多自然問一個問題；不要盤問，但可以用溫柔小問題讓長者多說一點。
+回覆要自然、像陪在身邊的寵物。
+${COMPANIONSHIP_VOICE_POLICY}
 不要像客服，不要像老師，不要做醫療診斷。
 如果有 Companion Engine 提供的 nextStrategy，請優先遵守。
 
@@ -342,7 +359,7 @@ const REALTIME_INSTRUCTIONS = `你是長者陪伴寵物，不是一般助理。
 - 「我還有多少金幣 / 金幣餘額 / 寵物狀態 / 寵物數值」 = 查詢使用者目前在 App 裡的金幣數或寵物數值。你不知道實際數字，請回「我幫你看一下喔」這類短句，App 端會更新畫面。
 - 「今天有什麼任務 / 每日任務 / 任務清單」 = App 的任務系統。回「今天的任務我幫你列在畫面上了」之類。
 - 「我喝水了 / 我吃飯了 / 我休息了 / 我完成任務」 = 完成每日任務。回「好的，幫你記下了」。
-- 「幫我買 X / 買 X / 購買」 = App 內商城的購買。回「沒問題，幫你買好了」。
+- 「幫我買 X / 買 X / 購買」 = App 內虛擬商城的金幣購買。先簡短核對商品與數量，等使用者明確確認且 App 回報成功後，才能說已放入背包。
 - 「把聲音關掉 / 打開聲音 / 字調大 / 字調小 / 說話慢一點 / 慢慢說 / 溫柔點」 = 調整 App 設定。回「好，幫你調好了」。
 - 「播放音樂 / 放歌」但沒有指定歌手、歌曲或類型 = 先問「想聽誰的歌，還是想聽什麼類型呢？」不要直接播放。
 - 「聽放鬆音樂 / 台語老歌 / 白噪音 / 指定歌手或歌曲」 = App 會直接幫長者播放音樂。回「好的，幫你播放音樂」。
@@ -377,6 +394,7 @@ const REALTIME_INSTRUCTIONS = `你是長者陪伴寵物，不是一般助理。
 - 記憶相關（例：「記住我喜歡聽台語老歌」「你記得我喜歡什麼嗎」）
 
 回應原則：工具動作簡短肯定，陪伴對話自然有溫度；不要照本宣科解釋細節（不要說「我會打開撥號畫面但不會自動撥出」這類技術細節）。能執行的事由 App 處理，不能確認完成的事不要假裝已完成。
+${TOOL_TRUTH_POLICY}
 
 【投資 / 股票免責】（CR-0096）
 當長者提到或詢問股票、股市、股價、台股、美股、買賣股票、投資、基金、ETF、配息、殖利率、高股息、0050、0056、00878、定期定額這類投資理財內容時，你還是先用溫暖陪伴的語氣回應，不要給具體買賣建議、不要報明牌、不要保證獲利。
@@ -443,21 +461,6 @@ function fallbackGreeting({ petName, localHour }) {
     return `晚安，我是${petName}，今天辛苦了，我陪你一下。`;
   }
   return `晚安，我是${petName}，這麼晚了，要不要準備休息了呢？`;
-}
-
-function outputLanguageInstruction({ languageHint = "", replyLanguage = "", mode = "" } = {}) {
-  const normalizedReplyLanguage = (replyLanguage || "").toString().trim();
-  const normalizedLanguageHint = (languageHint || "").toString().trim();
-  const normalizedMode = (mode || "").toString().trim();
-  if (
-    normalizedMode === "taigi_realtime" ||
-    normalizedReplyLanguage === "taigi" ||
-    normalizedReplyLanguage === "mixed-zh-taigi" ||
-    normalizedLanguageHint === "taigi"
-  ) {
-    return "輸入語境：使用者用台語（Taiwanese Hokkien）或台語混中文跟你說話。\n輸出語言：請用自然、口語、長者聽得懂的台語陪他，以台語為主；句子短、用日常台語詞，不要用艱深或文謅謅的台語字。\n長者聽得懂優先：遇到不好用台語講、或可能讓長者聽不懂的詞，可以自然地國台語混用，不用硬翻成生僻台語，也不要每句都硬翻成純台語而變得難懂。\n用繁體中文漢字書寫台語（不要羅馬拼音 / 台羅 / Pinyin）。\n常用台語表達範例：「今仔日」「食飽未」「慢慢來」「有我佇遮陪你」「歹勢」。\n開頭不要用「您好」「你好」「我聽到了」這類生硬的國語化招呼。\n若沒聽清楚，用台語自然確認，例如：「歹勢，我聽無清楚，你閣講一遍好無？」";
-  }
-  return "輸出語言：你必須整段使用繁體中文（標準台灣中文 / Mandarin）回覆，不可以使用台語詞或台語漢字（例如「今仔日」「食飽未」「無代誌」等）、也不可以使用羅馬拼音。\n用詞要自然、像台灣朋友會說的繁體中文。";
 }
 
 function buildRealtimeInstructions(

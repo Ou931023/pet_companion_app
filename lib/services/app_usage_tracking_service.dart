@@ -15,11 +15,16 @@ class AppUsageTrackingService {
   AppUsageTrackingService({
     http.Client? client,
     AuthTokenProvider? authTokenProvider,
+    // Render cold starts observed in production can exceed 20 seconds. Tracking
+    // is always fire-and-forget, so this preserves events without delaying UI.
+    Duration requestTimeout = const Duration(seconds: 35),
   })  : _client = client ?? http.Client(),
-        _authTokenProvider = authTokenProvider;
+        _authTokenProvider = authTokenProvider,
+        _requestTimeout = requestTimeout;
 
   final http.Client _client;
   final AuthTokenProvider? _authTokenProvider;
+  final Duration _requestTimeout;
 
   Future<bool> track(
     String eventType, {
@@ -54,7 +59,7 @@ class AppUsageTrackingService {
               if (metadata.isNotEmpty) 'metadata': _safeMetadata(metadata),
             }),
           )
-          .timeout(const Duration(seconds: 4));
+          .timeout(_requestTimeout);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         AppLog.debug('[APP_USAGE] non-2xx response: ${response.statusCode}');
         return false;

@@ -26,8 +26,8 @@
 //   clarify           → 語句不清楚，簡短確認，不硬猜
 //   normal_chat       → 一般日常閒聊，順著內容自然接話
 
-const NORMAL_VOICE_CADENCE =
-  "一般語音回覆控制在 1–3 句；若使用者有情緒，第一句先接住情緒，再回應內容。整段最多一個問題，也不要在同一問句塞入多題。依這一輪的具體內容自然開場，避免連續使用「聽起來」「我在這裡陪你」等固定開場。";
+const { COMPANIONSHIP_VOICE_POLICY, TOOL_TRUTH_POLICY, outputLanguageInstruction } = require("./voice_prompt_policy");
+const NORMAL_VOICE_CADENCE = COMPANIONSHIP_VOICE_POLICY;
 
 function compact(text, maxLength = 42) {
   const normalized = (text || "").toString().replace(/\s+/g, " ").trim();
@@ -136,7 +136,7 @@ function planNextStrategy({
   const recentReplyHint = recentReplyInstruction(recentTurns);
   const taigiHint =
     languageHint === "taigi"
-      ? " 使用台灣長者自然聽得懂的語氣，不要硬翻成不自然台語；若 transcript 不完整，溫和追問確認。"
+      ? ` ${outputLanguageInstruction({ languageHint })}`
       : "";
   const finish = (
     mode,
@@ -168,7 +168,7 @@ function planNextStrategy({
   if (hasReminderIntent(text, companionNeed)) {
     return finish(
       "tool_action",
-      "使用者有明確的生活需求（例如提醒、吃藥、喝水、查詢）。先簡短回應你聽到的這件事，並讓他知道你正在幫他記下 / 處理，由提醒或工具功能接手，不要只是閒聊帶過。明確告訴他你做了什麼，最多確認一個重點。",
+      `使用者有明確的生活需求（例如提醒、吃藥、喝水、查詢）。先簡短回應這件事，由提醒或工具功能接手，最多確認一個必要重點。${TOOL_TRUTH_POLICY}`,
     );
   }
 
@@ -229,7 +229,7 @@ function planNextStrategy({
     if (isTiredContent(text, emotion)) {
       return finish(
         "comfort_lightly",
-        "使用者說他覺得累。先別急著長篇鼓勵，用一句話接住，再簡短問一句是「身體累」還是「心裡累」，讓他自己多說一點。回覆要短、口語，不要說教、不要一次給很多建議。",
+        "使用者說他覺得累。先別急著長篇鼓勵，用一句話接住就好；只有確實需要釐清時才問是「身體累」還是「心裡累」，不必每次追問。回覆要短、口語，不要說教、不要一次給很多建議。",
       );
     }
     if (isGroundingContent(emotion, companionNeed)) {
@@ -240,7 +240,7 @@ function planNextStrategy({
     }
     return finish(
       "comfort_lightly",
-      "先回應使用者剛剛說的具體內容，用一句話輕輕接住他的情緒，再溫柔問一個跟他剛剛說的事有關的問題。不要過度安慰、不要說教、不要每句都說會陪你，讓他多說一點。",
+      "先回應使用者剛剛說的具體內容，用一句話輕輕接住他的情緒就好；只有必要時才溫柔問一個相關問題，不例行追問。不要過度安慰、不要說教、不要每句都說會陪你，留空間讓他自己繼續說。",
     );
   }
 

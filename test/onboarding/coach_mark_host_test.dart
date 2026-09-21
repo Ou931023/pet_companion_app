@@ -49,7 +49,7 @@ Widget _app({
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('首次進首頁會自動開始 production 15 步導覽', (tester) async {
+  testWidgets('首次進首頁會自動開始含寵物商城的 16 步導覽', (tester) async {
     final controller = CoachMarkController();
     final keys = CoachMarkKeys();
     final nav = AppNavigationController();
@@ -73,8 +73,8 @@ void main() {
     await tester.pump();
 
     expect(controller.isActive, isTrue);
-    expect(controller.stepCount, 15);
-    expect(find.text('第 1 步 / 共 15 步'), findsOneWidget);
+    expect(controller.stepCount, 16);
+    expect(find.text('第 1 步 / 共 16 步'), findsOneWidget);
   });
 
   testWidgets('已看過則不自動開始導覽', (tester) async {

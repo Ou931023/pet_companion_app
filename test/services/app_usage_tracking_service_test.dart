@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -75,5 +76,16 @@ void main() {
       client: MockClient((request) async => throw Exception('network')),
     );
     await expectLater(throwing.track('typed_chat_sent'), completion(isFalse));
+  });
+
+  test('背景追蹤逾時會回 false，不會把錯誤拋回長者操作流程', () async {
+    final pendingResponse = Completer<http.Response>();
+    final service = AppUsageTrackingService(
+      authTokenProvider: () async => 'token',
+      requestTimeout: const Duration(milliseconds: 20),
+      client: MockClient((request) => pendingResponse.future),
+    );
+
+    await expectLater(service.track('app_open'), completion(isFalse));
   });
 }

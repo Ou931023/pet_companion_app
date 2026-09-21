@@ -119,6 +119,7 @@ void main() {
 
       expect(AppConfig.demoLoginVisible, isFalse);
       expect(AppConfig.socialSignInVisible, AppConfig.showSocialSignIn);
+      expect(AppConfig.petShopVisible, isTrue);
       expect(AppConfig.marketplaceVisible, isFalse);
       expect(AppConfig.dailyCareTasksVisible, isTrue);
       expect(AppConfig.devPanelsVisible, isFalse);
@@ -286,6 +287,12 @@ void main() {
         _pngSize('store_assets/play_feature_graphic_1024x500.png'),
         const _ImageSize(1024, 500),
       );
+      expect(
+        _pngHasAlpha('store_assets/play_feature_graphic_1024x500.png'),
+        isFalse,
+        reason:
+            'Google Play feature graphic must be a 24-bit PNG without alpha',
+      );
       final androidScreenshots = [
         'store_assets/screenshots/android_phone/01_home_voice.png',
         'store_assets/screenshots/android_phone/02_voice_conversation.png',
@@ -304,20 +311,36 @@ void main() {
       for (final path in androidScreenshots) {
         expect(File(path).existsSync(), isTrue, reason: '$path should exist');
         expect(_pngSize(path), const _ImageSize(1080, 1920));
+        expect(
+          _pngHasAlpha(path),
+          isFalse,
+          reason: '$path must be a 24-bit PNG without alpha',
+        );
       }
 
       for (final path in iosScreenshots) {
         expect(File(path).existsSync(), isTrue, reason: '$path should exist');
         expect(_pngSize(path), const _ImageSize(1290, 2796));
+        expect(
+          _pngHasAlpha(path),
+          isFalse,
+          reason: '$path must not contain an alpha channel',
+        );
       }
 
       final screenshotScript = _read('scripts/generate_store_screenshots.sh');
-      expect(screenshotScript, contains('非醫療診斷'));
+      expect(screenshotScript, contains('raw_screenshots'));
+      expect(screenshotScript, contains('real app capture'));
+      expect(screenshotScript, contains('PNG24:'));
       expect(screenshotScript, isNot(contains('debug')));
       expect(screenshotScript, isNot(contains('demo')));
       expect(screenshotScript, isNot(contains('mock')));
       expect(assetChecklist, contains('Android adaptive icon：✅'));
-      expect(assetChecklist, contains('screenshots：✅'));
+      expect(
+        assetChecklist,
+        contains('screenshots：⏳'),
+        reason: 'Real app-in-use screenshots remain a manual release gate',
+      );
     });
 
     test('launch screen and display names use production branding', () {
@@ -638,6 +661,13 @@ _ImageSize _pngSize(String path) {
   final bytes = File(path).readAsBytesSync();
   expect(bytes.take(8).toList(), [137, 80, 78, 71, 13, 10, 26, 10]);
   return _ImageSize(_readUint32(bytes, 16), _readUint32(bytes, 20));
+}
+
+bool _pngHasAlpha(String path) {
+  final bytes = File(path).readAsBytesSync();
+  expect(bytes.take(8).toList(), [137, 80, 78, 71, 13, 10, 26, 10]);
+  final colorType = bytes[25];
+  return colorType == 4 || colorType == 6;
 }
 
 int _readUint32(List<int> bytes, int offset) =>

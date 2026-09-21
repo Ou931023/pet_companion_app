@@ -36,8 +36,19 @@ class AgentToolController extends ChangeNotifier {
   bool _isRouting = false;
   bool _isExecuting = false;
   String? _errorMessage;
+  int _generation = 0;
+  String? _sessionId;
+  String? _pendingShopContext;
+  final Set<String> _routedTurns = {};
 
-  AgentToolIntent? get pendingIntent => _pendingIntent;
+  AgentToolIntent? get pendingIntent {
+    if (_pendingIntent?.toolName == 'purchase_shop_item' &&
+        _pendingShopContext != executorService.shopContextKey?.call()) {
+      _pendingIntent = null;
+    }
+    return _pendingIntent;
+  }
+
   AgentToolExecutionResult? get executionResult => _executionResult;
   bool get isRouting => _isRouting;
   bool get isExecuting => _isExecuting;
@@ -55,6 +66,12 @@ class AgentToolController extends ChangeNotifier {
   }) async {
     final normalized = userText.trim();
     if (normalized.isEmpty || _isRouting) return;
+    if (_sessionId != null && _sessionId != sessionId) clear();
+    _sessionId = sessionId;
+    final turnKey = '$sessionId:$turnId';
+    if (!_routedTurns.add(turnKey)) return;
+    final generation = _generation;
+    final accountContext = executorService.shopContextKey?.call();
     _isRouting = true;
     _errorMessage = null;
     notifyListeners();
@@ -70,12 +87,26 @@ class AgentToolController extends ChangeNotifier {
         petState: petState,
         recentTurns: recentTurns,
       );
+      if (generation != _generation ||
+          accountContext != executorService.shopContextKey?.call()) {
+        return;
+      }
       if (!result.hasToolIntent || result.intent == null) {
         _errorMessage =
             result.errorMessage.isEmpty ? null : result.errorMessage;
         return;
       }
-      final intent = result.intent!;
+      var intent = result.intent!;
+      if (intent.toolName == 'purchase_shop_item') {
+        final quote = executorService.prepareShopPurchase(intent);
+        if (quote == null) {
+          _pendingIntent = null;
+          _errorMessage = '請先在寵物商城確認商品、數量與登入狀態。';
+          return;
+        }
+        intent = quote;
+        _pendingShopContext = executorService.shopContextKey?.call();
+      }
       _pendingIntent = intent;
       _executionResult = null;
       // 輪次控制 / 安全閘門：
@@ -93,13 +124,15 @@ class AgentToolController extends ChangeNotifier {
       _errorMessage = error.toString();
       AppLog.error('[AgentToolController] route failed', error);
     } finally {
-      _isRouting = false;
-      notifyListeners();
+      if (generation == _generation) {
+        _isRouting = false;
+        notifyListeners();
+      }
     }
   }
 
   Future<void> confirmAndExecute() async {
-    final intent = _pendingIntent;
+    final intent = pendingIntent;
     if (intent == null || !intent.isExecutable || _isExecuting) return;
     _pendingIntent = intent.copyWith(status: AgentToolStatus.confirmed);
     notifyListeners();
@@ -113,6 +146,7 @@ class AgentToolController extends ChangeNotifier {
   }
 
   void cancelIntent() {
+    executorService.cancelShopPurchase();
     final intent = _pendingIntent;
     _pendingIntent = null;
     _executionResult = intent == null
@@ -126,6 +160,9 @@ class AgentToolController extends ChangeNotifier {
   }
 
   void clear() {
+    _generation++;
+    executorService.cancelShopPurchase();
+    _pendingShopContext = null;
     _pendingIntent = null;
     _executionResult = null;
     _errorMessage = null;
@@ -137,6 +174,11 @@ class AgentToolController extends ChangeNotifier {
   Future<void> _executeCurrentIntent() async {
     final intent = _pendingIntent;
     if (intent == null) return;
+    if (intent.toolName == 'purchase_shop_item' &&
+        intent.status != AgentToolStatus.confirmed) {
+      return;
+    }
+    final generation = _generation;
     _isExecuting = true;
     _errorMessage = null;
     _pendingIntent = intent.copyWith(status: AgentToolStatus.executing);
@@ -148,6 +190,7 @@ class AgentToolController extends ChangeNotifier {
       navigationController: navigationController,
       memoryController: memoryController,
     );
+    if (generation != _generation) return;
     _executionResult = result;
     _pendingIntent =
         result.success ? null : intent.copyWith(status: AgentToolStatus.failed);

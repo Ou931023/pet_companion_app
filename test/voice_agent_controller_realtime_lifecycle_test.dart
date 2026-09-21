@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:pet_companion_app/controllers/app_navigation_controller.dart';
+import 'package:pet_companion_app/controllers/agent_tool_controller.dart';
 import 'package:pet_companion_app/controllers/care_alert_controller.dart';
 import 'package:pet_companion_app/controllers/check_in_controller.dart';
 import 'package:pet_companion_app/controllers/conversation_controller.dart';
@@ -18,6 +19,8 @@ import 'package:pet_companion_app/controllers/task_controller.dart';
 import 'package:pet_companion_app/controllers/voice_agent_controller.dart';
 import 'package:pet_companion_app/controllers/wallet_controller.dart';
 import 'package:pet_companion_app/models/language_route.dart';
+import 'package:pet_companion_app/models/agent_tool_execution_result.dart';
+import 'package:pet_companion_app/models/agent_tool_intent.dart';
 import 'package:pet_companion_app/models/care_alert.dart';
 import 'package:pet_companion_app/models/companion_analysis_result.dart';
 import 'package:pet_companion_app/models/voice_agent_state.dart';
@@ -144,13 +147,151 @@ void main() {
 
     expect(captured, isNotNull);
     expect(captured!.languageHint, 'taigi');
-    expect(captured!.replyLanguage, 'mixed-zh-taigi');
+    expect(captured!.replyLanguage, 'taigi');
     expect(captured!.mode, 'taigi_realtime');
     expect(harness.conversationController.isTaigiAsrRecording, isFalse);
     expect(harness.conversationController.taigiAsrStatusMessage, isEmpty);
 
     harness.dispose();
   });
+
+  for (final mode in [
+    VoiceLanguageMode.taigiRealtime,
+    VoiceLanguageMode.taigiPreferred,
+    VoiceLanguageMode.manualOverride
+  ]) {
+    test(
+        'CR0108 $mode retains explicit Taiwanese through Mandarin input and reconnect',
+        () async {
+      final requests = <RealtimeConnectRequest>[];
+      final sent = <String>[];
+      final service = RealtimeVoiceService(
+        healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+        connectImplementationForTesting: (request) async =>
+            requests.add(request),
+        eventSenderForTesting: (payload) async => sent.add(payload),
+      );
+      final harness = await _VoiceControllerHarness.create(service);
+      await harness.controller.profileController
+          .setManualAsrStrategy('mockTaigiAsr');
+      await harness.controller.profileController.setVoiceLanguageMode(mode);
+      await _reachListening(harness, service);
+      expect(requests.single.replyLanguage, 'taigi');
+      service.handleDataChannelEventForTest(
+          '{"type":"conversation.item.input_audio_transcription.completed","item_id":"u1","transcript":"我今天很好"}');
+      await pumpEventQueue();
+      expect(harness.controller.currentLanguageRoute.replyLanguage,
+          ReplyLanguage.taigi);
+      _completeAudioResponse(service, responseId: 'r1', reply: '好喔。');
+      await pumpEventQueue();
+      await harness.controller.startRealtimeConversation();
+      expect(requests, hasLength(1),
+          reason: 'Warm input reuses the connection');
+      final updates = sent
+          .map((p) => jsonDecode(p) as Map)
+          .where((e) => e['type'] == 'session.update');
+      expect(updates.last['session']['instructions'], contains('以台語為主'));
+      service.handlePeerStateForTest('RTCPeerConnectionStateFailed');
+      await pumpEventQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await pumpEventQueue();
+      expect(requests, hasLength(2));
+      expect(requests.last.replyLanguage, 'taigi');
+      expect(requests.last.mode,
+          mode == VoiceLanguageMode.taigiRealtime ? 'taigi_realtime' : '');
+      harness.dispose();
+    });
+  }
+
+  test('CR0108 explicit Mandarin selection replaces Taiwanese on warm input',
+      () async {
+    final sent = <String>[];
+    final service = RealtimeVoiceService(
+      healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+      connectImplementationForTesting: (_) async {},
+      eventSenderForTesting: (p) async => sent.add(p),
+    );
+    final harness = await _VoiceControllerHarness.create(service);
+    await harness.controller.profileController
+        .setVoiceLanguageMode(VoiceLanguageMode.taigiRealtime);
+    await _reachListening(harness, service);
+    _completeAudioResponse(service, responseId: 'r1', reply: '好喔');
+    await pumpEventQueue();
+    await harness.controller.profileController
+        .setVoiceLanguageMode(VoiceLanguageMode.defaultOpenAiRealtime);
+    await harness.controller.startRealtimeConversation();
+    expect(harness.controller.currentLanguageRoute.replyLanguage,
+        ReplyLanguage.zhTw);
+    final update = jsonDecode(sent.last) as Map;
+    expect(update['session']['instructions'], contains('請用繁體中文自然回覆'));
+    harness.dispose();
+  });
+
+  test('CR0108 no-intent chat never replays retained previous tool success',
+      () async {
+    final sent = <String>[];
+    final service = RealtimeVoiceService(
+      healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+      connectImplementationForTesting: (_) async {},
+      eventSenderForTesting: (p) async => sent.add(p),
+    );
+    final tools = _VoiceToolFake()
+      ..executionResult = AgentToolExecutionResult.succeeded(
+          toolName: 'play_music', message: '舊的音樂結果');
+    final harness = await _VoiceControllerHarness.create(service,
+        agentToolController: tools);
+    await _reachListening(harness, service);
+    service.handleDataChannelEventForTest(
+        '{"type":"conversation.item.input_audio_transcription.completed","item_id":"u1","transcript":"我今天心情很好"}');
+    await pumpEventQueue();
+    expect(tools.routeCount, 1);
+    _completeAudioResponse(service, responseId: 'r1', reply: '真好。');
+    await pumpEventQueue();
+    expect(
+        sent.where((p) => (jsonDecode(p) as Map)['type'] == 'response.create'),
+        isEmpty);
+    harness.dispose();
+  });
+
+  for (final invalidation in ['new input', 'stop', 'none']) {
+    test('CR0108 async tool result with $invalidation is scoped to its input',
+        () async {
+      final sent = <String>[];
+      final service = RealtimeVoiceService(
+        healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+        connectImplementationForTesting: (_) async {},
+        eventSenderForTesting: (p) async => sent.add(p),
+      );
+      final done = Completer<void>();
+      final tools = _VoiceToolFake();
+      tools.onRoute = () async {
+        await done.future;
+        tools.executionResult = AgentToolExecutionResult.succeeded(
+            toolName: 'retrieve_memory', message: '本次查詢結果');
+      };
+      final harness = await _VoiceControllerHarness.create(service,
+          agentToolController: tools);
+      await _reachListening(harness, service);
+      service.handleDataChannelEventForTest(
+          '{"type":"conversation.item.input_audio_transcription.completed","item_id":"u1","transcript":"我今天心情很好"}');
+      await pumpEventQueue();
+      expect(tools.routeCount, 1);
+      _completeAudioResponse(service, responseId: 'r1', reply: '真好。');
+      await pumpEventQueue();
+      if (invalidation == 'new input') {
+        await harness.controller.startRealtimeConversation();
+      }
+      if (invalidation == 'stop') {
+        await harness.controller.stopRealtimeConversation();
+      }
+      done.complete();
+      await pumpEventQueue();
+      final responses = sent
+          .where((p) => (jsonDecode(p) as Map)['type'] == 'response.create');
+      expect(responses, hasLength(invalidation == 'none' ? 1 : 0));
+      harness.dispose();
+    });
+  }
 
   test('health check failed does not stay connecting', () async {
     var attempts = 0;
@@ -245,7 +386,7 @@ void main() {
     expect(turn.languageHint, 'taigi');
     expect(turn.asrSource, 'openai-realtime');
     expect(turn.routeReason, 'taigi_realtime_mode');
-    expect(turn.replyLanguage, 'mixed-zh-taigi');
+    expect(turn.replyLanguage, 'taigi');
 
     harness.dispose();
   });
@@ -298,11 +439,12 @@ void main() {
     expect(userTurn.toolName, 'realtime-user-text');
     expect(harness.controller.state, VoiceAgentState.thinking);
 
-    // The two realtime events (item.create + response.create) were sent.
-    expect(sentPayloads, hasLength(2));
-    expect(sentPayloads[0], contains('conversation.item.create'));
-    expect(sentPayloads[0], contains('我今天很開心'));
-    expect(sentPayloads[1], contains('response.create'));
+    // Language context is applied before creating the typed response.
+    expect(sentPayloads, hasLength(3));
+    expect(sentPayloads[0], contains('session.update'));
+    expect(sentPayloads[1], contains('conversation.item.create'));
+    expect(sentPayloads[1], contains('我今天很開心'));
+    expect(sentPayloads[2], contains('response.create'));
 
     // The pet reply lands via the normal realtime assistantText flow and pairs
     // with the same turn (no orphan empty bubble, no stuck thinking).
@@ -1325,6 +1467,7 @@ class _VoiceControllerHarness {
     CompanionEngineService companionEngineService =
         const CompanionEngineService(),
     LanguageRoutingService? languageRoutingService,
+    AgentToolController? agentToolController,
     CareAlertController? careAlertController,
   }) async {
     final localStorage = LocalStorageService();
@@ -1403,6 +1546,7 @@ class _VoiceControllerHarness {
       navigationService: navigationService,
       navigationController: navigationController,
       timeoutConfig: timeoutConfig,
+      agentToolController: agentToolController,
       careAlertController: careAlertController,
     );
     return _VoiceControllerHarness(
@@ -1417,6 +1561,32 @@ class _VoiceControllerHarness {
     controller.dispose();
     conversationController.dispose();
     petController.dispose();
+  }
+}
+
+class _VoiceToolFake extends Fake implements AgentToolController {
+  @override
+  AgentToolExecutionResult? executionResult;
+  @override
+  AgentToolIntent? get pendingIntent => null;
+  @override
+  bool get isRouting => false;
+  int routeCount = 0;
+  Future<void> Function()? onRoute;
+
+  @override
+  Future<void> routeFromUserText(
+    String userText, {
+    required String sessionId,
+    required String turnId,
+    required String petName,
+    required String emotion,
+    required String languageHint,
+    Map<String, dynamic> petState = const {},
+    List<Map<String, dynamic>> recentTurns = const [],
+  }) async {
+    routeCount += 1;
+    await onRoute?.call();
   }
 }
 

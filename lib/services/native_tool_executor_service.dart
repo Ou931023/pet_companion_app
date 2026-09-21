@@ -37,6 +37,10 @@ class NativeToolExecutorService {
     this.onNotifyCaregiver,
     this.onPurchaseSkin,
     this.storyProvider,
+    this.onPrepareShopPurchase,
+    this.onPurchaseShopItem,
+    this.onCancelShopPurchase,
+    this.shopContextKey,
   }) : _launch = launch ?? _defaultLaunch;
 
   final UrlLauncherCallback _launch;
@@ -45,6 +49,17 @@ class NativeToolExecutorService {
   final AgentNotifyCaregiverCallback? onNotifyCaregiver;
   final AgentPurchaseSkinCallback? onPurchaseSkin;
   final AgentStoryProvider? storyProvider;
+  final AgentToolIntent? Function(AgentToolIntent)? onPrepareShopPurchase;
+  final Future<AgentToolExecutionResult> Function(AgentToolIntent)?
+      onPurchaseShopItem;
+  final void Function()? onCancelShopPurchase;
+  final String Function()? shopContextKey;
+  final Set<String> _spentShopIntentIds = {};
+
+  AgentToolIntent? prepareShopPurchase(AgentToolIntent intent) =>
+      onPrepareShopPurchase?.call(intent);
+
+  void cancelShopPurchase() => onCancelShopPurchase?.call();
 
   static const Set<String> supportedToolNames = {
     'play_music',
@@ -61,6 +76,7 @@ class NativeToolExecutorService {
     'delete_memory',
     'logout',
     'purchase_pet_skin',
+    'purchase_shop_item',
   };
 
   Future<AgentToolExecutionResult> execute({
@@ -92,6 +108,7 @@ class NativeToolExecutorService {
         'delete_memory' => _deleteMemory(intent, memoryController),
         'logout' => _logout(intent),
         'purchase_pet_skin' => _purchaseSkin(intent),
+        'purchase_shop_item' => _purchaseShopItem(intent),
         _ => Future.value(AgentToolExecutionResult.failed(
             toolName: intent.toolName,
             message: '不支援的工具，已拒絕執行。',
@@ -110,35 +127,18 @@ class NativeToolExecutorService {
     }
   }
 
-  /// 長者說「播放音樂」時要真的「開始播放」，而不是只丟一頁 YouTube 搜尋結果讓他自己找。
-  /// 依長者講的類型對應到精選、長輩友善、無廣告的 YouTube 影片（開 watch 連結，
-  /// iOS 會交給 YouTube App 直接播放）。認不得的查詢（指定歌手 / 歌名等）才退回搜尋。
-  ///
-  /// 影片來源（皆為公開、可用、無廣告長片，2026-06 驗證可播）：
-  /// - 放鬆 / 輕音樂：「放鬆音樂 - Relaxing Music Sleep」高品質放鬆輕音樂。
-  /// - 台語老歌：「懷舊台語老歌金曲」雨夜花 / 望春風 / 港都夜雨。
-  /// - 白噪音 / 助眠：「自然音樂」樹林雨聲雷聲助眠白噪音。
-  static const String _relaxingMusicVideoId = 'Qes9vypXOlE';
-  static const String _taiwaneseOldiesVideoId = 'aRrXwHP0v4A';
-  static const String _whiteNoiseVideoId = '-ERFwSSqg1Y';
-
-  /// 由 backend agent（extractMusicQuery）帶來的 query 或長者口語，判斷要播哪一類。
-  /// 認不得 → 回 null，由呼叫端退回 YouTube 搜尋（保留任意歌手 / 歌名仍可查的能力）。
-  static String? _curatedMusicVideoIdFor(String query) {
-    bool hasAny(List<String> keywords) =>
-        keywords.any((keyword) => query.contains(keyword));
-
-    // 先比對較專一的類別，避免被通用詞搶走。
-    if (hasAny(['台語', '老歌', '懷舊', '望春風', '雨夜花', '港都'])) {
-      return _taiwaneseOldiesVideoId;
+  Future<AgentToolExecutionResult> _purchaseShopItem(
+      AgentToolIntent intent) async {
+    final purchase = onPurchaseShopItem;
+    if (purchase == null ||
+        intent.status != AgentToolStatus.confirmed ||
+        !intent.requiresConfirmation ||
+        intent.id.isEmpty ||
+        !_spentShopIntentIds.add(intent.id)) {
+      return AgentToolExecutionResult.failed(
+          toolName: intent.toolName, message: '請先確認商城商品與金幣價格，這次還沒有購買。');
     }
-    if (hasAny(['白噪音', '雨聲', '海浪', '助眠', '入睡', 'asmr', '睡覺', '睏'])) {
-      return _whiteNoiseVideoId;
-    }
-    if (hasAny(['放鬆', '輕音樂', '療癒', '冥想', '紓壓', '舒壓', '放空'])) {
-      return _relaxingMusicVideoId;
-    }
-    return null;
+    return purchase(intent);
   }
 
   Future<AgentToolExecutionResult> _playMusic(AgentToolIntent intent) async {
@@ -151,16 +151,18 @@ class NativeToolExecutorService {
         message: '想聽誰的歌，還是想聽什麼類型呢？',
       );
     }
-    final videoId = _curatedMusicVideoIdFor(query);
-    final isPlayback = videoId != null;
-    final uri = isPlayback
-        ? Uri.https('www.youtube.com', '/watch', {'v': videoId})
-        : Uri.https('www.youtube.com', '/results', {'search_query': query});
+    // Preserve song and artist names; genre substrings must not select a
+    // hardcoded playlist. Opening results is not proof that playback started.
+    final uri = Uri.https(
+      'www.youtube.com',
+      '/results',
+      {'search_query': query.trim()},
+    );
     final ok = await _launch(uri, LaunchMode.externalApplication);
     return ok
         ? AgentToolExecutionResult.succeeded(
             toolName: intent.toolName,
-            message: isPlayback ? '好的，幫你播放音樂了。' : '已開啟 YouTube 音樂搜尋。',
+            message: '已幫你搜尋「${query.trim()}」，點選想聽的歌曲就能播放。',
           )
         : AgentToolExecutionResult.failed(
             toolName: intent.toolName,

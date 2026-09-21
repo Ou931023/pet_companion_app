@@ -8,6 +8,12 @@
 // - 低風險操作可直接執行：create_reminder、play_music(搜尋)、open_app_route(navigate)、
 //   tell_story、save_memory(直接做但要讓使用者知道已記住)、search_trusted_info、retrieve_memory。
 const TOOL_DEFINITIONS = Object.freeze({
+  purchase_shop_item: {
+    displayName: "購買虛擬寵物用品",
+    riskLevel: "high",
+    requiresConfirmation: true,
+    allowedArguments: ["itemId", "itemName", "quantity"],
+  },
   play_music: {
     displayName: "播放音樂",
     riskLevel: "low",

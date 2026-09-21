@@ -39,6 +39,7 @@ import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/marketplace/marketplace_screen.dart';
 import 'screens/memory_management_screen.dart';
+import 'screens/mood_diary_screen.dart';
 import 'screens/notification_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/puzzle_game_screen.dart';
@@ -69,6 +70,7 @@ import 'services/local_storage_service.dart';
 import 'services/language_routing_service.dart';
 import 'services/marketplace_service.dart';
 import 'services/memory_service.dart';
+import 'services/mood_diary_service.dart';
 import 'services/mock_ai_service.dart';
 import 'services/mock_shop_service.dart';
 import 'services/mock_speech_to_text_service.dart';
@@ -282,44 +284,56 @@ class PetCompanionApp extends StatelessWidget {
         // （登出 / Care Alert 通知 / 說故事內容），不另開新架構、不加 demo-only 假成功。
         // 這些 callback 對應的工具皆 requiresConfirmation=true，只有使用者確認後才被呼叫。
         Provider<NativeToolExecutorService>(
-          create: (context) => NativeToolExecutorService(
-            contactLookup: ContactLookupService(
-              context.read<ProfileController>(),
-            ),
-            onLogout: () => context.read<AuthController>().logout(),
-            onNotifyCaregiver: ({required reason, required riskLevel}) async {
-              // 先同步取出所需服務，避免 await 後再用 context。
-              final careAlertController = context.read<CareAlertController>();
-              final notifyService = context
-                  .read<CareAlertNotificationService>();
-              final sttProxyUrl = context.read<ProfileController>().sttProxyUrl;
-              final alert = CareAlert(
-                id: 'agent_notify_${DateTime.now().microsecondsSinceEpoch}',
-                createdAt: DateTime.now(),
-                riskLevel: CareAlertRiskLevel.fromJson(riskLevel),
-                category: CareAlertCategory.other,
-                triggerSummary: reason,
-                transcriptSnippet: reason,
-                source: 'agent_tool',
-                isRead: false,
-              );
-              await careAlertController.addAlert(alert);
-              await notifyService.notify(
-                sttProxyUrl: sttProxyUrl,
-                alert: alert,
-              );
-              return true;
-            },
-            storyProvider: (topic) async {
-              final result = await context
-                  .read<CompanionContentService>()
-                  .createContent(
-                    userText: topic.isEmpty ? '說個故事' : '說一個關於$topic的故事',
-                    preferences: const ['story'],
-                  );
-              return result.message;
-            },
-          ),
+          lazy: false,
+          create: (context) {
+            final shopRouter = context.read<AiToolRouter>();
+            final auth = context.read<AuthController>();
+            shopRouter.shopAccountKey = () => auth.session == null
+                ? ''
+                : '${auth.currentElderId}:${identityHashCode(auth.session)}';
+            return NativeToolExecutorService(
+              onPrepareShopPurchase: shopRouter.prepareShopPurchase,
+              onPurchaseShopItem: shopRouter.executeShopPurchase,
+              onCancelShopPurchase: shopRouter.cancelShopPurchase,
+              shopContextKey: () => shopRouter.shopContextKey,
+              contactLookup: ContactLookupService(
+                context.read<ProfileController>(),
+              ),
+              onLogout: () => context.read<AuthController>().logout(),
+              onNotifyCaregiver: ({required reason, required riskLevel}) async {
+                // 先同步取出所需服務，避免 await 後再用 context。
+                final careAlertController = context.read<CareAlertController>();
+                final notifyService =
+                    context.read<CareAlertNotificationService>();
+                final sttProxyUrl =
+                    context.read<ProfileController>().sttProxyUrl;
+                final alert = CareAlert(
+                  id: 'agent_notify_${DateTime.now().microsecondsSinceEpoch}',
+                  createdAt: DateTime.now(),
+                  riskLevel: CareAlertRiskLevel.fromJson(riskLevel),
+                  category: CareAlertCategory.other,
+                  triggerSummary: reason,
+                  transcriptSnippet: reason,
+                  source: 'agent_tool',
+                  isRead: false,
+                );
+                await careAlertController.addAlert(alert);
+                await notifyService.notify(
+                  sttProxyUrl: sttProxyUrl,
+                  alert: alert,
+                );
+                return true;
+              },
+              storyProvider: (topic) async {
+                final result =
+                    await context.read<CompanionContentService>().createContent(
+                  userText: topic.isEmpty ? '說個故事' : '說一個關於$topic的故事',
+                  preferences: const ['story'],
+                );
+                return result.message;
+              },
+            );
+          },
         ),
         ChangeNotifierProvider(
           create: (context) => AgentToolController(
@@ -336,13 +350,12 @@ class PetCompanionApp extends StatelessWidget {
         // 因該 mock 在 production 已不注入；STT 仍依 mockServicesEnabled 條件選用
         // 正式 OpenAiSpeechToTextService（production）或 mock（dev/test）。
         ChangeNotifierProxyProvider5<
-          ProfileController,
-          PetController,
-          AiToolRouter,
-          TextToSpeechService,
-          SearchService,
-          ConversationController
-        >(
+            ProfileController,
+            PetController,
+            AiToolRouter,
+            TextToSpeechService,
+            SearchService,
+            ConversationController>(
           create: (context) => ConversationController(
             profileController: context.read<ProfileController>(),
             petController: context.read<PetController>(),
@@ -364,8 +377,8 @@ class PetCompanionApp extends StatelessWidget {
             emotionFusionService: context.read<EmotionFusionService>(),
             petEmotionMapper: context.read<PetEmotionMapper>(),
             memoryController: context.read<MemoryController>(),
-            companionReplyStrategy: context
-                .read<CompanionReplyStrategyService>(),
+            companionReplyStrategy:
+                context.read<CompanionReplyStrategyService>(),
             languageRoutingService: context.read<LanguageRoutingService>(),
             taigiAsrService: context.read<TaigiAsrService>(),
             coachMarkController: context.read<CoachMarkController>(),
@@ -389,22 +402,21 @@ class PetCompanionApp extends StatelessWidget {
                 emotionFusionService: context.read<EmotionFusionService>(),
                 petEmotionMapper: context.read<PetEmotionMapper>(),
                 memoryController: context.read<MemoryController>(),
-                companionReplyStrategy: context
-                    .read<CompanionReplyStrategyService>(),
+                companionReplyStrategy:
+                    context.read<CompanionReplyStrategyService>(),
                 languageRoutingService: context.read<LanguageRoutingService>(),
                 taigiAsrService: context.read<TaigiAsrService>(),
                 coachMarkController: context.read<CoachMarkController>(),
               ),
         ),
         ChangeNotifierProxyProvider6<
-          ProfileController,
-          PetController,
-          PetStatsController,
-          ConversationController,
-          RealtimeVoiceService,
-          AppNavigationController,
-          VoiceAgentController
-        >(
+            ProfileController,
+            PetController,
+            PetStatsController,
+            ConversationController,
+            RealtimeVoiceService,
+            AppNavigationController,
+            VoiceAgentController>(
           create: (context) => VoiceAgentController(
             profileController: context.read<ProfileController>(),
             petController: context.read<PetController>(),
@@ -419,42 +431,39 @@ class PetCompanionApp extends StatelessWidget {
             trackingService: context.read<AppUsageTrackingService>(),
             agentToolController: context.read<AgentToolController>(),
             careAlertController: context.read<CareAlertController>(),
-            careAlertNotificationService: context
-                .read<CareAlertNotificationService>(),
+            careAlertNotificationService:
+                context.read<CareAlertNotificationService>(),
             coachMarkController: context.read<CoachMarkController>(),
           ),
-          update:
-              (
-                context,
-                profile,
-                pet,
-                petStats,
-                conversation,
-                realtimeService,
-                navigation,
-                controller,
-              ) =>
-                  controller ??
-                  VoiceAgentController(
-                    profileController: profile,
-                    petController: pet,
-                    petStatsController: petStats,
-                    conversationController: conversation,
-                    realtimeVoiceService: realtimeService,
-                    companionEngineService: context
-                        .read<CompanionEngineService>(),
-                    languageRoutingService: context
-                        .read<LanguageRoutingService>(),
-                    memoryController: context.read<MemoryController>(),
-                    navigationService: context.read<AiNavigationService>(),
-                    navigationController: navigation,
-                    trackingService: context.read<AppUsageTrackingService>(),
-                    agentToolController: context.read<AgentToolController>(),
-                    careAlertController: context.read<CareAlertController>(),
-                    careAlertNotificationService: context
-                        .read<CareAlertNotificationService>(),
-                    coachMarkController: context.read<CoachMarkController>(),
-                  ),
+          update: (
+            context,
+            profile,
+            pet,
+            petStats,
+            conversation,
+            realtimeService,
+            navigation,
+            controller,
+          ) =>
+              controller ??
+              VoiceAgentController(
+                profileController: profile,
+                petController: pet,
+                petStatsController: petStats,
+                conversationController: conversation,
+                realtimeVoiceService: realtimeService,
+                companionEngineService: context.read<CompanionEngineService>(),
+                languageRoutingService: context.read<LanguageRoutingService>(),
+                memoryController: context.read<MemoryController>(),
+                navigationService: context.read<AiNavigationService>(),
+                navigationController: navigation,
+                trackingService: context.read<AppUsageTrackingService>(),
+                agentToolController: context.read<AgentToolController>(),
+                careAlertController: context.read<CareAlertController>(),
+                careAlertNotificationService:
+                    context.read<CareAlertNotificationService>(),
+                coachMarkController: context.read<CoachMarkController>(),
+              ),
         ),
       ],
       child: Consumer<ProfileController>(
@@ -506,6 +515,19 @@ class PetCompanionApp extends StatelessWidget {
           AppRoute.reminders => const ReminderScreen(),
           AppRoute.dailyCareTasks => const DailyCareTaskScreen(),
           AppRoute.memories => const MemoryManagementScreen(),
+          AppRoute.moodDiary => Selector<AuthController, String>(
+              selector: (_, auth) => auth.currentUserId,
+              builder: (context, userId, _) {
+                final auth = context.read<AuthController>();
+                return MoodDiaryScreen(
+                  key: ValueKey(userId),
+                  createService: () => MoodDiaryService(
+                    ownerId: userId,
+                    currentUserId: () => auth.currentUserId,
+                    authTokenProvider: auth.resolveNotifyAuthToken,
+                  ),
+                );
+              }),
           AppRoute.puzzle => const PuzzleGameScreen(),
           AppRoute.conversationDetail => _conversationDetail(settings),
           _ => const MainShell(),
@@ -698,9 +720,8 @@ class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
 
     final now = DateTime.now();
     final history = conversation.history; // 最新在前
-    final DateTime? lastInteraction = history.isNotEmpty
-        ? history.first.timestamp
-        : null;
+    final DateTime? lastInteraction =
+        history.isNotEmpty ? history.first.timestamp : null;
     String? latestEmotion;
     for (final turn in history) {
       if (turn.emotionTag != 'neutral') {
@@ -896,7 +917,7 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
-  List<Widget> get _pages => AppConfig.marketplaceVisible
+  List<Widget> get _pages => AppConfig.petShopVisible
       ? const [HomeScreen(), ShopScreen(), HistoryScreen(), SettingsScreen()]
       : const [HomeScreen(), HistoryScreen(), SettingsScreen()];
 
@@ -945,7 +966,7 @@ class _HomeNavigationBar extends StatefulWidget {
 class _HomeNavigationBarState extends State<_HomeNavigationBar> {
   static const _channel = MethodChannel('pet_companion/native_home_bar');
 
-  List<NavigationDestination> get _destinations => AppConfig.marketplaceVisible
+  List<NavigationDestination> get _destinations => AppConfig.petShopVisible
       ? const [
           NavigationDestination(icon: Icon(Icons.pets), label: '首頁'),
           NavigationDestination(icon: Icon(Icons.storefront), label: '商城'),
@@ -1005,7 +1026,7 @@ class _HomeNavigationBarState extends State<_HomeNavigationBar> {
         viewType: 'native_home_bar',
         creationParams: {
           'selectedIndex': widget.selectedIndex,
-          'showMarketplace': AppConfig.marketplaceVisible,
+          'showMarketplace': AppConfig.petShopVisible,
         },
         creationParamsCodec: const StandardMessageCodec(),
       ),

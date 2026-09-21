@@ -190,7 +190,13 @@ class RealtimeVoiceService {
   bool _hasActiveAssistantResponse = false;
   // 工具結果（找新聞 / 播音樂…）要念的句子：若送來時還有 active response，先排隊，
   // 等 response.done 再送，避免「同時只能一個 response」而被丟棄。
-  String? _pendingToolOutcomeLine;
+  final Queue<({String line, int generation})> _pendingToolOutcomes = Queue();
+  final Set<String> _spokenToolOutcomeIds = {};
+  int _toolOutcomeGeneration = 0;
+  bool _toolResponseRequested = false;
+  bool _audioPlaybackActive = false;
+  String _replyLanguage = 'zh-TW';
+  final Set<String> _completedAssistantResponseIds = {};
   // 這一輪回覆是否出現過 output_audio_buffer 事件（代表真的在播語音）。
   // 用來決定排隊中的工具念稿要在 response.done 立刻送（純文字回覆），
   // 還是等 output_audio_buffer.stopped（語音播完）才送。
@@ -340,6 +346,7 @@ class RealtimeVoiceService {
       try {
         await _resetConnectionResources(emitIdle: false);
         _throwIfStaleConnect(generation);
+        _replyLanguage = replyLanguage.trim();
         final testConnect = connectImplementationForTesting;
         if (testConnect != null) {
           await testConnect(RealtimeConnectRequest(
@@ -555,6 +562,11 @@ class RealtimeVoiceService {
   Future<void> updateCompanionContext(String companionContext) async {
     final normalized = companionContext.trim();
     if (normalized.isEmpty) return;
+    final language = RegExp(r'^replyLanguage=([^\n\r]+)', multiLine: true)
+        .firstMatch(normalized)
+        ?.group(1)
+        ?.trim();
+    if (language != null && language.isNotEmpty) _replyLanguage = language;
     try {
       await _sendEventPayload(jsonEncode({
         'type': 'session.update',
@@ -583,52 +595,87 @@ class RealtimeVoiceService {
   ///
   /// 只送一次性 `response.create` 並用 `response.instructions` 帶入這一句要說的內容；
   /// **不建立 user 訊息**（不會產生假的使用者泡泡），也**不動純語音 server_vad 主流程**。
-  /// 沿用既有 `_sendEventPayload`（含 data channel 未開時排隊與錯誤保護）。
-  Future<void> speakToolOutcome(String line) async {
+  /// 只在仍可傳送時補述；已斷線的結果不可留到下一段連線重播。
+  Future<void> speakToolOutcome(String line, {String? outcomeId}) async {
     final normalized = line.trim();
-    if (normalized.isEmpty) return;
+    if (normalized.isEmpty || _isStopping || _isDisposed) return;
+    final identity = outcomeId ?? normalized;
+    if (!_spokenToolOutcomeIds.add(identity)) return;
     // Realtime 同時只能有一個 active response：若目前還在回覆中（例如剛說完「好的，幫你查」
     // 那個 response 尚未結束），先把這句排隊，等 response.done 再送，避免被丟棄而「沒有後續」。
-    if (_hasActiveAssistantResponse) {
-      _pendingToolOutcomeLine = normalized;
+    if (_hasActiveAssistantResponse ||
+        _toolResponseRequested ||
+        _audioPlaybackActive) {
+      _pendingToolOutcomes
+          .add((line: normalized, generation: _toolOutcomeGeneration));
+      if (!_hasActiveAssistantResponse && !_toolResponseRequested) {
+        _startToolOutcomeFlushTimer();
+      }
       _log('Tool outcome queued until current response finishes');
       return;
     }
-    await _sendToolOutcomeResponse(normalized);
+    await _sendToolOutcomeResponse(normalized, _toolOutcomeGeneration);
   }
 
-  Future<void> _sendToolOutcomeResponse(String line) async {
+  /// New input, cancellation, and session teardown invalidate delayed tool speech.
+  void invalidateToolOutcomes() {
+    _toolOutcomeGeneration += 1;
+    _pendingToolOutcomes.clear();
+    _spokenToolOutcomeIds.clear();
+    _cancelToolOutcomeFlushTimer();
+  }
+
+  Future<void> _sendToolOutcomeResponse(String line, int generation) async {
+    if (generation != _toolOutcomeGeneration ||
+        _isStopping ||
+        _isDisposed ||
+        !_dataChannelOpen ||
+        _isClosedOrFailedState(_lastConnectionState) ||
+        _isClosedOrFailedState(_lastIceConnectionState)) {
+      return;
+    }
+    _toolResponseRequested = true;
     try {
       await _sendEventPayload(jsonEncode({
         'type': 'response.create',
         'response': {
           'instructions': '請用溫暖、簡短、口語的方式對長輩說以下這件事，像剛幫他做完一樣自然，'
+              '只說本次結果或必要確認，不另加話題或邀請繼續聊；說完等待使用者。'
+              '${_outputLanguageGuidance('replyLanguage=$_replyLanguage')}\n'
               '不要重複問問題、不要說自己是 AI：$line',
         },
       }));
       _log('Sent tool outcome to realtime session for spoken reply');
     } catch (error) {
+      _toolResponseRequested = false;
       _log('Unable to send tool outcome: $error');
     }
   }
 
   /// 真的送出排隊中的工具念稿（找新聞 / 播音樂結果）並清掉排隊狀態與保底計時器。
   /// 由 output_audio_buffer.stopped、純文字回覆的 response.done、或保底計時器觸發。
-  void _flushPendingToolOutcome() {
+  void _flushPendingToolOutcome({bool playbackFallback = false}) {
+    if (_hasActiveAssistantResponse ||
+        _toolResponseRequested ||
+        (_audioPlaybackActive && !playbackFallback)) {
+      return;
+    }
     _cancelToolOutcomeFlushTimer();
-    final pending = _pendingToolOutcomeLine;
-    if (pending == null) return;
-    _pendingToolOutcomeLine = null;
-    unawaited(_sendToolOutcomeResponse(pending));
+    if (_pendingToolOutcomes.isEmpty) return;
+    final pending = _pendingToolOutcomes.removeFirst();
+    unawaited(_sendToolOutcomeResponse(pending.line, pending.generation));
   }
 
   void _startToolOutcomeFlushTimer() {
     _cancelToolOutcomeFlushTimer();
+    final generation = _toolOutcomeGeneration;
     _toolOutcomeFlushTimer = Timer(toolOutcomeFlushFallback, () {
-      if (_isStopping || _isDisposed) return;
+      if (_isStopping || _isDisposed || generation != _toolOutcomeGeneration) {
+        return;
+      }
       _log('output_audio_buffer.stopped not received in time; '
           'flushing queued tool outcome via fallback');
-      _flushPendingToolOutcome();
+      _flushPendingToolOutcome(playbackFallback: true);
     });
   }
 
@@ -852,6 +899,7 @@ class RealtimeVoiceService {
     }
 
     if (type == 'response.created') {
+      _toolResponseRequested = false;
       _hasActiveAssistantResponse = true;
       _sawOutputAudioBufferThisResponse = false;
       _emit(RealtimeEventType.assistantResponseStart, '');
@@ -902,6 +950,7 @@ class RealtimeVoiceService {
     if (type == 'output_audio_buffer.started' ||
         type == 'response.output_audio.delta' ||
         type == 'response.audio.delta') {
+      _audioPlaybackActive = true;
       // CR-0089：本輪首次出現「真實語音」→ 發一次 assistantAudioPlaybackStarted。
       // 守在 _sawOutputAudioBufferThisResponse（非 _isSpeaking）：文字先於語音的
       // 混合回覆，_isSpeaking 可能已被文字 delta 設 true，仍要正確發出本訊號。
@@ -918,10 +967,11 @@ class RealtimeVoiceService {
     }
 
     if (type == 'output_audio_buffer.stopped') {
+      _audioPlaybackActive = false;
       // 這才是「語音真的播完」的時間點（response.done 只代表生成結束）。
       // 排隊中的工具念稿要等到這裡才送，response 2 的字幕才不會在 response 1
       // 還在播時就把字幕蓋掉。
-      if (_pendingToolOutcomeLine != null) {
+      if (_pendingToolOutcomes.isNotEmpty) {
         _flushPendingToolOutcome();
       }
       // CR-0089：把「語音真的播完」當成事件對外發出（response.done ≠ 播完）。
@@ -932,6 +982,16 @@ class RealtimeVoiceService {
     }
 
     if (type == 'response.done') {
+      final response = map['response'];
+      final responseId =
+          response is Map ? response['id']?.toString() ?? '' : '';
+      if (responseId.isNotEmpty) {
+        if (!_completedAssistantResponseIds.add(responseId)) return;
+        if (_completedAssistantResponseIds.length > 256) {
+          _completedAssistantResponseIds
+              .remove(_completedAssistantResponseIds.first);
+        }
+      }
       final responseText = _extractReplyTextFromResponseDone(map).trim();
       final text =
           responseText.isNotEmpty ? responseText : _assistantBuffer.trim();
@@ -945,6 +1005,7 @@ class RealtimeVoiceService {
       _assistantBuffer = '';
       _isSpeaking = false;
       _hasActiveAssistantResponse = false;
+      _toolResponseRequested = false;
       _emit(RealtimeEventType.assistantResponseDone, '');
       _emit(RealtimeEventType.assistantAudioEnd, '');
       // 這一輪回覆結束後，若有排隊中的工具念稿（找新聞 / 播音樂結果），決定何時送：
@@ -952,8 +1013,8 @@ class RealtimeVoiceService {
       // - 有語音 buffer：response.done 只代表「生成完」，語音可能還在播，
       //   等 output_audio_buffer.stopped 才送，避免字幕提早被蓋掉；
       //   並用保底計時器確保 .stopped 沒到時也不會漏掉「後續」。
-      if (_pendingToolOutcomeLine != null) {
-        if (_sawOutputAudioBufferThisResponse) {
+      if (_pendingToolOutcomes.isNotEmpty) {
+        if (_audioPlaybackActive) {
           _startToolOutcomeFlushTimer();
         } else {
           _flushPendingToolOutcome();
@@ -1156,9 +1217,13 @@ class RealtimeVoiceService {
     _emittedFinalUserItemIds.clear();
     _isSpeaking = false;
     _hasActiveAssistantResponse = false;
+    _toolResponseRequested = false;
+    _audioPlaybackActive = false;
+    _replyLanguage = 'zh-TW';
+    _completedAssistantResponseIds.clear();
     _sawOutputAudioBufferThisResponse = false;
     _cancelToolOutcomeFlushTimer();
-    _pendingToolOutcomeLine = null;
+    invalidateToolOutcomes();
     _cancelPartialThrottleTimer();
     _lastPartialEmitAt = null;
     if (emitIdle) {
@@ -1411,6 +1476,7 @@ class RealtimeVoiceService {
 使用者不一定會直接說出「孤單、難過、焦慮」等字眼，你要從語意中理解可能的陪伴需求。
 不要武斷地說「你就是孤單」。
 回覆要簡短、自然（通常 1～3 句）、像陪在身邊的寵物。
+說完本次回答就等待使用者，不自行續講、換話題或例行邀請繼續聊；使用者明確要求的詳細回答、必要工具結果與確認、安全提醒不受此限。
 每次最多問一個問題。
 不要像客服，不要像老師，不要做醫療診斷。
 普通聊天就自然接話，不要硬把話題帶去提醒、喝水、吃藥或任務；長者明確要求或情境明確需要時才提醒。
@@ -1429,11 +1495,14 @@ $context
   }
 
   String _outputLanguageGuidance(String context) {
-    final replyLanguage =
-        RegExp(r'replyLanguage=([^\n\r]+)').firstMatch(context)?.group(1) ?? '';
+    final replyLanguage = RegExp(r'^replyLanguage=([^\n\r]+)', multiLine: true)
+            .firstMatch(context)
+            ?.group(1) ??
+        _replyLanguage;
     return switch (replyLanguage.trim()) {
       'mixed-zh-taigi' => '台語口吻搭配繁體中文，自然國台語混用、長者聽得懂優先；不要用艱深台語字或大量羅馬拼音。',
-      'taigi' => '以台語為主、長者聽得懂優先：用自然口語台語回覆，可自然國台語混用，不要硬翻成生僻台語字，也不要大量羅馬拼音。',
+      'taigi' =>
+        '以台語為主、長者聽得懂優先：這是使用者明確選擇的回覆語言，跨輪與工具結果都維持自然口語台語；不要因為一小句國語、混合語句或轉錄結果就改用國語。不要硬翻成生僻台語字，也不要大量羅馬拼音。',
       _ => '請用繁體中文自然回覆。',
     };
   }

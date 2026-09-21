@@ -724,7 +724,88 @@ async function listTasksForAdmin(options = {}) {
   return listTasksForAdminJson(options);
 }
 
+function editFailure(status, code) {
+  return Object.assign(new Error(code), { status, code });
+}
+
+function validateTaskEdit(payload) {
+  const allowed = ['title', 'description', 'scheduledTime'];
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)
+      || !Object.keys(payload).length || Object.keys(payload).some((key) => !allowed.includes(key))) {
+    throw editFailure(400, 'invalid_payload');
+  }
+  const patch = {};
+  for (const key of Object.keys(payload)) {
+    if (typeof payload[key] !== 'string' || payload[key].includes('\0')) throw editFailure(400, 'invalid_payload');
+    const value = key === 'scheduledTime' ? payload[key] : payload[key].trim();
+    if (key === 'title' && (!value || [...value].length > 200)) throw editFailure(400, 'invalid_payload');
+    if (key === 'description' && [...value].length > 1000) throw editFailure(400, 'invalid_payload');
+    if (key === 'scheduledTime' && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value)) throw editFailure(400, 'invalid_payload');
+    patch[key] = value;
+  }
+  return patch;
+}
+
+// Editing is DB-only: lock the current task before checking history and updating
+// only supplied fields, so independent edits never overwrite an entire snapshot.
+async function editTask(id, payload, options = {}) {
+  const patch = validateTaskEdit(payload);
+  const pg = options.pg || activePg;
+  const pool = pg.getPool?.();
+  if (!pool) throw editFailure(503, 'task_unavailable');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const caller = options.residentCaller;
+    if (caller) {
+      const validUuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+      if (!validUuid.test(caller.userId || '') || !validUuid.test(caller.elderId || '')) throw editFailure(403, 'forbidden');
+      const owner = await client.query(
+        `SELECT id FROM users WHERE id = $1 AND elder_id = $2
+         AND role = 'elder' AND COALESCE(status, 'active') = 'active' FOR SHARE`,
+        [caller.userId, caller.elderId],
+      );
+      if (!owner.rows.length) throw editFailure(403, 'forbidden');
+    } else if (!options.authContext) {
+      throw editFailure(403, 'forbidden');
+    }
+    const found = await client.query(
+      `SELECT * FROM daily_care_tasks WHERE id = $1${caller ? ' AND elder_id = $2' : ''} FOR UPDATE`,
+      caller ? [id, caller.elderId] : [id],
+    );
+    const task = found.rows[0];
+    if (!task) throw editFailure(404, 'not_found');
+    if (!caller) {
+      const authz = require('../admin/authorizationService');
+      if (!(await authz.assertCanManageResident(options.authContext, task.elder_id, { pg: client }))) {
+        throw editFailure(403, 'forbidden');
+      }
+    }
+    const submissions = await client.query('SELECT id FROM daily_care_task_submissions WHERE task_id = $1 LIMIT 1', [id]);
+    if (task.status !== 'pending' || submissions.rows.length) throw editFailure(409, 'task_not_editable');
+    if (Object.hasOwn(patch, 'scheduledTime') && patch.scheduledTime !== task.scheduled_time && task.due_at != null) {
+      throw editFailure(409, 'task_schedule_conflict');
+    }
+    const columns = { title: 'title', description: 'description', scheduledTime: 'scheduled_time' };
+    const keys = Object.keys(patch);
+    const assignments = keys.map((key, i) => `${columns[key]} = $${i + 2}`);
+    const updated = await client.query(
+      `UPDATE daily_care_tasks SET ${assignments.join(', ')}, updated_at = clock_timestamp() WHERE id = $1 RETURNING *`,
+      [id, ...keys.map((key) => patch[key])],
+    );
+    await client.query('COMMIT');
+    return rowToTask(updated.rows[0]);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
+  editTask,
+  validateTaskEdit,
   createTask,
   listTasks,
   getTaskById,

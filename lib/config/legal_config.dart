@@ -1,7 +1,7 @@
 /// 法遵（隱私 / 條款 / 知情同意）相關的集中設定。
 ///
 /// 這裡只放「常數」與「版本號」，實際條款內文放在 [legal_content.dart]。
-  /// 對外連結已有正式 GitHub Pages 頁面；仍可由 `--dart-define` 覆寫。
+/// 對外連結已有正式 GitHub Pages 頁面；仍可由 `--dart-define` 覆寫。
 class LegalConfig {
   const LegalConfig._();
 
@@ -9,7 +9,7 @@ class LegalConfig {
   ///
   /// 只要隱私權政策、服務條款或資料蒐集說明有實質變動，就把這個版本號往上加，
   /// 已同意舊版本的使用者下次啟動時會被要求重新閱讀並同意新版本。
-  static const String consentVersion = '2026-08-07.v1';
+  static const String consentVersion = '2026-09-21.v2';
 
   /// 隱私權政策正式 hosted 頁面網址（上架時填入）。
   ///

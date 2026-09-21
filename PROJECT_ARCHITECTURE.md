@@ -146,6 +146,42 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
 
 ---
 
+### 4.1 CR-0108 心情日記契約（2026-09-21 核准，待實作）
+
+以下為 architecture-agent 已核准的 additive 契約，可由指定 owner 直接實作，非既有功能已完成的宣稱。
+
+| Method | Path | 成功回應 / 權限 |
+|---|---|---|
+| GET | `/api/mood-diary` | 200 `{success:true,entries:[entry]}`；requireResidentCaller，僅本人 |
+| POST | `/api/mood-diary` | 201 `{success:true,entry}`；requireResidentCaller，僅本人 |
+| PATCH | `/api/mood-diary/:id` | 200 `{success:true,entry}`；requireResidentCaller，僅本人，僅改分享 |
+| DELETE | `/api/mood-diary/:id` | 200 `{success:true}`；requireResidentCaller，僅本人 |
+| GET | `/api/admin/residents/:residentId/mood-diary` | 200 `{success:true,entries:[entry]}`；既有 staff auth，active 已指派 caregiver（含 viewer）或 super_admin，僅分享資料 |
+
+- `entry = {id,mood,content,createdAt,sharedWithCaregiver}`；id 為 server UUID，createdAt 為 server ISO8601；mood 限 `happy/okay/low/worried`；content trim 後非空、最多 1000 Unicode code points；sharedWithCaregiver 為 boolean，預設 false。
+- POST 僅接受 `{mood,content,sharedWithCaregiver?}`；PATCH 僅接受 `{sharedWithCaregiver:boolean}`。拒絕未知欄位（包含 userId、elderId、逐字稿）；所有 resident 身分取 `req.residentCaller` 的 userId / elderId。staff residentId 依既有住民解析方式映射 elderId，再檢查 active assignment，不採信前端授權。
+- GET 支援選用 `limit`，整數 1..100、預設 50；依 createdAt DESC、id DESC 排序。staff 查詢必須在 SQL 限 `shared_with_caregiver=true`，super_admin 亦不得讀未分享日記。無分享資料回空列表；非授權住民回 403。
+- 錯誤一律 `{success:false,error}`：400 `invalid_payload`、401 沿用 auth error code、403 `forbidden`（既有 middleware code 保持相容）、本人 scope 內找不到 mutation target 為 404 `not_found`、DB 不可用 503 `diary_unavailable`。回應 `Cache-Control: private, no-store`；不記錄內容到 log / analytics。
+- 儲存按鈕不等於分享同意：另設未預勾分享 checkbox，清楚指出對已授權照護者 / 管理員可見；撤回分享立即影響後續讀取。無 AI 自動寫入、無私人聊天回填；日記不自動進入長期記憶。保留既有記憶管理與刪除入口。
+- 核准 PostgreSQL-only migration `019`（若編號已被並行變更占用，只改用下一個空號，勿覆寫）：`mood_diary_entries`，`id UUID PRIMARY KEY`、`user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE`、`elder_id UUID NOT NULL REFERENCES elders(id) ON DELETE CASCADE`、`mood TEXT NOT NULL CHECK` 四值、`content TEXT NOT NULL CHECK(char_length(content) BETWEEN 1 AND 1000)`、`shared_with_caregiver BOOLEAN NOT NULL DEFAULT FALSE`、`created_at TIMESTAMPTZ NOT NULL DEFAULT now()`。索引為住民時間排序及 shared=true 的住民時間 partial index；user / elder 配對由 server 權威身分寫入，不接受 client 指定。
+- 帳號刪除在既有同一 transaction 刪除日記 rows，FK cascade 作防護；核准 `services/auth/sessionService.js` 最小接線及對應測試。不可用 JSON fallback 假成功。無新依賴、無 Care Alert schema 改動。
+- 新日記與 resident 任務編輯端點另以 DB 驗證 `users.role='elder'` 及 userId / elderId 配對，不改共享 requireResidentCaller。entry 不新增 elderId / userId，維持上述使用者指定形狀；UI 以請求帳號 generation 隔離回應。v1 不新增 requestId / ledger，UI 防連點，未知 POST 結果先重讀、不自動重送；不得宣稱 POST 冪等。
+
+### 4.2 CR-0108 任務編輯契約（2026-09-21 核准，待實作）
+
+- `PATCH /api/daily-care-tasks/:taskId`：requireResidentCaller，只能本人任務；`PATCH /api/admin/daily-care-tasks/:taskId`：既有 admin auth + assertCanManageResident，super_admin 或 active primary / secondary，viewer 禁寫。
+- payload 是非空子集合 `{title?,description?,scheduledTime?}`，拒絕其餘欄位；title trim 後 1..200 code points，description trim 後 0..1000，scheduledTime 為嚴格 `HH:mm`（00:00..23:59），沿用 Asia/Taipei 本地每日時間。不允許改住民、type、status、dueAt、submission 或 proof。
+- 成功 200 `{success:true,task}` 沿用現有 task shape；400 `invalid_payload`，auth 錯誤沿用既有中介，scope 內不存在 404 `not_found`，完成任務拒絕 409 `task_not_editable`。dueAt 非 null 時更改 scheduledTime 拒絕 409 `task_schedule_conflict`，內容仍可改，不默默製造不一致時間。
+- 核准既有 `dailyCareTaskStore.js` 的 scoped edit 與測試、server 最小路由接線。只更新 payload 指定欄位，以 transaction / row lock 驗證當前可編輯狀態，保存 status / proof。此版不新增 revision 欄位：同欄位並行編輯採最後成功提交者生效，不同欄位不得被整筆覆寫；此規則取代 CR-0108 初稿強制版本衝突要求。UI 保存後重讀，排程只在成功後替換舊提醒。
+- 可編輯狀態限定 pending 且無 submission；否則 409 `task_not_editable`。新 PATCH 採 DB-only，故障回 503 `{success:false,error:'task_unavailable'}`，不改其他既有路由 fallback。v1 不要求 If-Match / 428，維持上述欄位級最後提交規則；dueAt 非 null 時更改時間維持 409，不推算另一日期。舊提醒取消 / 重設是 Flutter owner 責任，不宣稱後端已取消本機通知。
+
+### 4.3 CR-0108 語音商店與 Realtime 範圍核准
+
+- 語音購買指**既有本機金幣錢包的虛擬寵物商店**，不是 `/api/marketplace/orders` 外部 commerce。不新增付款、物流或訂單 API。Hegel 診斷後沿用現有商品 / gold / inventory 購買路徑：先顯示品項與金幣成本、明確確認，再檢查餘額 / 持有狀態並扣款發放；同一確認不可重複扣金幣，取消 / 換帳號使確認失效。不得聲稱伺服器級交易保障或真實付款。
+- realtime-voice-agent 可改 `realtime_voice_service.dart`：context / tool response instructions 保留明確 reply language；依 user turn + tool call identity 去重，不把同輪不同工具結果互相吞掉；新輸入 / stop 使舊 queued outcome 失效；生成中或音訊播放中先排隊，flush 時重新檢查 generation / turn，播放結束亦不可自動創造無請求續講。
+- `voice_agent_controller.dart` 的 start / reconnect / warm input 尊重 profile 明確台語（taigiRealtime、taigiPreferred、manual taigi），輸出為 taigi 而非強制 mixed；reconnect 保留 mode，async tool callback 檢查 generation / turn。profile 持久化 / 帳號隔離由 frontend owner 負責。
+- 不改 SDP / ICE / DataChannel 傳輸、VAD 設定或手動 commit / VAD race；後者另 checkpoint。僅新增 / 更新 voice owner 的 regression tests；本次不執行 Flutter tests / build，實機與測試結果不得宣稱通過。
+
 ## 5. Care Alert 共用資料結構（🔒 三方共用）
 
 分析邏輯 owner：`companion-memory-agent`；持久化 / 狀態 / 通知 owner：`backend-agent`；顯示 owner：`frontend-ux-agent`。任何一方都不可單方面改欄位。

@@ -108,7 +108,7 @@ test("mixed Mandarin/Taigi voice commands route to real tools", () => {
     {
       text: "放台語老歌予我聽",
       toolName: "play_music",
-      argument: ["query", "台語老歌 放鬆"],
+      argument: ["query", "台語老歌"],
     },
     {
       text: "八點記咧提醒我食藥",

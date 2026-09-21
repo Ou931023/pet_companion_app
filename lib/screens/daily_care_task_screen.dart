@@ -102,13 +102,29 @@ class _DailyCareTaskScreenState extends State<DailyCareTaskScreen> {
               ),
             ),
           ),
-        for (final task in controller.tasks)
+        for (final task in controller.tasks) ...[
           DailyCareTaskCard(
             task: task,
             isSubmitting: controller.isSubmitting(task.id),
             isHighlighted: _isVoiceTarget(task),
-            onComplete: () => _handleComplete(task),
+            onComplete: () {
+              if (!controller.isUpdating(task.id)) _handleComplete(task);
+            },
           ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: IconButton(
+              tooltip: '修改${task.title}的內容與時間',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: task.status != DailyCareTaskStatus.pending ||
+                      task.latestSubmission != null ||
+                      controller.isSubmitting(task.id) ||
+                      controller.isUpdating(task.id)
+                  ? null
+                  : () => _editTask(task),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -117,6 +133,15 @@ class _DailyCareTaskScreenState extends State<DailyCareTaskScreen> {
     final requestedType = _voiceArgs?.requestedTaskType;
     if (requestedType == null || requestedType.isEmpty) return false;
     return dailyCareTaskTypeToString(task.type) == requestedType;
+  }
+
+  Future<void> _editTask(DailyCareTask task) async {
+    final controller = context.read<DailyCareTaskController>();
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _TaskEditor(task: task, controller: controller),
+    );
   }
 
   /// 使用 State 自身的 `context`（不接收 context 參數），讓 `mounted` 能正確守衛
@@ -343,6 +368,143 @@ class _DailyCareTaskScreenState extends State<DailyCareTaskScreen> {
 }
 
 enum _PickSource { camera, gallery }
+
+class _TaskEditor extends StatefulWidget {
+  const _TaskEditor({required this.task, required this.controller});
+  final DailyCareTask task;
+  final DailyCareTaskController controller;
+
+  @override
+  State<_TaskEditor> createState() => _TaskEditorState();
+}
+
+class _TaskEditorState extends State<_TaskEditor> {
+  late final _title = TextEditingController(text: widget.task.title);
+  late final _description =
+      TextEditingController(text: widget.task.description);
+  final _form = GlobalKey<FormState>();
+  TimeOfDay? _time;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final match = RegExp(r'^([01]\d|2[0-3]):([0-5]\d)$')
+        .firstMatch(widget.task.scheduledTime);
+    if (match != null) {
+      _time =
+          TimeOfDay(hour: int.parse(match[1]!), minute: int.parse(match[2]!));
+    }
+  }
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _description.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_saving || !_form.currentState!.validate()) return;
+    if (_time == null) {
+      setState(() => _error = '請選擇任務時間。');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    final saved = await widget.controller.updateTask(
+      taskId: widget.task.id,
+      title: _title.text,
+      description: _description.text,
+      scheduledTime:
+          '${_time!.hour.toString().padLeft(2, '0')}:${_time!.minute.toString().padLeft(2, '0')}',
+    );
+    if (!mounted) return;
+    if (saved) {
+      Navigator.pop(context);
+    } else {
+      setState(() {
+        _saving = false;
+        _error = widget.controller.errorMessage ?? '任務還沒儲存成功，請稍後再試一次。';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: !_saving,
+      child: SafeArea(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+              16, 20, 16, MediaQuery.of(context).viewInsets.bottom + 20),
+          child: Form(
+            key: _form,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text('修改今日任務',
+                    style:
+                        TextStyle(fontSize: 24, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _title,
+                  enabled: !_saving,
+                  maxLength: 200,
+                  decoration: const InputDecoration(
+                      labelText: '任務內容', border: OutlineInputBorder()),
+                  validator: (value) =>
+                      value == null || value.trim().isEmpty ? '請填寫任務內容。' : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _description,
+                  enabled: !_saving,
+                  maxLength: 1000,
+                  minLines: 2,
+                  maxLines: 4,
+                  decoration: const InputDecoration(
+                      labelText: '備註', border: OutlineInputBorder()),
+                ),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.schedule),
+                  label: Text(_time?.format(context) ?? '選擇時間'),
+                  onPressed: _saving
+                      ? null
+                      : () async {
+                          final time = await showTimePicker(
+                              context: context,
+                              initialTime:
+                                  _time ?? const TimeOfDay(hour: 9, minute: 0));
+                          if (mounted && time != null) {
+                            setState(() => _time = time);
+                          }
+                        },
+                ),
+                if (_error != null)
+                  Text(_error!,
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                          fontSize: 18)),
+                const SizedBox(height: 12),
+                FilledButton(
+                    onPressed: _saving ? null : _save,
+                    child: Text(_saving ? '正在儲存' : '儲存任務')),
+                TextButton(
+                    onPressed: _saving ? null : () => Navigator.pop(context),
+                    child: const Text('取消')),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _VoiceGuidanceBanner extends StatelessWidget {
   const _VoiceGuidanceBanner({this.taskLabel});

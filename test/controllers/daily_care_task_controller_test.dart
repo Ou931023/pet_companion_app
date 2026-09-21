@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -61,6 +62,39 @@ class _FakeApi extends DailyCareTaskApiService {
   int listCalls = 0;
   int createCalls = 0;
   int submitCalls = 0;
+  bool editError = false;
+  int editCalls = 0;
+  final List<Completer<DailyCareTask>> editRequests = [];
+  bool delayEdits = false;
+
+  @override
+  Future<DailyCareTask> updateTask({
+    required String taskId,
+    required String title,
+    required String description,
+    required String scheduledTime,
+  }) async {
+    editCalls++;
+    if (delayEdits) {
+      final request = Completer<DailyCareTask>();
+      editRequests.add(request);
+      return request.future;
+    }
+    if (editError) {
+      throw const DailyCareTaskApiException('請重新查看任務。', requiresRefresh: true);
+    }
+    final previous = _tasks.firstWhere((t) => t.id == taskId);
+    return DailyCareTask(
+      id: taskId,
+      elderId: previous.elderId,
+      title: title,
+      type: previous.type,
+      description: description,
+      scheduledTime: scheduledTime,
+      status: previous.status,
+      proofRequired: previous.proofRequired,
+    );
+  }
 
   @override
   Future<List<DailyCareTask>> listTasks({required String elderId}) async {
@@ -68,7 +102,9 @@ class _FakeApi extends DailyCareTaskApiService {
     if (listError) {
       throw const DailyCareTaskApiException('現在拿不到今天的任務，待會再看看好嗎？');
     }
-    return _tasks.where((t) => t.elderId == elderId || elderId == 'default_user').toList();
+    return _tasks
+        .where((t) => t.elderId == elderId || elderId == 'default_user')
+        .toList();
   }
 
   @override
@@ -108,6 +144,92 @@ class _FakeApi extends DailyCareTaskApiService {
 }
 
 void main() {
+  test('edit completion after dispose is ignored without notification',
+      () async {
+    final api = _FakeApi(initialTasks: [_task('t1')])..delayEdits = true;
+    final controller = DailyCareTaskController(apiService: api);
+    await controller.load();
+    final pending = controller.updateTask(
+        taskId: 't1', title: '散步', description: '', scheduledTime: '16:30');
+    controller.dispose();
+    api.editRequests.single.complete(_task('t1'));
+    expect(await pending, false);
+  });
+
+  test('old account edit cannot clear new account saving state', () async {
+    final api = _FakeApi(initialTasks: [_task('t1')])..delayEdits = true;
+    final controller = DailyCareTaskController(apiService: api);
+    await controller.load();
+    final oldEdit = controller.updateTask(
+        taskId: 't1', title: '舊內容', description: '', scheduledTime: '16:30');
+    controller.setElderId('other');
+    api._tasks = [_task('t1', elderId: 'other')];
+    await controller.load();
+    final newEdit = controller.updateTask(
+        taskId: 't1', title: '新內容', description: '', scheduledTime: '17:30');
+    var notifications = 0;
+    controller.addListener(() => notifications++);
+    api.editRequests.first.complete(_task('t1'));
+    expect(await oldEdit, false);
+    expect(controller.isUpdating('t1'), true);
+    expect(controller.tasks.first.elderId, 'other');
+    expect(notifications, 0);
+    api.editRequests.last.complete(_task('t1', elderId: 'other'));
+    expect(await newEdit, true);
+    expect(controller.isUpdating('t1'), false);
+    controller.dispose();
+  });
+
+  test('edit applies server task without changing completion status', () async {
+    final api = _FakeApi(initialTasks: [_task('t1')]);
+    final controller = DailyCareTaskController(apiService: api);
+    await controller.load();
+    expect(
+        await controller.updateTask(
+            taskId: 't1',
+            title: '散步',
+            description: '慢慢走',
+            scheduledTime: '16:30'),
+        true);
+    expect(controller.tasks.first.title, '散步');
+    expect(controller.tasks.first.scheduledTime, '16:30');
+    expect(controller.tasks.first.status, DailyCareTaskStatus.pending);
+    expect(controller.isUpdating('t1'), false);
+  });
+
+  test('edit rejects blank content and completed history before HTTP',
+      () async {
+    final api = _FakeApi(initialTasks: [
+      _task('t1'),
+      _task('t2', status: DailyCareTaskStatus.completed)
+    ]);
+    final controller = DailyCareTaskController(apiService: api);
+    await controller.load();
+    expect(
+        await controller.updateTask(
+            taskId: 't1', title: ' ', description: '', scheduledTime: '16:30'),
+        false);
+    expect(
+        await controller.updateTask(
+            taskId: 't2', title: '散步', description: '', scheduledTime: '16:30'),
+        false);
+    expect(api.editCalls, 0);
+  });
+
+  test('edit conflict refreshes list and preserves old task', () async {
+    final api = _FakeApi(initialTasks: [_task('t1')])..editError = true;
+    final controller = DailyCareTaskController(apiService: api);
+    await controller.load();
+    expect(
+        await controller.updateTask(
+            taskId: 't1', title: '散步', description: '', scheduledTime: '16:30'),
+        false);
+    expect(controller.tasks.first.title, 't1');
+    expect(api.listCalls, 2);
+    expect(controller.errorMessage, '請重新查看任務。');
+    expect(controller.isUpdating('t1'), false);
+  });
+
   test('load：已有任務 → 不補種、tasks 設定正確', () async {
     final api = _FakeApi(initialTasks: [_task('t1'), _task('t2')]);
     final controller = DailyCareTaskController(apiService: api);

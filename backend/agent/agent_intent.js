@@ -39,6 +39,7 @@ const AGENT_INTENTS = Object.freeze([
   "delete_memory",
   "logout",
   "purchase_pet_skin",
+  "purchase_shop_item",
   // 沒有工具意圖、交給陪伴對話處理
   "small_talk",
 ]);
@@ -59,6 +60,7 @@ const TOOL_TO_INTENT = Object.freeze({
   delete_memory: "delete_memory",
   logout: "logout",
   purchase_pet_skin: "purchase_pet_skin",
+  purchase_shop_item: "purchase_shop_item",
 });
 
 // 情緒危機（自傷 / 活著沒意思 / 沒有人需要我…）。

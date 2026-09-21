@@ -93,9 +93,8 @@ class _CoachMarkHostState extends State<CoachMarkHost> {
     if (replay) {
       _controller.consumeReplayRequest();
     } else {
-      final done = await context
-          .read<LocalStorageService>()
-          .loadHomeCoachMarkDone();
+      final done =
+          await context.read<LocalStorageService>().loadHomeCoachMarkDone();
       if (done) return;
     }
     if (!mounted || !widget.homeVisible || _controller.isActive) return;
@@ -106,7 +105,7 @@ class _CoachMarkHostState extends State<CoachMarkHost> {
       buildHomeCoachMarkSteps(
         keys,
         bottomNavInset: bottomInset,
-        showMarketplace: AppConfig.marketplaceVisible,
+        showMarketplace: AppConfig.petShopVisible,
       ),
     );
   }
@@ -254,8 +253,8 @@ class _CoachMarkOverlayState extends State<CoachMarkOverlay> {
     final safeTop = media.padding.top + 16;
     final safeBottom = media.padding.bottom + 16;
     // 卡片最高不超過可用高度的一半，避免小螢幕 / 放大字體時溢出安全區。
-    final maxCardHeight = ((media.size.height - safeTop - safeBottom) * 0.5)
-        .clamp(150.0, 420.0);
+    final maxCardHeight =
+        ((media.size.height - safeTop - safeBottom) * 0.5).clamp(150.0, 420.0);
     return Positioned(
       left: 20,
       right: 20,

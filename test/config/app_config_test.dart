@@ -53,6 +53,10 @@ void main() {
       expect(AppConfig.socialSignInVisible, AppConfig.showSocialSignIn);
     });
 
+    test('寵物用品商城依獨立開關顯示，不受長照交易功能影響', () {
+      expect(AppConfig.petShopVisible, AppConfig.showPetShop);
+    });
+
     test('marketplaceVisible 在 production 一律 false（CR-0056 A2）', () {
       if (AppConfig.isProduction) {
         expect(AppConfig.marketplaceVisible, isFalse);

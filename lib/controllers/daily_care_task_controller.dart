@@ -27,6 +27,21 @@ class DailyCareTaskController extends ChangeNotifier {
   bool _isLoading = false;
   String? _errorMessage;
   String? _submittingTaskId;
+  final Set<String> _updatingTaskIds = {};
+  int _accountGeneration = 0;
+  bool _disposed = false;
+
+  bool _isCurrent(int generation) =>
+      !_disposed && generation == _accountGeneration;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _updatingTaskIds.clear();
+    super.dispose();
+  }
+
+  bool isUpdating(String taskId) => _updatingTaskIds.contains(taskId);
 
   /// 已嘗試補過預設任務的 elderId，避免每次空清單都重複建立。
   final Set<String> _seededElders = {};
@@ -43,6 +58,8 @@ class DailyCareTaskController extends ChangeNotifier {
     final next =
         (elderId == null || elderId.isEmpty) ? 'default_user' : elderId;
     if (next == _elderId) return;
+    _accountGeneration++;
+    _updatingTaskIds.clear();
     _elderId = next;
     _tasks = const [];
     _errorMessage = null;
@@ -109,6 +126,69 @@ class DailyCareTaskController extends ChangeNotifier {
     } finally {
       _submittingTaskId = null;
       notifyListeners();
+    }
+  }
+
+  Future<bool> updateTask({
+    required String taskId,
+    required String title,
+    required String description,
+    required String scheduledTime,
+  }) async {
+    if (_disposed || isUpdating(taskId) || isSubmitting(taskId)) return false;
+    final matches = _tasks.where((task) => task.id == taskId);
+    if (matches.isEmpty ||
+        matches.first.status != DailyCareTaskStatus.pending ||
+        matches.first.latestSubmission != null) {
+      _errorMessage = '這項任務目前無法修改，請重新整理後再看看。';
+      notifyListeners();
+      return false;
+    }
+    if (title.trim().isEmpty ||
+        !RegExp(r'^([01]\d|2[0-3]):[0-5]\d$').hasMatch(scheduledTime)) {
+      _errorMessage = '請填寫任務內容並選擇時間。';
+      notifyListeners();
+      return false;
+    }
+    final generation = _accountGeneration;
+    _updatingTaskIds.add(taskId);
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final task = await _api.updateTask(
+        taskId: taskId,
+        title: title,
+        description: description,
+        scheduledTime: scheduledTime,
+      );
+      if (!_isCurrent(generation)) return false;
+      _tasks = _tasks.map((item) => item.id == task.id ? task : item).toList();
+      return true;
+    } on DailyCareTaskApiException catch (error) {
+      if (_isCurrent(generation)) {
+        if (error.requiresRefresh) {
+          try {
+            final tasks = await _api.listTasks(elderId: _elderId);
+            if (_isCurrent(generation)) _tasks = tasks;
+          } catch (_) {
+            // Preserve the existing list when refreshing also fails.
+          }
+        }
+        if (_isCurrent(generation)) {
+          _errorMessage = error.friendlyMessage;
+        }
+      }
+      return false;
+    } catch (_) {
+      if (_isCurrent(generation)) {
+        _errorMessage = '任務還沒儲存成功，請稍後再試一次。';
+      }
+      return false;
+    } finally {
+      if (_isCurrent(generation)) {
+        _updatingTaskIds.remove(taskId);
+        notifyListeners();
+      }
     }
   }
 

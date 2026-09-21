@@ -11,6 +11,7 @@ function normalizeSql(sql) {
 }
 
 const accountDataTables = [
+  "mood_diary_entries",
   "notification_logs",
   "consent_records",
   "resident_caregiver_links",
@@ -93,6 +94,7 @@ test("production account deletion removes all resident data in one transaction",
 
   const sql = fake.statements.join("\n");
   for (const table of [
+    "mood_diary_entries",
     "notification_logs",
     "consent_records",
     "resident_caregiver_links",
@@ -170,6 +172,15 @@ test("missing account is idempotent and still commits the transaction", async ()
   assert.equal(result.elder, 0);
   assert.deepEqual(fake.statements.slice(-1), ["COMMIT"]);
   assert.ok(!fake.statements.some((statement) => statement.startsWith("DELETE FROM")));
+  assert.equal(fake.wasReleased(), true);
+});
+
+test("diary deletion failure rolls back the entire account deletion", async () => {
+  const fake = createTransactionDb({ failPattern: /^DELETE FROM mood_diary_entries/ });
+  await assert.rejects(() => deleteAccountDataPostgres("firebase-uid", fake.db));
+  assert.ok(fake.statements.includes("ROLLBACK"));
+  assert.ok(!fake.statements.includes("COMMIT"));
+  assert.ok(!fake.statements.some((sql) => sql.startsWith("DELETE FROM users")));
   assert.equal(fake.wasReleased(), true);
 });
 

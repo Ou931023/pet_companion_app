@@ -1,4 +1,5 @@
 const { RISK_LEVELS, getToolDefinition } = require("./tool_schemas");
+const { isValidShopArguments } = require("./virtual_shop_intent");
 
 function sanitizeArguments(toolName, rawArguments = {}) {
   const definition = getToolDefinition(toolName);
@@ -46,6 +47,9 @@ function validateIntentDraft(draft) {
       message: "工具風險設定不符合安全規則，我先不執行。",
     };
   }
+  if (toolName === "purchase_shop_item" && !isValidShopArguments(draft.arguments)) {
+    return { ok: false, reason: "invalid_shop_item", message: "請先選好商城裡的寵物用品和數量，再確認購買。" };
+  }
   return {
     ok: true,
     toolName,
@@ -79,6 +83,7 @@ function buildSafeIntent(draft) {
 
 // 高影響操作的白話確認文字（給長者看 / 寵物口語確認；只問一個清楚問題）。
 const CONFIRMATION_MESSAGES = Object.freeze({
+  purchase_shop_item: "要用 App 金幣購買這個虛擬寵物用品嗎？請先確認商品與價格。",
   open_phone_dialer: "要幫你開啟撥號畫面嗎？不會自動撥出。",
   send_message: "要幫你傳這則訊息嗎？傳出前你再確認一次內容。",
   create_email_draft: "要幫你建立 Email 草稿嗎？不會自動寄出。",

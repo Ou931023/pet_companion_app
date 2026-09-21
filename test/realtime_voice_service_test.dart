@@ -45,11 +45,13 @@ void main() {
       }));
       await pumpEventQueue();
 
-      final errorEvents =
-          events.where((event) => event.type == RealtimeEventType.error).toList();
+      final errorEvents = events
+          .where((event) => event.type == RealtimeEventType.error)
+          .toList();
       expect(errorEvents, hasLength(1));
       expect(errorEvents.single.payload, equals(realtimeApiErrorUserMessage));
-      expect(errorEvents.single.payload, isNot(contains('server had an error')));
+      expect(
+          errorEvents.single.payload, isNot(contains('server had an error')));
       expect(errorEvents.single.payload, isNot(contains('Realtime API')));
 
       await sub.cancel();
@@ -433,8 +435,8 @@ void main() {
           .map((event) => event.payload)
           .toList();
       expect(
-        events
-            .where((event) => event.type == RealtimeEventType.partialTranscript),
+        events.where(
+            (event) => event.type == RealtimeEventType.partialTranscript),
         isEmpty,
       );
       // Leading edge 先送出第一段，最後一筆 partial 一定帶完整累積文字（最後幾個字不丟）。
@@ -592,26 +594,23 @@ void main() {
       final updates =
           sentPayloads.where((p) => p.contains('session.update')).toList();
       expect(updates, isNotEmpty);
-      final instructions =
-          ((jsonDecode(updates.last) as Map)['session'] as Map)['instructions']
-              as String;
+      final instructions = ((jsonDecode(updates.last) as Map)['session']
+          as Map)['instructions'] as String;
 
       // 陪伴優先 / 不硬轉任務。
-      expect(instructions,
-          contains('不要硬把話題帶去提醒、喝水、吃藥或任務'));
+      expect(instructions, contains('不要硬把話題帶去提醒、喝水、吃藥或任務'));
       // 避免重複。
       expect(instructions, contains('這類同一句罐頭'));
       expect(instructions, contains('不要每句都用問句收尾'));
       // 低落先陪伴、不過度醫療化。
       expect(instructions, contains('先陪伴，不急著解決、不過度醫療化'));
       // 安全邊界（新增，未弱化）。
-      expect(instructions,
-          contains('胸痛、呼吸困難、跌倒、嚴重不適或自傷意念'));
+      expect(instructions, contains('胸痛、呼吸困難、跌倒、嚴重不適或自傷意念'));
       // 台語自然、長者聽得懂優先。
       expect(instructions, contains('以台語為主、長者聽得懂優先'));
       // 仍保留 nextStrategy 框架語，不外漏分析欄位名稱。
-      expect(instructions,
-          contains('請優先遵守 nextStrategy，但不要提到 Companion Engine'));
+      expect(
+          instructions, contains('請優先遵守 nextStrategy，但不要提到 Companion Engine'));
 
       service.dispose();
     });
@@ -746,6 +745,117 @@ void main() {
       await service.stop();
 
       service.dispose();
+      service.dispose();
+    });
+
+    test(
+        'CR0108 tool speech retains explicit language without new context hints',
+        () async {
+      final sent = <String>[];
+      final service =
+          RealtimeVoiceService(eventSenderForTesting: (p) async => sent.add(p));
+      service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
+      await service.updateCompanionContext('replyLanguage=taigi');
+      await service.updateCompanionContext('emotion=neutral');
+      await service.speakToolOutcome('已經找到歌曲', outcomeId: 'turn1:music');
+      final events = sent.map((p) => jsonDecode(p) as Map).toList();
+      final context = events[1]['session']['instructions'] as String;
+      final speech = events.last['response']['instructions'] as String;
+      expect(context, contains('以台語為主'));
+      expect(context, contains('胸痛'));
+      expect(context, contains('不自行續講'));
+      expect(speech, contains('以台語為主'));
+      expect(speech, contains('說完等待使用者'));
+      service.dispose();
+    });
+
+    test(
+        'CR0108 tool call identity dedupes before response.created, not different calls',
+        () async {
+      final sent = <String>[];
+      final service =
+          RealtimeVoiceService(eventSenderForTesting: (p) async => sent.add(p));
+      service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
+      await service.speakToolOutcome('已完成', outcomeId: 'turn1:tool1');
+      await service.speakToolOutcome('已完成', outcomeId: 'turn1:tool1');
+      await service.speakToolOutcome('已完成', outcomeId: 'turn1:tool2');
+      expect(sent, hasLength(1));
+      service.handleDataChannelEventForTest('{"type":"response.created"}');
+      service.handleDataChannelEventForTest(
+          '{"type":"response.done","response":{"id":"tool1"}}');
+      await pumpEventQueue();
+      expect(sent, hasLength(2));
+      // Replaying the previous completion must not start another queued reply.
+      service.handleDataChannelEventForTest(
+          '{"type":"response.done","response":{"id":"tool1"}}');
+      await pumpEventQueue();
+      expect(sent, hasLength(2));
+      service.dispose();
+    });
+
+    test('CR0108 late tool result waits for playback even after response.done',
+        () async {
+      final sent = <String>[];
+      final service =
+          RealtimeVoiceService(eventSenderForTesting: (p) async => sent.add(p));
+      service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
+      service.handleDataChannelEventForTest('{"type":"response.created"}');
+      service.handleDataChannelEventForTest(
+          '{"type":"output_audio_buffer.started"}');
+      service.handleDataChannelEventForTest('{"type":"response.done"}');
+      await service.speakToolOutcome('找到資料了', outcomeId: 'turn1:search');
+      expect(sent, isEmpty);
+      service.handleDataChannelEventForTest(
+          '{"type":"output_audio_buffer.stopped"}');
+      await pumpEventQueue();
+      expect(sent, hasLength(1));
+      service.dispose();
+    });
+
+    for (final invalidateByStop in [false, true]) {
+      test(
+          'CR0108 ${invalidateByStop ? 'stop' : 'new input'} invalidates queued tool speech and timer',
+          () async {
+        final sent = <String>[];
+        final service = RealtimeVoiceService(
+          toolOutcomeFlushFallback: const Duration(milliseconds: 10),
+          eventSenderForTesting: (p) async => sent.add(p),
+        );
+        service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
+        service.handleDataChannelEventForTest('{"type":"response.created"}');
+        service.handleDataChannelEventForTest(
+            '{"type":"output_audio_buffer.started"}');
+        await service.speakToolOutcome('舊工具結果', outcomeId: 'turn1:search');
+        service.handleDataChannelEventForTest('{"type":"response.done"}');
+        if (invalidateByStop) {
+          await service.stop();
+        } else {
+          service.invalidateToolOutcomes();
+        }
+        service.handleDataChannelEventForTest(
+            '{"type":"output_audio_buffer.stopped"}');
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+        expect(sent, isEmpty);
+        service.dispose();
+      });
+    }
+
+    test(
+        'CR0108 completion and playback events without a tool never request continuation',
+        () async {
+      final sent = <String>[];
+      final service =
+          RealtimeVoiceService(eventSenderForTesting: (p) async => sent.add(p));
+      service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
+      service.handleDataChannelEventForTest('{"type":"response.created"}');
+      for (var i = 0; i < 2; i++) {
+        service.handleDataChannelEventForTest(
+            '{"type":"response.done","response":{"id":"r1"}}');
+        service.handleDataChannelEventForTest(
+            '{"type":"output_audio_buffer.stopped"}');
+      }
+      await pumpEventQueue();
+      expect(sent, isEmpty);
       service.dispose();
     });
 
@@ -894,8 +1004,8 @@ void main() {
         'type': 'response.output_audio_transcript.delta',
         'delta': '好的',
       }));
-      service.handleDataChannelEventForTest(
-          jsonEncode({'type': 'response.done'}));
+      service
+          .handleDataChannelEventForTest(jsonEncode({'type': 'response.done'}));
       await pumpEventQueue();
 
       // response.done 仍照常發 assistantAudioEnd（不可移除）。
@@ -948,8 +1058,8 @@ void main() {
       service.handleDataChannelEventForTest(
           jsonEncode({'type': 'output_audio_buffer.started'}));
       await service.speakToolOutcome('今天天氣晴');
-      service.handleDataChannelEventForTest(
-          jsonEncode({'type': 'response.done'}));
+      service
+          .handleDataChannelEventForTest(jsonEncode({'type': 'response.done'}));
       await pumpEventQueue();
       service.handleDataChannelEventForTest(
           jsonEncode({'type': 'output_audio_buffer.stopped'}));
@@ -966,7 +1076,8 @@ void main() {
         .where((e) => e.type == RealtimeEventType.assistantAudioPlaybackStarted)
         .length;
 
-    test('CR-0089: audio response emits assistantAudioPlaybackStarted exactly once',
+    test(
+        'CR-0089: audio response emits assistantAudioPlaybackStarted exactly once',
         () async {
       final service = RealtimeVoiceService();
       final events = <RealtimeVoiceEvent>[];
@@ -990,10 +1101,10 @@ void main() {
       final sub = service.events.listen(events.add);
       service.handleDataChannelEventForTest(
           jsonEncode({'type': 'response.created'}));
-      service.handleDataChannelEventForTest(jsonEncode(
-          {'type': 'response.output_text.delta', 'delta': '好的'}));
       service.handleDataChannelEventForTest(
-          jsonEncode({'type': 'response.done'}));
+          jsonEncode({'type': 'response.output_text.delta', 'delta': '好的'}));
+      service
+          .handleDataChannelEventForTest(jsonEncode({'type': 'response.done'}));
       await pumpEventQueue();
       expect(startedCount(events), 0);
       await sub.cancel();
@@ -1024,7 +1135,8 @@ void main() {
   });
 
   group('CR-0096 手動結束本輪語音 + 良性錯誤過濾', () {
-    test('commitUserAudioAndRespond：無 active response 時送 commit + response.create',
+    test(
+        'commitUserAudioAndRespond：無 active response 時送 commit + response.create',
         () async {
       final sent = <String>[];
       final service = RealtimeVoiceService(
@@ -1042,7 +1154,8 @@ void main() {
       service.dispose();
     });
 
-    test('commitUserAudioAndRespond：已有 active response 時只送 commit、不重送 response.create',
+    test(
+        'commitUserAudioAndRespond：已有 active response 時只送 commit、不重送 response.create',
         () async {
       final sent = <String>[];
       final service = RealtimeVoiceService(

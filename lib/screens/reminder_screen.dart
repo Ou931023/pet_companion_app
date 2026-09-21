@@ -34,7 +34,12 @@ class ReminderScreen extends StatelessWidget {
             for (final reminder in controller.reminders)
               Card(
                 child: ListTile(
-                  leading: const Icon(Icons.alarm),
+                  leading: IconButton(
+                    tooltip: '修改提醒內容與時間',
+                    onPressed: () =>
+                        _showReminderForm(context, reminder: reminder),
+                    icon: const Icon(Icons.edit_outlined),
+                  ),
                   title: Text('${reminder.title} ${reminder.timeLabel}'),
                   subtitle: Text(
                     '${reminder.repeatLabel}${reminder.note.isEmpty ? '' : '・${reminder.note}'}',
@@ -74,13 +79,15 @@ class ReminderScreen extends StatelessWidget {
         TimeOfDay(hour: reminder?.hour ?? 9, minute: reminder?.minute ?? 0);
     var repeatType = reminder?.repeatType ?? 'daily';
     var enabled = reminder?.enabled ?? true;
+    var saving = false;
+    String? error;
 
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (sheetContext) {
         return StatefulBuilder(
-          builder: (context, setSheetState) => Padding(
+          builder: (context, setSheetState) => SingleChildScrollView(
             padding: EdgeInsets.fromLTRB(
               16,
               16,
@@ -101,6 +108,7 @@ class ReminderScreen extends StatelessWidget {
                 const SizedBox(height: 12),
                 TextField(
                   controller: titleController,
+                  enabled: !saving,
                   decoration: const InputDecoration(
                     labelText: '提醒名稱',
                     border: OutlineInputBorder(),
@@ -108,15 +116,17 @@ class ReminderScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 OutlinedButton.icon(
-                  onPressed: () async {
-                    final picked = await showTimePicker(
-                      context: context,
-                      initialTime: time,
-                    );
-                    if (picked != null) {
-                      setSheetState(() => time = picked);
-                    }
-                  },
+                  onPressed: saving
+                      ? null
+                      : () async {
+                          final picked = await showTimePicker(
+                            context: context,
+                            initialTime: time,
+                          );
+                          if (context.mounted && picked != null) {
+                            setSheetState(() => time = picked);
+                          }
+                        },
                   icon: const Icon(Icons.schedule),
                   label: Text(
                     '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
@@ -130,12 +140,15 @@ class ReminderScreen extends StatelessWidget {
                     ButtonSegment(value: 'weekly', label: Text('每週')),
                   ],
                   selected: {repeatType},
-                  onSelectionChanged: (values) =>
-                      setSheetState(() => repeatType = values.first),
+                  onSelectionChanged: saving
+                      ? null
+                      : (values) =>
+                          setSheetState(() => repeatType = values.first),
                 ),
                 const SizedBox(height: 10),
                 TextField(
                   controller: noteController,
+                  enabled: !saving,
                   decoration: const InputDecoration(
                     labelText: '備註',
                     border: OutlineInputBorder(),
@@ -145,26 +158,55 @@ class ReminderScreen extends StatelessWidget {
                   contentPadding: EdgeInsets.zero,
                   value: enabled,
                   title: const Text('啟用提醒'),
-                  onChanged: (value) => setSheetState(() => enabled = value),
+                  onChanged: saving
+                      ? null
+                      : (value) => setSheetState(() => enabled = value),
                 ),
+                if (error != null)
+                  Text(error!,
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.error)),
                 FilledButton(
-                  onPressed: () async {
-                    final next = Reminder(
-                      id: reminder?.id ??
-                          DateTime.now().microsecondsSinceEpoch.toString(),
-                      title: titleController.text.trim().isEmpty
-                          ? '日常提醒'
-                          : titleController.text.trim(),
-                      hour: time.hour,
-                      minute: time.minute,
-                      repeatType: repeatType,
-                      note: noteController.text.trim(),
-                      enabled: enabled,
-                    );
-                    await controller.addOrUpdate(next);
-                    if (sheetContext.mounted) Navigator.pop(sheetContext);
-                  },
-                  child: const Text('儲存提醒'),
+                  onPressed: saving
+                      ? null
+                      : () async {
+                          if (titleController.text.trim().isEmpty) {
+                            setSheetState(() => error = '請填寫提醒內容。');
+                            return;
+                          }
+                          setSheetState(() {
+                            saving = true;
+                            error = null;
+                          });
+                          final next = Reminder(
+                            id: reminder?.id ??
+                                DateTime.now()
+                                    .microsecondsSinceEpoch
+                                    .toString(),
+                            title: titleController.text.trim().isEmpty
+                                ? '日常提醒'
+                                : titleController.text.trim(),
+                            hour: time.hour,
+                            minute: time.minute,
+                            repeatType: repeatType,
+                            note: noteController.text.trim(),
+                            enabled: enabled,
+                          );
+                          try {
+                            await controller.addOrUpdate(next);
+                            if (sheetContext.mounted) {
+                              Navigator.pop(sheetContext);
+                            }
+                          } catch (_) {
+                            if (sheetContext.mounted) {
+                              setSheetState(() {
+                                saving = false;
+                                error = '提醒還沒設定好，請稍後再試一次。';
+                              });
+                            }
+                          }
+                        },
+                  child: Text(saving ? '正在儲存' : '儲存提醒'),
                 ),
               ],
             ),

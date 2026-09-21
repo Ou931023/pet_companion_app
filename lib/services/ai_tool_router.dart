@@ -9,6 +9,9 @@ import '../controllers/reminder_controller.dart';
 import '../controllers/task_controller.dart';
 import '../controllers/wallet_controller.dart';
 import '../models/ai_tool_result.dart';
+import '../models/agent_tool_intent.dart';
+import '../models/agent_tool_execution_result.dart';
+import '../models/shop_item.dart';
 import '../models/language_route.dart';
 import '../models/pet_status.dart';
 import '../models/reminder.dart';
@@ -64,12 +67,157 @@ class AiToolRouter {
   /// 可由建構子覆寫（app.dart 注入）。
   final bool useMockChat;
 
+  String Function() shopAccountKey = () => '';
+  DateTime Function() shopClock = DateTime.now;
+  AgentToolIntent? _shopQuote;
+  String? _shopQuoteAccount;
+  final Set<String> _consumedShopIntents = {};
+  bool _shopPurchaseRunning = false;
+  int _shopGeneration = 0;
+
+  String get shopContextKey => '${shopAccountKey()}:$_shopGeneration';
+
+  void cancelShopPurchase() {
+    _shopGeneration++;
+    _shopQuote = null;
+    _shopQuoteAccount = null;
+  }
+
+  ShopItem? _shopItem(String id) {
+    for (final item in shopService.allItems()) {
+      if (item.id == id) return item;
+    }
+    return null;
+  }
+
+  AgentToolIntent? prepareShopPurchase(AgentToolIntent candidate) {
+    cancelShopPurchase();
+    final quantity = candidate.arguments['quantity'];
+    final item = _shopItem(candidate.arguments['itemId']?.toString() ?? '');
+    if (shopAccountKey().isEmpty ||
+        _shopPurchaseRunning ||
+        candidate.id.isEmpty ||
+        _consumedShopIntents.contains(candidate.id) ||
+        quantity is! int ||
+        quantity < 1 ||
+        quantity > 99 ||
+        item == null ||
+        (item.onlyWhenDead && !petStatsController.isDead)) {
+      return null;
+    }
+    _shopQuoteAccount = shopAccountKey();
+    _shopQuote = candidate.copyWith(
+      toolName: 'purchase_shop_item',
+      arguments: Map.unmodifiable({
+        'itemId': item.id,
+        'itemName': item.name,
+        'quantity': quantity,
+        'unitPrice': item.price,
+        'totalPrice': item.price * quantity,
+        'quoteGeneration': _shopGeneration,
+      }),
+      requiresConfirmation: true,
+      riskLevel: AgentToolRiskLevel.high,
+      status: AgentToolStatus.pending,
+      createdAt: shopClock(),
+      userFacingMessage:
+          '要用 ${item.price * quantity} 枚金幣買 $quantity 份${item.name}嗎？每份 ${item.price} 枚，這是虛擬寵物用品。請說「確認購買」或「取消購買」。',
+    );
+    return _shopQuote;
+  }
+
+  Future<AgentToolExecutionResult> executeShopPurchase(
+      AgentToolIntent intent) async {
+    AgentToolExecutionResult failed(String message) =>
+        AgentToolExecutionResult.failed(
+            toolName: 'purchase_shop_item', message: message);
+    final quote = _shopQuote;
+    final account = shopAccountKey();
+    if (intent.status != AgentToolStatus.confirmed ||
+        !intent.requiresConfirmation ||
+        _shopPurchaseRunning ||
+        quote == null ||
+        account.isEmpty ||
+        account != _shopQuoteAccount ||
+        intent.id != quote.id ||
+        _consumedShopIntents.contains(intent.id) ||
+        shopClock().difference(quote.createdAt) > const Duration(minutes: 2) ||
+        shopClock().isBefore(quote.createdAt) ||
+        intent.arguments.length != quote.arguments.length ||
+        quote.arguments.entries
+            .any((e) => intent.arguments[e.key] != e.value)) {
+      return failed('這次購買確認已失效，請重新選擇商品並確認。');
+    }
+    final item = _shopItem(quote.arguments['itemId'] as String);
+    final quantity = quote.arguments['quantity'] as int;
+    if (item == null ||
+        item.price != quote.arguments['unitPrice'] ||
+        item.name != quote.arguments['itemName'] ||
+        (item.onlyWhenDead && !petStatsController.isDead)) {
+      cancelShopPurchase();
+      return failed('商品或價格有變動，請重新確認。');
+    }
+    final total = item.price * quantity;
+    if (walletController.coins < total) {
+      cancelShopPurchase();
+      return failed('金幣還不夠，這次需要 $total 枚，你目前有 ${walletController.coins} 枚。');
+    }
+    // Consume before the first await: retries cannot repeat a local debit.
+    _consumedShopIntents.add(intent.id);
+    _shopPurchaseRunning = true;
+    final generation = _shopGeneration;
+    _shopQuote = null;
+    try {
+      if (!await walletController.spendCoins(total)) {
+        return failed('金幣還不夠，這次沒有買成。');
+      }
+      for (var i = 0; i < quantity; i++) {
+        if (account != shopAccountKey() || generation != _shopGeneration) {
+          return failed('購買期間狀態已改變，請查看金幣與背包，先不要重複購買。');
+        }
+        await inventoryController.addFromShop(item);
+      }
+      return AgentToolExecutionResult.succeeded(
+        toolName: 'purchase_shop_item',
+        message: '已用 $total 枚金幣將 $quantity 份${item.name}放入背包。',
+        data: {'itemId': item.id, 'quantity': quantity, 'spentCoins': total},
+      );
+    } catch (_) {
+      return failed('購買結果還需要確認，請查看金幣與背包，先不要重複購買。');
+    } finally {
+      _shopPurchaseRunning = false;
+    }
+  }
+
   Future<AiToolResult> route(
     String userText, {
     String memoryContextSummary = '',
     List<Map<String, String>> history = const [],
   }) async {
     final normalized = _toTraditional(userText.trim());
+    if (_isShopDecision(normalized)) {
+      if (normalized == '取消購買' || normalized == '不要買') {
+        cancelShopPurchase();
+        return const AiToolResult(
+            toolName: 'buyShopItem',
+            success: false,
+            message: '好，這次不買。',
+            petMode: PetMode.listening,
+            shouldSpeak: true);
+      }
+      final pending = _shopQuote;
+      final result = pending == null
+          ? AgentToolExecutionResult.failed(
+              toolName: 'purchase_shop_item', message: '目前沒有待確認的購買。')
+          : await executeShopPurchase(
+              pending.copyWith(status: AgentToolStatus.confirmed));
+      return AiToolResult(
+          toolName: 'buyShopItem',
+          success: result.success,
+          message: result.message,
+          petMode: PetMode.listening,
+          shouldSpeak: true);
+    }
     if (_isCapabilityHelpRequest(normalized)) {
       return _capabilityHelp();
     }
@@ -122,6 +270,7 @@ class AiToolRouter {
   bool shouldHandleLocally(String text) {
     final normalized = _toTraditional(text.trim());
     return _isCapabilityHelpRequest(normalized) ||
+        _isShopDecision(normalized) ||
         reminderController.isCreateReminderCommand(normalized) ||
         reminderController.isListReminderCommand(normalized) ||
         _isVoiceLanguageSwitch(normalized) ||
@@ -266,9 +415,12 @@ class AiToolRouter {
   }
 
   bool _isBuyRequest(String text) {
-    if (text.contains('不要買') || text.contains('不買')) return false;
-    return text.contains('買') || text.contains('購買') || text.contains('幫我買');
+    return RegExp(r'^(?:請|麻煩)?(?:幫我|替我|我想|我要|我欲)?(?:用金幣)?(?:購買|買)')
+        .hasMatch(text);
   }
+
+  bool _isShopDecision(String text) =>
+      const ['確認購買', '取消購買', '不要買'].contains(text);
 
   bool _isSettingsRequest(String text) {
     if (text.contains('設定') ||
@@ -403,47 +555,87 @@ class AiToolRouter {
   }
 
   Future<AiToolResult> _buyShopItem(String text) async {
-    final item = shopService.findByText(text);
-    if (item == null) {
-      final names = shopService.allItems().map((item) => item.name).join('、');
-      return AiToolResult(
-        toolName: 'buyShopItem',
-        success: false,
-        message: '我目前找不到這個商品。你可以請我買：$names。',
-        petMode: PetMode.listening,
-        shouldSpeak: true,
-      );
-    }
-    if (item.onlyWhenDead && !petStatsController.isDead) {
-      return AiToolResult(
-        toolName: 'buyShopItem',
-        success: false,
-        message: '${item.name}現在還用不到，我先幫你省下金幣。',
-        petMode: PetMode.caring,
-        shouldSpeak: true,
-      );
-    }
-    final canBuy = await walletController.spendCoins(item.price);
-    if (!canBuy) {
-      return AiToolResult(
-        toolName: 'buyShopItem',
-        success: false,
-        message:
-            '你目前金幣不足，${item.name} 需要 ${item.price} 枚金幣，你現在有 ${walletController.coins} 枚。',
-        petMode: PetMode.sad,
-        shouldSpeak: true,
-      );
-    }
-    await inventoryController.addFromShop(item);
+    final target = text
+        .replaceFirst(
+            RegExp(r'^(?:請|麻煩)?(?:幫我|替我|我想|我要|我欲)?(?:用金幣)?(?:購買|買)\s*'), '')
+        .replaceFirst(RegExp(r'[。！!]+$'), '');
+    final match =
+        RegExp(r'^(?:(\d+|[一二兩三四五六七八九十])(?:個|份|包|瓶|本|顆|條|張|件)?)?\s*(.+)$')
+            .firstMatch(target);
+    final countText = match?.group(1);
+    final quantity = countText == null
+        ? 1
+        : int.tryParse(countText) ??
+            const {
+              '一': 1,
+              '二': 2,
+              '兩': 2,
+              '三': 3,
+              '四': 4,
+              '五': 5,
+              '六': 6,
+              '七': 7,
+              '八': 8,
+              '九': 9,
+              '十': 10
+            }[countText];
+    final name = match?.group(2) ?? '';
+    final item = shopService.findByText(name);
+    // A substring match must not turn a compound/external order into a partial purchase.
+    final exact = item != null &&
+        (name == item.name ||
+            const [
+              '餅乾',
+              '狗狗餅乾',
+              '點心',
+              '飯團',
+              '牛奶',
+              '熱牛奶',
+              '飲料',
+              '鮭魚',
+              '魚肉',
+              '鮭魚碗',
+              '雞湯',
+              '雞肉湯',
+              '玩具球',
+              '鈴鐺',
+              '毯子',
+              '小毯子',
+              '床',
+              '小床',
+              '寵物床',
+              '梳子',
+              '毛刷',
+              '寵物梳',
+              '毛巾',
+              '浴巾',
+              '洗澡毛巾',
+              '故事書',
+              '繪本',
+              '音樂盒',
+              '藥水'
+            ].contains(name));
+    final quote = exact
+        ? prepareShopPurchase(AgentToolIntent(
+            id: 'local_shop_${shopClock().microsecondsSinceEpoch}_${++_shopGeneration}',
+            toolName: 'purchase_shop_item',
+            displayName: '購買虛擬寵物用品',
+            arguments: {'itemId': item.id, 'quantity': quantity},
+            requiresConfirmation: true,
+            riskLevel: AgentToolRiskLevel.high,
+            status: AgentToolStatus.pending,
+            userFacingMessage: '',
+            createdAt: shopClock(),
+          ))
+        : null;
+    if (quote == null) cancelShopPurchase();
     return AiToolResult(
       toolName: 'buyShopItem',
-      success: true,
-      message:
-          '已經幫你購買${item.name}囉，花費 ${item.price} 枚金幣，已放進背包，目前剩下 ${walletController.coins} 枚金幣。',
-      petMode: PetMode.happy,
+      success: false,
+      message: quote?.userFacingMessage ?? '這次還不能購買，請在寵物商城確認商品、數量與登入狀態。',
+      petMode: PetMode.listening,
       shouldSpeak: true,
-      updatedCoins: walletController.coins,
-      extraData: {'itemId': item.id, 'itemName': item.name},
+      extraData: {'pendingConfirmation': quote != null},
     );
   }
 

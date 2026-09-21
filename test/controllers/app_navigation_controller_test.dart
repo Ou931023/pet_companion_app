@@ -5,8 +5,16 @@ import 'package:pet_companion_app/routes/app_routes.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('預設導覽保留寵物商城分頁', () {
+    final navigation = AppNavigationController();
+
+    expect(navigation.visibleShellRoutes, AppRoute.shellRoutes);
+    navigation.selectShellIndex(1);
+    expect(navigation.currentShellRoute, AppRoute.shop);
+  });
+
   test(
-    'production navigation hides shop and maps visible indices correctly',
+    '緊急關閉寵物商城時仍會正確重映射可見分頁',
     () {
       final navigation = AppNavigationController(showMarketplace: false);
 
@@ -26,7 +34,7 @@ void main() {
     },
   );
 
-  test('development navigation keeps the four existing shell routes', () {
+  test('開啟寵物商城時保留四個既有分頁', () {
     final navigation = AppNavigationController(showMarketplace: true);
 
     expect(navigation.visibleShellRoutes, AppRoute.shellRoutes);
@@ -43,7 +51,7 @@ void main() {
     expect(navigation.currentShellRoute, AppRoute.home);
   });
 
-  test('hidden shop route cannot become the production shell route', () {
+  test('商城被緊急關閉時不能切入隱藏路由', () {
     final navigation = AppNavigationController(showMarketplace: false);
 
     navigation.navigateTo(AppRoute.shop);
