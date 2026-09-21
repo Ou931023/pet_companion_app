@@ -104,7 +104,7 @@ test("index.html 提供 APP_CONFIG 注入點，且不以 localhost 為正式預�
     "index.html 不應載入可能在 Render static publish path 下 404 的外部 config script"
   );
   assert.ok(
-    indexHtml.includes("app.js?v=20260830-store-final") &&
+    indexHtml.includes("app.js?v=20260921-workspace-recovery") &&
       indexHtml.includes("styles.css?v=20260830-store-final"),
     "app.js cache bust 應更新，避免 Render/瀏覽器吃舊版"
   );

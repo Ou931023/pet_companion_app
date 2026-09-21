@@ -60,6 +60,8 @@
   };
   // 401 之後設為 true，停止重複狂打受保護 API，直到使用者重新登入。
   var sessionInvalid = false;
+  var workspaceRequestId = 0;
+  var dailyTaskRequestId = 0;
 
   // 同時支援權威四級（low/medium/high/urgent）與舊代碼（normal/attention）。
   var RISK_LABELS = {
@@ -1072,6 +1074,8 @@
 
   // CR-0042：從 localStorage 還原身分狀態。
   function loadAuthState() {
+    resetWorkspace();
+    clearDailyTaskStats();
     resetResidentDetail();
     var mode = (localStorage.getItem(AUTH_MODE_KEY) || "").trim();
     if (mode !== "super_admin" && mode !== "caregiver") {
@@ -1127,6 +1131,8 @@
   // CR-0042：收到 401 → 標記 session 失效、提示重新登入、停止後續請求。
   function handleSessionExpired() {
     sessionInvalid = true;
+    resetWorkspace();
+    clearDailyTaskStats();
     resetResidentDetail();
     if (elH.healthStatus) elH.healthStatus.textContent = SESSION_EXPIRED_MSG;
     showAuthMessage(SESSION_EXPIRED_MSG, true);
@@ -1294,6 +1300,7 @@
   }
 
   function resetWorkspace() {
+    workspaceRequestId += 1;
     if (elW.residentCount) elW.residentCount.textContent = "—";
     if (elW.alertCount) elW.alertCount.textContent = "—";
     if (elW.taskCount) elW.taskCount.textContent = "—";
@@ -1305,39 +1312,37 @@
     return isSuperAdminMode() ? adminUrl("/elders?assignable=1") : adminUrl("/elders");
   }
 
+  function workspaceFetch(url) {
+    var controller = new AbortController();
+    var timer = setTimeout(function () { controller.abort(); }, 15000);
+    return fetch(url, { headers: authHeaders(), signal: controller.signal })
+      .then(function (r) {
+        if (r.status === 401) throw new Error("session_expired");
+        if (r.status === 403) throw new Error("forbidden");
+        if (!r.ok) throw new Error("service_failed");
+        return r.json();
+      })
+      .finally(function () { clearTimeout(timer); });
+  }
+
   function fetchWorkspaceResidents() {
-    return fetch(workspaceResidentUrl(), { headers: authHeaders() }).then(function (r) {
-      if (r.status === 401) {
-        handleSessionExpired();
-        throw new Error("session_expired");
-      }
-      if (r.status === 403) throw new Error("forbidden");
-      return parseJsonOrApiError(r);
+    return workspaceFetch(workspaceResidentUrl()).then(function (body) {
+      if (!Array.isArray(body)) throw new Error("invalid_response");
+      return body;
     });
   }
 
   function fetchWorkspaceAlerts() {
-    return fetch(getApiBase() + "/care-alerts?status=new&limit=20", {
-      headers: authHeaders(),
-    }).then(function (r) {
-      if (r.status === 401) {
-        handleSessionExpired();
-        throw new Error("session_expired");
-      }
-      if (r.status === 403) throw new Error("forbidden");
-      if (!r.ok) throw new Error("alerts_failed");
-      return r.json();
+    return workspaceFetch(getApiBase() + "/care-alerts?status=new&limit=20").then(function (body) {
+      if (!body || !Array.isArray(body.alerts)) throw new Error("invalid_response");
+      return body;
     });
   }
 
   function fetchWorkspaceTasks() {
-    return fetch(adminUrl("/daily-care-tasks"), { headers: authHeaders() }).then(function (r) {
-      if (r.status === 401) {
-        handleSessionExpired();
-        throw new Error("session_expired");
-      }
-      if (r.status === 403) throw new Error("forbidden");
-      return parseJsonOrApiError(r);
+    return workspaceFetch(adminUrl("/daily-care-tasks")).then(function (body) {
+      if (!body || !Array.isArray(body.tasks)) throw new Error("invalid_response");
+      return body;
     });
   }
 
@@ -1421,43 +1426,45 @@
       return;
     }
     resetWorkspace();
+    var requestId = workspaceRequestId;
     setWorkspaceStatus("工作台載入中…", "");
-    Promise.all([fetchWorkspaceResidents(), fetchWorkspaceAlerts(), fetchWorkspaceTasks()])
-      .then(function (results) {
-        var residents = normalizeWorkspaceResidents(results[0]);
-        var alerts = results[1] && Array.isArray(results[1].alerts) ? results[1].alerts : [];
-        var tasks =
-          results[2] && Array.isArray(results[2].tasks)
-            ? results[2].tasks
-            : Array.isArray(results[2])
-              ? results[2]
-              : [];
-        var reviewTasks = tasks.filter(function (t) {
-          return ["needs_review", "submitted", "missed"].indexOf(t.status) >= 0;
-        });
-        if (elW.residentCount) elW.residentCount.textContent = String(residents.length);
-        if (elW.alertCount) elW.alertCount.textContent = String(alerts.length);
-        if (elW.taskCount) elW.taskCount.textContent = String(reviewTasks.length);
-        renderWorkspaceRoster(residents);
-        setWorkspaceStatus(
-          residents.length
-            ? "已載入最新照護資料。"
-            : isSuperAdminMode()
-              ? "尚未建立正式住民。可用 CSV 匯入或在授權指派視窗新增。"
-              : EMPTY_CAREGIVER_MSG,
-          residents.length ? "" : "error"
-        );
-      })
-      .catch(function (err) {
-        resetWorkspace();
-        if (err && err.message === "session_expired") {
-          setWorkspaceStatus(SESSION_EXPIRED_MSG, "error");
-        } else if (err && err.message === "forbidden") {
-          setWorkspaceStatus(FORBIDDEN_MSG, "error");
+    var loaders = [fetchWorkspaceResidents, fetchWorkspaceAlerts, fetchWorkspaceTasks];
+    var labels = ["住民名單", "照護提醒", "日常任務"];
+    var failures = [];
+    var residentCount = null;
+    return Promise.all(loaders.map(function (loader, index) {
+      return Promise.resolve().then(loader).then(function (body) {
+        if (requestId !== workspaceRequestId || sessionInvalid) return;
+        if (index === 0) {
+          var residents = normalizeWorkspaceResidents(body);
+          residentCount = residents.length;
+          if (elW.residentCount) elW.residentCount.textContent = String(residentCount);
+          renderWorkspaceRoster(residents);
+        } else if (index === 1) {
+          if (elW.alertCount) elW.alertCount.textContent = body.alerts.length >= 20 ? "20+" : String(body.alerts.length);
         } else {
-          setWorkspaceStatus("目前連不到後端，請稍後重新整理。", "error");
+          var reviewTasks = body.tasks.filter(function (t) {
+            return ["needs_review", "submitted", "missed"].indexOf(t.status) >= 0;
+          });
+          if (elW.taskCount) elW.taskCount.textContent = String(reviewTasks.length);
         }
+      }).catch(function (err) {
+        if (requestId !== workspaceRequestId) return;
+        if (err.message === "session_expired") {
+          handleSessionExpired();
+          setWorkspaceStatus(SESSION_EXPIRED_MSG, "error");
+          return;
+        }
+        failures.push(labels[index] + (err.message === "forbidden" ? "沒有查看權限" : "暫時無法載入"));
       });
+    })).then(function () {
+      if (requestId !== workspaceRequestId || sessionInvalid) return;
+      if (failures.length) {
+        setWorkspaceStatus(failures.join("；") + "。請重新整理，其他已載入資料仍可查看。", "error");
+      } else {
+        setWorkspaceStatus(residentCount === 0 ? (isSuperAdminMode() ? "尚未建立住民，請先新增住民資料。" : EMPTY_CAREGIVER_MSG) : "已載入最新照護資料。", "");
+      }
+    });
   }
 
   function parseCsvLine(line) {
@@ -2177,7 +2184,7 @@
       escapeHtml(task.title || "") +
       "</span>" +
       '<span class="task-elder">長者：' +
-      escapeHtml(task.elderId || "—") +
+      escapeHtml(task.elderDisplayName || "姓名暫時無法讀取") +
       "</span>" +
       "</div>" +
       '<div class="task-row-meta">' +
@@ -2188,6 +2195,7 @@
       escapeHtml(completedAt) +
       "</span>" +
       "</div>" +
+      (!sub ? '<p class="task-verification-empty">尚未送出照片</p>' :
       '<div class="task-verification-card task-verification-' +
       escapeHtml(verificationClass) +
       '">' +
@@ -2214,7 +2222,7 @@
       '<p class="task-verification-reason"><b>AI 原因：</b>' +
       aiReason +
       "</p>" +
-      "</div>" +
+      "</div>") +
       "</div>"
     );
   }
@@ -2238,6 +2246,7 @@
   // GET /api/admin/daily-care-tasks → 任務 + 最新 submission（含 AI 結果）。
   // 後端連不到時顯示白話訊息、清空統計，不 crash、不假裝有資料。
   function clearDailyTaskStats() {
+    dailyTaskRequestId += 1;
     ["statTotal", "statCompleted", "statPending", "statReview", "statMissed"].forEach(
       function (k) {
         if (elT[k]) elT[k].textContent = "—";
@@ -2256,22 +2265,25 @@
       return;
     }
     var filter = elT.tasksFilter ? elT.tasksFilter.value : "";
+    clearDailyTaskStats();
+    var requestId = dailyTaskRequestId;
     var url = adminUrl("/daily-care-tasks");
     if (filter) url += "?status=" + encodeURIComponent(filter);
     if (elT.tasksStatus) elT.tasksStatus.textContent = "載入中…";
 
-    fetch(url, { headers: authHeaders() })
-      .then(function (r) {
-        if (r.status === 401) {
-          handleSessionExpired();
-          throw new Error("session_expired");
-        }
-        if (r.status === 403) throw new Error("forbidden");
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
-      })
-      .then(function (data) {
-        var tasks = data && Array.isArray(data.tasks) ? data.tasks : [];
+    return Promise.all([workspaceFetch(url), fetchWorkspaceResidents().catch(function (err) {
+      if (err.message === "session_expired") throw err;
+      return [];
+    })])
+      .then(function (results) {
+        if (requestId !== dailyTaskRequestId || sessionInvalid) return;
+        var data = results[0];
+        if (!data || !Array.isArray(data.tasks)) throw new Error("invalid_response");
+        var names = Object.create(null);
+        normalizeWorkspaceResidents(results[1]).forEach(function (r) { names[r.elderId] = r.displayName; });
+        var tasks = data.tasks.map(function (task) {
+          return Object.assign({}, task, { elderDisplayName: names[task.elderId] || "" });
+        });
         renderDailyTasks(tasks);
         if (elT.tasksStatus) {
           // caregiver 無授權住民 → 空清單，顯示友善空狀態。
@@ -2280,9 +2292,11 @@
         }
       })
       .catch(function (err) {
+        if (requestId !== dailyTaskRequestId) return;
         clearDailyTaskStats();
         if (elT.tasksStatus) {
           if (err && err.message === "session_expired") {
+            handleSessionExpired();
             elT.tasksStatus.textContent = SESSION_EXPIRED_MSG;
           } else if (err && err.message === "forbidden") {
             elT.tasksStatus.textContent = FORBIDDEN_MSG;

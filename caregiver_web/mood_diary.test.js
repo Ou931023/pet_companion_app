@@ -35,6 +35,8 @@ function harness() {
   ]);
   const pending = [];
   const context = vm.createContext({
+    workspaceRequestId: 0, elW: {},
+    dailyTaskRequestId: 0, elT: {},
     elH: Object.fromEntries([
       "diaryEntries", "diaryStatus", "diaryRefresh", "elderAnalysis", "healthStatus",
     ].map(key => [key, element()])),
@@ -59,7 +61,7 @@ function harness() {
     },
   });
   for (const name of [
-    "escapeHtml", "getAdminToken", "getCaregiverToken", "isSuperAdminMode",
+    "clearDailyTaskStats", "resetWorkspace", "escapeHtml", "getAdminToken", "getCaregiverToken", "isSuperAdminMode",
     "isCaregiverMode", "getActiveToken", "hasActiveToken", "authHeaders",
     "loadAuthState", "applyLogin", "logout", "ensureCanFetch", "handleSessionExpired",
     "loadElderAnalysis", "resetResidentDetail", "residentDetailGuard",
