@@ -21,6 +21,7 @@ import 'app_usage_tracking_service.dart';
 import 'mock_ai_service.dart';
 import 'shop_service.dart';
 import 'web_search_service.dart';
+import 'voice_language_command_service.dart';
 
 class AiToolRouter {
   AiToolRouter({
@@ -402,12 +403,7 @@ class AiToolRouter {
 
   /// CR-0101：語音切換台語 / 中文語音模式。
   bool _isVoiceLanguageSwitch(String text) {
-    return text.contains('台語') ||
-        (text.contains('中文') &&
-            (text.contains('改') ||
-                text.contains('用') ||
-                text.contains('切換') ||
-                text.contains('說')));
+    return const VoiceLanguageCommandService().parse(text) != null;
   }
 
   bool _isConcernReminderToggle(String text) {
@@ -526,17 +522,15 @@ class AiToolRouter {
 
   /// CR-0101：語音切換台語 / 中文語音模式。
   Future<AiToolResult> _setVoiceLanguage(String text) async {
-    final isTaigi = text.contains('台語');
-    final mode = isTaigi
-        ? VoiceLanguageMode.taigiRealtime
-        : VoiceLanguageMode.defaultOpenAiRealtime;
+    final mode = const VoiceLanguageCommandService().parse(text)!;
+    final isTaigi = mode == VoiceLanguageMode.taigiRealtime;
     await profileController.setVoiceLanguageMode(mode);
     return AiToolResult(
       toolName: 'setVoiceLanguage',
       success: true,
-      message: isTaigi ? '好，我之後會用台語陪你說話。' : '好，我之後會用中文陪你說話。',
+      message: isTaigi ? '已記住你想用台語聊天。' : '已記住你想用國語聊天。',
       petMode: PetMode.happy,
-      shouldSpeak: true,
+      shouldSpeak: false,
     );
   }
 

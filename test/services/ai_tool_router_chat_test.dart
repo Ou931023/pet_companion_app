@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pet_companion_app/models/language_route.dart';
 import 'package:pet_companion_app/controllers/check_in_controller.dart';
 import 'package:pet_companion_app/controllers/inventory_controller.dart';
 import 'package:pet_companion_app/controllers/pet_stats_controller.dart';
@@ -149,6 +150,32 @@ void main() {
   });
 
   group('AiToolRouter._chat production path (useMockChat=false)', () {
+    test(
+        'CR0109 explicit language commands save preference, not applied success',
+        () async {
+      final router = await _buildRouter(useMockChat: false);
+      final taigi = await router.route('請用台語陪我聊天');
+      expect(router.profileController.voiceLanguageMode,
+          VoiceLanguageMode.taigiRealtime);
+      expect(taigi.success, isTrue);
+      expect(taigi.shouldSpeak, isFalse);
+      expect(taigi.message, contains('已記住'));
+      final mandarin = await router.route('改用國語');
+      expect(router.profileController.voiceLanguageMode,
+          VoiceLanguageMode.defaultOpenAiRealtime);
+      expect(mandarin.shouldSpeak, isFalse);
+    });
+
+    test('CR0109 language mentions and negations are not local switches',
+        () async {
+      final router = await _buildRouter(useMockChat: false);
+      for (final text in ['我想聽台語歌', '不要切換台語', '你會說台語嗎', '他說改用中文']) {
+        expect(router.shouldHandleLocally(text), isFalse, reason: text);
+      }
+      await router.route('不要切換台語');
+      expect(router.profileController.voiceLanguageMode,
+          VoiceLanguageMode.defaultOpenAiRealtime);
+    });
     test('純閒聊語句走 companionChatService，回後端 reply', () async {
       final chat = _StubChatService(replyValue: '我在這裡陪你呀。');
       final router = await _buildRouter(useMockChat: false, chatService: chat);

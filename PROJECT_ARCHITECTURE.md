@@ -182,6 +182,46 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
 - `voice_agent_controller.dart` 的 start / reconnect / warm input 尊重 profile 明確台語（taigiRealtime、taigiPreferred、manual taigi），輸出為 taigi 而非強制 mixed；reconnect 保留 mode，async tool callback 檢查 generation / turn。profile 持久化 / 帳號隔離由 frontend owner 負責。
 - 不改 SDP / ICE / DataChannel 傳輸、VAD 設定或手動 commit / VAD race；後者另 checkpoint。僅新增 / 更新 voice owner 的 regression tests；本次不執行 Flutter tests / build，實機與測試結果不得宣稱通過。
 
+### 4.4 CR-0109 語言同步、通知通道與設備基礎（2026-09-22 核准，待實作）
+
+本節是限定實作核准，不是功能已完成或 production 啟用核准。無 MQTT 硬體 / broker；「小黑豆」僅是候選 IR blaster，型號、協定、設備回報能力均未確認，不假定支援 MQTT。
+
+**最新範圍裁決（2026-09-22，優先於本節下方原核准）：** 兩位 owner 已完成唯讀。A 語言批立即放行，包含 voice owner 的 ai_tool_router 語言區塊及最小 Realtime 同步；不必等待 backend。backend 已確認缺機構收件映射與 consent gate，因此 B 本批只准隔離、預設停用的 LINE adapter、dispatcher、policy resolver interface 與注入式單測；**不接 processCareAlert，不修改 server.js、既有 Telegram sender / cooldown / notification log、catalog / intent policy，也不掛啟動或 live voice 路徑**。下方 B 的正式派送接線、安全 gate、結果與去重要求保留為後續契約，不是本批接線許可；可信授權來源完成並另經審查才放行整合。C 本批縮限為文件 / 契約，不新增可執行 MQTT adapter、device policy、broker client 或連線測試，不宣稱設備可用。下方 C 的程式檔案與驗收設計僅供後續提案，不再構成本批實作許可。
+
+#### A. 國語 / 台語切換
+
+- realtime-voice-agent 主導 `voice_agent_controller.dart`、`language_routing_service.dart` 與 owned tests；特別核准其修改 `ai_tool_router.dart` 的語言命令辨識 / 呼叫區塊（不改其他工具）。frontend-ux-agent 僅修改 profile、設定 UI 與最小 provider 接線。兩種入口走同一語言變更流程，不各自重建 session。
+- 明確選擇優先於自動偵測，國語與台語雙向對稱；辨識的是要求切換的命令，而非出現「台語」就切換。否定、引述、歌曲 / 新聞主題、能力詢問、同句衝突目標不切換，必要時澄清。只接受 user final transcript / 主動手動選擇，partial 與 assistant transcript 不觸發。
+- 分離 desired preference 與 session applied state；profile 按帳號保存，語言 revision + session / account generation 防止較舊 async 結果蓋回。重連採最新偏好；登出 / stop 清掉舊待套用工作。切換不清除正式對話或重送工具，不因 profile 其他欄位變更重複更新。
+- 核准 `realtime_voice_service.dart` 最小語言 instructions 同步及更新成功 / 失敗回報；沿用既有 session.update，送出不等於服務端已套用，失敗保留待同步狀態，不先報成功。已在播放的句子不要求中途換語言，下一個回覆 / 工具結果使用最新已套用偏好；不自動新增無請求 response。
+- 不改 SDK、模型、依賴、SDP / ICE / DataChannel 傳輸、VAD / commit 或 ASR 架構；不保證未實機驗證的台語發音品質。
+
+#### B. 機構選擇 Telegram / LINE
+
+- backend-agent（Feynman）核准新增 `services/caregiverNotificationDispatcher.js`、`lineNotifyService.js`、`facilityNotificationPolicy.js` 與對應單測；可小範圍修改既有 Telegram service、notification log / cooldown 及 `server.js` 的 processCareAlert 接線。不改既有 Telegram export / 呼叫簽章與 `/api/care-alerts/notify` request / response 形狀；舊 `telegram` 欄位僅描述 Telegram，不得以 LINE 成功冒充。LINE 結果先留內部通道結果 / 稽核，對外新欄位與管理 UI API 另審。
+- 內部可信設定契約：`resolvePolicy(serverElderId) -> { facilityId, channels, recipientBindingRefs, policyVersion } | null`，channels 為 `[]`、`['telegram']`、`['line']` 或兩者，無隱含跨通道 fallback。機構選擇不等於住民同意。facilityId 與收件人由 server 授權關係及受控設定解析，不接受 body、LLM 或工具參數指定 chatId、LINE recipient、URL 或 facilityId。
+- 每次派送及重試前檢查當前有效的「住民 + 機構 + 通道 + 收件綁定 + 告知範圍」同意與 active caregiver assignment；一般 privacy_terms、OS 推播許可或模型的 confirmed 不是這項授權。自動 high / urgent alert 需預先明確 opt-in；手動 notify_caregiver 仍需當次內容 / 對象確認，不能冒充 urgent 來繞過規則。撤回、未綁定、查詢失敗一律不送；不得自行新增緊急例外。
+- v1 允許以注入的可信 policy / consent / recipient resolver 建立可測試接線；缺少正式權威來源時回 skipped，禁止以 local preference、環境開關或 stub=true 代替同意。此案不核准新 DB schema、同意 / 綁定 API 或 production provisioning；若既有來源不足，先完成 adapter 並保持停用，另提精確契約。
+- LINE 預設停用，可用設定名稱 `LINE_NOTIFICATIONS_ENABLED`、`LINE_CHANNEL_ACCESS_TOKEN`（只記名稱，不讀值）；各機構 recipient binding 是可信設定參照，不以全域 recipient 取代住民授權。Telegram 舊全域設定不得自動成為所有機構收件者。保留 Telegram 介面不等於保留未經同意的送出旁路；兩通道共用派送 gate，既有直接 sender 呼叫須納入測試。
+- 新通道內容僅含風險四級、時間、受控照護代稱 / alert reference 及固定的關心提示；不含逐字稿、自由文字 triggerSummary、日記、記憶、姓名、電話、住址或任意 URL。Telegram 保留介面但 dispatcher 傳入同樣最小化資料。Care Alert 儲存 / 分析與送訊息分離，通知被拒不刪 alert；不改風險規則或共用 alert shape。
+- 內部結果固定 `{channel,status,errorCode?}`，status 限 `accepted/failed/unknown/skipped_disabled/skipped_consent/skipped_binding/skipped_low_risk/skipped_duplicate`；accepted 只表示供應商接受，不等於已送達 / 已讀。每通道獨立結果，一通道失敗不重送已接受的另一通道。timeout 結果可能 unknown，不可直接聲稱沒送出。
+- 去重鍵至少包含 facility / elder / event identity / recipient binding / channel；風險升級是新事件。不得沿用僅 source+riskLevel 的全域 cooldown 抑制其他住民。v1 不新增 durable queue / 自動重試 worker；僅 in-process 去重不得宣稱跨重啟 exactly-once。稽核只存 ID、通道、結果與錯誤碼，不存 recipient 值、原文、憑證或 HTTP headers。
+- LINE 使用 Messaging API push，非已終止的 LINE Notify；使用既有 fetch，不新增 SDK。首次即使用穩定 UUID retry key，若後續另行核准重試，須遵守供應商有效期限；接受不代表送達。來源：[Messaging API](https://developers.line.biz/en/reference/messaging-api/#send-push-message)、[retry semantics](https://developers.line.biz/en/docs/messaging-api/retrying-api-request/)、[LINE Notify 終止公告](https://developers.line.biz/en/news/2025/04/01/line-notify/)。
+
+#### C. MQTT / IR 僅基礎，不啟用設備
+
+- Feynman 核准新增 `backend/agent/device_control_policy.js`、`backend/stt_proxy/services/facilityMqttAdapter.js` 與 isolated tests。只建立驗證 / adapter interface / disabled result；不裝 MQTT 套件、不建立真 broker connection、不 publish，不接 server 啟動副作用。
+- 設定契約為可信注入 `{enabled:false, brokerRef:null, facilityBindings:[]}`；binding 草案為 `{facilityId,deviceId,kind,allowedActions,commandTopicRef,stateTopicRef}`，kind 限 light / ac；本批 enabled=true 必須拒絕為 `not_commissioned`，缺設定回 `disabled`。broker / topic 參照不是允許 client 提供 URL、topic 或 credentials；不得填入猜測的小黑豆協定。
+- 內部草案命令 `{commandId,deviceId,action,parameters,expiresAt}` 必須經 server 身分、機構設備綁定、能力白名單與參數驗證；只允許絕對狀態，不接受 toggle、任意 raw IR、任意 topic / payload。AC 溫度界限須待設備及機構政策確認，現在不硬編一組值當正式安全界限。
+- `backend/agent/tool_schemas.js` / policy / intent builder 僅核准相容性測試與既有 notify_caregiver 確認規則補強；**不得新增可列出 / 可路由 / 可執行的 MQTT 工具**，不改 live voice catalog，不給 LLM publish 能力。語言切換仍為本機控制，不新增後端語言 endpoint。
+- 日後另案確認硬體 / IR 協定、broker TLS / ACL、身分到 facility / device 綁定、當次確認綁 command / expiry、kill switch、retain=false、過期 / 重連不重播、去重及狀態驗證後才可啟用。publish / broker ACK / IR 發送均不是設備實際狀態，無回讀不可說「冷氣已開」。本批測試 fake transport 只限測試，不當成產品成功 fallback。
+
+#### D. 驗收與發布界線
+
+- 語言：手動 / 語音雙向切換、否定 / 引述 / 台語歌曲不誤觸、混合語輸入不覆蓋偏好、連續切換 / 重連 / 換帳號 / update 失敗、工具結果語言與不重複發話。
+- 通知：機構選擇矩陣、無 / 撤回同意零 outbound、跨機構 / 未綁定零 outbound、最小化內容、Telegram 相容、雙通道部分失敗、住民隔離去重、timeout 與 redaction。MQTT：disabled / not_commissioned、無 connection / publish、catalog 無設備工具、錯誤 action / scope / expiry 拒絕。
+- 所有單測須注入 fake HTTP / policy / transport，禁止讀 env 檔或 runtime data、發真通知 / 操作硬體。正式通知啟用需可信綁定和同意來源驗證；設備啟用另案。不得以本核准宣稱測試通過、台語品質或設備支援。
+
 ## 5. Care Alert 共用資料結構（🔒 三方共用）
 
 分析邏輯 owner：`companion-memory-agent`；持久化 / 狀態 / 通知 owner：`backend-agent`；顯示 owner：`frontend-ux-agent`。任何一方都不可單方面改欄位。

@@ -60,6 +60,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final profile = context.watch<ProfileController>();
+    final voice = context.watch<VoiceAgentController?>();
     final coachMark = context.watch<CoachMarkController?>();
     final coachKeys = context.read<CoachMarkKeys>();
     final coachTarget = coachMark?.currentStep?.targetKey;
@@ -211,7 +212,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 14),
                 _SettingsSection(
-                  title: '語音輸入方式',
+                  title: '聊天語言',
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -232,20 +233,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ? VoiceLanguageMode.taigiRealtime
                               : VoiceLanguageMode.defaultOpenAiRealtime,
                         },
-                        onSelectionChanged: (values) {
+                        onSelectionChanged: (values) async {
                           context
                               .read<ConversationController>()
                               .clearPendingTaigiAsrTranscript();
-                          profile.setVoiceLanguageMode(values.first);
+                          try {
+                            await profile.setVoiceLanguageMode(values.first);
+                          } catch (_) {
+                            if (!context.mounted) return;
+                            ElderFeedback.showImportant(
+                              context,
+                              '語言偏好還沒儲存好，請再試一次。',
+                            );
+                          }
                         },
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        switch (profile.voiceLanguageMode) {
-                          VoiceLanguageMode.taigiRealtime =>
-                            '台語即時語音對話會使用原本即時語音連線，可以直接用台語或台語混中文跟寵物說話。',
-                          _ => '中文即時語音對話會使用原本的 Realtime 連線。',
-                        },
+                        voice?.languageSyncMessage ?? '下次聊天會使用你選的語言。',
                         style: TextStyle(
                           color: Colors.black.withValues(alpha: 0.58),
                           fontWeight: FontWeight.w600,

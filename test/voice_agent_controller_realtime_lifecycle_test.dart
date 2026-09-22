@@ -61,9 +61,296 @@ void main() {
     });
   });
 
+  for (final ackFirst in [false, true]) {
+    test(
+        'CP-V1 typed response sends exactly once when ACK before analysis=$ackFirst',
+        () async {
+      var acknowledge = true;
+      final sent = <Map>[];
+      final analysis = _DeferredLanguageCompanionEngine();
+      final service = _acknowledgingRealtimeService(
+        shouldAcknowledge: () => acknowledge,
+        healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+        connectImplementationForTesting: (_) async {},
+        eventSenderForTesting: (p) async => sent.add(jsonDecode(p) as Map),
+      );
+      final harness = await _VoiceControllerHarness.create(service,
+          companionEngineService: analysis);
+      addTearDown(harness.dispose);
+      await _reachListening(harness, service);
+      acknowledge = false;
+      sent.clear();
+      final handled = harness.controller.sendTextDuringRealtime('今天想聊聊天');
+      await pumpEventQueue();
+      final original = sent.single;
+      if (ackFirst) {
+        service.handleDataChannelEventForTest(jsonEncode(
+            {'type': 'session.updated', 'session': original['session']}));
+        await pumpEventQueue();
+      }
+      analysis.complete();
+      await pumpEventQueue();
+      final latest = sent.lastWhere((e) => e['type'] == 'session.update');
+      expect(latest['event_id'], isNot(original['event_id']));
+      if (!ackFirst) {
+        service.handleDataChannelEventForTest(jsonEncode(
+            {'type': 'session.updated', 'session': original['session']}));
+        await pumpEventQueue();
+        expect(sent.where((e) => e['type'] == 'response.create'), isEmpty);
+      }
+      service.handleDataChannelEventForTest(jsonEncode(
+          {'type': 'session.updated', 'session': latest['session']}));
+      expect(await handled, isTrue);
+      await pumpEventQueue();
+      expect(sent.where((e) => e['type'] == 'conversation.item.create'),
+          hasLength(1));
+      expect(sent.where((e) => e['type'] == 'response.create'), hasLength(1));
+      expect(harness.controller.state, VoiceAgentState.thinking);
+      expect(harness.conversationController.history.single.userText, '今天想聊聊天');
+    });
+  }
+
+  for (final succeeds in [true, false]) {
+    test(
+        'CP-V2 transcribing language switch succeeds=$succeeds never leaves silent capture',
+        () async {
+      var acknowledge = true;
+      final service = _acknowledgingRealtimeService(
+        contextUpdateTimeout: const Duration(milliseconds: 20),
+        shouldAcknowledge: () => acknowledge,
+        healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+        connectImplementationForTesting: (_) async {},
+      );
+      final harness = await _VoiceControllerHarness.create(service);
+      addTearDown(harness.dispose);
+      await _reachListening(harness, service);
+      service.handleDataChannelEventForTest(
+          '{"type":"input_audio_buffer.speech_started"}');
+      service.handleDataChannelEventForTest(
+          '{"type":"conversation.item.input_audio_transcription.delta","delta":"今天"}');
+      await pumpEventQueue();
+      expect(harness.controller.state, VoiceAgentState.transcribing);
+      acknowledge = succeeds;
+      await harness.controller.profileController
+          .setVoiceLanguageMode(VoiceLanguageMode.taigiRealtime);
+      await pumpEventQueue();
+      if (succeeds) {
+        expect(harness.controller.languageSyncState,
+            VoiceLanguageSyncState.applied);
+        expect(harness.controller.state, VoiceAgentState.transcribing);
+        expect(service.isMicEnabled, isTrue);
+        expect(harness.controller.partialTranscript, '今天');
+      } else {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+        expect(harness.controller.languageSyncState,
+            VoiceLanguageSyncState.failed);
+        expect(harness.controller.state, VoiceAgentState.idle);
+        expect(service.isMicEnabled, isFalse);
+        expect(harness.controller.canStartVoiceInput, isTrue);
+        expect(harness.controller.partialTranscript, isEmpty);
+        acknowledge = true;
+        await harness.controller.startRealtimeConversation();
+        expect(harness.controller.languageSyncState,
+            VoiceLanguageSyncState.applied);
+        expect(service.isMicEnabled, isTrue);
+      }
+    });
+  }
+
+  test(
+      'CR0109 manual switching updates active session, unrelated profile changes do not',
+      () async {
+    final sent = <Map>[];
+    final service = _acknowledgingRealtimeService(
+      healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+      connectImplementationForTesting: (_) async {},
+      eventSenderForTesting: (p) async => sent.add(jsonDecode(p) as Map),
+    );
+    final harness = await _VoiceControllerHarness.create(service);
+    addTearDown(harness.dispose);
+    await _reachListening(harness, service);
+    expect(
+        harness.controller.languageSyncState, VoiceLanguageSyncState.applied);
+    final initialCount = sent.length;
+    await harness.controller.profileController.setPetVolume(0.5);
+    await pumpEventQueue();
+    expect(sent.length, initialCount);
+    await harness.controller.profileController
+        .setVoiceLanguageMode(VoiceLanguageMode.taigiRealtime);
+    await pumpEventQueue();
+    expect(harness.controller.appliedLanguage, ReplyLanguage.taigi);
+    await harness.controller.profileController
+        .setVoiceLanguageMode(VoiceLanguageMode.defaultOpenAiRealtime);
+    await pumpEventQueue();
+    expect(harness.controller.appliedLanguage, ReplyLanguage.zhTw);
+    expect(sent.where((e) => e['type'] == 'response.create'), isEmpty);
+  });
+
+  test(
+      'CR0109 final-only language commands survive early response and preserve preference across ASR',
+      () async {
+    final sent = <Map>[];
+    final service = _acknowledgingRealtimeService(
+      healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+      connectImplementationForTesting: (_) async {},
+      eventSenderForTesting: (p) async => sent.add(jsonDecode(p) as Map),
+    );
+    final harness = await _VoiceControllerHarness.create(service);
+    addTearDown(harness.dispose);
+    await _reachListening(harness, service);
+    service.handleDataChannelEventForTest(
+        '{"type":"conversation.item.input_audio_transcription.delta","delta":"改說台語"}');
+    service.handleDataChannelEventForTest(
+        '{"type":"response.output_audio_transcript.delta","delta":"改說台語"}');
+    await pumpEventQueue();
+    expect(harness.controller.desiredLanguage, ReplyLanguage.zhTw);
+    service.handleDataChannelEventForTest(
+        '{"type":"input_audio_buffer.committed","item_id":"switch1"}');
+    service.handleDataChannelEventForTest(
+        '{"type":"response.created","response":{"id":"r1"}}');
+    service.handleDataChannelEventForTest(
+        '{"type":"conversation.item.input_audio_transcription.completed","item_id":"switch1","transcript":"幫我設定成台語"}');
+    await pumpEventQueue();
+    expect(harness.controller.appliedLanguage, ReplyLanguage.taigi);
+    final updates = sent.length;
+    service.handleDataChannelEventForTest(
+        '{"type":"conversation.item.input_audio_transcription.completed","item_id":"switch1","transcript":"幫我設定成台語"}');
+    await pumpEventQueue();
+    expect(sent.length, updates);
+    _completeAudioResponse(service, responseId: 'r1', reply: '好喔。');
+    await pumpEventQueue();
+    await harness.controller.startRealtimeConversation();
+    service.handleDataChannelEventForTest(
+        '{"type":"conversation.item.input_audio_transcription.completed","item_id":"short","transcript":"好的"}');
+    await pumpEventQueue();
+    expect(harness.controller.currentLanguageRoute.replyLanguage,
+        ReplyLanguage.taigi);
+    expect(sent.where((e) => e['type'] == 'response.create'), isEmpty);
+  });
+
+  test(
+      'CR0109 initial timeout is visible, next input retries without a new connection',
+      () async {
+    var acknowledge = false;
+    var connections = 0;
+    final service = _acknowledgingRealtimeService(
+      contextUpdateTimeout: const Duration(milliseconds: 20),
+      shouldAcknowledge: () => acknowledge,
+      healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+      connectImplementationForTesting: (_) async {
+        connections++;
+      },
+    );
+    final harness = await _VoiceControllerHarness.create(service);
+    addTearDown(harness.dispose);
+    await _reachListening(harness, service);
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    expect(harness.controller.languageSyncState, VoiceLanguageSyncState.failed);
+    expect(harness.controller.appliedLanguage, isNull);
+    expect(service.isMicEnabled, isFalse);
+    acknowledge = true;
+    await harness.controller.startRealtimeConversation();
+    expect(
+        harness.controller.languageSyncState, VoiceLanguageSyncState.applied);
+    expect(service.isMicEnabled, isTrue);
+    expect(connections, 1);
+  });
+
+  test(
+      'CR0109 rapid switches ignore old ACK and account change invalidates pending work',
+      () async {
+    var acknowledge = true;
+    final sent = <Map>[];
+    final service = _acknowledgingRealtimeService(
+      shouldAcknowledge: () => acknowledge,
+      healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+      connectImplementationForTesting: (_) async {},
+      eventSenderForTesting: (p) async => sent.add(jsonDecode(p) as Map),
+    );
+    final harness = await _VoiceControllerHarness.create(service);
+    addTearDown(harness.dispose);
+    await _reachListening(harness, service);
+    acknowledge = false;
+    await harness.controller.profileController
+        .setVoiceLanguageMode(VoiceLanguageMode.taigiRealtime);
+    await pumpEventQueue();
+    final old = sent.last;
+    await harness.controller.profileController
+        .setVoiceLanguageMode(VoiceLanguageMode.defaultOpenAiRealtime);
+    await pumpEventQueue();
+    service.handleDataChannelEventForTest(
+        jsonEncode({'type': 'session.updated', 'session': old['session']}));
+    await pumpEventQueue();
+    expect(
+        harness.controller.languageSyncState, VoiceLanguageSyncState.applying);
+    harness.controller.memoryController.syncUserId('different-resident');
+    await pumpEventQueue();
+    service.handleDataChannelEventForTest(jsonEncode(
+        {'type': 'session.updated', 'session': sent.last['session']}));
+    await pumpEventQueue();
+    expect(
+        harness.controller.languageSyncState, VoiceLanguageSyncState.pending);
+    expect(harness.controller.appliedLanguage, isNull);
+    expect(harness.controller.state, VoiceAgentState.idle);
+  });
+
+  test('CR0109 late language final cannot undo a newer manual choice',
+      () async {
+    final service = _acknowledgingRealtimeService(
+      healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+      connectImplementationForTesting: (_) async {},
+    );
+    final harness = await _VoiceControllerHarness.create(service);
+    addTearDown(harness.dispose);
+    await _reachListening(harness, service);
+    service.handleDataChannelEventForTest(
+        '{"type":"input_audio_buffer.committed","item_id":"old"}');
+    _completeAudioResponse(service, responseId: 'r1', reply: '好的');
+    await pumpEventQueue();
+    await harness.controller.profileController
+        .setVoiceLanguageMode(VoiceLanguageMode.taigiRealtime);
+    await pumpEventQueue();
+    service.handleDataChannelEventForTest(
+        '{"type":"conversation.item.input_audio_transcription.completed","item_id":"old","transcript":"請用國語跟我說話"}');
+    await pumpEventQueue();
+    expect(harness.controller.desiredLanguage, ReplyLanguage.taigi);
+  });
+
+  test(
+      'CR0109 completed response accepts late Mandarin switch without another response',
+      () async {
+    final sent = <Map>[];
+    final service = _acknowledgingRealtimeService(
+      healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+      connectImplementationForTesting: (_) async {},
+      eventSenderForTesting: (p) async => sent.add(jsonDecode(p) as Map),
+    );
+    final harness = await _VoiceControllerHarness.create(service);
+    addTearDown(harness.dispose);
+    await harness.controller.profileController
+        .setVoiceLanguageMode(VoiceLanguageMode.taigiRealtime);
+    await _reachListening(harness, service);
+    service.handleDataChannelEventForTest(
+        '{"type":"input_audio_buffer.committed","item_id":"switch-late"}');
+    _completeAudioResponse(service, responseId: 'r1', reply: '好喔。');
+    await pumpEventQueue();
+    service.handleDataChannelEventForTest(
+        '{"type":"conversation.item.input_audio_transcription.completed","item_id":"switch-late","transcript":"請用國語跟我說話"}');
+    await pumpEventQueue();
+    expect(harness.controller.appliedLanguage, ReplyLanguage.zhTw);
+    expect(harness.controller.state, VoiceAgentState.idle);
+    await harness.controller.startRealtimeConversation();
+    service.handleDataChannelEventForTest(
+        '{"type":"conversation.item.input_audio_transcription.completed","item_id":"taigi-short","transcript":"今仔日心情真好"}');
+    await pumpEventQueue();
+    expect(harness.controller.currentLanguageRoute.replyLanguage,
+        ReplyLanguage.zhTw);
+    expect(sent.where((e) => e['type'] == 'response.create'), isEmpty);
+  });
+
   test('realtime call retries before controller enters error', () async {
     var attempts = 0;
-    final realtimeService = RealtimeVoiceService(
+    final realtimeService = _acknowledgingRealtimeService(
       healthCheckImplementationForTesting: (_) async => _healthyBackend(),
       connectImplementationForTesting: (_) async {
         attempts += 1;
@@ -85,7 +372,7 @@ void main() {
       () async {
     final completer = Completer<void>();
     var attempts = 0;
-    final realtimeService = RealtimeVoiceService(
+    final realtimeService = _acknowledgingRealtimeService(
       healthCheckImplementationForTesting: (_) async => _healthyBackend(),
       connectImplementationForTesting: (_) async {
         attempts += 1;
@@ -109,7 +396,7 @@ void main() {
       'voice start button is unavailable while initial health/connect is in flight',
       () async {
     final healthCompleter = Completer<RealtimeHealthStatus>();
-    final realtimeService = RealtimeVoiceService(
+    final realtimeService = _acknowledgingRealtimeService(
       healthCheckImplementationForTesting: (_) => healthCompleter.future,
       connectImplementationForTesting: (_) async {},
     );
@@ -133,7 +420,7 @@ void main() {
   test('taigi realtime mode passes taigi language hint without Taigi ASR',
       () async {
     RealtimeConnectRequest? captured;
-    final realtimeService = RealtimeVoiceService(
+    final realtimeService = _acknowledgingRealtimeService(
       healthCheckImplementationForTesting: (_) async => _healthyBackend(),
       connectImplementationForTesting: (request) async {
         captured = request;
@@ -165,7 +452,7 @@ void main() {
         () async {
       final requests = <RealtimeConnectRequest>[];
       final sent = <String>[];
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (request) async =>
             requests.add(request),
@@ -206,7 +493,7 @@ void main() {
   test('CR0108 explicit Mandarin selection replaces Taiwanese on warm input',
       () async {
     final sent = <String>[];
-    final service = RealtimeVoiceService(
+    final service = _acknowledgingRealtimeService(
       healthCheckImplementationForTesting: (_) async => _healthyBackend(),
       connectImplementationForTesting: (_) async {},
       eventSenderForTesting: (p) async => sent.add(p),
@@ -223,14 +510,14 @@ void main() {
     expect(harness.controller.currentLanguageRoute.replyLanguage,
         ReplyLanguage.zhTw);
     final update = jsonDecode(sent.last) as Map;
-    expect(update['session']['instructions'], contains('請用繁體中文自然回覆'));
+    expect(update['session']['instructions'], contains('請用自然國語回覆'));
     harness.dispose();
   });
 
   test('CR0108 no-intent chat never replays retained previous tool success',
       () async {
     final sent = <String>[];
-    final service = RealtimeVoiceService(
+    final service = _acknowledgingRealtimeService(
       healthCheckImplementationForTesting: (_) async => _healthyBackend(),
       connectImplementationForTesting: (_) async {},
       eventSenderForTesting: (p) async => sent.add(p),
@@ -257,7 +544,7 @@ void main() {
     test('CR0108 async tool result with $invalidation is scoped to its input',
         () async {
       final sent = <String>[];
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {},
         eventSenderForTesting: (p) async => sent.add(p),
@@ -295,7 +582,7 @@ void main() {
 
   test('health check failed does not stay connecting', () async {
     var attempts = 0;
-    final realtimeService = RealtimeVoiceService(
+    final realtimeService = _acknowledgingRealtimeService(
       healthCheckImplementationForTesting: (_) async =>
           RealtimeHealthStatus.unavailable('後端未啟動'),
       connectImplementationForTesting: (_) async {
@@ -315,7 +602,7 @@ void main() {
 
   test('peer connection failed reconnects only once', () async {
     var attempts = 0;
-    final realtimeService = RealtimeVoiceService(
+    final realtimeService = _acknowledgingRealtimeService(
       healthCheckImplementationForTesting: (_) async => _healthyBackend(),
       connectImplementationForTesting: (_) async {
         attempts += 1;
@@ -345,7 +632,7 @@ void main() {
 
   test('stopRealtimeConversation clears timers and temporary transcript',
       () async {
-    final realtimeService = RealtimeVoiceService(
+    final realtimeService = _acknowledgingRealtimeService(
       healthCheckImplementationForTesting: (_) async => _healthyBackend(),
       connectImplementationForTesting: (_) async {},
     );
@@ -367,7 +654,7 @@ void main() {
 
   test('taigi realtime final transcript stores taigi realtime metadata',
       () async {
-    final realtimeService = RealtimeVoiceService(
+    final realtimeService = _acknowledgingRealtimeService(
       healthCheckImplementationForTesting: (_) async => _healthyBackend(),
       connectImplementationForTesting: (_) async {},
     );
@@ -393,7 +680,7 @@ void main() {
 
   test('sendTextDuringRealtime returns false when realtime is not connected',
       () async {
-    final realtimeService = RealtimeVoiceService(
+    final realtimeService = _acknowledgingRealtimeService(
       healthCheckImplementationForTesting: (_) async => _healthyBackend(),
       connectImplementationForTesting: (_) async {},
     );
@@ -412,7 +699,7 @@ void main() {
       'sendTextDuringRealtime injects user turn, sends text and triggers reply',
       () async {
     final sentPayloads = <String>[];
-    final realtimeService = RealtimeVoiceService(
+    final realtimeService = _acknowledgingRealtimeService(
       healthCheckImplementationForTesting: (_) async => _healthyBackend(),
       connectImplementationForTesting: (_) async {},
       eventSenderForTesting: (payload) async {
@@ -426,6 +713,8 @@ void main() {
     await pumpEventQueue();
     realtimeService.forceConnectionUsableForTest();
 
+    expect(sentPayloads.single, contains('session.update'));
+    sentPayloads.clear();
     final handled =
         await harness.controller.sendTextDuringRealtime('  我今天很開心  ');
     await pumpEventQueue();
@@ -464,7 +753,7 @@ void main() {
   });
 
   test('response timeout 後回到 idle（turn-based，不自動 listening）', () async {
-    final realtimeService = RealtimeVoiceService(
+    final realtimeService = _acknowledgingRealtimeService(
       healthCheckImplementationForTesting: (_) async => _healthyBackend(),
       connectImplementationForTesting: (_) async {},
     );
@@ -489,7 +778,7 @@ void main() {
   group('語音輪次控制（turn-based 一人一句 + mic 閘門）', () {
     test('idle 可以開始語音；連線後進入 listening 並標記為不可再次開始', () async {
       var attempts = 0;
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {
           attempts += 1;
@@ -512,7 +801,7 @@ void main() {
 
     test('listening 待命中再次按開始 → 不建立新連線', () async {
       var attempts = 0;
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {
           attempts += 1;
@@ -533,7 +822,7 @@ void main() {
 
     test('thinking 思考中不能再次開始新的語音對話', () async {
       var attempts = 0;
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {
           attempts += 1;
@@ -558,7 +847,7 @@ void main() {
 
     test('speaking 說話中不能再次開始新的語音對話', () async {
       var attempts = 0;
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {
           attempts += 1;
@@ -583,7 +872,7 @@ void main() {
       // 迴歸：server VAD 的 create_response 讓寵物常在使用者這句轉錄完成前就先開口，
       // 本輪 final transcript 比 response 晚到。修正前會被 turn-based 守衛整個丟掉，
       // 導致對話紀錄使用者文字空白、情緒/長期記憶/Care Alert 全失效。
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {},
       );
@@ -611,7 +900,7 @@ void main() {
     });
 
     test('speaking 播放完成後回到 idle（turn-based，麥克風關閉、需再按一次）', () async {
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {},
       );
@@ -642,7 +931,7 @@ void main() {
 
     test('response.done 同時帶 done + audioEnd 兩個結束事件，冪等收斂在 idle（不回 listening）',
         () async {
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {},
       );
@@ -670,7 +959,7 @@ void main() {
 
     test('idle 後再按一次 → 同一條連線開始下一句（不重連），回到 listening', () async {
       var attempts = 0;
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {
           attempts += 1;
@@ -705,7 +994,7 @@ void main() {
         'CR-0105: 30 warm turns reuse one session and never strand lifecycle state',
         () async {
       var attempts = 0;
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {
           attempts += 1;
@@ -810,7 +1099,7 @@ void main() {
       final careAlertController =
           CareAlertController(CareAlertStorageService());
       await careAlertController.loadAlerts();
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {},
       );
@@ -918,7 +1207,7 @@ void main() {
         'async language routing cannot create a turn after response playback completed',
         () async {
       final routing = _DeferredLanguageRoutingService();
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {},
       );
@@ -973,7 +1262,7 @@ void main() {
         'routing completed after assistant text but before audio stop records one complete turn',
         () async {
       final routing = _DeferredLanguageRoutingService();
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {},
       );
@@ -1058,7 +1347,7 @@ void main() {
       final careAlertController =
           CareAlertController(CareAlertStorageService());
       await careAlertController.loadAlerts();
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {},
       );
@@ -1133,7 +1422,7 @@ void main() {
 
     test('CR-0089：有語音時 response.done 不收 turn，保留 speaking + 字幕；播完才 idle',
         () async {
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {},
       );
@@ -1167,7 +1456,7 @@ void main() {
     });
 
     test('CR-0089：純文字回覆（無語音 buffer）→ response.done 立即收 idle，不等播完', () async {
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {},
       );
@@ -1191,7 +1480,7 @@ void main() {
 
     test('speaking 期間按語音鈕不打斷寵物：不送 response.cancel、狀態維持 speaking', () async {
       final sentPayloads = <String>[];
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {},
         eventSenderForTesting: (payload) async {
@@ -1216,7 +1505,7 @@ void main() {
     });
 
     test('speaking 期間使用者語音事件被忽略：不觸發新一輪、不改狀態', () async {
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {},
       );
@@ -1242,7 +1531,7 @@ void main() {
 
     test('thinking 時也不可打斷寵物：回傳 false、不送 cancel、維持 thinking', () async {
       final sentPayloads = <String>[];
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {},
         eventSenderForTesting: (payload) async {
@@ -1267,7 +1556,7 @@ void main() {
 
     test('listening 待命中按打斷無作用：回傳 false、不送 cancel', () async {
       final sentPayloads = <String>[];
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {},
         eventSenderForTesting: (payload) async {
@@ -1290,7 +1579,7 @@ void main() {
     test('CR-0096：聆聽中有語音時按停止＝送出本輪（commit+response.create、進 thinking、不斷線不清字幕）',
         () async {
       final sentPayloads = <String>[];
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {},
         eventSenderForTesting: (payload) async {
@@ -1301,6 +1590,8 @@ void main() {
       await _reachListening(harness, service);
 
       // 使用者開口（server VAD 偵測到 speech started）+ 串流 partial transcript。
+      expect(sentPayloads.single, contains('session.update'));
+      sentPayloads.clear();
       service.handleDataChannelEventForTest(
           '{"type":"input_audio_buffer.speech_started"}');
       service.handleDataChannelEventForTest(
@@ -1326,7 +1617,7 @@ void main() {
 
     test('CR-0096：聆聽中還沒開口就按停止＝不送空 commit、維持待命（不誤觸 commit_empty）', () async {
       final sentPayloads = <String>[];
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {},
         eventSenderForTesting: (payload) async {
@@ -1352,7 +1643,7 @@ void main() {
     test('error 狀態可以重試：canStartVoiceInput 為 true 且能再次連線', () async {
       var shouldFail = true;
       var attempts = 0;
-      final service = RealtimeVoiceService(
+      final service = _acknowledgingRealtimeService(
         healthCheckImplementationForTesting: (_) async => _healthyBackend(),
         connectImplementationForTesting: (_) async {
           attempts += 1;
@@ -1383,6 +1674,37 @@ void main() {
 
 /// 連線並把 data channel 打開，讓 controller 進入 listening 待命狀態，
 /// 並標記連線可用（讓「已連線時再次開始」走乾淨的 no-op，而非觸發重連）。
+// Existing turn tests use a deterministic server ACK. CR0109 failure/race tests
+// below disable it explicitly; production always waits for the real event.
+RealtimeVoiceService _acknowledgingRealtimeService({
+  Future<RealtimeHealthStatus> Function(String)?
+      healthCheckImplementationForTesting,
+  Future<void> Function(RealtimeConnectRequest)?
+      connectImplementationForTesting,
+  Future<void> Function(String)? eventSenderForTesting,
+  bool Function()? shouldAcknowledge,
+  Duration contextUpdateTimeout = const Duration(seconds: 3),
+}) {
+  late RealtimeVoiceService service;
+  service = RealtimeVoiceService(
+    healthCheckImplementationForTesting: healthCheckImplementationForTesting,
+    connectImplementationForTesting: connectImplementationForTesting,
+    contextUpdateTimeout: contextUpdateTimeout,
+    eventSenderForTesting: (payload) async {
+      await eventSenderForTesting?.call(payload);
+      final event = jsonDecode(payload) as Map;
+      if (event['type'] == 'session.update' &&
+          (shouldAcknowledge?.call() ?? true)) {
+        service.handleDataChannelEventForTest(jsonEncode({
+          'type': 'session.updated',
+          'session': event['session'],
+        }));
+      }
+    },
+  );
+  return service;
+}
+
 Future<void> _reachListening(
   _VoiceControllerHarness harness,
   RealtimeVoiceService service,
@@ -1623,6 +1945,32 @@ class _DeferredLanguageRoutingService extends LanguageRoutingService {
   }) {
     _wasCalled = true;
     return _route.future;
+  }
+}
+
+class _DeferredLanguageCompanionEngine extends CompanionEngineService {
+  final _gate = Completer<void>();
+  void complete() => _gate.complete();
+
+  @override
+  Future<CompanionAnalysisResult?> analyze({
+    required String sttProxyUrl,
+    required String userId,
+    required String sessionId,
+    required String turnId,
+    required String petName,
+    required String transcript,
+    required Map<String, dynamic> petState,
+    List<Map<String, dynamic>> recentTurns = const [],
+    String languageHint = 'zh',
+    Map<String, dynamic> audioFeatures = const {},
+  }) async {
+    await _gate.future;
+    return CompanionAnalysisResult.fromJson({
+      'turnId': turnId,
+      'emotion': 'neutral',
+      'companionNeed': 'companionship',
+    });
   }
 }
 

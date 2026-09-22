@@ -431,6 +431,28 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('設定語言顯示待連線狀態而非提前宣稱已套用', (tester) async {
+    final harness = await _HomeHarness.create();
+    addTearDown(harness.dispose);
+    await tester.pumpWidget(_settingsHost(harness));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('看與聽'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('台語即時語音'),
+      200,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.tap(find.text('台語即時語音'));
+    await tester.pumpAndSettle();
+
+    expect(harness.profileController.voiceLanguageMode.name, 'taigiRealtime');
+    expect(find.text('聊天語言'), findsOneWidget);
+    expect(find.text('已記住語言偏好，下次連線時套用。'), findsOneWidget);
+    expect(find.text('聊天語言已更新。'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('SettingsScreen hides dev panels when SHOW_DEV_PANELS is off',
       (tester) async {
     final harness = await _HomeHarness.create();

@@ -60,6 +60,34 @@
 
 ## 提案紀錄（Change Requests）
 
+### CR-0109：語言同步、機構選用 Telegram / LINE 與停用的 MQTT 基礎
+
+#### 最新放行裁決（2026-09-22，取代下方較寬 B2 / B3 核准）
+
+- **本輪最終 checkpoint（2026-09-22，優先於下方歷史待修狀態）**：CP-N1、CP-V1、CP-V2 **CLOSED**。architecture-agent 已核對 voice 跟隨最新同步 Future 與 transcribing ACK / timeout 恢復策略，實際重跑 `flutter test --no-pub test/voice_agent_controller_realtime_lifecycle_test.dart --plain-name CP-V` **4/4 pass**。Copernicus 回報 164 targeted tests / 分析通過；Main 回報 home_screen_layout_test **22/22 pass**，二者本次未獨立全量重跑，不與 4 項加總。已審 settings lazy-scroll 測試 / 狀態呈現與 `docs/VOICE_LANGUAGE_SMOKE_CR0109.md` 的「實機未執行」標示。本輪限定複核未見兩項未解決 bug，收斂不擴功能；**iPhone 未測，不給 release approval**。LINE 未接線 / MQTT 僅契約與 CP-N2–CP-N7 整合門檻維持，詳 runbook §7 最終複核。
+
+- **最新複核（2026-09-22）**：CP-N1 已修為 detached / caught audit，architecture-agent 重跑 **34/34 pass**（含 hanging / rejected / throws），本項結案；其餘通知整合門檻未解除。Voice / settings 工作樹靜態審查新增 CP-V1（P1：background analysis 取代 sync 導致 typed turn 未送出卻回已接手）、CP-V2（P2：transcribing 切換後 mic 不恢復），詳 `CARE_FACILITY_INTEGRATION_RUNBOOK.md` §7。准 voice owner 在既核准的同步 / controller / tests 範圍修正，不改 VAD / transport；settings 未確認其他獨立新 bug。未跑 Flutter / 實機，未改 owner 程式；LINE 未接線、MQTT 僅契約。
+
+- **隔離模組 review checkpoint（2026-09-22）**：已審查四個新增 notification service / test files，owner 的空 channels 防護與繁中訊息修正已出現在本次 31/31 通過的工作樹。另重現 **P2：channel loop await audit，audit 不 settle 導致第二通道及 dispatch 永久等待**；核准 backend owner 僅修隔離模組 / 單測的非阻塞 audit 行為，修後複審，不接 production。容量 / durable dedupe、timeout 與取消、skipped_duplicate 不代表先前 accepted、可信授權來源、輸入 / 時間及未接線事實已記入 `docs/CARE_FACILITY_INTEGRATION_RUNBOOK.md` §7 CP-N1–CP-N7。整合核准仍未給予；本次不是雙平台通知上線驗收。
+
+- **B1 APPROVED，語言 owner 可立即動工**：`voice_agent_controller.dart`、`language_routing_service.dart`、`ai_tool_router.dart` 僅語言辨識 / 呼叫區塊、`realtime_voice_service.dart` 僅語言 instructions 同步 / 更新結果與對應 tests。手動與語音共用流程，明確命令才切換，雙向偏好 / revision / account-session generation 隔離；不改 SDK、模型、傳輸或 VAD。frontend owner 負責 profile / 設定 / 必要 provider 接線；voice owner 不自行改其他 owner 檔案。此批不等待後端。
+- **B2 APPROVED，Feynman 僅隔離實作**：LINE adapter + dispatcher + policy / consent / recipient resolver interface 與 unit tests，預設停用，測試 fake 僅測試可用。缺機構映射或同意時零 outbound；不接現行 processCareAlert、不改 server.js、Telegram sender / cooldown / notification log、catalog 或其他 production 路徑。後端發現的機構收件映射 / consent gate 缺口為整合阻擋條件，不能以全域設定或 stub 補過；權威來源與精確契約另審後才接線。
+- **B3 CONTRACT ONLY**：MQTT 無硬體 / broker，本批只寫契約與未決問題；不新增可執行 adapter / device policy、不裝依賴、不連線 / publish、不接 live voice，不宣稱小黑豆支援或可用。程式實作須另行核准。
+- 架構 §4.4 已同步此優先裁決。下方 B2/B3 原範圍中較寬的整合與 MQTT 程式許可撤回；安全要求仍保留供後續審查。本輪只改兩份治理文件，未執行功能測試。
+
+- 提出 / 核准 agent：`architecture-agent`；日期：2026-09-22。
+- 使用者澄清：目前沒有 MQTT 硬體 / broker，小黑豆 IR blaster 僅候選；機構需能選 Telegram、LINE 或兩者。本輪只授權修改本檔與 `PROJECT_ARCHITECTURE.md`。
+- 唯讀依據：已檢查治理、controller / profile / ai_tool_router、Realtime context update、backend agent catalog / policy、processCareAlert、Telegram sender；未讀 env、憑證或 runtime data。現況風險：router 出現「台語」即命中；profile 更新不等於 session 套用；context update 捕捉錯誤後不回報套用失敗；通知採全域收件設定及 source+riskLevel cooldown，派送路徑未見逐住民 / 通道 consent gate。
+- 風險：語言 medium；通知隱私及未來實體設備 high。觸及跨 owner、Realtime 核心與 server 內部通知接線；本案不核准 API shape、DB schema、依賴或模型變更。
+- **裁決：APPROVED WITH CONSTRAINTS，可依已同步的 `PROJECT_ARCHITECTURE.md §4.4` 立即分批實作，不需再等待範圍核准；不等於 production 啟用或發布核准。** §4.4 是本案精確契約，與舊通知「立即送出」敘述衝突時，以同意 / 綁定 gate 為準。
+- **B1 / realtime-voice-agent**：controller / language routing / 最小 Realtime instructions 同步、可觀測更新結果與 owned tests；特別授權 ai_tool_router 語言辨識區塊，改為明確命令且排除否定、引述、話題。frontend owner 接 profile / 設定 / 必要 provider，統一變更入口、帳號隔離。無 SDK / model / transport / VAD 改動。
+- **B2 / Feynman（backend-agent）**：LINE opt-in adapter、facility policy / consent / binding resolver contract、notification dispatcher 及 isolated tests；最小 processCareAlert / Telegram / cooldown / audit 接線，維持 Telegram export 與 /notify HTTP 契約。可信設定選通道；不得把機構選項、一般 consent 或工具 confirmed 當外傳授權。無有效權威來源即 skipped，adapter 可先完成但不得以 stub 或全域收件人開 production。
+- **B3 / Feynman（backend-agent）**：MQTT guarded adapter / config validator / device policy 及 isolated tests；enabled=false 預設、enabled=true 仍 not_commissioned。無 broker connect / publish、無真 IR、無新依賴、無 live voice / catalog 設備工具。硬體協定、設備授權及實機驗收另提 CR。
+- 後端 catalog 核准僅既有 notify_caregiver 確認政策補強與回歸測試，不擴增副作用工具；Care Alert 風險邏輯仍 companion-memory owner。新路由、response 欄位、consent / recipient DB schema、配置管理 UI、production provisioning 均不在本次範圍。
+- 安全關卡：最小通知不含逐字稿 / 自由文字摘要 / 日記 / 記憶；撤回後每次發送重新驗證；住民 / 機構 / 收件綁定 / 通道隔離去重；accepted 不等於送達，IR 發出不等於設備生效；測試 fake 不可冒充產品成功。
+- 測試計畫：依 §4.4 D 的語言切換競態、通知 consent / scope / 通道矩陣 / 相容性 / redaction、MQTT 零副作用 / catalog 不暴露測試。先檢查測試載入是否會讀 env / runtime；本輪不執行功能 tests / build，不連 DB 或外部服務。
+- 完成狀態：**提案與架構契約核准完成；功能實作 / 測試 / 實機驗收未完成。** Feynman 可先 B2/B3，與 B1 按檔案分工進行；目前無其他 agent 修改 backend 的使用者資訊不構成超範圍授權。回滾以停用新 channel / adapter 為主，不移除同意驗證來恢復不安全派送。
+
 ### CR-0108：精簡陪伴、台語持續、音樂路由、語音購物、心情日記與任務編輯
 
 - 提出 / 核准 agent：`architecture-agent`。

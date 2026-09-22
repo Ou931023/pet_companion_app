@@ -149,6 +149,7 @@ class RealtimeVoiceService {
     this.dataChannelOpenTimeout = const Duration(seconds: 8),
     this.toolOutcomeFlushFallback = const Duration(seconds: 4),
     this.assistantPartialThrottle = const Duration(milliseconds: 150),
+    this.contextUpdateTimeout = const Duration(seconds: 3),
   });
 
   @visibleForTesting
@@ -163,6 +164,21 @@ class RealtimeVoiceService {
       healthCheckImplementationForTesting;
 
   final Duration dataChannelOpenTimeout;
+  final Duration contextUpdateTimeout;
+  Completer<bool>? _contextUpdate;
+  Timer? _contextUpdateTimer;
+  int _contextRevision = 0;
+  String _pendingContextInstructions = '';
+  String _pendingContextEventId = '';
+  String _pendingContextPayload = '';
+  String _desiredReplyLanguage = 'zh-TW';
+  String _lastContext = '';
+  bool _lastContextApplied = false;
+  bool _languageSynchronized = true;
+  Future<void> _contextSendTail = Future.value();
+
+  String get appliedReplyLanguage => _replyLanguage;
+  bool get isLanguageSynchronized => _languageSynchronized;
 
   /// 當這一輪回覆有真正的語音 buffer 事件時，工具念稿要等
   /// `output_audio_buffer.stopped`（語音真的播完）才送，避免字幕提早被蓋掉。
@@ -347,6 +363,7 @@ class RealtimeVoiceService {
         await _resetConnectionResources(emitIdle: false);
         _throwIfStaleConnect(generation);
         _replyLanguage = replyLanguage.trim();
+        _desiredReplyLanguage = _replyLanguage;
         final testConnect = connectImplementationForTesting;
         if (testConnect != null) {
           await testConnect(RealtimeConnectRequest(
@@ -559,26 +576,79 @@ class RealtimeVoiceService {
     _emit(RealtimeEventType.state, 'listening');
   }
 
-  Future<void> updateCompanionContext(String companionContext) async {
+  Future<bool> updateCompanionContext(String companionContext) {
     final normalized = companionContext.trim();
-    if (normalized.isEmpty) return;
+    if (normalized.isEmpty || _isDisposed || _isStopping) {
+      return Future.value(false);
+    }
+    if (normalized == _lastContext) {
+      if (_contextUpdate != null) return _contextUpdate!.future;
+      if (_lastContextApplied) return Future.value(true);
+    }
+    _finishContextUpdate(false);
+    _lastContext = normalized;
+    _lastContextApplied = false;
     final language = RegExp(r'^replyLanguage=([^\n\r]+)', multiLine: true)
         .firstMatch(normalized)
         ?.group(1)
         ?.trim();
-    if (language != null && language.isNotEmpty) _replyLanguage = language;
-    try {
-      await _sendEventPayload(jsonEncode({
-        'type': 'session.update',
-        'session': {
-          'type': 'realtime',
-          'instructions': _instructionsWithCompanionContext(normalized),
-        },
-      }));
-      _log('Companion context sent to realtime session');
-    } catch (error) {
-      _log('Unable to update companion context: $error');
+    if (language != null && language.isNotEmpty) {
+      _desiredReplyLanguage = language;
     }
+    // An analysis-only update must not revoke a previously ACKed language.
+    _languageSynchronized =
+        _languageSynchronized && _desiredReplyLanguage == _replyLanguage;
+    if (!_dataChannelOpen) return Future.value(false);
+    final completion = Completer<bool>();
+    _contextUpdate = completion;
+    final revision = ++_contextRevision;
+    _pendingContextEventId = 'language_${_connectGeneration}_$revision';
+    // session.updated has its own event_id; match the echoed instructions,
+    // including a unique revision, rather than mistaking any update for an ACK.
+    _pendingContextInstructions = _instructionsWithCompanionContext(
+      '$normalized\n${language == null ? 'replyLanguage=$_desiredReplyLanguage\n' : ''}'
+      'languageRevision=$_pendingContextEventId',
+    );
+    _pendingContextPayload = jsonEncode({
+      'event_id': _pendingContextEventId,
+      'type': 'session.update',
+      'session': {
+        'type': 'realtime',
+        'instructions': _pendingContextInstructions,
+      },
+    });
+    _contextUpdateTimer = Timer(contextUpdateTimeout, () {
+      if (identical(_contextUpdate, completion)) _finishContextUpdate(false);
+    });
+    final payload = _pendingContextPayload;
+    _contextSendTail = _contextSendTail.then((_) async {
+      if (!identical(_contextUpdate, completion)) return;
+      try {
+        await _sendEventPayload(payload);
+      } catch (_) {
+        if (identical(_contextUpdate, completion)) _finishContextUpdate(false);
+      }
+    });
+    return completion.future;
+  }
+
+  void _finishContextUpdate(bool applied) {
+    _contextUpdateTimer?.cancel();
+    _contextUpdateTimer = null;
+    _pendingEventPayloads.remove(_pendingContextPayload);
+    final completion = _contextUpdate;
+    _contextUpdate = null;
+    _pendingContextInstructions = '';
+    _pendingContextEventId = '';
+    _pendingContextPayload = '';
+    if (completion == null) return;
+    _lastContextApplied = applied;
+    if (applied) {
+      _languageSynchronized = true;
+      _replyLanguage = _desiredReplyLanguage;
+    }
+    completion.complete(applied);
+    if (applied) _flushPendingToolOutcome();
   }
 
   Future<void> cancelResponse() async {
@@ -605,10 +675,13 @@ class RealtimeVoiceService {
     // 那個 response 尚未結束），先把這句排隊，等 response.done 再送，避免被丟棄而「沒有後續」。
     if (_hasActiveAssistantResponse ||
         _toolResponseRequested ||
-        _audioPlaybackActive) {
+        _audioPlaybackActive ||
+        !_languageSynchronized) {
       _pendingToolOutcomes
           .add((line: normalized, generation: _toolOutcomeGeneration));
-      if (!_hasActiveAssistantResponse && !_toolResponseRequested) {
+      if (_languageSynchronized &&
+          !_hasActiveAssistantResponse &&
+          !_toolResponseRequested) {
         _startToolOutcomeFlushTimer();
       }
       _log('Tool outcome queued until current response finishes');
@@ -627,6 +700,7 @@ class RealtimeVoiceService {
 
   Future<void> _sendToolOutcomeResponse(String line, int generation) async {
     if (generation != _toolOutcomeGeneration ||
+        !_languageSynchronized ||
         _isStopping ||
         _isDisposed ||
         !_dataChannelOpen ||
@@ -657,6 +731,7 @@ class RealtimeVoiceService {
   void _flushPendingToolOutcome({bool playbackFallback = false}) {
     if (_hasActiveAssistantResponse ||
         _toolResponseRequested ||
+        !_languageSynchronized ||
         (_audioPlaybackActive && !playbackFallback)) {
       return;
     }
@@ -855,6 +930,12 @@ class RealtimeVoiceService {
     _log('Received event type: $type');
 
     if (type == 'session.updated') {
+      final session = map['session'];
+      if (_contextUpdate != null &&
+          session is Map &&
+          session['instructions'] == _pendingContextInstructions) {
+        _finishContextUpdate(true);
+      }
       return;
     }
 
@@ -1029,6 +1110,13 @@ class RealtimeVoiceService {
     }
 
     if (type == 'error') {
+      final error = map['error'];
+      if (_contextUpdate != null &&
+          error is Map &&
+          error['event_id'] == _pendingContextEventId) {
+        _finishContextUpdate(false);
+        return;
+      }
       if (_isStopping) {
         _log('Ignore data channel error during manual stop');
         return;
@@ -1067,6 +1155,8 @@ class RealtimeVoiceService {
       return;
     }
     if (raw.contains('closed') || raw.contains('closing')) {
+      _finishContextUpdate(false);
+      _languageSynchronized = false;
       _dataChannelOpen = false;
       if (_isStopping) {
         _log('Ignore data channel close event during manual stop');
@@ -1081,6 +1171,8 @@ class RealtimeVoiceService {
   void _handlePeerState(String state) {
     final raw = state.toLowerCase();
     if (_isClosedOrFailedState(raw)) {
+      _finishContextUpdate(false);
+      _languageSynchronized = false;
       _dataChannelOpen = false;
       if (_isStopping) {
         _log('Ignore connection close event during manual stop');
@@ -1168,6 +1260,11 @@ class RealtimeVoiceService {
   }
 
   Future<void> _resetConnectionResources({required bool emitIdle}) async {
+    _finishContextUpdate(false);
+    _lastContext = '';
+    _lastContextApplied = false;
+    _languageSynchronized = false;
+    _contextSendTail = Future.value();
     _cancelDataChannelOpenTimer();
     _dataChannelOpen = false;
     _pendingEventPayloads.clear();
@@ -1503,7 +1600,8 @@ $context
       'mixed-zh-taigi' => '台語口吻搭配繁體中文，自然國台語混用、長者聽得懂優先；不要用艱深台語字或大量羅馬拼音。',
       'taigi' =>
         '以台語為主、長者聽得懂優先：這是使用者明確選擇的回覆語言，跨輪與工具結果都維持自然口語台語；不要因為一小句國語、混合語句或轉錄結果就改用國語。不要硬翻成生僻台語字，也不要大量羅馬拼音。',
-      _ => '請用繁體中文自然回覆。',
+      _ =>
+        '請用自然國語回覆，文字使用繁體中文。這是使用者選擇的回覆語言，跨輪與工具結果都維持國語；不要因為一小句台語、混合語句或轉錄結果就切換語言。',
     };
   }
 

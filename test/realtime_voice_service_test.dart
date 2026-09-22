@@ -553,7 +553,9 @@ void main() {
       service.dispose();
     });
 
-    test('queues event until data channel opens', () async {
+    test(
+        'language context waits for open channel and never queues stale updates',
+        () async {
       final sentPayloads = <String>[];
       final service = RealtimeVoiceService(
         eventSenderForTesting: (payload) async {
@@ -561,16 +563,23 @@ void main() {
         },
       );
 
-      await service.updateCompanionContext('陪伴脈絡');
+      expect(await service.updateCompanionContext('陪伴脈絡'), isFalse);
 
       expect(sentPayloads, isEmpty);
-      expect(service.pendingEventCountForTest, 1);
+      expect(service.pendingEventCountForTest, 0);
 
       service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
       await pumpEventQueue();
 
-      expect(sentPayloads, hasLength(1));
-      expect(sentPayloads.single, contains('session.update'));
+      expect(sentPayloads, isEmpty);
+      final update = service.updateCompanionContext('陪伴脈絡');
+      await pumpEventQueue();
+      final payload = jsonDecode(sentPayloads.single) as Map;
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'session.updated',
+        'session': payload['session'],
+      }));
+      expect(await update, isTrue);
       expect(service.pendingEventCountForTest, 0);
 
       service.dispose();
@@ -587,8 +596,9 @@ void main() {
       );
 
       // 帶 taigi 的 nextStrategy context → 觸發台語輸出指引。
-      await service.updateCompanionContext('replyLanguage=taigi\n先陪他聊聊天');
       service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
+      final updated =
+          service.updateCompanionContext('replyLanguage=taigi\n先陪他聊聊天');
       await pumpEventQueue();
 
       final updates =
@@ -596,6 +606,11 @@ void main() {
       expect(updates, isNotEmpty);
       final instructions = ((jsonDecode(updates.last) as Map)['session']
           as Map)['instructions'] as String;
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'session.updated',
+        'session': {'instructions': instructions},
+      }));
+      expect(await updated, isTrue);
 
       // 陪伴優先 / 不硬轉任務。
       expect(instructions, contains('不要硬把話題帶去提醒、喝水、吃藥或任務'));
@@ -752,8 +767,17 @@ void main() {
         'CR0108 tool speech retains explicit language without new context hints',
         () async {
       final sent = <String>[];
-      final service =
-          RealtimeVoiceService(eventSenderForTesting: (p) async => sent.add(p));
+      late RealtimeVoiceService service;
+      service = RealtimeVoiceService(eventSenderForTesting: (p) async {
+        sent.add(p);
+        final event = jsonDecode(p) as Map;
+        if (event['type'] == 'session.update') {
+          service.handleDataChannelEventForTest(jsonEncode({
+            'type': 'session.updated',
+            'session': event['session'],
+          }));
+        }
+      });
       service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
       await service.updateCompanionContext('replyLanguage=taigi');
       await service.updateCompanionContext('emotion=neutral');
