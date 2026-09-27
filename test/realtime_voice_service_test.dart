@@ -4,6 +4,21 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pet_companion_app/services/realtime_voice_service.dart';
 
+// Synthetic initial server instructions, not a production fallback.
+const _syntheticBaseline = '''SYNTHETIC_PERSONA PET_NAME MEMORY TOOL_SAFETY FIXED_COMPLIANCE
+不要硬把話題帶去提醒、喝水、吃藥或任務。
+不要重複這類同一句罐頭；不要每句都用問句收尾。
+先陪伴，不急著解決、不過度醫療化。
+胸痛、呼吸困難、跌倒、嚴重不適或自傷意念時注意安全。
+不自行續講。''';
+
+void _supplyBaseline(RealtimeVoiceService service) {
+  service.handleDataChannelEventForTest(jsonEncode({
+    'type': 'session.created',
+    'session': {'instructions': _syntheticBaseline},
+  }));
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -572,6 +587,7 @@ void main() {
       await pumpEventQueue();
 
       expect(sentPayloads, isEmpty);
+      _supplyBaseline(service);
       final update = service.updateCompanionContext('陪伴脈絡');
       await pumpEventQueue();
       final payload = jsonDecode(sentPayloads.single) as Map;
@@ -586,7 +602,7 @@ void main() {
     });
 
     test(
-        'CR-0093A: mid-session session.update persona 同步 CR-0090 自然度 + 台語自然 + 安全',
+        'CR-0093A/P1: session.update preserves supplied initial persona and safety',
         () async {
       final sentPayloads = <String>[];
       final service = RealtimeVoiceService(
@@ -597,6 +613,7 @@ void main() {
 
       // 帶 taigi 的 nextStrategy context → 觸發台語輸出指引。
       service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
+      _supplyBaseline(service);
       final updated =
           service.updateCompanionContext('replyLanguage=taigi\n先陪他聊聊天');
       await pumpEventQueue();
@@ -612,6 +629,7 @@ void main() {
       }));
       expect(await updated, isTrue);
 
+      expect(instructions, startsWith(_syntheticBaseline));
       // 陪伴優先 / 不硬轉任務。
       expect(instructions, contains('不要硬把話題帶去提醒、喝水、吃藥或任務'));
       // 避免重複。
@@ -624,8 +642,7 @@ void main() {
       // 台語自然、長者聽得懂優先。
       expect(instructions, contains('以台語為主、長者聽得懂優先'));
       // 仍保留 nextStrategy 框架語，不外漏分析欄位名稱。
-      expect(
-          instructions, contains('請優先遵守 nextStrategy，但不要提到 Companion Engine'));
+      expect(instructions, contains('nextStrategy 僅在不牴觸上述語言、安全與固定合規規則時採用'));
 
       service.dispose();
     });
@@ -779,6 +796,7 @@ void main() {
         }
       });
       service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
+      _supplyBaseline(service);
       await service.updateCompanionContext('replyLanguage=taigi');
       await service.updateCompanionContext('emotion=neutral');
       await service.speakToolOutcome('已經找到歌曲', outcomeId: 'turn1:music');

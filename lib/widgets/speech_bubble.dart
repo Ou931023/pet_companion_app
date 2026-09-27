@@ -18,11 +18,11 @@ class SpeechBubble extends StatelessWidget {
   final bool isWaiting;
   final bool compact;
 
-  /// CR-0080：是否把較長內容分頁顯示（與語音同步、不提前翻頁）。
+  /// CR-0080：是否把較長內容分頁顯示（依字數估算翻頁時間，非精確語音同步）。
   /// 只在「寵物字幕」開啟；使用者泡泡 / 等待狀態維持原本單塊顯示。
   final bool enablePaging;
 
-  /// CR-0084：是否為「即時逐字串流中」——分頁器顯示最新一頁、不用計時器翻頁。
+  /// CR-0084：是否為即時逐字串流中；保留閱讀頁與估算計時，不使用淡入淡出。
   final bool streaming;
 
   @override

@@ -24,6 +24,7 @@ import '../services/realtime_turn_coordinator.dart';
 import '../services/realtime_voice_service.dart';
 import '../services/web_search_service.dart';
 import '../services/voice_language_command_service.dart';
+import '../services/voice_language_diagnostics.dart';
 import '../utils/app_log.dart';
 import '../utils/zh_convert.dart';
 import 'app_navigation_controller.dart';
@@ -111,6 +112,27 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       '${profileController.voiceLanguageMode.name}:'
       '${profileController.voiceLanguageMode == VoiceLanguageMode.manualOverride ? profileController.manualAsrStrategy : ''}';
 
+  void _traceLanguageSync(String code, {bool recordDiagnostic = true}) {
+    if (recordDiagnostic) {
+      realtimeVoiceService.languageDiagnostics.record(
+        VoiceDiagnosticEvent.fromCode(code),
+        attempt: _languageSyncAttempt,
+        generation: _languageSessionGeneration,
+        revision: _languageRevision,
+        desired: VoiceDiagnosticLanguage.fromValue(desiredLanguage.value),
+        applied: VoiceDiagnosticLanguage.fromValue(_appliedLanguage?.value),
+        pending: _languageSyncState != VoiceLanguageSyncState.applied,
+        channelOpen: realtimeVoiceService.isDataChannelOpen,
+        baselineReady: realtimeVoiceService.baselineReady,
+      );
+    }
+    AppLog.debug('[VOICE_LANGUAGE] code=$code revision=$_languageRevision '
+        'generation=$_languageSessionGeneration attempt=$_languageSyncAttempt '
+        'desired=${desiredLanguage.value} applied=${_appliedLanguage?.value ?? 'none'} '
+        'sync=${_languageSyncState.name} voice=${_state.name} '
+        'mic=${realtimeVoiceService.isMicEnabled}');
+  }
+
   void _onLanguagePreferenceChanged() {
     if (_disposed || _observedLanguagePreference == _languagePreferenceKey) {
       return;
@@ -118,6 +140,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     _observedLanguagePreference = _languagePreferenceKey;
     _languageRevision++;
     _currentLanguageRoute = _realtimeStartRoute();
+    _traceLanguageSync('preference_changed');
     unawaited(_synchronizeLanguage());
   }
 
@@ -129,6 +152,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _invalidateLanguageSession() {
+    realtimeVoiceService.languageDiagnostics.clear();
     _languageSessionGeneration++;
     _languageSyncAttempt++;
     _languageSyncInFlight = null;
@@ -137,6 +161,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     _resumeMicAfterLanguageSync = false;
     _handledLanguageCommands.clear();
     _userLanguageRevisions.clear();
+    _traceLanguageSync('session_invalidated');
   }
 
   Future<bool> _synchronizeLanguage([CompanionAnalysisResult? context]) {
@@ -157,7 +182,8 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
       return false;
     }
-    final needsLanguageSync = !realtimeVoiceService.isLanguageSynchronized ||
+    final needsLanguageSync = !realtimeVoiceService.baselineReady ||
+        !realtimeVoiceService.isLanguageSynchronized ||
         realtimeVoiceService.appliedReplyLanguage != language.value;
     if (needsLanguageSync) {
       _languageSyncState = VoiceLanguageSyncState.applying;
@@ -165,6 +191,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       realtimeVoiceService.pauseMicInput();
     }
     notifyListeners();
+    _traceLanguageSync('update_requested');
     final applied = await realtimeVoiceService
         .updateCompanionContext(_companionContextPrompt(context));
     if (_disposed ||
@@ -201,19 +228,28 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       conversationController.showPetBubbleMessage(languageSyncMessage);
     }
     notifyListeners();
+    _traceLanguageSync(languageApplied ? 'applied' : 'not_applied');
     return languageApplied;
   }
 
   void _applySpokenLanguageCommand(String text, String sourceItemId) {
     final mode = _languageCommands.parse(text);
-    if (mode == null || !_userRequestedRealtime || _disposed) return;
+    if (!_userRequestedRealtime || _disposed) return;
+    if (mode == null) {
+      _traceLanguageSync('final_not_command');
+      return;
+    }
     final inputRevision =
         _userLanguageRevisions[sourceItemId] ?? _inputLanguageRevision;
-    if (inputRevision != _languageRevision) return;
+    if (inputRevision != _languageRevision) {
+      _traceLanguageSync('final_stale_revision');
+      return;
+    }
     final identity = sourceItemId.isNotEmpty
         ? sourceItemId
         : '$_voiceInputGeneration:${text.trim()}';
     if (!_handledLanguageCommands.add(identity)) return;
+    _traceLanguageSync('final_command_accepted');
     unawaited(_saveSpokenLanguage(mode));
   }
 
@@ -224,6 +260,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     } catch (_) {
       if (_disposed || generation != _languageSessionGeneration) return;
       _languageSyncState = VoiceLanguageSyncState.failed;
+      _traceLanguageSync('preference_save_failed');
       notifyListeners();
     }
   }
@@ -394,6 +431,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
           return;
         }
         _transition(VoiceAgentState.listening, 'turn_based_next_turn');
+        _traceLanguageSync('next_input_started');
       } finally {
         if (generation == _voiceInputGeneration) _isConnecting = false;
       }
@@ -467,6 +505,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       await realtimeVoiceService.startListening();
       _cancelTimeout(RealtimeTimeoutType.connectionTimeout);
     } catch (error) {
+      if (attemptId != _connectionAttemptId || !_userRequestedRealtime) return;
       await _handleRealtimeFailure(error);
     } finally {
       if (attemptId == _connectionAttemptId) {
@@ -573,6 +612,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> stopRealtimeConversation() async {
     _invalidateLanguageSession();
+    realtimeVoiceService.languageDiagnostics.stopCapture();
     _connectionAttemptId++;
     _transcriptRouteAttemptId++;
     _invalidateVoiceToolSpeech();
@@ -790,6 +830,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
         ));
         break;
       case RealtimeEventType.assistantResponseStart:
+        _traceLanguageSync('response_started');
         _responseTurnId = _activeTurnId;
         _responseAwaitingUserFinal = _activeTurnId.isEmpty;
         _currentResponseUserItemId = _pendingUserItemId;
@@ -2014,6 +2055,13 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       );
       return;
     }
+    // Buffered speech events must not reopen capture after a failed update.
+    if (_languageSyncState == VoiceLanguageSyncState.failed &&
+        (newState == VoiceAgentState.ready ||
+            newState == VoiceAgentState.listening ||
+            newState == VoiceAgentState.transcribing)) {
+      newState = VoiceAgentState.idle;
+    }
     final previous = _state;
     _state = newState;
     AppLog.debug(
@@ -2021,11 +2069,20 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     );
     switch (newState) {
       case VoiceAgentState.listening:
+      case VoiceAgentState.transcribing:
         _petExpression = 'listening';
         _petAction = 'listen';
         petController.setMode(PetMode.listening);
-        // Turn-based：開始聽使用者這一句 → 開啟麥克風。
-        realtimeVoiceService.resumeMicInput();
+        // Residual partial/VAD events can arrive while session.update waits.
+        // Only the matching language ACK may release this capture hold.
+        if (_languageSyncState == VoiceLanguageSyncState.applying) {
+          _resumeMicAfterLanguageSync = true;
+          realtimeVoiceService.pauseMicInput();
+          _traceLanguageSync('capture_held',
+              recordDiagnostic: previous != newState);
+        } else {
+          realtimeVoiceService.resumeMicInput();
+        }
         break;
       case VoiceAgentState.thinking:
         _petExpression = 'thinking';
@@ -2033,12 +2090,6 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
         petController.setMode(PetMode.thinking);
         // Turn-based：寵物開始回覆 → 關閉麥克風，避免雜音被當成新一輪。
         realtimeVoiceService.pauseMicInput();
-        break;
-      case VoiceAgentState.transcribing:
-        _petExpression = 'listening';
-        _petAction = 'listen';
-        petController.setMode(PetMode.listening);
-        realtimeVoiceService.resumeMicInput();
         break;
       case VoiceAgentState.speaking:
         _petExpression = 'speaking';
@@ -2307,20 +2358,21 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     _invalidateLanguageSession();
     _invalidateVoiceToolSpeech();
     _currentLanguageRoute = _realtimeStartRoute();
-    _connectionAttemptId += 1;
+    final attemptId = ++_connectionAttemptId;
     _isConnecting = true;
     _cancelAllTimeouts();
     _clearCurrentTurn();
-    await realtimeVoiceService.stop();
-    petController.setModeAndMessage(PetMode.listening, message);
-    conversationController.showPetBubbleMessage(message);
-    final attemptId = ++_connectionAttemptId;
-    _transition(VoiceAgentState.connecting, '${reason}_reconnect_started');
-    _startTimeout(RealtimeTimeoutType.reconnectTimeout);
     try {
+      await realtimeVoiceService.stop();
+      if (attemptId != _connectionAttemptId || !_userRequestedRealtime) return;
+      petController.setModeAndMessage(PetMode.listening, message);
+      conversationController.showPetBubbleMessage(message);
+      _transition(VoiceAgentState.connecting, '${reason}_reconnect_started');
+      _startTimeout(RealtimeTimeoutType.reconnectTimeout);
       final health = await realtimeVoiceService.checkBackendHealth(
         AppConfig.healthUrlForSttProxy(profileController.sttProxyUrl),
       );
+      if (attemptId != _connectionAttemptId || !_userRequestedRealtime) return;
       if (!health.ok || !health.hasOpenAiKey) {
         final type = !health.ok
             ? RealtimeFailureType.backendUnavailable
@@ -2349,6 +2401,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       await realtimeVoiceService.startListening();
       _cancelTimeout(RealtimeTimeoutType.reconnectTimeout);
     } catch (error) {
+      if (attemptId != _connectionAttemptId || !_userRequestedRealtime) return;
       AppLog.debug('[VoiceAgentController] reconnect failed: $error');
       final failureType = error is RealtimeFailure
           ? error.type
@@ -2363,7 +2416,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
         stopConnection: true,
       );
     } finally {
-      _isConnecting = false;
+      if (attemptId == _connectionAttemptId) _isConnecting = false;
     }
   }
 
@@ -2414,7 +2467,10 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
       case AppLifecycleState.detached:
-        if (_state == VoiceAgentState.ready ||
+        if ((_state == VoiceAgentState.idle && _userRequestedRealtime) ||
+            _state == VoiceAgentState.connecting ||
+            _state == VoiceAgentState.recovering ||
+            _state == VoiceAgentState.ready ||
             _state == VoiceAgentState.listening ||
             _state == VoiceAgentState.transcribing ||
             _state == VoiceAgentState.thinking ||

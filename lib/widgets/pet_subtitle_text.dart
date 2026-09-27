@@ -7,16 +7,17 @@ import 'package:flutter/material.dart';
 /// 問題：較長的寵物回覆若一次塞滿字幕、或用過快的計時器翻頁，會讓字幕跟語音
 /// 對不上——常常寵物第一段話還沒念完，字幕就跳到下一頁。
 ///
-/// 設計（與語音同步、且可由使用者自行翻頁）：
-/// - 把回覆依中文／台語標點切成自然短句，再合併成「最多兩、三行、長者好讀」的短頁
-///   （每頁約 [_maxCharsPerPage] 字）。
+/// 設計（估算閱讀時間，非精確語音同步；可由使用者自行翻頁）：
+/// - 把回覆依中文／台語標點切成自然短句，每頁最多 [_maxCharsPerPage] 字；
+///   行數隨可用寬度與字體大小增加，不裁掉頁尾。
 /// - Realtime 文字增長時保留目前頁與既有計時器，不會因每個 delta 都跳回第一頁。
 /// - 每頁停留時間依長者友善語速估算；final 文字接手時延續目前頁，不重播第一頁。
 /// - 多頁字幕提供上一頁／下一頁與頁碼。使用者手動翻頁後，本輪停止自動翻頁，
 ///   避免正在閱讀舊頁時被畫面搶走。
 /// - 只有「需要分頁的長回覆」才會啟動計時器；短回覆只有一頁、行為與過去相同、
 ///   不會留下待處理的計時器。
-/// - 新的一輪回覆（text 改變）會從第一頁重新開始。
+/// - 重新進入串流或非延續文字會從第一頁重新開始；沒有回合 ID 時，
+///   無法辨識 streaming 持續為 true 的兩個不同回合。
 class PetSubtitleText extends StatefulWidget {
   const PetSubtitleText({
     super.key,
@@ -62,7 +63,9 @@ class _PetSubtitleTextState extends State<PetSubtitleText> {
         oldWidget.streaming != widget.streaming) {
       final previousText = oldWidget.text.trim();
       final nextText = widget.text.trim();
-      final sameResponse = previousText.isNotEmpty &&
+      final startsStreaming = !oldWidget.streaming && widget.streaming;
+      final sameResponse = !startsStreaming &&
+          previousText.isNotEmpty &&
           nextText.isNotEmpty &&
           (oldWidget.streaming ||
               nextText.startsWith(previousText) ||
@@ -136,9 +139,7 @@ class _PetSubtitleTextState extends State<PetSubtitleText> {
     final pageWidget = Text(
       pageText,
       key: ValueKey('pet-subtitle-page-$_pageIndex'),
-      // 保留一行安全餘裕（目標兩行），避免窄螢幕把該頁尾字裁掉而漏字。
-      maxLines: 3,
-      overflow: TextOverflow.ellipsis,
+      // 字數上限不等於行數上限；窄螢幕與大字體仍須顯示整頁。
       style: widget.textStyle,
     );
     return Column(
@@ -215,15 +216,8 @@ class _PetSubtitleTextState extends State<PetSubtitleText> {
     final buffer = StringBuffer();
     for (final rune in text.runes) {
       final ch = String.fromCharCode(rune);
-      if (ch == '\n') {
-        if (buffer.isNotEmpty) {
-          segments.add(buffer.toString().trim());
-          buffer.clear();
-        }
-        continue;
-      }
       buffer.write(ch);
-      if (_breakers.contains(ch)) {
+      if (_breakers.contains(ch) || ch == '\n') {
         segments.add(buffer.toString());
         buffer.clear();
       }
@@ -233,12 +227,10 @@ class _PetSubtitleTextState extends State<PetSubtitleText> {
     // 無標點的超長句硬切，避免單頁爆行。
     final normalized = <String>[];
     for (final seg in segments) {
-      final trimmed = seg.trim();
-      if (trimmed.isEmpty) continue;
-      if (trimmed.runes.length <= _maxCharsPerPage) {
-        normalized.add(trimmed);
+      if (seg.runes.length <= _maxCharsPerPage) {
+        normalized.add(seg);
       } else {
-        normalized.addAll(_hardWrap(trimmed));
+        normalized.addAll(_hardWrap(seg));
       }
     }
     return normalized;

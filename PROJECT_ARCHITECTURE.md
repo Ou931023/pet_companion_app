@@ -74,6 +74,16 @@
 
 transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤判成 user；user partial 不可變永久訊息；空白 final 不可產生空訊息。
 
+### 3.1 CR-0109 指令保留與診斷邊界（2026-09-27 核准方案，尚未實作 / 驗收）
+
+- 現況缺口：backend `buildRealtimeInstructions` 含完整 persona、寵物名與記憶；client `_instructionsWithCompanionContext` 的縮版字串經 `session.update` 覆寫整個 instructions，並非僅更新語言。此缺口不等於已證明 build 2 語音失敗根因；實機仍 NO-GO。
+- ASR source 現況（非部署驗證）：`VoiceLanguageMode.taigiRealtime` 的 `routeTranscript` 沿用既有 OpenAI Realtime transcript；voice controller 在此正常 / late-final 路徑傳入文字，不送音訊至 ASR26。`/api/realtime/call` 原始碼的 transcription 為 `gpt-4o-transcribe`、`language: zh`。台語模式 / 回覆偏好不等於 ASR26 已接線；此與使用者期待的差異僅列證據，不核准更換 ASR、transcription model / language 或 transport，也不推定為實機失敗根因。
+- 核准最小方案：從同 connection generation 的初始 `session.created` 事件擷取 `session.instructions` 為私有 immutable baseline；每次用 baseline 加一份最新語言 / 分析覆蓋區塊組裝，不累加舊 update，不複製 backend persona。顯式語言優先於 hint / 一般 nextStrategy，保留完整 persona、姓名、記憶、工具確認、安全與固定合規原句例外。stop / reset / 換帳號 / dispose 清除基底；重連不得沿用舊基底。
+- 初始事件可用性尚待證明。缺基底時有界等待、只保留最新 context，逾時回失敗，不送縮版覆寫或假報 applied；維持 revision / generation / exact ACK 與既有背景防護。若上游未提供完整基底，須回 architecture-agent 重審，不自行新增 API 或改 `/api/realtime/call` SDP response。
+- 診斷與 baseline 完全隔離。只允許 128 筆 / 64 KiB 上限的 typed in-memory 狀態紀錄，不含原文、音訊、帳號、姓名、記憶、instructions、SDP、憑證或內容 hash。僅在非 release 且顯式 `VOICE_LANGUAGE_DIAGNOSTICS=true` 下收集並註冊 snapshot / clear VM service extension；release 即使 flag=true 亦封鎖收集與讀取，無 debug UI、網路上傳或自動持久化。
+- P1 核准診斷 schema v2（待實作 / 複審）：v1 固定事件欄位新增必填 boolean `baselineReady`，只反映當前 generation + channel 的有效初始 instructions 已取得，不等同 ACK / 內容或語音驗收；新增固定 events `baseline_ready`、`baseline_waiting`、`baseline_timeout`（failure=timeout）。空 snapshot 亦為 v2；reader 嚴格 v2-only，拒絕 v1 / 未知版本 / 缺欄位，不做隱式轉換。clear 不影響業務基底，stop / reset / 換帳號 / 重連不得保留舊基底真值；不得新增內容、長度或 hash 診斷。精確契約與兩端測試要求見 CR-0109「P1 診斷 schema v2 增補核准」。
+- D1 code/privacy checkpoint 通過即可進 P1 離線實作 / 測試，不等待實機 attach；兩批離線複審後可規劃一次合併候選建置 / 安裝，避免低磁碟下重建兩次。實機驗收仍須在同一 opt-in Profile 候選依序確認非 console 真實管道、同 generation 初始 baseline、實際語音案例；未完成維持 NO-GO，離線通過不是安裝 / 實機成功。ACK 不證明實際語言；模型、WebRTC transport、API 路由 / response、DB、Care Alert、依賴維持不變。精確 owner allowlist、D1-C / D1-H / P1-C checkpoint、測試與 backlog 以 `docs/CHANGE_REVIEW.md` CR-0109 的 2026-09-27 最新裁決為準。
+
 ---
 
 ## 4. 後端 API 契約（以 `backend/stt_proxy/server.js` 現況為準）

@@ -15,6 +15,11 @@ void main() {
     '把聊天語言改成台語',
     '改說台語',
     '把語言改成台語',
+    '可以幫我切換成台語嗎？',
+    '請你，幫我設定成台語。',
+    '可不可以用台語跟我聊天？',
+    '能不能改用台語？',
+    '幫我把語言設定為臺語',
   ]) {
     test('explicit Taiwanese command: $command', () {
       expect(parser.parse(command), VoiceLanguageMode.taigiRealtime);
@@ -46,6 +51,10 @@ void main() {
     '今天心情很好',
     '',
     '改用台語，不要真的切換',
+    '可以播放台語歌嗎？',
+    '可以用台語唱歌嗎？',
+    '他問，可以切換成台語嗎？',
+    '如果可以，改用台語',
   ]) {
     test('does not switch for mention or ambiguous request: $text', () {
       expect(parser.parse(text), isNull);

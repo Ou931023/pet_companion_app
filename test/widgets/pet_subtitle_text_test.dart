@@ -1,9 +1,134 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/rendering.dart';
 
 import 'package:pet_companion_app/widgets/pet_subtitle_text.dart';
+import 'package:pet_companion_app/widgets/speech_bubble.dart';
 
 void main() {
+  Widget bubble(String text, {bool streaming = true, double scale = 1}) =>
+      MaterialApp(
+        home: MediaQuery(
+          data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+          child: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: 280,
+                child: SpeechBubble(
+                  text: text,
+                  enablePaging: true,
+                  streaming: streaming,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+  test('分頁保留內部空白與換行', () {
+    final text = '陪你慢慢說。\n hello world， take care。' * 3;
+    expect(PetSubtitleText.paginateForTest(text).join(), text);
+  });
+
+  testWidgets('新串流即使沿用舊文字前綴也重設手動頁與計時', (tester) async {
+    final oldText = '甲' * 56;
+    final newText = '$oldText${'乙' * 28}';
+    await tester.pumpWidget(bubble(oldText, streaming: false));
+    await tester.tap(find.byKey(const ValueKey('pet-subtitle-next-page')));
+    await tester.pumpAndSettle();
+    expect(find.text('2 / 2'), findsOneWidget);
+    await tester.pumpWidget(bubble(newText));
+    expect(find.text('1 / 3'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 8));
+    expect(find.text('2 / 3'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('窄泡泡兩倍字體每頁全文可見而非省略', (tester) async {
+    final text = '陪' * 56;
+    await tester.pumpWidget(bubble(text, scale: 2));
+    for (var index = 0; index < 2; index++) {
+      final paragraph = tester.renderObject<RenderParagraph>(find.descendant(
+        of: find.byKey(ValueKey('pet-subtitle-page-$index')),
+        matching: find.byType(RichText),
+      ));
+      expect(paragraph.didExceedMaxLines, isFalse);
+      expect(tester.takeException(), isNull);
+      if (index == 0) {
+        await tester.tap(find.byKey(const ValueKey('pet-subtitle-next-page')));
+        await tester.pump();
+      }
+    }
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('手動頁在串流增長及 final 接手後保持，縮短 final 夾到有效頁', (tester) async {
+    await tester.pumpWidget(bubble('甲' * 56));
+    await tester.tap(find.byKey(const ValueKey('pet-subtitle-next-page')));
+    await tester.pump();
+    await tester.pumpWidget(bubble('甲' * 84));
+    expect(find.text('2 / 3'), findsOneWidget);
+    await tester.pumpWidget(bubble('甲' * 84, streaming: false));
+    await tester.pump(const Duration(seconds: 30));
+    expect(find.text('2 / 3'), findsOneWidget);
+    await tester.pumpWidget(bubble('甲' * 10, streaming: false));
+    await tester.pumpAndSettle();
+    expect(find.text('甲' * 10), findsOneWidget);
+    expect(find.byKey(const ValueKey('pet-subtitle-page-label')), findsNothing);
+  });
+
+  testWidgets('串流高頻增長不延後既有計時，抵達尾頁後新增頁仍會繼續', (tester) async {
+    final first = '甲' * 28;
+    final second = '乙' * 28;
+    final third = '丙' * 28;
+    await tester.pumpWidget(bubble('$first$second'));
+    await tester.pump(const Duration(seconds: 6));
+    await tester.pumpWidget(bubble('$first$second丙'));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text(second), findsOneWidget);
+    await tester.pump(const Duration(seconds: 7));
+    expect(find.text('丙'), findsOneWidget);
+    await tester.pumpWidget(bubble('$first$second$third${'丁' * 28}'));
+    expect(find.text(third), findsOneWidget);
+    await tester.pump(const Duration(seconds: 7));
+    expect(find.text('丁' * 28), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('串流分頁重排後仍可逐頁讀回完整 final 文字', (tester) async {
+    final prefix = '${'甲' * 19}。';
+    await tester.pumpWidget(bubble('$prefix${'乙' * 8}'));
+    final full = '$prefix${'乙' * 40}。結尾。';
+    await tester.pumpWidget(bubble(full));
+    await tester.pumpWidget(bubble(full, streaming: false));
+    final pages = PetSubtitleText.paginateForTest(full);
+    final visible = <String>[];
+    for (var index = 0; index < pages.length; index++) {
+      await tester.pumpAndSettle();
+      visible.add(tester
+          .widget<Text>(
+            find.byKey(ValueKey('pet-subtitle-page-$index')),
+          )
+          .data!);
+      if (index < pages.length - 1) {
+        await tester.tap(find.byKey(const ValueKey('pet-subtitle-next-page')));
+      }
+    }
+    expect(visible.join(), full);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('不相關的靜態新文字會離開舊手動頁', (tester) async {
+    await tester.pumpWidget(bubble('甲' * 56, streaming: false));
+    await tester.tap(find.byKey(const ValueKey('pet-subtitle-next-page')));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(bubble('乙' * 84, streaming: false));
+    await tester.pumpAndSettle();
+    expect(find.text('1 / 3'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   group('PetSubtitleText.paginate (CR-0080)', () {
     const maxChars = 28;
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -51,6 +52,7 @@ import 'package:pet_companion_app/services/taigi_asr_strategy.dart';
 import 'package:pet_companion_app/services/taigi_asr_service.dart';
 import 'package:pet_companion_app/services/text_to_speech_service.dart';
 import 'package:pet_companion_app/services/web_search_service.dart';
+import 'package:pet_companion_app/services/voice_language_diagnostics.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -60,6 +62,509 @@ void main() {
       'ttsEnabled': false,
     });
   });
+
+  for (final timesOut in [false, true]) {
+    test('P1 controller holds mic for baseline and supports retry timeout=$timesOut', () async {
+      final diagnostics = VoiceLanguageDiagnostics.forTesting();
+      final sent = <Map>[];
+      final service = _acknowledgingRealtimeService(
+        languageDiagnostics: diagnostics,
+        supplyInitialBaseline: false,
+        contextUpdateTimeout: const Duration(milliseconds: 100),
+        healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+        connectImplementationForTesting: (_) async {},
+        eventSenderForTesting: (p) async => sent.add(jsonDecode(p) as Map),
+      );
+      final harness = await _VoiceControllerHarness.create(service);
+      addTearDown(harness.dispose);
+      await harness.controller.startRealtimeConversation();
+      service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
+      service.forceConnectionUsableForTest();
+      await pumpEventQueue(times: 2);
+      expect(service.baselineReady, isFalse);
+      expect(harness.controller.languageSyncState, VoiceLanguageSyncState.applying);
+      expect(service.isMicEnabled, isFalse);
+      expect(sent, isEmpty);
+      if (timesOut) {
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+        expect(harness.controller.languageSyncState, VoiceLanguageSyncState.failed);
+        expect(harness.controller.state, VoiceAgentState.idle);
+        expect(service.isMicEnabled, isFalse);
+        expect(harness.controller.languageSyncMessage, '語言還沒更新好，下次開口時會再試一次。');
+      }
+      _supplyInitialBaseline(service);
+      if (timesOut) {
+        await pumpEventQueue(times: 2);
+        expect(sent, isEmpty, reason: 'Late baseline alone does not restart a timed-out update');
+        expect(service.isMicEnabled, isFalse);
+        await harness.controller.startRealtimeConversation();
+      }
+      await pumpEventQueue();
+      expect(service.baselineReady, isTrue);
+      expect(harness.controller.languageSyncState, VoiceLanguageSyncState.applied);
+      expect(service.isMicEnabled, isTrue);
+      expect(sent.where((e) => e['type'] == 'session.update'), hasLength(1));
+      expect(sent.where((e) => e['type'] == 'response.create'), isEmpty);
+      final events = jsonDecode(diagnostics.snapshot())['events'] as List;
+      expect(events.firstWhere((e) => e['event'] == 'update_requested')['baselineReady'], isFalse);
+      expect(events.lastWhere((e) => e['event'] == 'applied')['baselineReady'], isTrue);
+    });
+  }
+
+  test('P1 background stop cancels baseline wait and rejects late channel creation', () async {
+    final diagnostics = VoiceLanguageDiagnostics.forTesting();
+    final sent = <Map>[];
+    final service = _acknowledgingRealtimeService(
+      languageDiagnostics: diagnostics,
+      supplyInitialBaseline: false,
+      healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+      connectImplementationForTesting: (_) async {},
+      eventSenderForTesting: (p) async => sent.add(jsonDecode(p) as Map),
+    );
+    final harness = await _VoiceControllerHarness.create(service);
+    addTearDown(harness.dispose);
+    await _reachListening(harness, service);
+    final oldChannel = service.bindDataChannelEventHandlerForTest();
+    expect(harness.controller.languageSyncState, VoiceLanguageSyncState.applying);
+    harness.controller.didChangeAppLifecycleState(AppLifecycleState.paused);
+    await pumpEventQueue();
+    _supplyInitialBaseline(service, oldChannel);
+    harness.controller.didChangeAppLifecycleState(AppLifecycleState.resumed);
+    await pumpEventQueue();
+    expect(service.baselineReady, isFalse);
+    expect(service.isMicEnabled, isFalse);
+    expect(harness.controller.state, VoiceAgentState.idle);
+    expect(harness.controller.languageSyncState, VoiceLanguageSyncState.pending);
+    expect(sent, isEmpty);
+    expect(diagnostics.snapshot(), VoiceLanguageDiagnostics.emptySnapshot);
+  });
+
+  test('D1 captures controller language state and clears on stop and dispose', () async {
+    final diagnostics = VoiceLanguageDiagnostics.forTesting();
+    final service = _acknowledgingRealtimeService(
+      languageDiagnostics: diagnostics,
+      healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+      connectImplementationForTesting: (_) async {},
+    );
+    final harness = await _VoiceControllerHarness.create(service);
+    addTearDown(harness.dispose);
+    await _reachListening(harness, service);
+    await harness.controller.profileController.setVoiceLanguageMode(VoiceLanguageMode.taigiRealtime);
+    await pumpEventQueue();
+    final events = jsonDecode(diagnostics.snapshot())['events'] as List;
+    expect(events.map((e) => e['event']), containsAll([
+      'capture_ready', 'preference_changed', 'update_requested', 'send', 'matched', 'applied',
+    ]));
+    final applied = events.lastWhere((e) => e['event'] == 'applied');
+    expect(applied['desired'], 'taigi');
+    expect(applied['applied'], 'taigi');
+    expect(applied['pending'], isFalse);
+    expect(applied['channelOpen'], isTrue);
+    await harness.controller.stopRealtimeConversation();
+    expect(diagnostics.snapshot(), VoiceLanguageDiagnostics.emptySnapshot);
+    await harness.controller.profileController.setVoiceLanguageMode(VoiceLanguageMode.defaultOpenAiRealtime);
+    await pumpEventQueue();
+    expect(diagnostics.snapshot(), VoiceLanguageDiagnostics.emptySnapshot);
+    await _reachListening(harness, service);
+    harness.controller.memoryController.syncUserId('PRIVATE_NEXT_ACCOUNT_SENTINEL');
+    expect(service.baselineReady, isFalse);
+    expect(diagnostics.snapshot(), VoiceLanguageDiagnostics.emptySnapshot);
+    await pumpEventQueue();
+    expect(diagnostics.snapshot(), VoiceLanguageDiagnostics.emptySnapshot);
+    await _reachListening(harness, service);
+    service.dispose();
+    expect(diagnostics.snapshot(), VoiceLanguageDiagnostics.emptySnapshot);
+  });
+
+  test('D1 repeated partials do not enqueue capture-held samples', () async {
+    final diagnostics = VoiceLanguageDiagnostics.forTesting();
+    var acknowledge = true;
+    final service = _acknowledgingRealtimeService(
+      languageDiagnostics: diagnostics,
+      shouldAcknowledge: () => acknowledge,
+      healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+      connectImplementationForTesting: (_) async {},
+    );
+    final harness = await _VoiceControllerHarness.create(service);
+    addTearDown(harness.dispose);
+    await _reachListening(harness, service);
+    acknowledge = false;
+    await harness.controller.profileController
+        .setVoiceLanguageMode(VoiceLanguageMode.taigiRealtime);
+    await pumpEventQueue();
+    service.handleDataChannelEventForTest(jsonEncode({
+      'type': 'conversation.item.input_audio_transcription.delta',
+      'delta': 'PRIVATE_PARTIAL_SENTINEL',
+    }));
+    await pumpEventQueue();
+    final snapshot = diagnostics.snapshot();
+    expect(snapshot, contains('capture_held'));
+    for (var i = 0; i < 10; i++) {
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'conversation.item.input_audio_transcription.delta',
+        'delta': 'PRIVATE_PARTIAL_SENTINEL',
+      }));
+    }
+    await pumpEventQueue();
+    expect(diagnostics.snapshot(), snapshot);
+    expect(snapshot, isNot(contains('PRIVATE_')));
+  });
+
+  for (final succeeds in [true, false]) {
+    test('CR0109 pending ACK keeps residual speech muted succeeds=$succeeds',
+        () async {
+      var acknowledge = true;
+      final sent = <Map>[];
+      final service = _acknowledgingRealtimeService(
+        shouldAcknowledge: () => acknowledge,
+        healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+        connectImplementationForTesting: (_) async {},
+        eventSenderForTesting: (p) async => sent.add(jsonDecode(p) as Map),
+      );
+      final harness = await _VoiceControllerHarness.create(service);
+      addTearDown(harness.dispose);
+      await _reachListening(harness, service);
+      acknowledge = false;
+      await harness.controller.profileController
+          .setVoiceLanguageMode(VoiceLanguageMode.taigiRealtime);
+      await pumpEventQueue();
+      final update = sent.last;
+      expect(service.isMicEnabled, isFalse);
+      service.handleDataChannelEventForTest(
+          '{"type":"input_audio_buffer.speech_started"}');
+      service.handleDataChannelEventForTest(
+          '{"type":"conversation.item.input_audio_transcription.delta","delta":"今天"}');
+      await pumpEventQueue();
+      expect(harness.controller.state, VoiceAgentState.transcribing);
+      expect(service.isMicEnabled, isFalse,
+          reason: 'Residual events must not reopen input before language ACK');
+      service.handleDataChannelEventForTest(jsonEncode(succeeds
+          ? {'type': 'session.updated', 'session': update['session']}
+          : {
+              'type': 'error',
+              'error': {'event_id': update['event_id'], 'code': 'invalid_request_error'}
+            }));
+      await pumpEventQueue();
+      expect(service.isMicEnabled, succeeds);
+      expect(harness.controller.languageSyncState, succeeds
+          ? VoiceLanguageSyncState.applied : VoiceLanguageSyncState.failed);
+      if (!succeeds) {
+        expect(harness.controller.state, VoiceAgentState.idle);
+        service.handleDataChannelEventForTest(
+            '{"type":"input_audio_buffer.speech_started"}');
+        await pumpEventQueue();
+        expect(harness.controller.state, VoiceAgentState.idle);
+        expect(service.isMicEnabled, isFalse);
+        acknowledge = true;
+        await harness.controller.startRealtimeConversation();
+      }
+      expect(service.appliedReplyLanguage, 'taigi');
+      expect(service.isMicEnabled, isTrue);
+      expect(sent.where((e) => e['type'] == 'response.create'), isEmpty);
+    });
+  }
+
+  for (final (retrying, fails) in [
+    (false, false), (false, true), (true, false), (true, true),
+  ]) {
+    test('CR0109 background cancels pending connect retrying=$retrying fails=$fails',
+        () async {
+      final entered = Completer<void>();
+      final release = Completer<void>();
+      var attempts = 0;
+      final service = _acknowledgingRealtimeService(
+        healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+        connectImplementationForTesting: (_) async {
+          attempts++;
+          if (retrying && attempts == 1) throw StateError('retry');
+          entered.complete();
+          await release.future;
+        },
+      );
+      final harness = await _VoiceControllerHarness.create(service);
+      await harness.controller.profileController
+          .setVoiceLanguageMode(VoiceLanguageMode.taigiRealtime);
+      final start = harness.controller.startRealtimeConversation();
+      addTearDown(() async {
+        if (!release.isCompleted) release.complete();
+        await start;
+        harness.dispose();
+      });
+      await entered.future;
+      await pumpEventQueue();
+      expect(harness.controller.state,
+          retrying ? VoiceAgentState.recovering : VoiceAgentState.connecting);
+      harness.controller.didChangeAppLifecycleState(AppLifecycleState.paused);
+      await pumpEventQueue();
+      if (fails) {
+        release.completeError(StateError('old connect failure'));
+      } else {
+        release.complete();
+      }
+      await start;
+      service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
+      await pumpEventQueue();
+      expect(harness.controller.state, VoiceAgentState.idle);
+      expect(service.isMicEnabled, isFalse);
+      expect(service.startListeningCalls, 0);
+      expect(harness.controller.desiredLanguage, ReplyLanguage.taigi);
+      expect(harness.controller.appliedLanguage, isNull);
+      expect(harness.controller.languageSyncState, VoiceLanguageSyncState.pending);
+      final previousAttempts = attempts;
+      harness.controller.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await pumpEventQueue();
+      expect(attempts, previousAttempts);
+      expect(service.isMicEnabled, isFalse);
+    });
+  }
+
+  for (final (fails, pendingHealth) in [
+    (false, false), (false, true), (true, false), (true, true),
+  ]) {
+    test(
+        'CR0109 background cancels reconnect pendingHealth=$pendingHealth fails=$fails',
+        () async {
+      final health = Completer<RealtimeHealthStatus>();
+      final connection = Completer<void>();
+      var healthCalls = 0;
+      var connections = 0;
+      final service = _acknowledgingRealtimeService(
+        healthCheckImplementationForTesting: (_) async {
+          healthCalls++;
+          if (pendingHealth && healthCalls > 1) return health.future;
+          return _healthyBackend();
+        },
+        connectImplementationForTesting: (_) async {
+          connections++;
+          if (connections > 1) await connection.future;
+        },
+      );
+      final harness = await _VoiceControllerHarness.create(service);
+      addTearDown(() async {
+        if (!health.isCompleted) health.complete(_healthyBackend());
+        if (!connection.isCompleted) connection.complete();
+        await pumpEventQueue();
+        harness.dispose();
+      });
+      await _reachListening(harness, service);
+      service.handlePeerStateForTest('RTCPeerConnectionStateDisconnected');
+      await pumpEventQueue();
+      // stop() emits idle while the reconnect health check is still pending.
+      expect(harness.controller.state,
+          pendingHealth ? VoiceAgentState.idle : VoiceAgentState.connecting);
+      expect(healthCalls, 2);
+      expect(connections, pendingHealth ? 1 : 2);
+      harness.controller.didChangeAppLifecycleState(AppLifecycleState.paused);
+      await pumpEventQueue();
+      if (fails && pendingHealth) {
+        health.completeError(StateError('old health failure'));
+      } else {
+        health.complete(_healthyBackend());
+      }
+      if (fails && !pendingHealth) {
+        connection.completeError(StateError('old connection failure'));
+      } else {
+        connection.complete();
+      }
+      await pumpEventQueue();
+      service.handleDataChannelStateForTest('RTCDataChannelStateOpen');
+      await pumpEventQueue();
+      expect(connections, pendingHealth ? 1 : 2,
+          reason: 'A stale health completion must not start another connection');
+      expect(harness.controller.state, VoiceAgentState.idle);
+      expect(service.isMicEnabled, isFalse);
+      expect(harness.controller.languageSyncState, VoiceLanguageSyncState.pending);
+      expect(harness.controller.appliedLanguage, isNull);
+      expect(service.startListeningCalls, 1);
+    });
+  }
+
+  for (final fails in [false, true]) {
+    test('CR0109 background cancels pending recovery stop fails=$fails', () async {
+      var healthCalls = 0;
+      var connections = 0;
+      late final _LifecycleRealtimeService service;
+      service = _LifecycleRealtimeService(
+        healthCheckImplementationForTesting: (_) async {
+          healthCalls++;
+          return _healthyBackend();
+        },
+        connectImplementationForTesting: (_) async {
+          connections++;
+          _supplyInitialBaseline(service);
+        },
+        eventSenderForTesting: (payload) async {
+          final event = jsonDecode(payload) as Map;
+          if (event['type'] == 'session.update') {
+            service.handleDataChannelEventForTest(jsonEncode({
+              'type': 'session.updated', 'session': event['session'],
+            }));
+          }
+        },
+      );
+      final harness = await _VoiceControllerHarness.create(service);
+      final gate = Completer<void>();
+      addTearDown(() async {
+        if (!gate.isCompleted) gate.complete();
+        await pumpEventQueue();
+        harness.dispose();
+      });
+      await harness.controller.profileController
+          .setVoiceLanguageMode(VoiceLanguageMode.taigiRealtime);
+      await _reachListening(harness, service);
+      final states = <VoiceAgentState>[];
+      harness.controller.addListener(() => states.add(harness.controller.state));
+      service.nextStop = gate;
+      service.handlePeerStateForTest('RTCPeerConnectionStateDisconnected');
+      await pumpEventQueue();
+      expect(states, contains(VoiceAgentState.recovering));
+      expect(harness.controller.state, VoiceAgentState.recovering);
+      expect(service.nextStop, isNull, reason: 'Recovery is awaiting the stop gate');
+      expect(healthCalls, 1);
+      harness.controller.didChangeAppLifecycleState(AppLifecycleState.paused);
+      await pumpEventQueue();
+      if (fails) {
+        gate.completeError(StateError('old stop failure'));
+      } else {
+        gate.complete();
+      }
+      await pumpEventQueue();
+      expect(healthCalls, 1);
+      expect(connections, 1);
+      expect(harness.controller.state, VoiceAgentState.idle);
+      expect(service.isMicEnabled, isFalse);
+      expect(harness.controller.desiredLanguage, ReplyLanguage.taigi);
+      expect(harness.controller.languageSyncState, VoiceLanguageSyncState.pending);
+      expect(harness.controller.appliedLanguage, isNull);
+      expect(service.startListeningCalls, 1);
+      harness.controller.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await pumpEventQueue();
+      expect(connections, 1);
+      expect(service.isMicEnabled, isFalse);
+    });
+  }
+
+  for (final warmIdle in [false, true]) {
+    test('CR0109 paused/resumed rejects old ACK warmIdle=$warmIdle', () async {
+      var acknowledge = true;
+      final sent = <Map>[];
+      final requests = <RealtimeConnectRequest>[];
+      final service = _acknowledgingRealtimeService(
+        shouldAcknowledge: () => acknowledge,
+        healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+        connectImplementationForTesting: (request) async => requests.add(request),
+        eventSenderForTesting: (p) async => sent.add(jsonDecode(p) as Map),
+      );
+      final harness = await _VoiceControllerHarness.create(service);
+      addTearDown(harness.dispose);
+      await _reachListening(harness, service);
+      acknowledge = false;
+      service.handleDataChannelEventForTest(
+          '{"type":"input_audio_buffer.committed","item_id":"switch-background"}');
+      service.handleDataChannelEventForTest(
+          '{"type":"conversation.item.input_audio_transcription.completed","item_id":"switch-background","transcript":"可以用台語跟我說話嗎？"}');
+      await pumpEventQueue();
+      final old = sent.lastWhere((e) => e['type'] == 'session.update');
+      expect(harness.controller.desiredLanguage, ReplyLanguage.taigi);
+      expect(harness.controller.languageSyncState, VoiceLanguageSyncState.applying);
+      if (warmIdle) {
+        _completeAudioResponse(service, responseId: 'background-r', reply: '好的');
+        await pumpEventQueue();
+        expect(harness.controller.state, VoiceAgentState.idle);
+      }
+      harness.controller.didChangeAppLifecycleState(AppLifecycleState.paused);
+      await pumpEventQueue();
+      expect(harness.controller.languageSyncState, VoiceLanguageSyncState.pending);
+      expect(harness.controller.desiredLanguage, ReplyLanguage.taigi);
+      expect(service.isMicEnabled, isFalse);
+      expect(service.isDataChannelOpen, isFalse);
+      service.forceConnectionUsableForTest(usable: false);
+      service.handleDataChannelEventForTest(jsonEncode(
+          {'type': 'session.updated', 'session': old['session']}));
+      harness.controller.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await pumpEventQueue();
+      expect(harness.controller.appliedLanguage, isNull);
+      expect(requests, hasLength(1), reason: 'Resume must not start the mic');
+      await _reachListening(harness, service);
+      final latest = sent.lastWhere((e) => e['type'] == 'session.update');
+      expect(requests.last.replyLanguage, 'taigi');
+      expect(latest['event_id'], isNot(old['event_id']));
+      service.handleDataChannelEventForTest(jsonEncode(
+          {'type': 'session.updated', 'session': old['session']}));
+      await pumpEventQueue();
+      expect(harness.controller.languageSyncState, VoiceLanguageSyncState.applying);
+      expect(service.isMicEnabled, isFalse);
+      service.handleDataChannelEventForTest(jsonEncode(
+          {'type': 'session.updated', 'session': latest['session']}));
+      await pumpEventQueue();
+      expect(harness.controller.appliedLanguage, ReplyLanguage.taigi);
+      expect(service.isMicEnabled, isTrue);
+      expect(sent.where((e) => e['type'] == 'response.create'), isEmpty);
+    });
+  }
+
+  for (final target in [ReplyLanguage.taigi, ReplyLanguage.zhTw]) {
+    test('CR0109 spoken final after generated response gates next input $target',
+        () async {
+      var acknowledge = true;
+      final sent = <Map>[];
+      final service = _acknowledgingRealtimeService(
+        shouldAcknowledge: () => acknowledge,
+        healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+        connectImplementationForTesting: (_) async {},
+        eventSenderForTesting: (p) async => sent.add(jsonDecode(p) as Map),
+      );
+      final harness = await _VoiceControllerHarness.create(service);
+      addTearDown(harness.dispose);
+      if (target == ReplyLanguage.zhTw) {
+        await harness.controller.profileController
+            .setVoiceLanguageMode(VoiceLanguageMode.taigiRealtime);
+      }
+      await _reachListening(harness, service);
+      final previous = service.appliedReplyLanguage;
+      acknowledge = false;
+      service.handleDataChannelEventForTest(
+          '{"type":"input_audio_buffer.speech_started"}');
+      service.handleDataChannelEventForTest(
+          '{"type":"input_audio_buffer.committed","item_id":"switch-chain"}');
+      service.handleDataChannelEventForTest(
+          '{"type":"response.created","response":{"id":"already-generated"}}');
+      service.handleDataChannelEventForTest(
+          '{"type":"response.output_audio.delta"}');
+      service.handleDataChannelEventForTest(jsonEncode({
+        'type': 'conversation.item.input_audio_transcription.completed',
+        'item_id': 'switch-chain',
+        'transcript': target == ReplyLanguage.taigi
+            ? '可以用台語跟我說話嗎？' : '可以用國語跟我說話嗎？',
+      }));
+      await pumpEventQueue();
+      expect(harness.controller.desiredLanguage, target);
+      expect(service.appliedReplyLanguage, previous);
+      expect(harness.controller.languageSyncState, VoiceLanguageSyncState.applying);
+      expect(harness.controller.state, VoiceAgentState.speaking);
+      expect(service.isMicEnabled, isFalse);
+      service.handleDataChannelEventForTest(
+          '{"type":"response.done","response":{"id":"already-generated","output":[]}}');
+      service.handleDataChannelEventForTest('{"type":"output_audio_buffer.stopped"}');
+      await pumpEventQueue();
+      expect(harness.controller.state, VoiceAgentState.idle);
+      final next = harness.controller.startRealtimeConversation();
+      await pumpEventQueue();
+      expect(service.isMicEnabled, isFalse);
+      final update = sent.lastWhere((e) => e['type'] == 'session.update');
+      expect(update['session']['instructions'], contains('replyLanguage=${target.value}'));
+      service.handleDataChannelEventForTest(jsonEncode(
+          {'type': 'session.updated', 'session': update['session']}));
+      await next;
+      await pumpEventQueue();
+      expect(harness.controller.appliedLanguage, target);
+      expect(service.appliedReplyLanguage, target.value);
+      expect(harness.controller.currentLanguageRoute.replyLanguage, target);
+      expect(harness.controller.state, VoiceAgentState.listening);
+      expect(service.isMicEnabled, isTrue);
+      expect(sent.where((e) => e['type'] == 'response.create' || e['type'] == 'response.cancel'), isEmpty);
+    });
+  }
 
   for (final ackFirst in [false, true]) {
     test(
@@ -1676,19 +2181,28 @@ void main() {
 /// 並標記連線可用（讓「已連線時再次開始」走乾淨的 no-op，而非觸發重連）。
 // Existing turn tests use a deterministic server ACK. CR0109 failure/race tests
 // below disable it explicitly; production always waits for the real event.
-RealtimeVoiceService _acknowledgingRealtimeService({
+_LifecycleRealtimeService _acknowledgingRealtimeService({
   Future<RealtimeHealthStatus> Function(String)?
       healthCheckImplementationForTesting,
   Future<void> Function(RealtimeConnectRequest)?
       connectImplementationForTesting,
   Future<void> Function(String)? eventSenderForTesting,
   bool Function()? shouldAcknowledge,
+  VoiceLanguageDiagnostics? languageDiagnostics,
+  bool supplyInitialBaseline = true,
   Duration contextUpdateTimeout = const Duration(seconds: 3),
 }) {
-  late RealtimeVoiceService service;
-  service = RealtimeVoiceService(
+  late _LifecycleRealtimeService service;
+  service = _LifecycleRealtimeService(
+    languageDiagnostics: languageDiagnostics,
     healthCheckImplementationForTesting: healthCheckImplementationForTesting,
-    connectImplementationForTesting: connectImplementationForTesting,
+    connectImplementationForTesting: connectImplementationForTesting == null
+        ? null
+        : (request) async {
+            final receive = service.bindDataChannelEventHandlerForTest();
+            await connectImplementationForTesting(request);
+            if (supplyInitialBaseline) _supplyInitialBaseline(service, receive);
+          },
     contextUpdateTimeout: contextUpdateTimeout,
     eventSenderForTesting: (payload) async {
       await eventSenderForTesting?.call(payload);
@@ -1703,6 +2217,14 @@ RealtimeVoiceService _acknowledgingRealtimeService({
     },
   );
   return service;
+}
+
+void _supplyInitialBaseline(RealtimeVoiceService service,
+    [void Function(String)? receive]) {
+  (receive ?? service.handleDataChannelEventForTest)(jsonEncode({
+    'type': 'session.created',
+    'session': {'instructions': 'SYNTHETIC_PERSONA PET_NAME MEMORY TOOL_SAFETY FIXED_COMPLIANCE'},
+  }));
 }
 
 Future<void> _reachListening(
@@ -1768,6 +2290,33 @@ RealtimeHealthStatus _healthyBackend() {
     realtimeModel: 'gpt-realtime',
     checkedAt: DateTime.now(),
   );
+}
+
+class _LifecycleRealtimeService extends RealtimeVoiceService {
+  _LifecycleRealtimeService({
+    super.healthCheckImplementationForTesting,
+    super.connectImplementationForTesting,
+    super.eventSenderForTesting,
+    super.contextUpdateTimeout,
+    super.languageDiagnostics,
+  });
+
+  Completer<void>? nextStop;
+  int startListeningCalls = 0;
+
+  @override
+  Future<void> startListening() async {
+    startListeningCalls++;
+    await super.startListening();
+  }
+
+  @override
+  Future<void> stop() async {
+    final gate = nextStop;
+    nextStop = null;
+    if (gate != null) await gate.future;
+    await super.stop();
+  }
 }
 
 class _VoiceControllerHarness {

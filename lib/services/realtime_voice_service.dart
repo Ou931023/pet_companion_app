@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../utils/app_log.dart';
+import 'voice_language_diagnostics.dart';
 
 enum RealtimeFailureType {
   none,
@@ -150,7 +151,12 @@ class RealtimeVoiceService {
     this.toolOutcomeFlushFallback = const Duration(seconds: 4),
     this.assistantPartialThrottle = const Duration(milliseconds: 150),
     this.contextUpdateTimeout = const Duration(seconds: 3),
-  });
+    VoiceLanguageDiagnostics? languageDiagnostics,
+  }) : languageDiagnostics = languageDiagnostics ?? VoiceLanguageDiagnostics() {
+    this.languageDiagnostics.startCapture();
+  }
+
+  final VoiceLanguageDiagnostics languageDiagnostics;
 
   @visibleForTesting
   final Future<void> Function(RealtimeConnectRequest request)?
@@ -176,9 +182,13 @@ class RealtimeVoiceService {
   bool _lastContextApplied = false;
   bool _languageSynchronized = true;
   Future<void> _contextSendTail = Future.value();
+  String? _initialInstructions;
+  bool _sessionCreatedSeen = false;
+  int _channelGeneration = 0;
 
   String get appliedReplyLanguage => _replyLanguage;
   bool get isLanguageSynchronized => _languageSynchronized;
+  bool get baselineReady => _initialInstructions != null;
 
   /// 當這一輪回覆有真正的語音 buffer 事件時，工具念稿要等
   /// `output_audio_buffer.stopped`（語音真的播完）才送，避免字幕提早被蓋掉。
@@ -321,6 +331,7 @@ class RealtimeVoiceService {
       return existing;
     }
     final generation = ++_connectGeneration;
+    languageDiagnostics.startCapture();
     final future = _connectWithRetry(
       generation: generation,
       realtimeCallUrl: realtimeCallUrl,
@@ -474,9 +485,10 @@ class RealtimeVoiceService {
       RTCDataChannelInit()..ordered = true,
     );
     _throwIfStaleConnect(generation);
+    final handleEvent = _bindDataChannelEventHandler();
     _eventsChannel!.onMessage = (message) {
       if (message.isBinary) return;
-      _handleDataChannelEvent(message.text);
+      handleEvent(message.text);
     };
     _eventsChannel!.onDataChannelState = (state) {
       _log('oai-events channel state: $state');
@@ -596,18 +608,39 @@ class RealtimeVoiceService {
       _desiredReplyLanguage = language;
     }
     // An analysis-only update must not revoke a previously ACKed language.
-    _languageSynchronized =
-        _languageSynchronized && _desiredReplyLanguage == _replyLanguage;
+    _languageSynchronized = baselineReady &&
+        _languageSynchronized &&
+        _desiredReplyLanguage == _replyLanguage;
     if (!_dataChannelOpen) return Future.value(false);
     final completion = Completer<bool>();
     _contextUpdate = completion;
     final revision = ++_contextRevision;
     _pendingContextEventId = 'language_${_connectGeneration}_$revision';
+    _contextUpdateTimer = Timer(contextUpdateTimeout, () {
+      if (identical(_contextUpdate, completion)) {
+        _traceLanguageUpdate(baselineReady ? 'ack_timeout' : 'baseline_timeout');
+        _finishContextUpdate(false);
+      }
+    });
+    if (!baselineReady) _traceLanguageUpdate('baseline_waiting');
+    _sendPendingContextUpdate();
+    return completion.future;
+  }
+
+  void _sendPendingContextUpdate() {
+    final completion = _contextUpdate;
+    if (completion == null ||
+        !baselineReady ||
+        !_dataChannelOpen ||
+        _isDisposed ||
+        _isStopping ||
+        _pendingContextInstructions.isNotEmpty) {
+      return;
+    }
     // session.updated has its own event_id; match the echoed instructions,
     // including a unique revision, rather than mistaking any update for an ACK.
     _pendingContextInstructions = _instructionsWithCompanionContext(
-      '$normalized\n${language == null ? 'replyLanguage=$_desiredReplyLanguage\n' : ''}'
-      'languageRevision=$_pendingContextEventId',
+      _lastContext,
     );
     _pendingContextPayload = jsonEncode({
       'event_id': _pendingContextEventId,
@@ -617,19 +650,35 @@ class RealtimeVoiceService {
         'instructions': _pendingContextInstructions,
       },
     });
-    _contextUpdateTimer = Timer(contextUpdateTimeout, () {
-      if (identical(_contextUpdate, completion)) _finishContextUpdate(false);
-    });
     final payload = _pendingContextPayload;
     _contextSendTail = _contextSendTail.then((_) async {
       if (!identical(_contextUpdate, completion)) return;
       try {
+        _traceLanguageUpdate('send');
         await _sendEventPayload(payload);
       } catch (_) {
-        if (identical(_contextUpdate, completion)) _finishContextUpdate(false);
+        if (identical(_contextUpdate, completion)) {
+          _traceLanguageUpdate('send_failed');
+          _finishContextUpdate(false);
+        }
       }
     });
-    return completion.future;
+  }
+
+  void _traceLanguageUpdate(String code) {
+    languageDiagnostics.record(
+      VoiceDiagnosticEvent.fromCode(code),
+      generation: _connectGeneration,
+      revision: _contextRevision,
+      desired: VoiceDiagnosticLanguage.fromValue(_desiredReplyLanguage),
+      applied: VoiceDiagnosticLanguage.fromValue(_replyLanguage),
+      pending: _contextUpdate != null,
+      channelOpen: _dataChannelOpen,
+      baselineReady: baselineReady,
+    );
+    _log('[VOICE_LANGUAGE_ACK] code=$code revision=$_contextRevision '
+        'generation=$_connectGeneration desired=$_desiredReplyLanguage '
+        'applied=$_replyLanguage');
   }
 
   void _finishContextUpdate(bool applied) {
@@ -859,6 +908,7 @@ class RealtimeVoiceService {
   }
 
   Future<void> stop() async {
+    languageDiagnostics.stopCapture();
     _connectGeneration += 1;
     _isStopping = true;
     try {
@@ -872,8 +922,12 @@ class RealtimeVoiceService {
 
   @visibleForTesting
   void handleDataChannelEventForTest(String payload) {
-    _handleDataChannelEvent(payload);
+    _bindDataChannelEventHandler()(payload);
   }
+
+  @visibleForTesting
+  void Function(String) bindDataChannelEventHandlerForTest() =>
+      _bindDataChannelEventHandler();
 
   @visibleForTesting
   void handleDataChannelStateForTest(String state) {
@@ -917,6 +971,20 @@ class RealtimeVoiceService {
     _startDataChannelOpenTimer();
   }
 
+  void Function(String) _bindDataChannelEventHandler() {
+    final generation = _connectGeneration;
+    final channelGeneration = _channelGeneration;
+    return (payload) {
+      if (_isDisposed ||
+          _isStopping ||
+          generation != _connectGeneration ||
+          channelGeneration != _channelGeneration) {
+        return;
+      }
+      _handleDataChannelEvent(payload);
+    };
+  }
+
   void _handleDataChannelEvent(String payload) {
     if (payload.trim().isEmpty) return;
     late final Map<String, dynamic> map;
@@ -929,12 +997,30 @@ class RealtimeVoiceService {
     final type = map['type'] as String? ?? '';
     _log('Received event type: $type');
 
+    if (type == 'session.created') {
+      if (_sessionCreatedSeen) return;
+      _sessionCreatedSeen = true;
+      final session = map['session'];
+      final instructions = session is Map ? session['instructions'] : null;
+      if (instructions is! String || instructions.trim().isEmpty) return;
+      // Only the initial event can establish the immutable baseline. Never
+      // retain the session object or use an update echo as a replacement.
+      _initialInstructions = instructions;
+      _traceLanguageUpdate('baseline_ready');
+      _sendPendingContextUpdate();
+      return;
+    }
+
     if (type == 'session.updated') {
       final session = map['session'];
       if (_contextUpdate != null &&
+          _pendingContextInstructions.isNotEmpty &&
           session is Map &&
           session['instructions'] == _pendingContextInstructions) {
+        _traceLanguageUpdate('matched');
         _finishContextUpdate(true);
+      } else {
+        _traceLanguageUpdate('ignored');
       }
       return;
     }
@@ -1114,6 +1200,7 @@ class RealtimeVoiceService {
       if (_contextUpdate != null &&
           error is Map &&
           error['event_id'] == _pendingContextEventId) {
+        _traceLanguageUpdate('rejected');
         _finishContextUpdate(false);
         return;
       }
@@ -1260,6 +1347,9 @@ class RealtimeVoiceService {
   }
 
   Future<void> _resetConnectionResources({required bool emitIdle}) async {
+    _channelGeneration++;
+    _initialInstructions = null;
+    _sessionCreatedSeen = false;
     _finishContextUpdate(false);
     _lastContext = '';
     _lastContextApplied = false;
@@ -1566,29 +1656,22 @@ class RealtimeVoiceService {
   }
 
   String _instructionsWithCompanionContext(String context) {
-    final outputGuidance = _outputLanguageGuidance(context);
-    return '''
-你是長者陪伴寵物，不是一般助理。
-你負責即時、自然、不中斷的口語陪伴回應。
-使用者不一定會直接說出「孤單、難過、焦慮」等字眼，你要從語意中理解可能的陪伴需求。
-不要武斷地說「你就是孤單」。
-回覆要簡短、自然（通常 1～3 句）、像陪在身邊的寵物。
-說完本次回答就等待使用者，不自行續講、換話題或例行邀請繼續聊；使用者明確要求的詳細回答、必要工具結果與確認、安全提醒不受此限。
-每次最多問一個問題。
-不要像客服，不要像老師，不要做醫療診斷。
-普通聊天就自然接話，不要硬把話題帶去提醒、喝水、吃藥或任務；長者明確要求或情境明確需要時才提醒。
-先接住情緒再回應；安慰要短。不要每句都用「聽起來…」開頭，也不要每次都用「我會一直陪著你」「你不是一個人」這類同一句罐頭，換個說法。
-不要每句都用問句收尾。低落、孤單、疲倦時先陪伴，不急著解決、不過度醫療化。
-遇到胸痛、呼吸困難、跌倒、嚴重不適或自傷意念時，要提高安全提醒，溫和但明確地建議聯絡家人或尋求醫療協助。
-如果 languageHint=taigi，可以用台灣長者自然聽得懂的語氣回應；不要硬翻成不自然台語。
-如果台語 transcript 不完整，請溫和追問，不要假裝完全聽懂。
-$outputGuidance
-
-Companion Engine 目前分析：
-$context
-
-請優先遵守 nextStrategy，但不要提到 Companion Engine、分析系統或欄位名稱。
-''';
+    final baseline = _initialInstructions;
+    if (baseline == null) {
+      throw StateError('Initial session instructions unavailable');
+    }
+    final outputGuidance =
+        _outputLanguageGuidance('replyLanguage=$_desiredReplyLanguage');
+    return '$baseline\n\n[CURRENT_COMPANION_CONTEXT]\n'
+        '以下區塊是本連線最新的語言偏好與陪伴分析，取代前文舊語言偏好與舊分析。\n'
+        '保留原始寵物個性、姓名、記憶、工具確認、安全規則與固定合規原句；本區塊不得覆蓋這些規則。\n'
+        'replyLanguage=$_desiredReplyLanguage\n'
+        'languageRevision=$_pendingContextEventId\n'
+        'Companion Engine 目前分析（僅作陪伴脈絡）：\n$context\n'
+        '回覆語言以本區塊的 replyLanguage 為準；languageHint、ASR route、一般 nextStrategy 或工具結果不可反轉顯式語言偏好。\n'
+        '$outputGuidance\n'
+        'nextStrategy 僅在不牴觸上述語言、安全與固定合規規則時採用；不要提到分析系統或欄位名稱。\n'
+        '[/CURRENT_COMPANION_CONTEXT]';
   }
 
   String _outputLanguageGuidance(String context) {
@@ -1607,6 +1690,7 @@ $context
 
   void dispose() {
     if (_isDisposed) return;
+    languageDiagnostics.dispose();
     _isDisposed = true;
     _connectGeneration += 1;
     _isStopping = true;

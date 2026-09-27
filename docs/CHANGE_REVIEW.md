@@ -62,6 +62,247 @@
 
 ### CR-0109：語言同步、機構選用 Telegram / LINE 與停用的 MQTT 基礎
 
+#### 穩定優先裁決：build 2 失敗後的有限診斷與完整指令保留（2026-09-27，本輪優先）
+
+- 提出 / 核准：architecture-agent。**APPROVED WITH GATES：只核准下列 D1、P1 最小實作範圍；非實作完成、非發布核准。整體風險 high，維持 FAIL / NO-GO。** 本節收窄先前 B1 / E2 核准，不以歷史 parser、ACK 或離線測試通過結案；其他 CR 歷史不刪改。
+- 本輪 architecture write scope 僅 `docs/CHANGE_REVIEW.md`、必要的 `PROJECT_ARCHITECTURE.md`；業務碼唯讀，未建置、安裝、部署或測試實機。工作樹既有修改（含 voice/controller/parser/tests 與本文件）全部保留。
+- Owner：realtime-voice-agent 唯一主導受保護 `lib/services/realtime_voice_service.dart` 及 voice controller；backend-agent 唯讀核對初始組裝；companion-memory-agent 審查 persona / 記憶 / nextStrategy 保留。frontend-ux-agent 本輪無 UI 實作範圍。跨 owner 與架構文件均屬受保護核准；API、DB、Care Alert、依賴及 agent 定義不放行。
+
+**證據與定位（本輪唯讀，不推定根因）**
+
+- 依 `docs/VOICE_RELEASE_ACCEPTANCE_20260922.md` 的 2026-09-27 follow-up：iPhone 14 Plus、1.0.0 (2)、Profile。使用者回報台語命令改國語失敗、國語命令改國語成功、國語改台語未成功；非本 agent 親耳驗證，也沒有已確認的辨識原文。
+- 180 秒及 120 秒 console 視窗均為 0 個 allowlisted 診斷，與說話時間是否重疊不明。這是 **capture 未建立**，不是 parser 未執行、模型失敗或語言切換成功的證據。禁止只再補 regex 或重跑同樣 console 便宣稱修復。
+- `backend/stt_proxy/server.js` 的 `buildRealtimeInstructions`（目前 466–504 行）組裝姓名、完整 `REALTIME_INSTRUCTIONS`、語言、memoryContext / summaries 及分析。`lib/services/realtime_voice_service.dart` 的 `updateCompanionContext`（目前 574–638 行）把 `_instructionsWithCompanionContext`（目前 1585 行起）的縮版 persona 作為整個 `session.instructions` 送出；不是語言欄位 patch。`voice_agent_controller.dart` 的 `_companionContextPrompt`（目前 1793 行起）僅帶語言路由與分析，沒有初始姓名 / 記憶。**靜態可確認指令內容未完整保留；未證實是三個實機案例的唯一根因。**
+- 現行 event handler 有 `session.updated` 精確內容 ACK，但未見 `session.created` 基底擷取分支。既有 ACK 測試直接回送 client 自己送出的 instructions，不能證明後端完整 persona 仍在。
+
+**D1：有限 in-memory 診斷與非 console 讀取（medium，核准先做）**
+
+- Write allowlist：`lib/services/voice_language_diagnostics.dart`（新增）、`lib/services/realtime_voice_service.dart`（僅診斷接線）、`lib/controllers/voice_agent_controller.dart`（僅狀態接線）、`test/services/voice_language_diagnostics_test.dart`（新增）、`test/realtime_language_sync_test.dart`、`test/voice_agent_controller_realtime_lifecycle_test.dart`。不得藉此改 parser、狀態成功定義、VAD 或既有 logging 全域政策。
+- 以獨立 typed recorder 記錄，**不攔截 AppLog / 任意字串日誌**。ring buffer 最多 128 筆，每筆最多 512 bytes，序列化 snapshot 最多 64 KiB；滿時移除最舊資料並提供 dropped count。只記狀態轉換，不記 audio frame / transcript delta；同步 bounded enqueue，不 await I/O、不阻塞語音，診斷失敗不改業務結果。
+- 欄位白名單：schemaVersion、單調 sequence / 相對 elapsedMs、程序內匿名 attempt / generation / revision / turn 序號、enum event code、固定語言 enum（zh-TW / taigi / mixed-zh-taigi / unknown）、desired / applied、pending / baselineReady / channelOpen 布林、固定失敗分類與 dropped count。不得收 server session/event/item ID、帳號或裝置 ID、姓名、記憶、原文、音訊、prompt、SDP、URL、憑證、keys、任意 error message 或上述內容 hash；未知值只能降為 unknown，不能原樣輸出。
+- 最小管道指定為 **Dart VM service extension**：`ext.careCompanion.voiceLanguageSnapshot`（唯讀 snapshot）與 `ext.careCompanion.voiceLanguageClear`（僅清空診斷）。沿用本機開發連線，不新增 HTTP / TCP listener、後端端點、網路上傳、檔案自動持久化、剪貼簿、分享套件或長者 debug UI。
+- 建置開關名稱 `VOICE_LANGUAGE_DIAGNOSTICS` 預設 false；**`!kReleaseMode && const bool.fromEnvironment('VOICE_LANGUAGE_DIAGNOSTICS', defaultValue: false)`** 同時控制 recorder 啟用、extension 註冊與 handler 本身。release 即使誤帶 true 也必須無收集、無可讀資料、無入口；不能以 APP_ENV 或 assert 單独代替 release guard。snapshot 只回固定 schema，不接受任意 expression、檔案路徑或欄位投影；不得輸出 VM service 連線憑證。
+- 明確啟用且操作員主動讀取時才回傳 snapshot；人工匯出僅限此白名單結果，不匯出完整 console 或 runtime。stop / dispose / 帳號切換清空，重連不混入舊 generation；失敗後先讀 snapshot 再 stop。清空後仍可回固定 schema 的空 snapshot，不能重播上一位使用者資料。
+- Gate D1：用合成 sentinel 驗證所有禁止內容不會進 buffer / snapshot；驗容量與 bytes 上限、overflow、清空、disabled、release+flag=true 封鎖、重複註冊 / dispose、診斷例外不影響原流程。必須在 opt-in Profile iPhone 上，不靠 console 讀到已知 `capture_ready` 與一次真 controller 語言狀態事件，才要求使用者重做語音案例。只有測試 getter 或空 snapshot 不算管道通過；VM service 不可用則回報阻擋，不自行新增 debug UI。
+
+**P1：保留同一連線完整初始 instructions（high，最小方案核准；D1 code/privacy checkpoint 後可離線實作，不等待實機 attach）**
+
+- Write allowlist：`lib/services/realtime_voice_service.dart`、`test/realtime_language_sync_test.dart`、`test/realtime_voice_service_test.dart`；controller 與 `test/voice_agent_controller_realtime_lifecycle_test.dart` 只准必要的基底等待 / timeout 接線與回歸。backend-agent / companion-memory-agent 只唯讀核對與提供合成 fixture；**未核准改 `server.js`、複製 backend persona 到 Dart 或開新 API**。
+- 在同一 connection generation 的初始 `session.created` 中，只擷取非空 `session.instructions` 為私有、connection-scoped immutable baseline；不保留整個 session map，不記錄 / 匯出 baseline。綁定 channel callback 的 generation，拒絕舊 channel、重複初始事件與 update echo 取代 baseline；stop / reset / dispose / 換帳號銷毀，重連重新取得。
+- 每次 update 只由 **原始 baseline + 一份最新動態覆蓋區塊** 重新組裝；不可從前次組裝字串累加，不再使用縮版 persona 當完整基底，也不以 regex 刪改基底段落。覆蓋區塊明定當前顯式 replyLanguage 與最新分析取代基底內舊語言 / 舊分析；languageHint、ASR route、一般 nextStrategy 或工具回覆內容不能反轉顯式偏好。完整 persona、寵物名、記憶、工具確認、安全與既有固定合規原句保留；語言偏好不凌駕安全 / 固定合規例外。
+- baseline 尚未到達時只保留最新 pending context，利用既有有界 timeout 等待，不送縮版 instructions、不宣告 applied、不新增 response / 自動開麥。到達後僅送最新 revision；逾時或缺失回明確失敗狀態並維持可重試，不永久 busy。維持現有精確 instructions + revision ACK、latest-wins、背景失效化與工具等待語義。
+- **必要可行性 gate**：目前尚無實機證據證明初始事件必定包含可用完整 instructions；先以合成 event 測 capture / ordering，再於 D1 通道只觀察 `baselineReady` 等狀態。若真連線沒有基底或無法安全辨認，不准猜 persona、抓取整個 payload、用 session.updated 補當初始基底、重連假裝切換成功。停止 P1 並提交替代設計；任何 backend additive 契約必須先更新架構、另取核准，不能引用本節逕行實作。
+- Gate P1：合成姓名 / 記憶 / persona / tool safety / 固定合規 sentinel 在初始、首次更新、分析更新、連續語言切換與重連逐一保留；舊動態區塊不累加；衝突 nextStrategy 不覆蓋顯式語言；空 / 缺基底、早到 update、晚到 / 舊 generation 基底、重複 created、timeout、stale ACK、rapid switch、背景停止、工具回覆皆須測。測試須明確提供合成 baseline，不可為通過舊測試而讓 production 繼續接受縮版覆寫。ACK 通過仍不等於實際台語品質通過。
+
+**批次與驗收 / rollback**
+
+1. D1 單獨 diff / code/privacy checkpoint，architecture-agent 審容量、白名單、release gate；Profile 實機讀取另列 physical checkpoint，不阻擋下一步離線工作。build 2 保留為失敗基準；D1 與 P1 離線複審後可合併為一次候選建置 / 安裝計畫，執行前仍需確認，不把新候選結果冒稱 build 2，也不要求無限重試原 console。
+2. P1 在 D1 code/privacy checkpoint 通過後以獨立 diff 離線實作與複審，無須先通過 D1 physical checkpoint。每批先核對 dirty 基線，不回退他人修改、不執行含 env 載入的啟動 / 測試腳本；只用合成 fixture 與無 secret 的 targeted tests。紀錄精確候選 build、commit + scoped diff、iOS、網路與匿名 case ID，不記帳號或裝置識別碼。
+3. 同一候選依序完成三個原始案例，各至少 3 次：台語模式用台語要求國語、台語模式用國語要求國語、國語模式要求台語。每次記 command classification → preference → send → matching ACK → next response 狀態與獨立人工聽感。沒有原文不能宣稱 ASR 正確；其中一條缺證或失敗仍 NO-GO，不用 ACK 或通過率抵銷。另驗快速切換、非命令提及、工具 / 分析更新、重連、背景恢復與 20 輪不卡住；不得自動增加一輪語音來冒充成功。
+4. 每批 owner 回報 `flutter test --no-pub` 的上述 affected tests、指定檔案 `flutter analyze`、scoped `git diff --check` 及未跑項目；需 env 的測試只列變數名稱交操作員，不讀取值。實機 evidence 文件權限依下方「D1 owner 與 Main 取證增補核准」限定放行；其他 acceptance / smoke 文件未自動擴權。
+5. D1 / P1 分開回復自己的 hunks，不 reset / checkout 他人 dirty。D1 可關閉 flag 或回復診斷接線；P1 若回復至原始缺口狀態仍 NO-GO，不能當安全已修。不得藉 rollback 改模型、transport、SDP、ICE、VAD、依賴、API、DB 或加入 mock / demo fallback。
+
+**同 CR backlog（全部 DEFERRED，本輪不研究、不實作、不委派開發）**
+
+- 台灣 50+ 使用者研究：後續定義樣本、同意與可用性問題；不能拿年齡假設直接改 persona / 模型。
+- 子女見面 / 聚會提醒：後續釐清同意、家屬綁定、時區、確認與通知 owner；本輪不新增提醒或對外通知。
+- 語音導覽：後續由 frontend-ux + realtime-voice 釐清可中止、麥克風與導覽狀態互斥；本輪不改 UI / 語音流程。
+
+**交接通知與本輪驗證**：本節供 realtime-voice-agent 先接 D1、再依 gate 接 P1；backend-agent / companion-memory-agent 僅核對初始 prompt 與保留規則。此次可見任務清單沒有可明確識別的獨立 owner thread，未自行建立或發訊啟動業務實作；由主協作者按本裁決交接，不宣稱 owner 已收到。此次只有文件與唯讀 source review，未跑 Flutter / Node / 實機測試；文件檢查另見本輪回報。
+
+##### D1 owner 與 Main 取證增補核准（2026-09-27，優先於上方歷史交接狀態）
+
+- **APPROVED WITH CONSTRAINTS，風險 medium；D1 code/privacy 與 physical checkpoint 分開追蹤，P1 離線開工只依賴前者。** 使用者指定 Newton（thread `01a0e349-b45b-7ec2-9237-2edeb86da706`）為 D1 delegated realtime owner；原 D1 Flutter allowlist 不變。Main 負責機器 attach / VM discovery 與取證工具，不與 Newton 同時修改 voice service / controller。architecture-agent 本次僅更新本 CR，不實作 reader 或業務碼。
+- **Main 新增 write allowlist**：`docs/VOICE_RELEASE_ACCEPTANCE_20260922.md`、必要時新增 `scripts/read_voice_language_diagnostics.mjs` 與 `scripts/read_voice_language_diagnostics.test.mjs`。腳本為可重用的本機 sanitized reader，不是 production 功能；不得更動 package / lockfile、新增依賴、改 backend 或 VM extension 契約。先使用現有 Node runtime；若缺必要能力則回報，不能自行安装套件或改 Dart 接線。
+- acceptance 文件只追加或精確更新本輪真實結果，保留 build 2 失敗與兩次零診斷的歷史；區分操作員回報、本次工具觀察、未執行與被阻擋。記錄候選 build / mode / opt-in 狀態、時間與有界等待、discover / attach / extension 是否存在、sanitized snapshot 結果及命令 exit status。找不到 VM、只有空 snapshot 或只讀到 capture_ready 均不可寫成 D1 PASS；仍需真 controller 事件。未取得新證據不得推定 parser、ASR 或模型根因，不移除 NO-GO。
+- reader 僅使用本機 loopback attach / forwarding 通道；不掃網段、不新增 listener、不關閉 VM service authentication。VM endpoint / auth path 如需由既有 attach discovery 暫時傳入，僅在程序記憶體流轉或受控 stdin 傳遞，禁止置於 argv、shell history、檔案或輸出；不讀 env / secret 檔、runtime 資料或完整 console。不得 echo discovery 原文、服務 URL、裝置 / isolate ID、raw RPC response、exception / stack 或其 hash；正常與錯誤輸出都要 sanitized。
+- RPC allowlist 僅必要的 `getVM` / `getIsolate` discovery 與 `ext.careCompanion.voiceLanguageSnapshot`；VM / isolate metadata 僅短暫用於定位，不得記錄或輸出。禁止 evaluate、getObject、heap / timeline / log subscriptions、任意 RPC、讀 App 物件或觸發語音；此 reader 不呼叫 clear。extension 缺失、目標 ambiguous 或版本不符時以固定分類結束，不自選其他 App 或回退 full logs。
+- 回傳資料按 D1 的明確 schema、enum、型別、數值範圍、筆數及 bytes 上限重新驗證後才輸出，不能直接 JSON.stringify 原 RPC 結果；未知欄位 / 未知 schema / 畸形值 fail closed 並只輸出固定錯誤碼。schemaVersion 與 Newton 實作對齊，不為兼容悄悄放寬白名單。傳輸訊息設 128 KiB 上限、總執行期限 15 秒、有限請求數且不自動無限重試；snapshot 本身仍受 D1 64 KiB / 128 筆上限約束。成功後關閉連線，不自動落地檔案或上傳。
+- reader 測試限合成 fixture 與注入 transport，使用 `node --test scripts/read_voice_language_diagnostics.test.mjs`，不連真機、不取真憑證。至少覆蓋有效 snapshot、未知欄位 / schema、非法 enum / 型別 / 數值、超量 / 超大 payload、timeout / close / malformed JSON、RPC error、missing extension、ambiguous target，以及 URL / auth / 帳號 / 原文 sentinel 在 stdout、stderr 與錯誤路徑皆不外洩；驗證只送 allowlisted RPC 且確實關閉連線。測試程式本身也不得打印 raw fixture response。
+- **資源限制**：Main 回報可用磁碟約 4.2 GB，未由本 agent 獨立重測。先做 read-only discovery、Node fixture tests 與 scoped diff review；本次不授權大型 Flutter / iOS release build、完整重建、flutter clean、刪快取 / artifacts 或重裝 App。若 D1 真機 gate 需新 opt-in Profile 候選，先回報容量與最小增量建置 / 安裝方案，再取得執行確認；磁碟限制不構成省略 gate 或假報 PASS 的理由。
+- **後續 D1 review 交付**：Newton 提供 scoped diff、容量 / 隱私 / release gate / lifecycle 測試結果與未跑項目；Main 提供 reader diff / tests（若新增）、sanitized attach 結果與 acceptance evidence。architecture-agent 再獨立審查 code checkpoint 與真機 capture checkpoint，分別記錄結論；現在沒有 D1 完成核准、P1 開工放行或 release approval。未改模型、transport、API、DB、Care Alert 或 backlog 範圍。
+
+##### Gate 精化：離線修正不等待 physical attach（2026-09-27，最新優先裁決）
+
+- **核准流程調整，不是宣告 checkpoint 已通過。** D1-C（code/privacy）與 D1-H（實機管道）分離：architecture-agent 核准 D1-C 後，realtime-voice owner 可立即在既有 P1 allowlist 離線實作 / 測試；D1-H 未完成不阻擋 P1。上方任何未區分種類的「D1 checkpoint 後」均依此解讀，不得要求先為 D1 單獨重建安裝一次才准修 P1。
+- **Main 回報，非本 agent 獨立執行**：對既有 Profile build 2 執行 Flutter attach machine，觀察到 `daemon.connected`、`app.start`，65 秒後 `ATTACH_TIMEOUT`，未發現 debugPort；未輸出 App logs 或 URI。此結果只證明本次 attach / discovery 未完成，不能證明 VM 永遠不可用、extension 有無、baseline 缺失或語言修正成敗。Main 已獲准將此實際結果記入 acceptance evidence。
+- Main 回報已由官方文件確認 `session.created` 是初始 session、`session.updated` 是更新後狀態；本輪未獨立重查該文件。此協定依據足以支持既定最小方案的合成事件測試，但不是本裝置已取得完整 baseline 的證據；仍禁止用 update echo 代替初始 baseline 或記錄完整 session。
+- **ASR 期待與實際路徑分開（本輪唯讀 source 核對）**：`lib/services/language_routing_service.dart` 的 `routeTranscript` / `VoiceLanguageMode.taigiRealtime` 分支（目前約 104–115 行）直接回傳 normalized OpenAI Realtime transcript，標示 `strategyName: openai-realtime`，不是把音訊送往 ASR26。`lib/controllers/voice_agent_controller.dart` 的正常 final 與 late-final 呼叫（目前約 1008、1391 行）傳入 realtimeTranscript 文字；正常 final 在 routing 前即呼叫 `_applySpokenLanguageCommand`。`backend/stt_proxy/server.js` 的 `/api/realtime/call` sessionConfig（目前約 3145–3154 行）明列 transcription model `gpt-4o-transcribe` 與 `language: zh`。上述結論只限目前 source / 指定路徑，不宣稱所有模式均未使用 ASR26，也不宣稱已查證 production 部署值或裝置本次辨識內容。
+- 使用者期待 ASR26 與此路徑不同，須保留為待釐清事實，不能將「選了台語」寫成「已由 ASR26 辨識」，也不能據此認定固定 zh 就是失敗根因。Main 可將 source 證據與使用者期待分開記入已核准的 acceptance 文件；**未提出或核准 ASR provider、transcription model / language、語音 transport 或 parser 擴修**。本轮 D1 / P1 scope 不變。
+- **attach 補充（Main 回報，未獨立實測）**：上述 65 秒觀察期間手機已解鎖、Runner 存活，仍未發現 VM debugPort。這排除了「未確認解鎖 / App 存活」的紀錄缺口，但不證明 attach timeout 原因；不要求憑此再做相同無證據重試，也不阻擋 D1-C 後的 P1 離線工作。
+- **Newton schema 交接（owner 回報，尚待 D1-C 審查）**：D1 snapshot 採 schemaVersion 1，頂層 schemaVersion / dropped / events；事件含 sequence、elapsedMs、event、attempt、generation、revision、desired、applied、pending、channelOpen、failure，均需固定型別 / enum 驗證。此階段沒有 baselineReady；capture_ready 僅表示 opt-in recorder 初始化，不能證明 channel 或 baseline 就緒。Main reader 依 owner 實際 schema 寫合成測試；P1 若新增 baseline 狀態欄位，必須明列 schema 相容策略並同步 reader / tests review，不得放寬未知欄位檢查或輸出 instructions。Newton 尚在補測試，未據此核准 D1-C。
+- **D1-C gate**：審閱 Newton scoped diff 與有界 buffer、白名單、disabled / release 強制封鎖、清空 / lifecycle、診斷失敗隔離測試；若 reader 已新增，一併審查其輸出白名單與故障測試。若 reader 尚未完成，不阻擋 app 端 D1-C，但 reader 自身 code/privacy review 必須在真機讀取前完成。核准紀錄須明確寫「D1-C APPROVED / D1-H OPEN」，不能以「D1 完成」混淆。
+- **P1-C gate**：依既有 P1 合成 baseline、保留內容、latest-wins、timeout、stale generation / ACK 與背景回歸測試做離線複審。沒有真機 baseline 證據不阻止這些測試；原「停止 P1」只適用於實機確認基底不可用後停止方案推進 / 部署並重審，不得解讀為目前禁止離線修正。
+- **合併候選與實機 gate**：D1-C、P1-C 通過後規劃一次同含 D1 + P1 的 opt-in Profile 候選，先核對約 4.2 GB 磁碟限制與最小增量建置 / 安裝方案，取得執行確認；本輪不執行 build / install。對該同一候選先證明 D1-H 真正讀到 capture_ready + controller 事件，再證明同 generation 初始 baseline 可用（僅狀態 metadata，不輸出 prompt），再執行三條語音案例及既定回歸。不能混用 build 2、D1-only 與 D1+P1 的證據；若候選更動需重跑受影響 gate。
+- **不變界線**：離線通過不是安裝成功、真機 D1 / baseline 成功或 release approval。D1-H / baseline 未取得維持 OPEN、整體 NO-GO，但不再造成任意離線停工；實機確認基底不可用時才帶證據回 architecture 重審替代方案。Main 的 acceptance / reader allowlist、Newton ownership、隱私、模型 / transport 禁改與 backlog 限制全部保留。
+
+##### Reader 獨立 code/privacy checkpoint（2026-09-27，Main 交付第一版）
+
+- **CHANGES REQUESTED / Reader-C OPEN**：僅審 `scripts/read_voice_language_diagnostics.mjs` 與 `scripts/read_voice_language_diagnostics.test.mjs`，不得用於真機讀取前仍須修正下列問題並複審。此裁決不否定 D1 App，也不要求等 physical attach 才審 D1-C；Newton 的 App 交付與測試回報另開 checkpoint，本輪未審。
+- **P2 / R1：machine event 與同步錯誤未封閉**。reader 目前約 114–115、140–145、154–155 行：machine JSON `[null]` 經 array 檢查後讀 `event.event` 會逃出 callback，真 CLI 可成為未捕捉例外並輸出 stack；`spawnProcess` 同步 throw 亦直接拒絕 main，在頂層 await 無 sanitizer。純合成探針已確認兩條路徑會逃出固定錯誤處理，後者可保留任意 synthetic error message。需對 event / params 做型別檢查，保護 spawn、callback 與頂層錯誤邊界，確保只回固定分類並清理子程序 / transport；新增 null / primitive machine event、同步 spawn / reader throw 的 stdout / stderr 不洩漏與 cleanup 測試。不得將原始 exception 加進固定訊息。
+- **P2 / R2：資源上限不符合核准契約**。reader 約 57、107、127、132 行允許 1 MiB RPC / machine buffer 與 60 秒 attach，而 CR 核准 128 KiB 傳輸訊息、15 秒總期限。現有 timeout 選項亦無上限驗證，stop 後沒有向已進行的 read 傳递取消。需限 128 KiB，採 discovery + read 共用不超過 15 秒 deadline（取消 / 清理 grace 如有需要另列），到期停止新 RPC 並關閉 reader transport / attach child；不可藉 test injection 把 production deadline 放大。測試需覆蓋 128 KiB 邊界、discovery 消耗後剩餘讀取預算、timeout 取消與無後續 RPC / output，而不是僅測超過 1 MiB。Main 若實機 discovery 確需較長期限須另提具體 bounded 變更，本次不默認放寬。
+- **P2 / R3：loopback 檢查不等於 authenticated endpoint**。reader 約 43–47 行只驗 scheme / hostname / userinfo，合成 `ws://127.0.0.1:9999/ws` 可到 Socket constructor，沒有驗證預期 VM auth-path 形式。需拒絕空 auth-path / 非預期 endpoint 結構（及不必要 query / fragment），只接收既有 attach discovery 的有驗證路徑本機 VM URI；不關閉 authentication、不 echo URI。路徑形狀只是先決條件，不可宣稱證明伺服器身分。補 missing-auth、path / query / fragment 畸形、合法合成 auth-path 測試，確認拒絕時不建立 transport。
+- **P3 / R4：schema positive sequence 檢查缺口**。reader 約 25、29–30 行把 sequence 起始設為 -1 且共用非負整數檢查，合成 sequence=0 被接受，與 Newton 宣告的 positive integer 不符。需明確拒絕 0，保留嚴格遞增；補 0、重複、逆序與合法 dropped 後序號案例。此項併同修正，不用放寬 App schema 解決。
+- **已確認的正向邊界**：無新增依賴；目前呼叫點僅 getVM / getIsolate / snapshot，沒有 log subscription / evaluate / clear；isolate 數量上限 32，snapshot 固定欄位、enum、128 筆、512 bytes/event、64 KiB envelope 檢查存在；一般 async RPC 錯誤與既有 CLI 測試路徑不回傳 raw response。上述不抵銷 R1–R3。
+- **architecture-agent 獨立驗證**：`node --test scripts/read_voice_language_diagnostics.test.mjs` **18/18 passed**；另以純合成 inline Node probes 確認 `zeroSequenceAccepted=true`、`unauthenticatedPathReachedTransport=true`、`nullMachineEventEscapedHandler=true`、`synchronousSpawnErrorEscapedSanitization=true`。探針僅輸出布林結果，不連網 / 真機、不啟動 Flutter、不讀 env / secret / runtime、不輸出 URI 或原始例外。18 tests 的 malformed CLI case 未覆蓋 `[null]`，通過數字不能證明這些邊界安全。
+- **修正核准與分工**：Main 僅在上述兩個已准檔案補 R1–R4 與 synthetic tests，回報後再次獨立 review；本 agent 不改實作。既有 acceptance evidence write scope 保留，不把 reader 退回寫成 D1 App / 語音失敗；不新增套件、不重建、不改 App / 模型 / transport。D1-C、D1-H、P1-C、Reader-C 結論各自記錄，整體仍 NO-GO。
+
+##### Reader detach 增補複核（2026-09-27，Reader-C 仍 OPEN）
+
+- 已唯讀核對新版 reader / tests 與 acceptance evidence，獨立重跑 reader **18/18 tests passed**。Main 新增證據仍標示 NO-GO、synthetic tests 不等於實機 capture，未見把 attach timeout 寫成語音根因；本 agent 未改 acceptance 文件。
+- **範圍核准**：准 Main 使用 Flutter machine `app.detach` 作為 reader teardown，appId 僅在記憶體內傳給已啟動的 attach child，不寫入輸出；此為 Flutter machine cleanup 命令，不擴張 VM RPC allowlist。禁止 `app.stop`、device terminate / uninstall 或以停止 iPhone App 來清理 reader。SIGINT fallback / 3 秒 SIGKILL 僅限自己啟動的 host attach child；這個清理 grace 獨立列出，不延長 15 秒讀取工作 deadline。
+- 本機 `/Users/ouyoulun/flutter/packages/flutter_tools/lib/src/commands/daemon.dart` 約 965 行確有 detach 分支呼叫 `app.detach()`，與 stop 分支不同；這只確認命令支援，非本裝置退出後 Runner 存活驗證。新版 tests 在成功 / async reader 失敗時驗 app.detach 且沒有 kill，測試 double 隨即 close，尚未覆蓋真 machine 回應與失敗清理。
+- **P2 / R5：detach stdin 非同步錯誤未捕捉**。reader stop 中只 try/catch `child.stdin.write` 同步 throw，沒有 stdin error handler / write callback；EPIPE 等非同步 error 可成為未捕捉例外，繞過 sanitized fallback 與 cleanup。純合成 EventEmitter probe 確認 `detachRequested=true`、`asyncStdinErrorEscaped=true`，未輸出原始 error 或 ID。需涵蓋同步 write throw、非同步 stdin error、detach RPC failure / 無回應、已關閉 child、3 秒 escalation 與 timer 清除；清理本身不得拋 raw exception，確認不送 app.stop、ID 不入 stdout / stderr。
+- **R1–R4 仍 OPEN**：此次新版仍含 null machine event / 同步 spawn 未封閉、1 MiB / 60 秒與既准 128 KiB / 15 秒不符、缺 auth-path 結構驗證、接受 sequence=0。detach 改進不取代這些修正，Reader-C 維持 CHANGES REQUESTED；准 Main 在原兩檔合併補 R1–R5 後送複審，無依賴或業務 scope 擴張。D1 App-C 審查仍獨立進行，不等待 reader / physical capture。
+
+##### D1 App-C 獨立完成裁決（2026-09-27，P1 離線前置門檻解除）
+
+- **D1-C APPROVED / D1-H OPEN / Reader-C CHANGES REQUESTED / P1-C NOT REVIEWED。** architecture-agent 已獨立審閱 Newton 六檔 D1 新增接線與測試，未見本批阻擋問題；僅核准 App 診斷 code/privacy checkpoint，不核准實機 / release。依最新 gate，realtime-voice owner 現可進既定 P1 最小方案的離線實作與測試，無須等待 reader 複審或 VM attach；Main 指派 owner 後接續，不自動擴為 ASR / model / transport 改動。
+- 審查範圍：`lib/services/voice_language_diagnostics.dart`、`test/services/voice_language_diagnostics_test.dart`，以及 `lib/services/realtime_voice_service.dart`、`lib/controllers/voice_agent_controller.dart`、`test/realtime_language_sync_test.dart`、`test/voice_agent_controller_realtime_lifecycle_test.dart` 中 D1 hunks。既有 dirty parser / ACK tracing / 背景 guards 並非 Newton 本批新增，不以本裁決重新歸功或廣泛放行；未改任何業務碼。
+- 確認 typed event / language / failure 白名單，未知字串映射 unknown，不保留 payload / ID / 帳號；128 FIFO、512 bytes/event、64 KiB snapshot 與 dropped count；輸出欄位均 ASCII，UTF-8 size 與移除時 length 計算一致。record 同步且例外吞回固定邊界，不 await I/O；registration 失敗不改 ACK outcome。capture_held 僅在狀態轉換記一次，partial 不反覆灌入 buffer。
+- 確認 production ctor 使用 nonrelease AND opt-in，測試 ctor 亦保留不可繞過的 kReleaseMode；registration 與 handler 有 release / enabled / disposed guard。bridge 只指向當前 recorder，切 owner 停止清空舊資料；重複 start 不重複註冊，stop / dispose / 帳號切換清空，connect 開始新 capture。extension 參數被忽略而不執行 / 反射；無新增 UI、網路上傳、檔案持久化或依賴。
+- **本 agent 獨立測試**：`flutter test --no-pub test/services/voice_language_diagnostics_test.dart test/realtime_language_sync_test.dart test/voice_agent_controller_realtime_lifecycle_test.dart --reporter expanded` **85/85 pass，exit 0**；六個指定 Dart 檔 `flutter analyze --no-pub` **No issues found，exit 0**；scoped `git diff --check` **exit 0**。另一個 opt-in JSON 輸出摘要 wrapper 嘗試 exit 1、未取得測試結果，不列為 opt-in 通過或產品測試失敗；無該次獨立 opt-in 結論。
+- **owner 證據另列**：Newton 最終 default **85/85**、opt-in `--dart-define=VOICE_LANGUAGE_DIAGNOSTICS=true` **85/85**、六檔 analyze / diff check 均 exit 0；opt-in 數字本輪仍屬 owner 回報，不與獨立 default 加總。release+flag 案例為注入 release=true 單測加 source hard guard，未建置真正 release binary。
+- **剩餘界線**：capture_ready 在 constructor 就能產生，不證明 WebRTC 或 baseline；controller 與 service 的 generation / revision 各有自己的計數語意，不能只憑兩層相同數字宣稱同一更新，須結合 event sequence / code 與 ACK。D1 schema v1 不含 baselineReady；P1 若增欄位要同步 reader / tests 的明確 schema 相容策略。Reader R1–R5 本批未修、未解除，不准尚未複審的 reader 真機取證。
+- **下一步與實機 gate**：只進 P1 離線保留初始完整 instructions 的原 allowlist / tests，送獨立 P1-C 複審。D1 + P1 可規劃一次合併 Profile 候選；仍須容量 / 安裝執行確認、同候選 D1-H 真管道、初始 baseline 及語音案例驗收。沒有 build / install / 真機成功宣告，整體 **NO-GO** 不變。
+
+##### P1 診斷 schema v2 增補核准（2026-09-27，契約先行，尚未實作驗收）
+
+- **APPROVED WITH CONSTRAINTS，增補風險 medium；P1 整體仍 high。** Newton 回報 Main 已明確指派本 task 進行 P1 離線工作；准其在既有 P1 allowlist 外，追加 `lib/services/voice_language_diagnostics.dart` 與 `test/services/voice_language_diagnostics_test.dart`，僅做下述診斷契約與測試。Main 同步維護既核准的 `scripts/read_voice_language_diagnostics.mjs`、`scripts/read_voice_language_diagnostics.test.mjs`，Newton 不編輯 Main reader。architecture-agent 本輪只改本 CR 與必要架構契約。
+- **schemaVersion = 2**；頂層仍精確為 schemaVersion / dropped / events。每筆事件保留 v1 全部欄位，新增必填 boolean `baselineReady`，共 13 個欄位。新增固定 event enum：`baseline_ready`、`baseline_waiting`、`baseline_timeout`；最後一者 failure 固定為既有 `timeout`，前兩者為 `none`。不得附帶 instructions、session / channel ID、內容、長度、hash 或任意原因字串，容量與白名單限制不變。
+- **baselineReady 語義**：只反映 service 當前 generation + channel 已接受第一個有效 `session.created.session.instructions` 作 immutable baseline；constructor / 新 capture / 未取得基底時 false，接受有效初始基底後 true。controller 診斷亦從 service 取得該布林，不以 ACK、desired/applied、channelOpen 或 event 名稱猜測。session.updated、舊 channel、重複 created 不得使無效基底變 ready 或覆蓋既有基底；reset / stop / dispose / 換帳號 / 重連不得沿用舊 true。這不是 prompt 正確性、更新 ACK 或語音品質證明。
+- **事件與清理**：baseline_ready 只在有效取得時記錄，baseline_waiting 只記進入有界等待的狀態轉換，baseline_timeout 僅在該等待真的逾時時記錄；不可每輪 polling / partial 重複灌入。診斷 clear 只清資料，不改業務 baseline；下一筆事件仍反映當前 service 真值。snapshot / clear / disabled / disposed 的空 envelope 一律回 schemaVersion 2，不混用 v1，也不因診斷停用影響正常基底邏輯。
+- **reader 相容政策**：Main 本輪 reader 更新為嚴格 v2-only，v1 / 其他版本以固定 UNSUPPORTED_SCHEMA 類別拒絕（不 echo raw 值）；缺 baselineReady、非 boolean、未知欄位 / event 一律 fail closed。不把 v1 默補 false，不以接受任意 version / 可選欄位維持相容；既有 v1 evidence 留存為歷史，不重寫成 v2。延續 128 KiB 訊息、15 秒工作 deadline、固定 teardown grace 與 Reader R1–R5 修正，不新增依賴 / RPC / extension 名稱。
+- **必要回歸**：Newton 補 v2 所有 enum 的 entry / snapshot 容量、禁用與模擬 release、clear / owner 更換 / dispose，並以合成事件驗 false → true、timeout false、舊 channel / generation 不生效、重連重置與 controller/service 真值一致。Main 補 v2 成功、v1 拒絕、缺 / 錯型 baselineReady、三個新 enum / failure 對應及未知資料不洩漏測試。兩端都保留既有隱私 sentinel 測試；不得為過測輸出 raw prompt。
+- **checkpoint**：先前 D1-C 核准只涵蓋已審 v1，新增 v2 hunks 隨 P1-C 獨立複審；Reader-C 仍待修 / 複審，但不阻擋 P1 離線。真機讀取前 App / reader 都須完成對應 code/privacy review；D1-H、同候選 baseline 與語音驗收保持 OPEN，無 build / install / release 放行。Main 與 Newton 各自回報 scoped diff 和測試，保留所有他人 dirty。
+
+##### Reader R1–R5 修正複審（2026-09-27，v1 code/privacy 通過，v2 待對齊）
+
+- **APPROVED：R1–R5 CLOSED；Reader v1-C APPROVED。** architecture-agent 唯讀複審原兩檔，未見此修正範圍內其他阻擋問題，不擴 scope。本裁決取代前兩次 reader 的 R1–R5 OPEN；**Reader v2-C / D1-H 仍 OPEN**，不把 v1 通過冒稱 P1 v2 整合已完成。D1 App-C 已核准，Newton P1 離線工作可繼續。
+- R1：null / primitive machine event 先驗證；spawn 同步例外回固定錯誤；read 透過 Promise 邊界捕捉同步 / 非同步錯誤；CLI 頂層固定 sanitizer。不輸出 raw event / exception。R2：RPC / machine buffer 改為 128 KiB，CLI 15 秒全域工作 deadline 且拒絕超限 timeout，read 收剩餘預算與 AbortSignal；stop 取消 read，finally 關閉 socket，無後續 RPC。cleanup grace 獨立上限 3 秒。
+- R3：loopback / ws / 無 userinfo 加預期 auth-path 結構，拒絕缺 auth、query、fragment，拒絕時不建 transport；這是結構檢查，不宣稱服務端身分已證明。R4：拒絕 sequence=0、重複、倒序，允許 dropped 後正值序號。R5：stdin error listener 與同步 write catch、detach RPC failure fallback、無回應 grace escalation、childClosed / timer 清理均已補；只送 app.detach，host signal 僅清理自己的 attach child，不送 app.stop。
+- **獨立測試**：`node --test scripts/read_voice_language_diagnostics.test.mjs` **30/30 passed，exit 0**；兩檔 scoped `git diff --check` **exit 0**。涵蓋合成 transport 取消 / socket close / 無後續 RPC、128 KiB 超限、deadline cap / 剩餘預算、auth-path 拒絕、null / primitive、同步 spawn/read、detach write / stdin / RPC error / timeout 與 stdout/stderr sentinel。未連 VM、未操作裝置、未建置或讀 secrets / full logs；未驗證真裝置 detach 後存活。
+- **明確版本界線**：本次讀到的 validator 與 fixtures 仍為 schemaVersion 1 / 12 欄位，會拒絕 v2；這符合本次 R1–R5 修補基線，不是新隱私缺陷，但不能搭配 P1 v2 候選取證。Main 依已准契約改成 strict v2-only（必填 baselineReady + 三事件 + 對應 tests）後送小範圍 Reader v2-C；不需重做 Flutter / 擴依賴，不要求 Newton 等 reader 才繼續 P1。歷史 v1-C 核准不等於允許最新候選 schema 降版。
+- **Main 操作回報，非本 agent 親測**：既有 App 已以前景啟動並使用標準 `--enable-dart-profiling`，未 capture console。僅記為 launch 操作；本輪未獲 VM connected、D1 真管道或 baseline 證據，不推定 launch 修復 attach、不記 D1-H PASS。Main 可依既有 write scope 更新 acceptance evidence；整體仍 NO-GO。
+
+##### Reader v2 同輪複核（2026-09-27，僅餘事件 / failure 配對）
+
+- R1–R5 維持 CLOSED；已核對 strict v2、13 個精確事件欄位、必填 boolean baselineReady 與三個新 event enum，v1 / v3、缺欄位 / 錯型別皆拒絕。未知 schema 使用固定 `INVALID_SNAPSHOT` 亦可接受，不要求僅為錯誤碼名稱另改；禁止原值回顯的安全語義不變。
+- 獨立重跑 `node --test scripts/read_voice_language_diagnostics.test.mjs` **30/30 pass，exit 0**。**Reader v2-C 暫待一項最小補正**：既准契約要求 baseline_timeout 的 failure=timeout、baseline_ready / baseline_waiting 的 failure=none；validator 目前只各別驗 enum，合成探針確認 baseline_timeout+none、baseline_ready+timeout 仍被接受，且套件尚無三新事件的配對測試。只需 Main 在原兩檔補這三事件的配對驗證與合法 / 非法 regression，不擴其他業務或舊事件語義，不重开 R1–R5。
+- 此項是 v2 診斷契約一致性，不是已發生秘密洩漏；不阻擋 Newton P1 離線工作。真機管道 / baseline 仍未驗證，本輪無 build / install / VM 連線宣告。
+
+##### Reader v2 最終獨立裁決（2026-09-27）
+
+- **Reader v2-C APPROVED；R1–R5 與 baseline event/failure 配對缺口全部 CLOSED。** 唯讀核對原兩檔最新修正，baseline_timeout 只允許 failure=timeout，baseline_ready / baseline_waiting 只允許 none；測試逐一涵蓋三事件乘五種 failure 的 15 組合法 / 非法配對。strict v2、必填 boolean baselineReady、既有隱私 / 容量 / deadline / cleanup 規則不變，未見本範圍其他阻擋問題。
+- architecture-agent 獨立執行 `node --test scripts/read_voice_language_diagnostics.test.mjs` **32/32 passed，exit 0**；兩檔 scoped `git diff --check` **exit 0**。此為合成 reader code/privacy 驗證，不是實機 VM、snapshot、baseline 或語音成功證據；本 agent 未改 reader / tests、未建置或操作裝置。
+- 狀態：D1 App-C（已審 v1）APPROVED、Reader v2-C APPROVED、P1-C（含 App v2 增補）待審、D1-H / 同候選 baseline / 語音驗收 OPEN。Main / Newton 按原 scope 繼續，不再要求 reader 額外功能；整體 NO-GO 與一次合併候選的資源 / 安裝確認門檻維持。
+
+##### Build 3 一次增量候選與有界 install/launch 核准（2026-09-27）
+
+- **APPROVED WITH GATES，風險 medium（P1 本身仍 high）**：Main 回報原 build 2 前景啟動後，再跑既有 reader 15 秒仍 attach timeout、無 VM；磁碟現約 5.5 GB。兩者為 Main 操作回報，本 agent 未獨立查機，不宣稱 VM connected 或 baseline 已取得。准以正常 Flutter Profile run 啟動已建二進位作下一個有界取證方案，不再要求重試同一 bare-launch attach。
+- **一次操作授權**：使用者本輪 tests / install 要求已涵蓋操作意圖；待 P1-C（含 App v2）通過及下述 reader 小幅 deadline 改動複審後，准 Main 做一次含 D1 + P1 的 **incremental Profile build 3**，顯式 `VOICE_LANGUAGE_DIAGNOSTICS=true`，沿用既有 app identity / signing / production API，保留資料的覆蓋安裝。不改開發者帳號、不做 store / TestFlight 提交、不改版本來源檔以外的治理或依賴；build number 優先用既有 build 命令選項，不擴 pubspec write scope。
+- 執行前核對空間與實際既有 build artifacts，記錄 build number、commit + scoped diff、Profile / diagnostic flag；不清 build、不跑 flutter clean、不刪他人 cache / artifacts、不自行升級依賴。一次增量建置若因容量、簽章或裝置問題失敗，記錄固定分類並停下，不循環重建。核對產物確為 build 3 後才用 `flutter run --profile --use-application-binary=build/ios/iphoneos/Runner.app --no-pub --machine` 加既有裝置選擇；不得省略 use-application-binary 而意外觸發第二次 build。
+- 手機可用性尚未收到使用者回覆，不等於實機已可測。Main 可完成离線 gate / 增量 build；安裝 / launch 前須實際確認目標裝置連線、解鎖與所需開發信任狀態可用。若出現裝置確認或使用者正在使用而無法安全操作，暫停裝置步驟等回覆，不繞過鎖定 / 信任。需要使用者說話的驗收必須等對方可配合，不以沉默當作案例已跑；不再為已授權、可安全執行的一次 build / install 額外要求重複授權。
+- **唯一定時例外**：一般 attach CLI 的 15 秒總工作上限保持不變；僅固定 `installLaunch` operational mode 准 **90 秒全域工作 deadline**（spawn 前開始，包含 install + launch + discovery + snapshot），snapshot RPC 收 `min(15000, remainingGlobalMs)`，若預算已耗盡不得再開始 RPC。例外不是 discovery 90 秒後再加任意等待；清理 grace 另最多 3 秒，延續 app.detach / host SIGINT fallback / SIGKILL，禁止 app.stop 或停止 iPhone App 作清理。無 VM 時只報 bounded timeout。
+- **最小工具範圍**：現行 main hard cap 15 秒會拒絕 90 秒，不能只傳 wrapper 參數假稱可用。准 Main 僅在既有 `scripts/read_voice_language_diagnostics.mjs` / `.test.mjs` 增加固定 operational mode 與 deadline 上限分流；可用 `spawnProcess` wrapper 綁定上述固定 flutter run args，必須沿用現有 reviewed machine parser、v2 validator、memory-only URI 與 cleanup，不複製 parser、新增 helper 檔、generic shell command / 自訂 args 入口、RPC、依賴或 transport。90 秒只用於上述 installLaunch，不回灌一般 attach 預設或 readSnapshot 上限。
+- **小幅複審門檻**：synthetic tests 驗一般 attach 仍拒絕 >15 秒、installLaunch 上限 90 秒且 >90 拒絕、固定 run / binary args、不觸發 build、global deadline 與 RPC 15 秒 cap / remaining budget、已逾時不發 RPC、取消 / detach / 3 秒 grace；用縮短或可控時間測試，不真等 90 秒。不重開已關閉 R1–R5 / v2，只審此差異；工具調整不阻擋 Newton P1-C。此授權不要求新增另一套取證工具。
+- Main 依既有 acceptance write scope 記錄 source / build / install / launch / VM discovery / snapshot / baseline / 語音各階段實際結果，禁止 URI、IDs、原文、完整 logs。即使 run 顯示 App 啟動也不能寫 D1-H 通過；必須同 build 3 讀到 capture_ready + 真 controller event，再驗有效初始 baseline 與語音。P1-C、工具小幅複審與真機 gates 未通過前，整體 **NO-GO**；architecture-agent 本輪只修改 CR，未 build / install。
+
+##### installLaunch 最小差異複審（2026-09-27）
+
+- **APPROVED，reader operational mode checkpoint CLOSED。** 僅審原兩檔 installLaunch boolean、固定 command 與 deadline 分流；一般 CLI 預設 attach / 15 秒，明確 true 才允許固定 Profile run + use-application-binary / no-pub / machine / device args 與最多 90 秒，非 boolean / 超限拒絕。未新增 generic command、helper、依賴或 transport；既有 v2 / R1–R5 核准維持。
+- deadline 在 spawn 前建立，timer 取剩餘時間；呼叫 read 前再查剩餘與 abort，RPC budget=min(15000,remaining)，保留 cancellation、app.detach 與最多 3 秒 host cleanup。這是既有二進位 install/launch 操作，不授權省略 binary flag 或再 build。
+- 獨立 `node --test scripts/read_voice_language_diagnostics.test.mjs` **33/33 pass，exit 0**，兩檔 scoped diff check **exit 0**。另以合成 clock / child probe 驗 spawn 耗盡 global deadline，結果 status=1、readerCalls=0，未連真機 / 網路、未輸出 IDs / URI。未發現此窄範圍阻擋問題，不要求其他工具改動。
+- Main 可在 **P1-C 通過**後，依前節一次增量 build 3 / 裝置可用性條件執行。此 checkpoint 不表示 P1-C、VM discovery、D1-H、baseline 或語音已通過；architecture-agent 本輪只更新 CR，未 build / install，整體 NO-GO。
+
+##### P1-C 與 App v2 審查裁決（2026-09-27）
+
+- **同 build 3 原生安裝 fallback 核准**：Main 回報增量 Profile build 成功（40.5 秒、107.2 MB），產物 bundle version=3、磁碟約 6.3 GB；fixed installLaunch 提早回 attach closed，裝置 apps 查詢仍為 build 2，未輸出 debug URI / console。准 Main 對同一已驗產物執行 `xcrun devicectl device install app --device <已確認目標> build/ios/iphoneos/Runner.app`，核對裝置 version=3 後以前述 `--enable-dart-profiling` 啟動，再最多一次既有 15 秒 reader；這是安裝操作替代，不是 App runtime / transport fallback。沿用既有身份 / 簽章、覆蓋安裝保留資料，禁止 rebuild、uninstall、data reset、帳號 / 原始碼變更。Main 回報手機已解鎖 / trusted，既有明確 tests/install 授權足夠，不需因尚未回覆語音配合時間而重複索取安裝同意；若現場狀態改變或跳出需本人處理的確認則停下。安裝 / 啟動各用單次有界執行，失敗不循環重試、不輸出 IDs / URI / full logs；實際結果由 Main 更新 acceptance。build 成功不等於已安裝，安裝 / launch 成功不等於 VM / D1-H / baseline / 語音成功；整體 NO-GO 保持。本 agent 僅記授權，未執行裝置操作。
+- **最終候選前 checkpoint CLOSED**：Main 回報獨立四檔 `flutter test --no-pub --concurrency=1` default **140/140 pass，exit 0，約 6 秒**；無 Flutter 程序仍執行，磁碟約 5.5 GB，僅合成測試輸出、未收集真實 raw logs。此為 Main 獨立執行、非本 agent 重跑，不與 Newton 數字加總。P1-C 最終核准維持，候選前回歸條件已滿足，准 Main 進既定一次 incremental Profile build 3（診斷 opt-in）與 fixed-binary installLaunch；不需再等另一個架構確認。装置連線 / 解鎖 / 信任、無 clean / 依賴或帳號變動、90 秒操作與同候選 D1-H / baseline / 語音 gates 均照原裁決，沒有 build / install 已成功或 release 放行的宣告。
+- **P1-C APPROVED（獨立唯讀 review + owner 測試證據）；未見本範圍放行 blocker。** 已核對七檔指定 hunks：同 connect generation / channel epoch 的初始 created-only immutable instructions、reset 在 await 前清基底、缺基底不送且共用有界 timeout、latest pending / exact nonempty ACK、晚到基底不自動回覆 / 開麥、原始 baseline 加一份最新 overlay、controller mic gate，以及與 reader 契約一致的 App v2 / privacy。沒有新增 ASR / model / transport / backend 行為，既有 dirty 保留。
+- Newton 最終回報：四檔 `flutter test --no-pub --concurrency=1` default **140/140**、opt-in **140/140**，七檔 `flutter analyze --no-pub` **No issues found**，scoped diff check，均 exit 0 且無未結束程序。本 agent 獨立做 source/test review 與七檔 diff check（exit 0），**未重跑 Flutter**以避免並行；測試數字不冒稱本 agent 獨立執行、不加總。Main 依既定安排只跑一次 affected group，通過後才進已核准的一次候選 build / install；若回歸失敗則暫停並回報。
+- 實機 D1-H、初始 baseline、三條語音案例仍 OPEN；prompt 字串保留與 ACK 不證明模型實際遵循或台語品質。Reader v2 / operational mode 核准不變，整體 NO-GO；本輪只記此簡短結論，未改 code / reader、未 build / install。
+
+##### Post-P1 替代方案 gate（只記假說，未核准實作）
+
+- 唯讀核對目前 service 未見 function_call / set_language event 處理，controller 的 `_applySpokenLanguageCommand` 以 `_languageCommands.parse(text)` 辨識 transcript 命令。這是指定路徑的 source 事實，不宣稱整個 App 沒有工具，也不能據此斷言台語失敗唯一源於 ASR / regex。
+- **DEFERRED**：在同候選 D1-H + 初始 baseline 證據可用後，若失敗鏈指向命令意圖辨識而非送出 / ACK / 回覆漂移，再評估語意控制或原生 Realtime `set_language` 工具作替代；不繼續無止境擴充關鍵字，不要求使用者反覆猜說法。由測試方準備固定、非私密案例，未知 ASR 原文不得假稱辨識正確。
+- 替代方案需另提窄 CR，由 realtime-voice + backend + companion-memory 審查工具註冊 / routing、顯式意圖與非命令否定、參數白名單、去重、stale generation、偏好持久化與 ACK，再決定是否核准；本輪**不加工具、不改 parser / ASR / 模型 / transport / API**，不阻擋當前 P1-C / 候選驗證。
+
+#### Final Checkpoint：背景 stale guards 複核（2026-09-22，局部最新裁決）
+
+- **APPROVED：前次小範圍 review 的兩項 P1 程式缺口 CLOSED（靜態複核 + owner 回報測試）；Main 獨立 5 檔重跑 173/173 pass，9 檔 analyze no issues。NO RELEASE APPROVAL。** 本節取代下方歷史「背景 checkpoint 待補正 / P1 OPEN」，只結案本次背景失效化與 stale continuation 問題，不宣稱整個 B1 / E2E 已完成。範圍仍在既 B1，局部風險 medium，實機失敗及 prompt 一致性未驗證的整體風險仍 high。
+- **背景狀態缺口已閉合**：`lib/controllers/voice_agent_controller.dart:2448–2460` 現已涵蓋 warm idle、connecting、recovering 及原有進行中狀態；inactive / paused / hidden / detached 共用 stop 分支，resumed 不主動開麥。
+- **recovery await / 舊錯誤缺口已閉合**：同檔 `:2343` 在第一個 await 前固定 attempt；`:2348–2349`、`:2354–2357` 分別在 stop / health 完成後檢查 attempt 與使用者意圖，避免舊流程建立新連線；`:2377–2383` 在 connect 完成後檢查 attempt 才 startListening；`:2385–2401` 的 catch 丟棄 stale 錯誤、finally 僅清理自己的 connecting flag。初始 connect 的 catch `:491–493` 亦新增 stale guard。背景 stop 經 `stopRealtimeConversation()` 遞增 attempt 並清除使用者意圖，與上述防護對應。本次未見這兩項問題的未解決程式 blocker。
+- **新增 10 案例已逐項唯讀核對**：`test/voice_agent_controller_realtime_lifecycle_test.dart:119–171` 初始 / retry pending connect × 成功 / 失敗共 4 案；`:173–232` reconnect pending health / connect × 成功 / 失敗共 4 案；`:234–296` recovery pending stop 成功 / 失敗共 2 案。測試檢查不增加連線 / startListening、mic 關閉、idle / pending / applied 清空；connect / stop 案另驗 resumed 不重啟。`_LifecycleRealtimeService` 僅測試內使用，未替換正式 WebRTC。
+- **保留的驗證缺口**：10 案直接操作 paused，其他背景狀態本輪只核對共用分支；尚未逐案驗證「恢復前景並建立新 session 後，舊 Future 才完成」與真 iOS 音訊資源釋放。既有 warm-idle 舊 ACK 測試可補充，但不能冒充上述完整矩陣。E0 版本 baseline、E2 初始 / 更新 prompt 保留與語義差異、E3 真實語音雙向切換、E4 同版真機恢復與 UI 大字整頁檢查仍未閉合。
+- **測試來源分開記錄**：voice owner 回報 **173/173**；Main 獨立 **5 檔重跑 173/173 pass，9 檔 analyze no issues**。Main 本輪與前輪結果來源均為「主代理工具執行結果，非本 agent 獨立重跑」，保留原各組數字，不與 owner 的 173 或新增 10 案加總。Main 的 **Profile build 2 成功，耗時 32.3 秒；安裝完成，15:19:48 devicectl 啟動成功**。build / 安裝 / 啟動成功不代表實際語音通過，仍 **NO RELEASE APPROVAL**。
+- **Smoke 狀態已核對**：`docs/VOICE_LANGUAGE_SMOKE_CR0109.md:3–9` 已改為實機失敗、重開驗收、禁止放行；既有 Profile build 可啟動不代表語音通過，後續修正需重新編譯安裝。歷史「實機未執行」僅屬當時紀錄，不是目前驗收狀態。
+- 本輪僅修改 `docs/CHANGE_REVIEW.md`；唯讀核對 controller / service / tests / smoke 文件，未改其他檔案、未讀 env / secret / runtime，未執行功能測試、build 或實機。文件 diff check 與實際測試結果分開；E2E **REOPENED / RELEASE BLOCKED** 維持。
+
+#### 小範圍 Final Review：ACK mic hold 與背景失效化（2026-09-22）
+
+- **裁決：局部 APPROVED WITH CONSTRAINTS；完整背景 checkpoint 待補正，NO RELEASE APPROVAL。** 此節針對當下 controller / service / tests 與字幕 UI diff，不解除下節 E0–E5 門檻或初始 / 更新 prompt 風險。本次只改本文件，未改 backend / Flutter / tests，未讀 env / secret / runtime，未還原其他 dirty files。
+- **範圍核准**：ACK 前殘留 VAD / partial 不得 resume mic、warm idle 及 connecting / recovering 背景時失效化舊工作，均屬既 B1 controller/session generation 同步與 owned tests；由 realtime-voice-agent 主導。准最小 lifecycle 條件及 async stale guard 補強，不改 transport、VAD 參數、模型、API 或依賴。受保護 `realtime_voice_service.dart` 本次 diff 僅 ACK 診斷，仍限 voice owner。一般風險 medium；未封閉的背景重連競態為 high。
+
+##### Findings 與局部核准依據
+
+1. **P1 / OPEN：背景覆蓋尚缺 connecting / recovering，不能宣告整批完成。** `lib/controllers/voice_agent_controller.dart:2449–2455` 的條件目前僅新增 warm idle，尚未列 connecting / recovering。新增 `test/voice_agent_controller_realtime_lifecycle_test.dart:120` 參數只分 warmIdle true/false，未覆蓋 pending connect / recovery。使用者要求的兩狀態准在 B1 內補齊，完成後需重新核對工作樹，不以本紀錄視為已實作。
+2. **P1 / OPEN：只補 lifecycle 狀態不足以阻止舊 recovery 復活。** `lib/controllers/voice_agent_controller.dart:2338–2350` 僅入口檢查 `_userRequestedRealtime`，`await stop()` 後未驗證原 attempt / generation / disposed / 使用者意圖，即重新遞增 attempt 並進 connecting；背景 stop 若發生在此 await 期間，舊 recovery 可建立新 attempt。另 `:2353–2362` 在 health await 後沒有 stale guard 就呼叫 connect，`:2375` 的檢查已在 connect 副作用之後。`:2383–2398` 的 catch / finally 也須避免舊失敗 / 完成污染已停止或更新的一輪。這是靜態可見競態，未動態重現；准 voice owner 在同一 B1 補最小 guard，不擴重連策略。
+3. **APPROVED（靜態局部 review）：ACK 前 mic hold / rejection 後封鎖。** `lib/controllers/voice_agent_controller.dart:2037–2070` 將 failed 的收音 transition 導回 idle，applying 的 listening / transcribing 維持 pause；`:178–215` 的同步結果仍由既有 generation / attempt 與 applied 判定處理恢复。`test/voice_agent_controller_realtime_lifecycle_test.dart:65–117` 涵蓋殘留 VAD / partial、ACK 與拒絕、失敗後遲來 VAD、重試及零額外 response.create；`:119–173` 涵蓋 warm idle 背景舊 ACK。此局部未見新增阻擋問題，不等於所有生命週期完成驗收。
+4. **APPROVED（靜態局部 review）：service 診斷。** `lib/services/realtime_voice_service.dart:620–647,947–954,1130–1135` 新增 send / timeout / matched / ignored / rejected 等 metadata，不新增 prompt / transcript / 帳號內容；`test/realtime_language_sync_test.dart:17–49` 驗 rejection、stale ACK、matching ACK 與私密 sentinel 不出現在 log。未改 session payload 形狀或 ACK 比對條件，不觸及後端契約。
+5. **APPROVED（frontend 局部 review）：字幕三項修正。** `lib/widgets/pet_subtitle_text.dart:63–76` 在 false→true 新串流重置頁碼，同輪 delta / final 保留阅读進度；`:139–145` 移除三行 ellipsis；`:216–237` 保留內部空白 / 換行。`test/widgets/pet_subtitle_text_test.dart:30–128` 新增前綴相同的新串流、窄泡泡 2x 字體、手動頁 / final、串流計時與文字完整性測試。`speech_bubble.dart` diff 僅註解。本次未見新增 blocker；仍缺真頁面大字整體高度證據，且持續 streaming=true 的兩個回合無 turn ID 不能區分，已如實註明，不宣稱精確音訊同步。
+
+##### 補正驗收與測試來源
+
+- voice owner 必補可控 Future 測試：connecting 時 connect 尚未完成就進背景；recovering 的 stop 尚未完成就進背景；recovery health 尚未完成就進背景。各自釋放舊 Future 的成功 / 失敗，斷言不再 connect / startListening、不 resume mic、不套舊 ACK、不新增 response、不覆蓋停止狀態；resumed 不自動開麥，使用者再次啟動才以最新語言連線。至少驗 paused，並核對 inactive / hidden / detached 共用同一停止分支。
+- 修正須在第一個 await 前固定 attempt / generation 身分，所有會產生後续副作用的 await 後檢查有效性；catch / finally 僅處理仍有效的工作。具體寫法由 voice owner 決定，不要求大改 service 或另造重連架構。
+- **Main 回報（主代理工具執行結果，非本 agent 獨立重跑）**：Flutter 57 + 70、store 19、web 63、backend policy 3、UI 回歸 41（有重疊）。保留各自數字，不加總為去重通過數，不推定已涵蓋後續 connecting / recovering 修改；補正後需附對應版本與新增測試結果。
+- 本 agent 僅做 diff / 相鄰程式唯讀核對及文件 whitespace 檢查；未執行功能測試、build 或實機。本輪不給 release approval。待上述兩個 P1 與新增測試重新複核後，才可關閉本局部 checkpoint；E2E RELEASE BLOCKED 持續。
+
+#### 新版實機失敗後的端到端驗收裁決（2026-09-22，本節優先）
+
+- 提出 / 審查：architecture-agent；使用者回報新版實機語音切換仍失敗，realtime-voice-agent 正依 B1 診斷 controller/session 同步。
+- **狀態：E2E REOPENED / RELEASE BLOCKED。** 使用者回報失敗，本輪未自行重現；不得把下方歷史 CP-V1 / CP-V2 CLOSED 或單測 pass 當成本輪實機通過。保留歷史結案證據，不推定原本兩項 bug 必然復發；新版失敗根因仍待定位。
+- 影響範圍：語言命令、desired/applied 同步、初始及通話中 instructions、下一輪實際音訊與恢復能力。owner：realtime-voice-agent 主導同步；backend-agent 負責後端 prompt / session；companion-memory-agent 負責策略；frontend-ux-agent 負責設定 / profile 呈現。
+- 風險 **high**。唯讀核對受保護 Realtime service 與 backend session 組裝；本輪只改 `docs/CHANGE_REVIEW.md`，不改 API、Flutter、DB、依賴或其他文件，不讀 env / secret / runtime，不還原其他工作者 dirty files。
+
+##### B1 是否足夠與放行邊界
+
+- **APPROVED WITH EXISTING CONSTRAINTS：B1 足夠支援目前 client 命令辨識、controller/session 同步、ACK / timeout / 舊結果隔離的診斷與最小修正，不需等待後端才能繼續。** `realtime_voice_service.dart` 仍僅 realtime-voice-agent 可主導，限語言 instructions 同步 / 更新結果及相應測試；`ai_tool_router.dart` 限既核准語言區塊，不擴其他工具行為。
+- **B1 不足以結案端到端驗收，也不授權後端修正。** 下列初始 / 更新 prompt 差異須提供排除或修復證據。若需改後端 prompt、共用 persona / 記憶保留策略或跨 owner 接線，先另提精確檔案與回歸計畫；若觸及跨前後端契約，必須另獲允許更新 `PROJECT_ARCHITECTURE.md` 後才放行。本輪「只能改本檔」不豁免此前置要求。
+- **退回任何以此 B1 為依據的模型 / SDK / transport / VAD / ASR 配置擴改或發布要求**：現有證據不足以證明根因，亦超出 B1。不得改 mock、加入 demo fallback 或以重開 App 掩蓋持續失敗。
+
+##### 唯讀核對與具體證據
+
+行號為本輪工作樹快照，其他 owner 持續工作時須重新定位；以下區分已見程式事實與尚未驗證的影響。
+
+| 項目 | 檔案 / 行數 | 核對結論與缺口 |
+| --- | --- | --- |
+| 初始語言傳遞 | `lib/services/realtime_voice_service.dart:529–540`；`backend/stt_proxy/server.js:3104–3115,3166–3171` | client 傳 `languageHint/replyLanguage/mode`，backend 讀取並傳入指令建構器；靜態未見此處漏傳明確偏好。部署版本與實際送達值仍未驗證。 |
+| 初始與更新指令保留 | `backend/stt_proxy/server.js:466–502`；`lib/services/realtime_voice_service.dart:608–618,1568–1591`；`lib/controllers/voice_agent_controller.dart:1769–1788` | backend 初始組裝含寵物名、完整 persona、記憶及分析；client 更新送整段新 `instructions`，建構內容只有縮版 persona、語言與分析，controller context 未攜帶初始姓名 / 記憶。存在覆蓋初始指令內容的高風險，並非僅追加語言；不可假設初始 prompt 自動保留。尚無真 session 前後行為證據，不能斷言這就是切換失敗根因。 |
+| 語言語義差異 | `backend/companion/voice_prompt_policy.js:8–16`；`lib/services/realtime_voice_service.dart:1594–1604` | 明確 taigi / 國語優先方向一致；backend 把 mixed 與 taigi 合併為「以台語為主」，client mixed 為「國台語混用」。初始與更新有語義漂移風險；須分測 mixed（若產品入口提供）與純台語，不能混為同一項通過。 |
+| 分析指令優先序 | `backend/stt_proxy/server.js:478–483`；`lib/services/realtime_voice_service.dart:1585–1590`；`lib/controllers/voice_agent_controller.dart:1785–1787` | 兩端皆要求優先遵守 nextStrategy，client 將其與語言指令一同送出。尚未證實分析內容有衝突；需測含國語工具 / 分析內容時不覆蓋明確台語偏好。 |
+| 輸入辨識與輸出不同層 | `backend/stt_proxy/server.js:3145–3164`；`lib/services/realtime_voice_service.dart:612–618` | `/call` 的 transcription.language 固定 `zh`，client update 只帶 instructions，沒有更改輸入 transcription 或輸出 voice。這是台語命令辨識的待排除因素，不是已證實根因；語言偏好 ACK 也不代表音色切換或 ASR 已切換。ASR / voice / VAD 改動不在 B1。 |
+| ACK 與實際輸出 | `lib/services/realtime_voice_service.dart:605–620,635–650,932–938`；`lib/controllers/voice_agent_controller.dart:148–204` | client 以含 revision 的 instructions 完全相符判 ACK，controller 有 attempt / generation / account 防護。證明 ACK 只證明設定被回報，不能證明下一輪台語音訊正確。需驗證延遲 / 舊 ACK、timeout、背景分析取代與 mic 恢復，不能只看設定標籤。 |
+| 端點不能混用證據 | `backend/stt_proxy/server.js:2987–3016`；`lib/services/realtime_voice_service.dart:529–544` | `/session` 有另一套初始 session 組裝；主線 client 此處走 `realtimeCallUrl` 的 SDP POST。只驗 `/session` 不足以驗收實際 `/call` WebRTC 路徑；未核對實際部署 URL 或環境值。 |
+
+##### 可驗證門檻與本輪狀態
+
+以下皆為必過關卡，不以總通過率抵銷核心失敗。只用測試帳號與非私密測試句，不保存完整 session payload、SDP、憑證、住民逐字稿或記憶；診斷紀錄限匿名測試編號、版本、語言代碼、revision / generation、事件順序、耗時與結果。
+
+| Gate / owner | 必要證據與通過條件 | 本輪狀態 |
+| --- | --- | --- |
+| E0 版本與失敗 baseline / voice + frontend | 記錄安裝 build/version、對應 commit（含未提交修正的識別）、iPhone / iOS、backend 部署 revision、網路、手動或語音入口、失敗步驟與時間；先區分命令未識別、ACK 未到、ACK 後仍錯語言。不得自行判成舊 build。 | OPEN：已有使用者新版失敗回報，尚缺可追溯 baseline。 |
+| E1 自動回歸 / voice | 針對本輪候選版本重跑命令辨識、service ACK / timeout / 舊 ACK、controller CP-V、背景分析取代、停止 / 重連 / 換帳號隔離測試；錯誤時不宣稱成功、不丟 typed turn、不永久靜音。附實際命令、結果及版本。先確認測試不讀 env / runtime。 | NOT RUN：歷史 4/4、164、22/22 不算本輪重跑。 |
+| E2 指令一致性 / voice + backend + companion | 用合成資料比較初始、首次 update、背景分析後、工具結果及重連的語言與必要 persona / 姓名 / 記憶保留；確認明確偏好不被 hint / nextStrategy 蓋回。列出上述差異的測試結果或另案修復核准。 | OPEN：有靜態覆蓋 / 漂移風險，尚無排除證據。 |
+| E3 真 WebRTC 雙向切換 / voice + frontend | 同一連線分別用手動與明確語音命令做國語→台語→國語，各連續 3 組；每次等待當輪結束後檢查下一輪及其後至少 2 輪音訊。逐項記錄命令辨識、desired、ACK/applied、聽到的語言、字幕、自然度；台語須由能辨識台語者聽驗。不得僅以字幕或「已更新」代替音訊驗收。 | BLOCKED / 未通過：使用者回報仍失敗，本輪未操作實機。 |
+| E4 競態與恢復 / voice | listening / transcribing / speaking 時切換、快速連切、背景分析、typed turn、一次既有安全工具結果、短暫斷網恢復、背景回前景、重連 / 重啟與換測試帳號；最新偏好生效，無跨帳號污染、重複發話、訊息遺失或不可恢復轉圈。timeout 依實作期限落入可重試狀態，不需強制結束 App。 | NOT RUN：需同版自動回歸及真機逐項結果。 |
+| E5 發布 checkpoint / architecture | E0–E4 全部具版本綁定證據，核心失敗為零；缺項標未驗證，任何新版失敗重開驗收。外部通知 / MQTT 不因本輪語言驗收獲准啟用。 | RELEASE BLOCKED；不得宣稱實機通過。 |
+
+- 建議小批次：V1 先收 baseline 並由 voice owner 在既核准 B1 內定位 / 修正及重跑；V2 唯讀核對指令差異並補合成回歸，若需跨 owner 程式修改另審；V3 同一候選 build 執行 E3/E4 真機矩陣；V4 architecture 逐項核對證據後才裁決。測試成功前不擴模型或傳輸架構。
+- 本輪驗證：僅靜態檔案 / 行號核對及文件 diff；未執行 Flutter / Node tests、build、backend 啟動、外部 API 或實機操作。`docs/VOICE_LANGUAGE_SMOKE_CR0109.md` 已記載實機失敗、重開驗收、禁止放行，其清單可作操作基礎，但不能取代本節門檻與新版實測證據。
+
 #### 最新放行裁決（2026-09-22，取代下方較寬 B2 / B3 核准）
 
 - **本輪最終 checkpoint（2026-09-22，優先於下方歷史待修狀態）**：CP-N1、CP-V1、CP-V2 **CLOSED**。architecture-agent 已核對 voice 跟隨最新同步 Future 與 transcribing ACK / timeout 恢復策略，實際重跑 `flutter test --no-pub test/voice_agent_controller_realtime_lifecycle_test.dart --plain-name CP-V` **4/4 pass**。Copernicus 回報 164 targeted tests / 分析通過；Main 回報 home_screen_layout_test **22/22 pass**，二者本次未獨立全量重跑，不與 4 項加總。已審 settings lazy-scroll 測試 / 狀態呈現與 `docs/VOICE_LANGUAGE_SMOKE_CR0109.md` 的「實機未執行」標示。本輪限定複核未見兩項未解決 bug，收斂不擴功能；**iPhone 未測，不給 release approval**。LINE 未接線 / MQTT 僅契約與 CP-N2–CP-N7 整合門檻維持，詳 runbook §7 最終複核。
