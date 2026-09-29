@@ -1,5 +1,93 @@
 # Voice Release Acceptance - 2026-09-22
 
+## Assistant Reliability - CR-0110, 2026-09-29
+
+User reports all three categories: irrelevant/repeated replies, promised tools
+not completing, and stalled/silent speech. User also requests gentle suggestions
+when unsure what to discuss. These reports remain open physical acceptance
+issues, not established as one shared root cause.
+
+Main reproduced with synthetic pure-function inputs before changes:
+
+- `我今天有喝水` selected planner `tool_action`, despite being a report.
+- `我不知道要聊什麼` selected generic `normal_chat`, without a specific
+  low-pressure topic-suggestion instruction.
+- Agent route for `江蕙`, even with recent `我想聽音樂` / `想聽誰的歌呢？`
+  context, returned no tool intent. Short clarification continuation is a
+  separate follow-on; the initial CR-0110 batch does not fix that gap.
+
+Initial automated gates: plain-language failed-tool feedback exactly once;
+no execution for stale routing results; exception-safe executing state;
+confirmation and no-duplicate side-effect guards; ordinary-chat noIntent stays
+quiet; simple health/routine reports do not request tools; no-topic suggestions
+are short and optional, never triggered just by silence; urgent/high safety and
+selected output language remain authoritative.
+
+Residual gates: actual ASR understanding, real model relevance/repetition,
+audio continuity, never-settling native tool execution and music/news short
+follow-ups require separate evidence. A route timeout is not cancellation of
+an external action. Do not auto-retry reminders, notifications or purchases
+when completion is unknown. Pure prompt tests do not establish spoken quality.
+
+Candidate verification on 2026-09-29:
+
+- Main independently ran the ten-file Flutter regression suite with
+  `--no-pub --concurrency=1`: **573/573 passed, exit 0**. It covers tool and voice
+  controllers, Realtime events/language sync/timeouts/turn coordination, language
+  commands, native executor, router service and voice-tool integration.
+- Main independently ran `node --test backend/companion/*.test.js`:
+  **75/75 passed, exit 0**. Owner reports five changed Dart files analyzed with
+  no issues; Main `git diff --check` passed.
+- Four intermediate integration failures were resolved through approved A4
+  synthetic fixture corrections: baseline instructions, matching language ACK,
+  distinct turn IDs and completed playback before the next input. Original
+  behavioral assertions were retained and two negative timing gates added.
+  No pre-change snapshot proved those failures pre-existing.
+- Candidate reports failed/busy tools without raw technical payloads, guards
+  duplicate execution, and ignores stale route completions. Executor exceptions
+  with unknown outcomes remain quarantined for the controller lifetime; there
+  is no reconciliation or cross-restart exactly-once guarantee. Never-resolving
+  external execution still requires follow-on work.
+- No-topic guidance offers one short optional suggestion; silence alone does
+  not trigger unsolicited speech. Reported habits are not reminder requests.
+- This batch has **not been committed, pushed, deployed or installed**. The
+  previously installed iPhone build remains **1.0.0 (6), Profile**. Backend
+  prompt tests and synthetic events are not live model/audio acceptance.
+
+## Device Feedback - 2026-09-29
+
+- User reported improved language switching on build 5, followed by a new
+  failure after leaving for the iPhone Home Screen and returning to the App.
+  Background recovery is therefore **not accepted**; the prior improvement
+  does not establish sustained conversational stability.
+- User clarified that the setting remains Taiwanese after returning; speaking
+  or language switching fails. Preference loss is not evidenced in this report.
+- Build 4 could not launch: native installation diagnostics explicitly reported
+  an expired provisioning profile. Xcode refreshed development provisioning and
+  build 5 installed without uninstalling the App. The first launch remained
+  blocked by iOS security; subsequent usability is user-reported, not an
+  independently captured successful launch or audio recording.
+- Investigate overlapping lifecycle teardown and restart, preserve the saved
+  language, and require a fresh-session acknowledgement before listening.
+  A source-level race or passing synthetic test alone must not be described as
+  proof of this specific device failure's cause or of a successful physical fix.
+- Controller candidate serializes repeated stop/start requests and drains old
+  connection cleanup before reuse. Timed-out cleanup remains quarantined; the
+  caller receives a bounded failure rather than opening a competing connection.
+  No profile, model, backend or Realtime service implementation changed.
+- Voice owner reports 13 added regressions and 476 passing targeted tests.
+  Main independently reran lifecycle and language-sync files: **106/106 passed,
+  exit 0**. These overlap the owner suite and are not additional unique cases.
+  Physical background-return and audible-language acceptance remain OPEN.
+- Owner subsequently added three cancellation/ordering tests and reports
+  **479/479** targeted passes; production controller was unchanged after review.
+- Candidate **1.0.0 (6), Profile** built incrementally in **79.7 seconds**,
+  reported **107.2 MB**, using existing production API and diagnostic test flags.
+  Native overwrite installation succeeded without uninstall; launch succeeded
+  at **2026-09-29 13:57:12 Asia/Taipei** and device app query confirmed build 6.
+  No commit/push or backend deployment was performed in this batch. Installation
+  and process launch do not establish audible language or background acceptance.
+
 ## Stability Investigation - 2026-09-27
 
 User priority: conversation reliability before engagement features or store

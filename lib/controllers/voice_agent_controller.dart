@@ -91,6 +91,11 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   Future<bool>? _languageSyncInFlight;
   int _languageSessionGeneration = 0;
   bool _disposed = false;
+  Future<void>? _stopInFlight;
+  Future<void>? _serviceStopInFlight;
+  Future<void>? _connectInFlight;
+  bool _requiresRealtimeTeardown = false;
+  int _lifecycleRequestId = 0;
   VoiceLanguageSyncState _languageSyncState = VoiceLanguageSyncState.pending;
   ReplyLanguage? _appliedLanguage;
   bool _resumeMicAfterLanguageSync = false;
@@ -409,6 +414,26 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> startRealtimeConversation() async {
+    if (_disposed) return;
+    final requestId = ++_lifecycleRequestId;
+    final stopping = _stopInFlight;
+    if (stopping != null) {
+      await stopping;
+    } else if (_requiresRealtimeTeardown) {
+      try {
+        await _stopRealtimeService();
+      } catch (_) {
+        if (!_disposed && requestId == _lifecycleRequestId) {
+          _showRealtimeTeardownFailure();
+        }
+        return;
+      }
+    }
+    if (_disposed || requestId != _lifecycleRequestId) return;
+    if (_requiresRealtimeTeardown) {
+      _showRealtimeTeardownFailure();
+      return;
+    }
     _userRequestedRealtime = true;
     _inputLanguageRevision = _languageRevision;
     // Turn-based：上一句寵物說完後回到 idle，但同一條 Realtime 連線仍在。
@@ -481,7 +506,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       conversationController.showPetBubbleMessage('正在連線陪伴寵物');
       notifyListeners();
       AppLog.debug('[PET_NAME] current=${profileController.petName}');
-      await realtimeVoiceService.connect(
+      await _trackRealtimeConnect(realtimeVoiceService.connect(
         realtimeCallUrl:
             AppConfig.realtimeCallUrlForSttProxy(profileController.sttProxyUrl),
         petName: profileController.petName,
@@ -493,7 +518,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
                 VoiceLanguageMode.taigiRealtime
             ? 'taigi_realtime'
             : '',
-      );
+      ));
       if (attemptId != _connectionAttemptId ||
           _state == VoiceAgentState.idle ||
           _state == VoiceAgentState.recovering) {
@@ -610,18 +635,91 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     return true;
   }
 
+  Future<void> _trackRealtimeConnect(Future<void> connection) async {
+    _connectInFlight = connection;
+    try {
+      await connection;
+    } finally {
+      if (identical(_connectInFlight, connection)) _connectInFlight = null;
+    }
+  }
+
+  Future<void> _stopRealtimeService() async {
+    final stopping = _serviceStopInFlight;
+    if (stopping != null) {
+      return stopping.timeout(timeoutConfig.connectionTimeout);
+    }
+    _requiresRealtimeTeardown = true;
+    final connection = _connectInFlight;
+    final future = () async {
+      try {
+        await realtimeVoiceService.stop();
+      } finally {
+        // Cancelled connect also performs cleanup; drain it before reusing service.
+        try {
+          await connection;
+        } catch (_) {
+          // The owning connect path handles its failure or cancellation.
+        }
+      }
+    }();
+    _serviceStopInFlight = future;
+    // A deadline ends the caller's wait, never the raw cleanup quarantine.
+    unawaited(future.then((_) {
+      if (!identical(_serviceStopInFlight, future)) return;
+      _serviceStopInFlight = null;
+      _requiresRealtimeTeardown = false;
+    }, onError: (Object _, StackTrace __) {
+      if (identical(_serviceStopInFlight, future)) _serviceStopInFlight = null;
+    }));
+    await future.timeout(timeoutConfig.connectionTimeout);
+  }
+
+  void _showRealtimeTeardownFailure() {
+    _connectionAttemptId++;
+    _userRequestedRealtime = false;
+    _isConnecting = false;
+    _cancelAllTimeouts();
+    realtimeVoiceService.pauseMicInput();
+    _lastError = '語音連線還沒關好，請稍後再試。';
+    _transition(VoiceAgentState.error, 'teardown_incomplete');
+    petController.setModeAndMessage(PetMode.sad, _lastError);
+    conversationController.showPetBubbleMessage(_lastError);
+  }
+
   Future<void> stopRealtimeConversation() async {
+    // Every stop cancels a queued start, even when teardown is already running.
+    _lifecycleRequestId++;
+    final stopping = _stopInFlight;
+    if (stopping != null) return stopping;
+    final future = _stopRealtimeConversation();
+    _stopInFlight = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_stopInFlight, future)) _stopInFlight = null;
+    }
+  }
+
+  Future<void> _stopRealtimeConversation() async {
     _invalidateLanguageSession();
     realtimeVoiceService.languageDiagnostics.stopCapture();
-    _connectionAttemptId++;
+    final attemptId = ++_connectionAttemptId;
     _transcriptRouteAttemptId++;
     _invalidateVoiceToolSpeech();
     _userRequestedRealtime = false;
     _isConnecting = false;
     _reconnectAttempts = 0;
     _cancelAllTimeouts();
-    await realtimeVoiceService.stop();
-    if (_disposed) return;
+    realtimeVoiceService.pauseMicInput();
+    var stopped = false;
+    try {
+      await _stopRealtimeService();
+      stopped = true;
+    } catch (_) {
+      AppLog.debug('[VoiceAgentController] stop failed');
+    }
+    if (_disposed || attemptId != _connectionAttemptId) return;
     _lastError = '';
     _activeTurnId = '';
     _responseTurnId = '';
@@ -637,6 +735,10 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     _speechStoppedAt = null;
     _turnCoordinator.reset();
     conversationController.clearRealtimeTranscriptState();
+    if (!stopped) {
+      _showRealtimeTeardownFailure();
+      return;
+    }
     _transition(VoiceAgentState.idle, 'manual_stop');
     petController.setMessage('我先在旁邊陪你。想不到要聊什麼也沒關係，要不要跟我說說今天最舒服的一刻？');
   }
@@ -1477,6 +1579,21 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     if (_languageCommands.parse(transcript) != null) return;
     final generation = _voiceInputGeneration;
     if (!_routedVoiceToolTurns.add(turnId)) return;
+    final tools = agentToolController;
+    final explicitRequest = _isExplicitToolRequest(transcript);
+    if (tools != null &&
+        (tools.isRouting || tools.isExecuting || tools.hasUncertainExecution)) {
+      if (explicitRequest ||
+          (tools.pendingIntent != null &&
+              (_isVoiceToolConfirm(transcript) || _isVoiceToolCancel(transcript)))) {
+        _speakToolOutcomeForInput(
+            tools.hasUncertainExecution
+                ? AgentToolController.executionUnknownMessage
+                : AgentToolController.busyMessage,
+            generation, '$turnId:busy');
+      }
+      return;
+    }
     if (_tryHandlePendingToolVoiceDecision(transcript, turnId)) {
       return;
     }
@@ -1497,8 +1614,13 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     // 其餘（播音樂 / 打電話 / 其他工具）交給後端 agent 路由，完成後用語音念出結果或確認問句。
-    final tools = agentToolController;
-    if (tools == null || tools.isRouting) return;
+    if (tools == null) {
+      if (explicitRequest) {
+        _speakToolOutcomeForInput('現在還沒辦法幫你安排這個動作，這次沒有執行。',
+            generation, '$turnId:unavailable');
+      }
+      return;
+    }
     final previousResult = tools.executionResult;
     final previousIntent = tools.pendingIntent;
     final routing = tools.routeFromUserText(
@@ -1528,7 +1650,22 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
           turnId: turnId,
           previousResult: previousResult,
           previousIntent: previousIntent,
+          reportRouteError: explicitRequest,
         )));
+  }
+
+  // Only explicit action requests get unavailable/busy feedback; ordinary chat
+  // still reaches the companion response without being called a tool failure.
+  static bool _isExplicitToolRequest(String text) {
+    if (RegExp(r'[「」『』"“”]|不要|不用|不想|不需要|沒有要|沒要|不是要|先別|怎麼|如何|為什麼')
+            .hasMatch(text) ||
+        RegExp(r'^(女兒|兒子|家人|朋友|媽媽|爸爸|醫生|他|她).*(說|提醒|叫|請)')
+            .hasMatch(text.trim())) {
+      return false;
+    }
+    return RegExp(
+      r'播放|放首|放一首|打給|打電話|撥電話|傳訊息|發訊息|寄信|寄郵件|提醒我|(幫我|替我)提醒|設.*提醒|設.*鬧鐘|通知.*(家人|照護|照顧)|幫我.*(聽|找|查|記|買|開)|我想聽|我要聽|我想買|我要買|請.*(播|查|找|開|記)|打開|開啟|登出|刪除.*記憶',
+    ).hasMatch(text);
   }
 
   static bool _isBroadMusicRequest(String text) {
@@ -1549,6 +1686,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     final pending = controller?.pendingIntent;
     if (controller == null ||
         pending == null ||
+        !pending.isExecutable ||
         !pending.requiresConfirmation) {
       return false;
     }
@@ -1651,13 +1789,13 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   /// 生活工具（找新聞 / 播音樂等）在語音模式自動執行後，讓寵物用語音把結果念出來，
-  /// 使用者才不會覺得寵物沒聽懂。只處理「已成功執行的低風險工具」；需使用者確認的高影響
-  /// 工具仍走確認 UI，不在此自動朗讀。純附加，不影響 Realtime 連線 / SDP / 純語音主流程。
+  /// 成功、失敗與待確認皆回報實際狀態，不自動重試外部動作。
   void _maybeSpeakToolOutcome(
     int generation, {
     required String turnId,
     required AgentToolExecutionResult? previousResult,
     required AgentToolIntent? previousIntent,
+    bool reportRouteError = true,
   }) {
     if (generation != _voiceInputGeneration || !_userRequestedRealtime) return;
     final controller = agentToolController;
@@ -1665,18 +1803,27 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     // 1) 低風險工具（找新聞 / 播音樂…）已自動執行 → 用語音念出結果。
     final result = controller.executionResult;
     if (result != null &&
-        result.success &&
         !identical(result, previousResult)) {
-      final line = result.message.trim();
+      final line = result.success
+          ? result.message.trim()
+          : controller.hasUncertainExecution
+              ? AgentToolController.executionUnknownMessage
+              : AgentToolController.executionFailureMessage;
       if (line.isNotEmpty) {
         _speakToolOutcomeForInput(line, generation, '$turnId:agent-result');
       }
+      return;
+    }
+    if (reportRouteError && controller.errorMessage?.isNotEmpty == true) {
+      _speakToolOutcomeForInput(AgentToolController.routeFailureMessage,
+          generation, '$turnId:agent-error');
       return;
     }
     // 2) 需確認的高影響工具（打電話 / 傳訊息…）不自動執行 → 用語音念出確認問句，
     //    讓寵物有回應；實際動作仍由確認 UI 完成（安全閘門不變）。
     final pending = controller.pendingIntent;
     if (pending != null &&
+        pending.isExecutable &&
         pending.requiresConfirmation &&
         !identical(pending, previousIntent)) {
       final ask = pending.userFacingMessage.trim();
@@ -2363,7 +2510,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     _cancelAllTimeouts();
     _clearCurrentTurn();
     try {
-      await realtimeVoiceService.stop();
+      await _stopRealtimeService();
       if (attemptId != _connectionAttemptId || !_userRequestedRealtime) return;
       petController.setModeAndMessage(PetMode.listening, message);
       conversationController.showPetBubbleMessage(message);
@@ -2379,7 +2526,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
             : RealtimeFailureType.missingApiKey;
         throw RealtimeFailure(type, type.message);
       }
-      await realtimeVoiceService.connect(
+      await _trackRealtimeConnect(realtimeVoiceService.connect(
         realtimeCallUrl:
             AppConfig.realtimeCallUrlForSttProxy(profileController.sttProxyUrl),
         petName: profileController.petName,
@@ -2391,7 +2538,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
                 VoiceLanguageMode.taigiRealtime
             ? 'taigi_realtime'
             : '',
-      );
+      ));
       if (attemptId != _connectionAttemptId) {
         AppLog.debug(
           '[VoiceAgentController] ignore stale reconnect completion attempt=$attemptId active=$_connectionAttemptId',
@@ -2425,13 +2572,21 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     String? message,
     bool stopConnection = false,
   }) async {
-    _connectionAttemptId += 1;
+    final attemptId = ++_connectionAttemptId;
     _isConnecting = false;
     _cancelAllTimeouts();
     _clearCurrentTurn();
     if (stopConnection) {
-      await realtimeVoiceService.stop();
+      try {
+        await _stopRealtimeService();
+      } catch (_) {
+        if (!_disposed && attemptId == _connectionAttemptId) {
+          _showRealtimeTeardownFailure();
+        }
+        return;
+      }
     }
+    if (_disposed || attemptId != _connectionAttemptId) return;
     _transition(VoiceAgentState.idle, reason);
     if (message != null && message.isNotEmpty) {
       petController.setModeAndMessage(PetMode.listening, message);
@@ -2444,13 +2599,21 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
     String? message,
     bool stopConnection = false,
   }) async {
-    _connectionAttemptId += 1;
+    final attemptId = ++_connectionAttemptId;
     _isConnecting = false;
     _cancelAllTimeouts();
     _clearCurrentTurn();
     if (stopConnection) {
-      await realtimeVoiceService.stop();
+      try {
+        await _stopRealtimeService();
+      } catch (_) {
+        if (!_disposed && attemptId == _connectionAttemptId) {
+          _showRealtimeTeardownFailure();
+        }
+        return;
+      }
     }
+    if (_disposed || attemptId != _connectionAttemptId) return;
     _transition(VoiceAgentState.error, reason);
     if (message != null && message.isNotEmpty) {
       petController.setModeAndMessage(PetMode.sad, message);
@@ -2467,7 +2630,8 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
       case AppLifecycleState.detached:
-        if ((_state == VoiceAgentState.idle && _userRequestedRealtime) ||
+        if (_stopInFlight != null || _serviceStopInFlight != null ||
+            (_state == VoiceAgentState.idle && _userRequestedRealtime) ||
             _state == VoiceAgentState.connecting ||
             _state == VoiceAgentState.recovering ||
             _state == VoiceAgentState.ready ||

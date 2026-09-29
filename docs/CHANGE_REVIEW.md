@@ -60,7 +60,125 @@
 
 ## 提案紀錄（Change Requests）
 
+### CR-0110：語音工具失敗回饋與無話題陪伴，第一批有界加固
+
+- 日期 / 審核：2026-09-29，architecture-agent；提供 Main 派工核准，不代派 owner、不改業務碼。
+- 裁決：**APPROVED WITH GATES（開工核准，非完成或 release 核准）**。影響為 controller 工具生命週期、companion planner / policy；風險 medium。跨 owner 邊界受保護，本筆明確核准下列 allowlist；Realtime service、API 契約、模型、傳輸、DB schema、Care Alert 共用欄位、依賴不放行。無跨端契約改動，不需更新 PROJECT_ARCHITECTURE.md。
+- 使用者回報：離題 / 重複回覆、宣稱播放音樂 / 查新聞 / 建提醒卻未執行、卡住 / 音訊停止；想不到話題時希望溫和建議。本次靜態證據只支持下列缺口，不宣稱找到所有實機故障根因，也不以 prompt 修改保證真實執行。
+- 已核對：AgentToolController._executeCurrentIntent 的 executor await 無 try/finally；route 在 _isRouting 時早退，且 _isRouting 包含後續 execution 等待。VoiceAgentController 在 tools==null 或 isRouting 時早退，_maybeSpeakToolOutcome 只播 success / confirmation，不處理 failed result 或 route error。NativeToolExecutorService.execute 已以 await switch + catch 處理一般 native throw，因此不能把一般 native exception 全算成未捕捉；custom executor throw 與永不完成的 Future 仍需區別。
+- AgentRouterService 已有 5 秒 HTTP timeout；controller 級 route Future 的上限與 late-result 隔離仍應可測。Planner 的 hasReminderIntent 同時接受 reminder_support 與喝水 / 吃藥等字詞；classifier 也會由單純提及產生 reminder_support。現行 cadence 禁止自行換話題，需為明確無話題 / 無聊增加窄例外。
+- 工作樹：保留所有既有 build6 lifecycle、language parser、對應 tests、素材與文件 dirty hunks；尤其 voice controller / lifecycle test 與本文件已有變更，不可整檔覆蓋、重置或混入本批提交。Main 派發前確認同檔沒有另一位 writer；owner 交付本批增量。
+
+#### A：工具生命週期與真實失敗回饋（realtime-voice-agent）
+
+- 特別核准 write allowlist：lib/controllers/agent_tool_controller.dart、lib/controllers/voice_agent_controller.dart、test/controllers/agent_tool_controller_test.dart、test/voice_agent_controller_realtime_lifecycle_test.dart。AgentToolController 是本批明確的跨邊界授權，不是永久 ownership 擴張。其他 executor / router / model / service 檔唯讀；需改先送追加審查。
+- A1 先補可控制 Future / throw 的失敗測試，再修 execution try/catch/finally。正常失敗與 custom throw 均不得永久留下 executing；僅所屬 operation / generation 可清旗標或寫結果，clear / session switch / dispose 後舊 catch / finally 不得污染新操作。重複確認不得再執行；失敗狀態不得被當作待確認再次詢問。
+- A2 僅對 routerService.route 等待設明確有限上限（沿用 5 秒預設，可注入短時間供測試），不可 timeout 整個 routeFromUserText，因其含外部 execution。過期 route 回來不得執行 intent、覆寫新 pending 或重播語音；逾時清理路由 busy 不代表取消底層 Future。保留同 session / turn 去重，不自動重試、不新增背景 queue。
+- A3 明確工具要求遇 busy / unavailable、route error、execution failed / throw，使用既有回饋與 speakToolOutcome 路徑給一次白話說明；不直接朗讀 error.toString、HTTP / exception 或任意 raw error。依 generation / turn / result identity 防重播與跨輪污染；必要時顯示既有泡泡，但不得建立另一條 TTS、打斷 transport 或自動續講。純聊天 noIntent 無錯誤時維持安靜，不能把每句聊天都說成工具失敗。
+- 本批採明示 busy / 未受理，不新增無界 queue 或自動延後執行；保留 confirmation gate、本地與後端工具互斥、音樂 / 新聞必要澄清。只能宣告實際結果：搜尋頁開啟不等於已播放，無來源不編新聞，沒有建立結果不說提醒已完成。
+- **外部 execution timeout 本批 HOLD**：不准套 Future.timeout 後解鎖重試提醒 / 購買等副作用。永不完成 execution 是本批明列殘餘風險，busy 回饋不等於問題已修復。若要加 execution deadline，另提 scoped unknown-outcome 審查：明示「目前無法確認是否完成」、隔離仍在執行的 operation、禁止自動或同動作盲目重試、處理 late completion / stop / clear / dispose，先核對實際結果再允許後續副作用；不能把 unknown 假裝 failed / cancelled。Custom throw 若無法證明無副作用，也不可鼓勵直接再做一次。
+- A gates：custom executor throw、native failed result、router throw / noIntent error / held timeout、busy / unavailable、成功與確認、純聊天 noIntent、重複 confirm、clear / 新 session / dispose 後 late completion，以及舊 finally 不清新旗標；held external execution 不應觸發第二次 executor。斷言 failure feedback 恰一次、stale feedback 為零、timeout 後 late route 不執行。既有 build6 lifecycle / language parser tests 必須保留。
+
+#### A1 安全細化核准（2026-09-29，開工範圍，非最終 checkpoint）
+
+- 核准 Zeno 在原 controller / tests allowlist 做 throw-only controller-lifetime quarantine（hasUncertainExecution 或等效內部狀態）。無法確認副作用的 executor throw 後，identity-aware finally 清 isExecuting，但 unknown quarantine 不因 clear / session switch 被解除；不能說已取消 / 未執行或引導重試 / 重啟解除。不新增 executor deadline 或 reconciliation API。
+- Held raw execution 在 clear 後仍保留 execution lock，只有所屬 completion 能解除，不得污染新 session 結果。confirm / executeLowRisk / route 與 voice 本地命令分支不能繞過 pending / unknown gate 再提交同一副作用；純聊天與 urgent safety 不能因此停止。
+- 必測 throw → clear → 新 session → 重述 / confirm 不再執行、held → clear → late complete、dispose 後 stale 不 notify。Controller 重建或程序重啟不具持久化去重保障，不宣稱 exactly-once；復原流程留待另審。Owner 稱 pre-fix 5 red / post-fix 5 green，本 reviewer 此刻尚未獨立驗證 A。
+
+#### A4 整合 harness 條件式追加核准（2026-09-29）
+
+- Owner 擴大 10-file regression 回報 555 passed / 4 failed，集中 test/integration/agent_voice_turn_integration_test.dart；目前未證明 pre-A baseline。**A 完成核准 HOLD**，不可只以 allowlist suite 通過結案，也不可稱四失敗已證明為舊問題。
+- Reviewer 唯讀證據：該 harness 只 open channel / force usable，未送 session.created 初始 instructions 或 exact session.updated ACK；現行 service speakToolOutcome 在 !_languageSynchronized 時排隊，且 active response / audio 未完成也不得送下一筆。Confirm / cancel 測試把兩個無 item_id 的 final 直接連送，未建立分立 user turn 或完成前輪回覆。故 harness 與現有語言 / 工具生命週期的前置條件明顯不符，但此靜態證據尚不是 pre-A 回歸歸因證明。
+- **APPROVED WITH GATES：僅追加 test/integration/agent_voice_turn_integration_test.dart 給 realtime-voice-agent**。先記錄原四失敗 assertions；准補合成 baseline、原始 session.update 精確 ACK、唯一 user item / response identity 與真實事件順序（前輪 response.done / output_audio_buffer.stopped、既有手動下一輪入口）。不可在 production 改 gate、直接設 private flags，或改成 mock transport fallback。
+- 不得刪測試、skip、放宽成功斷言、降低執行次數精度、移除實際提醒 title / list / confirm / cancel / no-re-route / thinking / no reconnect 的原斷言。新增前置條件斷言並保留/補「未 ACK 或回覆未完不提前播工具結果」負向驗證；不得只用固定 delay 讓測試變綠。
+- 修正後單獨整合 suite + 原 targeted / expanded suite 重跑並列差異；若前置條件正確後仍 fail，即回報 implementation regression，不再改測試期待。可據 harness 可控反例修復判斷測試可靠性，但沒有 pre-A 對照就不得把原四失敗標成 baseline 已證明。
+- 不核准整包複製專案到 tmp（可能帶入 secrets/runtime）；若仍需 pre-A 對照，另用明確非敏感 source allowlist 的隔離測試計畫，保留 build6/parser。此輪不碰任何 env / secret 檔、build / deploy / model / API / transport。
+- Reviewer 進度（尚非 A 最終核准）：原 allowlist AgentToolController + voice lifecycle tests 獨立 **138/138 passed，exit 0**；四檔 flutter analyze --no-pub **No issues found**，scoped diff --check 通過。已核對 failure result 的 message / data 在 controller 清成固定白話，voice 對 failed 再做固定訊息，合成 unsafe sentinel 不進語音 / 泡泡。Unknown 文案明示暫不能代辦其他動作但可繼續聊，不假稱只是短暫 busy；無 reconciliation 的工具不可用風險仍 OPEN。
+- Owner 單整合檔回報 **6 passed / 4 failed**：提醒清單、建立提醒的 response.create 缺失（建立 length/title 已過）；語音 confirm executor 0 vs 1；語音 cancel pending 仍存在。事件日志顯示 baseline_waiting / applied=none / 工具結果排隊，以及第二句沿用同一 turn；僅支持 harness 前置條件診斷，不是 pre-A baseline 證明。A4 修正與重跑待完成。
+
+#### A / A4 Final Code Checkpoint（2026-09-29，最新裁決）
+
+- **APPROVE（bounded code checkpoint）**，覆蓋 A4 整合失敗的暫時 HOLD；本批五檔無剩餘 code blocker。核准 AgentToolController、VoiceAgentController 的 CR-0110 工具增量及兩者 tests，加唯一 A4 integration test；不把同檔既有 build6 lifecycle / language parser hunks算成本批成果，不核准模型、Realtime service、transport、API、schema、依賴或發布改動。
+- Controller route 等待有上限，只包 router Future，不包 executor；late route 不執行。Executor try/catch/finally 使用 operation identity，clear 不解除 raw execution lock，late結果不污染新 session；custom throw 進 controller-lifetime unknown quarantine，不自動重試或在 session switch 解鎖。Failed message/data 清為固定白話，voice 對 failed 再使用固定訊息；unsafe sentinel 不進語音/泡泡。NoIntent 保留 pending confirmation；busy/unavailable/error 只針對明確要求回饋，補否定/轉述/引述及幫我/替我提醒反例/正例。
+- A4 diff 已完整審查：只補合成 baseline / exact ACK、confirm/cancel 分立 item identity、完成 response/audio 後經既有手動下一輪入口；原十個測試與行為斷言均保留，包括真實提醒 list/title、執行次數、pending確認/取消、no re-route、thinking與不重連。新增兩個負向gate證明未ACK或audio未完不提前送工具語音。沒有放寬assertion、skip或production gate修改。
+- Reviewer 最新獨立執行：flutter test --no-pub --concurrency=1 test/controllers/agent_tool_controller_test.dart test/voice_agent_controller_realtime_lifecycle_test.dart test/integration/agent_voice_turn_integration_test.dart --reporter expanded，**150/150 passed，exit 0**。五檔 flutter analyze --no-pub **No issues found，exit 0**；五檔及本文件 diff --check 通過。先前 integration lint 1 info 已補大括號並重跑消除。
+- Main 另獨立執行十檔 --no-pub --concurrency=1 expanded：**573/573 passed，exit 0**（Main 回報 session 30333 已結束）；owner 也回報十檔573/573。這兩筆與 reviewer 自行重跑150項分開標記，不混稱 reviewer 全量測試。原四失敗在修正前置條件後不再出現；沒有 pre-A snapshot，因此不宣稱已證明是既有 baseline failures。
+- **殘餘風險維持 OPEN**：held executor 仍可能永不完成，此批沒有安全取消/執行deadline；unknown quarantine 會阻擋該 controller 後續工具，無 reconciliation/解鎖流程，文案明示暫不能代辦但可繼續聊天，不冒充已恢復。隔離不持久化，不能宣稱重建controller或重啟後 exactly-once，也不可指引重啟重試。既有 NativeToolExecutor 內部 catch 回傳的失敗仍依既有結果契約，本批不等於全面副作用去重。
+- 本次 code approval 不關閉 C 的音樂/新聞澄清短答缺口，也不保證所有自然語句均能路由。真模型遵循、無重複/離題、音樂實際播放、新聞真來源、提醒通知實際送達、iPhone音訊持續與背景返回仍待實機驗收；不把離線成功表述為所有使用者故障已修好。Main 可整合這個有界批次，後续 scope 分別再審。
+
+#### B：無話題的溫和建議與提醒意圖收窄（companion-memory-agent）
+
+- Write allowlist：backend/companion/next_strategy_planner.js、voice_prompt_policy.js（同目錄）、next_strategy_planner.test.js、voice_prompt_policy.test.js、companion_engine.test.js、mandarin_quality_corpus.test.js（以上 tests 均同目錄）。classifier 本批唯讀；planner 不可單憑 reminder_support 就視為明確動作，避免上游 broad classifier 抵銷修正。若必須改 classifier，先提出追加範圍。
+- B1 僅「不知道聊什麼 / 不知道要說什麼 / 好無聊 / 沒事做」等明確無話題表達允許先接情緒，再提出一個低壓力、可拒絕的聊天話題或小活動，最多一問；沿用既有 mode / {mode,instruction} 形狀，不新增 schema / mode 契約。近期回覆避重保留，不反覆推同活動；不是靜默、idle timer、每輪一般聊天或工具完成後自動發話的許可。
+- B2 明確要求「提醒我 / 幫我設鬧鐘」才進提醒工具策略；「我剛喝水 / 已吃藥 / 今天回診」不觸發動作，否定、引用、假設及只問知識不能誤判。含混時間只澄清必要資訊，不聲稱已建立。由現有 Agent Router 執行，planner 不是 executor，這批不改 backend/agent/** 意圖規則。
+- Safety urgent / high 必須先於無聊與工具分支；不改風險規則或級別，不以去重刪必要安全話術。TOOL_TRUTH_POLICY 保留並可針對新聞 / 提醒補窄化文字；失敗 / 等待 / unknown 絕不聲稱成功，不捏造來源或已完成動作。保留既有台語 / 國語 policy。
+- B gates：明確無話題正例、一般日常 / 沉默不觸發、近期回覆避重、喝水 / 吃藥單純提及（包含 companionNeed=reminder_support）、明確提醒正例、否定 / 引用 / 假設反例、urgent / high + 無聊 / 提醒混合輸入仍 safety_check、工具真實性及既有 schema / 語言 / cadence 回歸。測試先確認純函式且不載 env，再執行指定 node --test suites。
+
+#### B 初次 Checkpoint（2026-09-29）
+
+- 裁決：**Changes requested**，不以 58 tests 通過取代行為 gate。四檔 diff 在原 allowlist 內，schema / safety 優先序與工具真實性方向符合範圍。
+- Reviewer 獨立執行 node --test backend/companion/next_strategy_planner.test.js backend/companion/voice_prompt_policy.test.js backend/companion/companion_engine.test.js backend/companion/mandarin_quality_corpus.test.js：58/58 passed，exit 0；檢查 imports 為純函式測試，不載 env。
+- 額外純 Node probe 重現：提醒我喝水，不要真的設定 / 提醒我八點吃藥，算了不用提醒了 仍回 tool_action + 明確要求建立提醒，因 first-match return 忽略句尾撤回。需掃完當輪、尊重後綴撤回，同時保留不同明確新要求正例。
+- 無話題窄例外另有：女兒說好無聊 被当成使用者無聊、我不是不想聊天 被當成拒聊、我今天沒事做，但不要建議活動 仍指示小活動。要求在原檔保守處理轉述 / 否定 / 明確限制並補反例，不擴為全面 NLP 重寫。
+- 上述問題已直接送 Kuhn；owner 回報已補句尾撤回，待其餘反例及最終 diff 複審。這些是 planner 指令錯誤，不代表已證明 executor 真正執行了錯誤動作。
+
+#### B Final Code Checkpoint（2026-09-29）
+
+- **後續裁決覆蓋：HOLD（2026-09-29，Main 新反例）**。Main 在 75 tests 通過後確認自然明確命令「幫我提醒明天八點吃藥」退化為 normal_chat；已交 Kuhn 於原四檔窄修正與補測。以下 APPROVE 為前一 snapshot 的歷史結論，暫不作為最新完成核准；待補正與 reviewer 重跑後另記最终裁決，不放寬 mere mention / 否定 / 引述 / 撤回限制。
+- 裁決：**APPROVE（僅 B 四檔 code checkpoint，非模型品質 / 真實工具 / release 核准）**。前次列出的句尾撤回、第三人轉述、否定拒聊及明確拒絕活動建議反例已在同 allowlist 補正與補測；本批無剩餘 code blocker。
+- reminderRequest 掃完當輪再決定 intent，撤回清空既有候選；單純 reminder_support 不再授權。取消僅指示現有工具核對支援與結果，不新增取消能力。無話題沿用 normal_chat，拒聊不注入 memory；high / urgent 仍先判斷，未新增 mode、API 或風險欄位。
+- Architecture 在最新修正版獨立重跑指定 planner / policy / engine / mandarin corpus 四 suites：**58/58 passed，exit 0**；四檔 git diff --check 通過。Main 另回報 backend/companion/*.test.js **75/75 passed，exit 0**，此 75 tests 非 reviewer 獨立重跑。新增案例放在既有表格迴圈，因此 case 數增加不一定增加 test runner 總數。
+- 限制：窄 regex 是保守的 planner 分流，不是完整自然語言理解或工具授權層。Backend intent/executor 未修改，不能宣稱所有提醒誤觸已端到端消失；語音模型遵循度、重複率、真實音樂 / 新聞 / 提醒與實機 audio 仍未驗。C 澄清短答與 A held executor / unknown reconciliation 仍 OPEN。
+
+#### B Re-review：明確幫我提醒回歸（2026-09-29，最新裁決）
+
+- **APPROVE（B code checkpoint 恢復）**。Kuhn 保留明確 requestPrefix，只有幫我 / 替我授權且提醒後有內容的窄分支允許省略第二個「我」，未放寬任意提醒字詞。新增幫我提醒明天八點吃藥、請幫我提醒明天八點吃藥、麻煩你替我提醒晚上喝水正例，以及單純回報、否定、第三人、已提醒、引述、句尾撤回反例。
+- Owner READY 停止寫入後，architecture 核對最新分支並獨立重跑 planner / policy / engine / mandarin corpus **58/58 passed，exit 0**，四檔與本文件 diff --check 通過；owner 最新全 companion **75/75 passed** 為 owner 回報，非 reviewer 全量重跑。
+- 覆蓋上一節後續 HOLD，維持四檔 bounded approval。先前 live model / executor / iPhone / release 限制不變；不因此放行 C 或宣稱 A 完成。
+
+#### C 候選：一次澄清的短答承接（獨立 follow-on，不併入 A / B）
+
+- Main 補充已由 architecture 唯讀核對：backend/agent/agent_orchestrator.js 的 routeAgentTool 只把 userText / petName 傳入 buildIntentDraft，沒有消費 request.context / recentTurns；voice controller 對 broad music / news 先問澄清再 return。下一輪僅說歌手或類別，可能沒有可執行 intent。這是靜態可見缺口，尚未以真音樂 / 新聞案例重現。
+- 裁決：**值得獨立 follow-on；只核准唯讀設計與案例盤點，實作 HOLD**。不擴張第一批、不把 recentTurns 全文餵入執行判斷；A 的失敗回饋不會自行修復澄清短答，B 的話題建議也不代表音樂 / 新聞能成功執行。
+- 建議由 realtime-voice-agent 主導澄清狀態生命週期，backend-agent 唯讀核對既有完整命令可接受格式；若需要 backend/agent/** 行為改動，獨立列 allowlist 與測試後再核准。不得由 companion owner 跨改工具路由。
+- 後續最小設計限定一筆 session-local pending clarification（music 或 news），綁定原請求、session / generation、有明確 TTL、只接受緊接的一次 user final 短答；不是把不同 turn 假稱同一 turn。只准补齊原需求缺少的歌手 / 類別，沿用既有 route 與真實執行，不能把一般聊天推定為提醒、購買、通知或其他副作用。
+- 必要 gates：同 turn 重複 final 去重、回答一次僅路由一次、新完整命令優先、拒絕 / 取消 / 換話題 / timeout / stop / clear / dispose / session switch 清除、stale async 不恢復 pending；urgent / safety 不被澄清攔截。不認得的短答最多澄清一次後結束，不能無限追問或自動執行。
+- A / B checkpoint 後，Main 提交上述狀態期限、可接受短答、測試檔與精確 write allowlist 再開工；若需 API / schema 改動，先更新 PROJECT_ARCHITECTURE.md，不能沿用本筆許可。
+
+#### Checkpoint、驗證與交付 Main
+
+- A / B 可由兩位 owner 在不重疊 allowlist 內獨立實作；各自先重現再最小修正，分開審查與可回復增量，不重構完整語音系統。回復僅本批 hunks，不回退 build6 / parser 或既有測試。
+- Owner 回報 scoped diff、失敗前 / 修正後 assertions、targeted tests、A 的 scoped flutter analyze、git diff --check。Main 整合後送 architecture checkpoint；不得只憑總測試數結案。
+- 真實 iPhone 驗收仍 OPEN：音樂確認实际開啟 / 播放層級、新聞真來源、提醒實際建立一次、失敗可聽見白話回饋、後續對話可繼續、無話題建議自然、urgent 優先及背景返回 / 語言回歸。未測不得宣稱音訊停止、重複回覆或所有工具故障全面解決。
+- 本輪完成：唯讀 source / dirty scope 檢查與此核准紀錄；未執行功能測試、未 build / install / deploy、未讀取 env / secrets / runtime 資料。Main 現在可依 A / B allowlist 派工；execution timeout 與任何 scope 擴張均需再審。
+
 ### CR-0109：語言同步、機構選用 Telegram / LINE 與停用的 MQTT 基礎
+
+#### Build 5 背景返回：有界 lifecycle stop/start 隔離提案與開工核准（2026-09-29）
+
+- 提出 / 審核：architecture-agent；voice owner Galileo（`01a0ebae-4d54-7ff3-a36b-442e5f36e50f`）唯一主導 controller / service / 對應測試。architecture 本輪只寫本文件，Main 不改業務碼；保留既有 parser、測試及素材等 unrelated dirty。
+- 使用者證據：build 5 語言切換改善，但 iPhone 回主畫面 / 背景再返回後切換再次失敗。尚無本次實機 trace 或確定性根因；下列是可見競態，不把風險當作已證明的實機診斷。
+- 使用者補充：返回前景後設定仍為台語，但對話 / 切換失敗；**沒有 profile 偏好被重設的證據**。Main 已另記驗收回饋，本案不改 profile 持久化，service 的 session-local replyLanguage 清理也不得等同 profile reset。
+- 靜態證據：`voice_agent_controller.dart` 的 `didChangeAppLifecycleState` 對 inactive / paused / hidden / detached 呼叫 unawaited stop，活動狀態直到 stop await 後才轉 idle；`stopRealtimeConversation` 在 await 前失效化 attempt，await 後卻只有 disposed 檢查，可能清掉較新的 turn / language session 狀態。`realtime_voice_service.dart` 的 `_resetConnectionResources` 在 await channel.close 後才取得共享 peer / stream，並在後續 awaits 後重設 replyLanguage、renderer、buffer 與 idle；`stop` 的 finally 也無 ownership 檢查地清 `_isStopping`。
+- 影響 / 風險：medium（涉及核心生命週期；若任意擴大 transport 或事件語意則退回）。觸及受保護 `lib/services/realtime_voice_service.dart`；無 API / model / transcript 契約變更，故不更新 `PROJECT_ARCHITECTURE.md`。
+- **APPROVED WITH GATES，僅開工範圍核准，不是修復完成或 release 核准**：准 Galileo 在 `lib/controllers/voice_agent_controller.dart` 做有界 pending stop 合併、stop/start 序列化與 stale completion 隔離；service 若以可控制 await 的測試證明資源清理競態，准在 `lib/services/realtime_voice_service.dart` 做最小 stop/reset ownership 與資源快照隔離。不得藉機全面重構。允許必要的測試注入點，但不能替換正式 WebRTC 主流程。
+- Write allowlist：上述兩個 Dart 檔、`test/voice_agent_controller_realtime_lifecycle_test.dart`、`test/realtime_voice_service_test.dart`、`test/realtime_language_sync_test.dart`。新增測試檔或其他檔案先回報 reviewer。既有 parser hunks 不納入本次核准。
+- Batch 1：先以 Completer / 可控制 close、stop、connect 完成順序重現；分辨重複背景 stop + 快速手動 restart 與正常完成 stop 後 restart。記錄修正前失敗 assertion；沒有 service 層證據則不動 service。
+- Batch 2：最小修正與測試。舊 stop 不可關閉新 peer / streams、清新 baseline / applied language / renderer / turn，亦不可送入新 session 的 idle 或解除新 stop 的旗標。新 start 等待 stop 後必須再驗 intent / attempt / disposed；等待期間再次背景、stop 或 dispose 必須取消舊 start。保留 resumed 不自動開麥，以及每個新 session 重新取得 baseline / exact ACK 才 applied 的既有規則。
+- Batch 3：交付 scoped diff、修正前失敗 / 修正後通過的測試結果及 analyze，architecture 再做最終審查。至少涵蓋重複 stop、快速 restart、stop 後正常 restart、等待 start 再 stop / dispose、延遲舊 cleanup / callback、stop 失敗不永久鎖住、重連後依最新 desired 語言重新同步。不得改 transcript parsing / pairing / emission 語意；只准清理時機與所屬 session 隔離。
+- 排除：backend / API / model / prompt / parser / VAD 參數 / transport / DB / Care Alert / 依賴、mock 或 demo fallback；不讀 env / secrets / runtime 資料，不 build / install / deploy。不得把離線成功當作 iPhone 語音成功。
+- 測試狀態：本次提案審查僅靜態檢查，尚未執行測試；owner 的確定性重現、最終 diff 審查與實機背景返回驗收均 OPEN。
+- Batch 1 owner 回報（尚未獨立重跑）：修正測試 usable 旗標並完成各 response turn 後，正常完成背景 stop / restart、fresh baseline、台語→國語→台語案例通過；held stop + inactive / hidden / paused + 立即 restart 確定性失敗，觀察到 4 次 stop（3 次 lifecycle + 1 次 recovery）。Owner 正進行 controller single-flight stop 與 queued start cancellation；尚未改受保護 service，native delayed-close 仍需獨立證據。本結果不證明 iPhone 回報的唯一根因。
+- Batch 2 中途審查（2026-09-29，**完成核准 HOLD**）：owner 另回報 pending recovery teardown 重啟提早 connect、以及 cancelled initial connect 被下一次 start 沿用的 red。共享 service-stop 與 drain 原始 connect future 仍在開工範圍；目前 service 未改。
+- **死鎖 / 有界性**：`_trackRealtimeConnect` 記錄的是原始 `realtimeVoiceService.connect(...)` future，不是 controller start / recovery future；controller failure handling 在外層 await 之後，事件處理也未被 service await，目前靜態未見直接循環等待。但 `_stopRealtimeService` 的 finally 無期限 await connection，native renderer / peer / microphone / SDP / close 等 await 無整體 timeout（HTTP 12 秒不涵蓋它們），且 manual stop 已取消 controller timers。若 connect 永不完成，stop 與後續 start 都可永久等待。**P1 / OPEN**：需 never-settled connect / stop 測試與有界、白話失敗出口；不得僅 timeout 後解除隔離，讓舊 cleanup 再傷及新連線。
+- **Recovery / manual overlap**：目前 work-in-progress 已讓 start 同時等待 `_stopInFlight ?? _serviceStopInFlight`，lifecycle 也涵蓋 service stop，並共用 recovery / error / manual teardown；仍需最終 diff 及確定性測試驗證等待解除後 attempt / intent 再檢查、舊 error / idle 不覆蓋新 session。此為靜態審閱，不是 runtime 通過。
+- **Stop exception cleanup**：目前 catch 後仍清 error 並轉 idle；若 service throw 時依然 usable，下一次可能走 warm reuse。現有 failed-stop 測試先 force usable=false，未覆蓋此條件。**P1 / OPEN**：需保留 usable=true 的失敗測試，證明未完成 teardown 不得被視為乾淨重啟；准在原 controller 範圍補 fail-closed 防護，不新增 service / transport 改動。
+- **P1 補強方案開工核准（非完成核准）**：owner 回報前一版 472 targeted tests 通過、scoped analyze 無問題，尚未由 architecture 獨立重跑，且不涵蓋以下新補強。准以既有 connectionTimeout 限制 caller 等待，保留 raw teardown future 作隔離；timeout 不可解鎖或重用 service，停止後顯示白話 error 並維持 mic paused。明確區分仍 pending 與已失敗的 future，避免 retry 永遠重等同一 rejected future；只准在前次 raw 作業已結束後重試清理，成功 drain 才能新建 session。每次 await 後須重驗 request / attempt / disposed，late completion 不得改 UI、開麥或清掉新一輪隔離；resumed 不自動重啟。須補 never-settled stop / connect、usable=true 時 stop throw 後成功 retry、timeout 後 late settle 加新 stop / dispose 測試。service 維持不改，兩項 P1 與最終 checkpoint 仍 OPEN。
+- **最終 code checkpoint（2026-09-29）：APPROVED，以上兩項 P1 在本 controller 批次 CLOSED，取代中途 HOLD。** 審閱最新版 controller 全部 diff 與 lifecycle 測試 hunks，未發現阻擋缺陷。Galileo 僅修改 `lib/controllers/voice_agent_controller.dart` 與 `test/voice_agent_controller_realtime_lifecycle_test.dart`；`realtime_voice_service.dart` diff 為空。既有 parser 與 command regression hunks 不算本批新增，也未撤回或覆寫。
+- **有界性 / 失敗隔離結論**：`_stopRealtimeService` 只對 caller 套既有 connectionTimeout，raw future 持續作 quarantine；timeout 不清除 `_serviceStopInFlight`，失敗不清除 `_requiresRealtimeTeardown`。Raw 成功且 identity 相符才解鎖；raw 失敗只移除已終止 future，保留需重清理旗標，明確 retry 可再清理而非永久重等 rejected future。Stop failure 進白話 error 並關 mic，不能以 usable=true 走 warm reuse。這保證等待有界與 fail-closed，不保證 native 作業本身可取消或一定完成；native 永久卡住時仍禁止重用同 service。
+- **最新意圖 / recovery 結論**：start 在等待 `_stopInFlight` 或必要 teardown 後，重驗 request ID / disposed / requiresTeardown；每次 stop（含合併 stop）遞增 lifecycle request，背景在 pending service-stop 時仍會取消 queued start。Recovery / error completion 以 connection attempt 與 disposed / user intent 防舊 UI / connect，manual stop 使舊 attempt 失效；raw cleanup callback 只操作 identity 對應隔離旗標，不啟動 UI 或 mic。追蹤的是原始 service connect，未把 controller failure handler 納入 drain，靜態未見循環 await。Resumed 不自動開麥。多個 start 等待同一 teardown 的 latest-request 分支已靜態核對；專門的兩個 start + error recovery 交錯測試可後補，非已執行證據。
+- **驗證**：architecture 獨立執行 `flutter test --no-pub test/voice_agent_controller_realtime_lifecycle_test.dart --reporter expanded`，**86/86 pass，exit 0**；scoped `git diff --check` 通過。Main 回報獨立 lifecycle + language sync **106/106 pass，exit 0**。Owner 回報四檔 targeted **476/476 pass**、兩個修改檔 scoped analyze **No issues found**；後两項非 architecture 獨立重跑。新增 13 個 lifecycle cases 覆蓋普通 / 快速重啟、queued cancellation、usable=true stop failure / retry、held stop / connect timeout 與 late dispose、新 stop、recovery / cancelled connect drain、fresh baseline / exact ACK。既有 failed stop 預期改 error 是 fail-closed 行為修正，未刪斷言。
+- **下一階段核准與限制**：可由 Main 依既有流程進入本候選的受控 build / install 與 iPhone 驗收；本 agent 未執行 build / install，不涉及發布核准。需驗台語設定保留、正常 / 快速 Home→foreground、手動重啟後台語↔國語實際回覆與對話可用性；離線 ACK 不代表語音語言正確。使用者 build 5 的確切實機根因仍未證明，實機 acceptance / release gate 維持 OPEN；不擴大 service / API / model / transcript scope。
 
 #### 穩定優先裁決：build 2 失敗後的有限診斷與完整指令保留（2026-09-27，本輪優先）
 

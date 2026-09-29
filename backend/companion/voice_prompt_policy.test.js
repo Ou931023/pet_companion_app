@@ -34,3 +34,23 @@ test("tool prompt forbids premature success and distinguishes virtual from real 
   assert.match(TOOL_TRUTH_POLICY, /明確確認後才執行/);
   assert.match(TOOL_TRUTH_POLICY, /不能說已建立實體商品訂單/);
 });
+
+test("CR-0110 B: topic invitation is explicit, optional, non-repetitive and never idle speech", () => {
+  assert.match(COMPANIONSHIP_VOICE_POLICY, /只有使用者明確表示無話題、無聊或沒事做時/);
+  assert.match(COMPANIONSHIP_VOICE_POLICY, /一個低壓力、可拒絕/);
+  assert.match(COMPANIONSHIP_VOICE_POLICY, /不想聊天.*不邀聊、不追問/);
+  assert.match(COMPANIONSHIP_VOICE_POLICY, /沉默不是續講邀請/);
+  assert.match(COMPANIONSHIP_VOICE_POLICY, /不要只換同義詞重複/);
+  assert.match(COMPANIONSHIP_VOICE_POLICY, /使用者已回答或拒絕.*不再重問/);
+  assert.match(COMPANIONSHIP_VOICE_POLICY, /不把喝水、吃藥等生活回報當成新增任務/);
+});
+
+test("CR-0110 B: reminder and news claims require real results, unknown outcomes never invite blind retry", () => {
+  assert.match(TOOL_TRUTH_POLICY, /等待、失敗或結果未知/);
+  assert.match(TOOL_TRUTH_POLICY, /不能自行重試有副作用的動作/);
+  assert.match(TOOL_TRUTH_POLICY, /提醒只有收到實際建立成功結果才說已設定/);
+  assert.match(TOOL_TRUTH_POLICY, /取消也必須有實際成功結果/);
+  assert.match(TOOL_TRUTH_POLICY, /不承諾沒有工具支援的稍後主動提醒/);
+  assert.match(TOOL_TRUTH_POLICY, /新聞沒有實際搜尋結果與來源時，不編造/);
+  assert.match(COMPANIONSHIP_VOICE_POLICY, /沒有對應工具成功結果，不承諾稍後自動提醒/);
+});

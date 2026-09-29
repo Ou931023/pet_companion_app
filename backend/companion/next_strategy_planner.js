@@ -59,10 +59,65 @@ function recentReplyInstruction(recentTurns = []) {
 
 // ---- 意圖偵測（deterministic，方便單元測試）----
 
-// 明確的生活工具需求：提醒 / 鬧鐘 / 吃藥 / 喝水 / 回診 等。
-function hasReminderIntent(text, companionNeed) {
-  if (companionNeed === "reminder_support") return true;
-  return /提醒|鬧鐘|回診|吃藥|喝水|量血壓/.test(text);
+function withoutQuotedText(text = "") {
+  return String(text).replace(/「[^」]*」|『[^』]*』|“[^”]*”|"[^"]*"/g, "");
+}
+
+// 上游 reminder_support 也包含生活陳述，不能當作工具授權。
+function reminderRequest(text = "") {
+  const unquoted = withoutQuotedText(text);
+  let scopedMention = false;
+  let intent = "";
+  for (const clause of unquoted.split(/([。！？!?；;\n])|[，,]/).filter(Boolean)) {
+    if (/^[。！？!?；;\n]$/.test(clause)) {
+      scopedMention = false;
+      continue;
+    }
+    let value = clause.trim();
+    // 假設或否認引用可跨逗號；明確轉折的新要求才解除該語境。
+    if (/^(?:但|不過)(?:現在|這次)?(?:請|麻煩|幫我)/.test(value)) {
+      scopedMention = false;
+      value = value.replace(/^(?:但|不過)(?:現在|這次)?/, "");
+    }
+    if (/如果|假如|假設|要是|例如|比方|(?:不是|沒有|沒)(?:說|要說)|(?:他|她|醫生|女兒|兒子)說/.test(value)) scopedMention = true;
+    if (scopedMention) continue;
+    if (/如果|假如|假設|要是|例如|比方|怎麼|如何|為什麼|什麼意思/.test(value)) continue;
+    if (/^(?:算了|不用了|不要了|取消吧|先不用|先不要)/.test(value) ||
+        (intent && /(?:不要|不用|不必).*(?:設定|建立|新增)/.test(value)) ||
+        /(?:不用|不需要|不必|不要|別再|別幫|不想|沒有要|沒要|不是要).*(?:提醒|鬧鐘)/.test(value)) {
+      intent = "";
+      continue;
+    }
+    if (/不用|不需要|不必|不要|別再|別幫|不想|沒有要|沒要|並非|不是要|已經|提醒過|取消了|取消過|設好了/.test(value)) continue;
+    const prefix = /^(?:(?:請|麻煩)(?:你)?|你(?:可以|能不能|可不可以)|可不可以|可以|能不能|我要|我想要|我想)?\s*(?:幫我|替我)?\s*/;
+    const requestPrefix = value.match(prefix)[0];
+    const request = value.slice(requestPrefix.length);
+    if (/^(?:取消|刪除|關掉|停用).*(?:提醒|鬧鐘)/.test(request)) {
+      intent = "cancel";
+      continue;
+    }
+    if (/^提醒我(?!.*(?:了|過)(?:嗎|呢)?$)/.test(request) ||
+        (/(?:幫我|替我)/.test(requestPrefix) && /^提醒(?!過|了|的)(?!.*(?:了|過)(?:嗎|呢)?$).+/.test(request)) ||
+        /^(?:設|設定|設置|新增|建立)(?:定)?[^，。]{0,24}(?:提醒|鬧鐘)/.test(request) ||
+        /^(?:明天|今天|今晚|晚上|早上|下午|每天|等一下|待會|過\d+分鐘)[^，。]{0,16}提醒我/.test(request)) intent = "create";
+  }
+  return intent;
+}
+
+function hasReminderIntent(text) {
+  return reminderRequest(text) === "create";
+}
+
+function wantsQuiet(text) {
+  const unquoted = withoutQuotedText(text).replace(/(?:不是|沒有)(?:不想|不要)(?:聊天|聊|說話|講話)/g, "");
+  return /(?:不想|不要|不想要|不太想|先不|暫時不)(?:再)?(?:跟我)?(?:聊|說話|講話)|想(?:要)?(?:安靜|靜一靜)|別(?:再)?(?:問|說|講)/.test(unquoted);
+}
+
+function needsTopic(text) {
+  text = withoutQuotedText(text);
+  if (/(?:女兒|兒子|他|她|朋友|家人)(?:說|覺得)|(?:不要|不用|不想|別).*(?:建議|推薦|活動|話題)/.test(text)) return false;
+  if (/不(?:是|覺得|會|太)?無聊|沒(?:有)?覺得無聊|不是沒事做|不是不知道/.test(text)) return false;
+  return /(?:不知道|不曉得|想不到)(?:要|能|可以)?(?:聊|說|講|做)(?:些|點)?什麼|沒(?:有)?話題|(?:好|很|有點|真|覺得)無聊|^(?:我)?無聊[。！!]*$|沒(?:有)?事做/.test(text);
 }
 
 // 使用者在問「你記不記得我之前說過…」。
@@ -141,12 +196,12 @@ function planNextStrategy({
   const finish = (
     mode,
     instruction,
-    { applyNormalCadence = true, applyRecentAvoidance = true } = {},
+    { applyNormalCadence = true, applyRecentAvoidance = true, applyMemory = true } = {},
   ) => ({
     mode,
     instruction: `${instruction}${applyNormalCadence ? ` ${NORMAL_VOICE_CADENCE}` : ""}${
       applyRecentAvoidance ? recentReplyHint : ""
-    }${memoryHint}${taigiHint}`,
+    }${applyMemory ? memoryHint : ""}${taigiHint}`,
   });
 
   // 1) 高風險優先：安全 / 情緒危機凌駕一般聊天與一般工具。
@@ -165,10 +220,35 @@ function planNextStrategy({
   }
 
   // 2) 明確生活需求：交給 Agent Router / 工具，不要只用聊天帶過。
-  if (hasReminderIntent(text, companionNeed)) {
+  const reminder = reminderRequest(text);
+  if (reminder) {
     return finish(
       "tool_action",
-      `使用者有明確的生活需求（例如提醒、吃藥、喝水、查詢）。先簡短回應這件事，由提醒或工具功能接手，最多確認一個必要重點。${TOOL_TRUTH_POLICY}`,
+      `${reminder === "cancel" ? "使用者明確要求取消既有提醒，不是新增提醒；只交由現有工具確認是否支援取消，不支援時坦白說明，不能宣稱已取消。" : "使用者明確要求建立提醒。"}先簡短回應這件事，由提醒或工具功能接手；缺少時間或內容時最多確認一個必要重點，不自行猜測或聲稱已建立。${TOOL_TRUTH_POLICY}`,
+    );
+  }
+
+  if (wantsQuiet(text)) {
+    return finish(
+      "normal_chat",
+      "使用者現在不想聊天。簡短接住他的意思就停，不提新話題、不問問題、不邀請活動，等待他主動再說。",
+      { applyNormalCadence: false, applyMemory: false },
+    );
+  }
+
+  if (/(?:不要|不用|不想|別).*(?:建議|推薦|活動|話題)/.test(withoutQuotedText(text))) {
+    return finish(
+      "normal_chat",
+      "使用者明確拒絕話題或活動建議。先接住當下感受，只用一兩個短句回應他本輪的具體內容，不提話題或活動、不追問，說完等待新的使用者輸入。",
+      { applyNormalCadence: false, applyMemory: false },
+    );
+  }
+
+  if (needsTopic(text)) {
+    return finish(
+      "normal_chat",
+      "使用者明確表示無話題或無聊。先用短句接住當下感受，再提出一個低壓力、可以拒絕的聊天話題或小活動；最多問一個問題，不反問他想聊什麼、不列功能清單。優先順著本輪內容；只在確實相關時自然引用既有記憶，不編造喜好，不重推最近已提過或被拒絕的話題與活動。說完就等新的使用者輸入，不因沉默繼續說。",
+      { applyMemory: false },
     );
   }
 

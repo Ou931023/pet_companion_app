@@ -4,6 +4,46 @@ import 'package:pet_companion_app/services/voice_language_command_service.dart';
 
 void main() {
   const parser = VoiceLanguageCommandService();
+  for (final verb in ['回答', '回覆', '回應']) {
+    for (final language in ['台語', '臺語', '國語', '中文', '華語']) {
+      for (final command in [
+        '用$language$verb',
+        '用$language${verb}我',
+        '請用$language${verb}我。',
+        '麻煩你用$language${verb}我好嗎？',
+        '可不可以用$language${verb}我？',
+        '能不能用$language${verb}我？',
+        '用$language${verb}我可以嗎？',
+      ]) {
+        test('whole reply command: $command', () {
+          expect(
+            parser.parse(command),
+            ['台語', '臺語'].contains(language)
+                ? VoiceLanguageMode.taigiRealtime
+                : VoiceLanguageMode.defaultOpenAiRealtime,
+          );
+        });
+      }
+      for (final text in [
+        '不要用$language${verb}我',
+        '請不要用$language${verb}我',
+        '不是叫你用$language${verb}我',
+        '「用$language${verb}我」',
+        '"用$language${verb}我"',
+        '請說「用$language${verb}我」',
+        '他說用$language${verb}我',
+        '如果可以用$language${verb}我就好了',
+        '如果我說用$language${verb}我呢',
+        '用$language${verb}我，不要真的切換',
+        '用$language${verb}我的問題',
+        '用$language${verb}我或用英文',
+      ]) {
+        test('rejects embedded or ambiguous reply command: $text', () {
+          expect(parser.parse(text), isNull);
+        });
+      }
+    }
+  }
   for (final command in [
     '請用台語陪我聊天',
     '改成台語',

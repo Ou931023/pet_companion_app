@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -52,6 +54,67 @@ import 'package:pet_companion_app/services/web_search_service.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({'ttsEnabled': false}));
+
+  test('CR0110 integration waits for matching language ACK before tool speech',
+      () async {
+    final harness =
+        await _Harness.create(_intent('create_reminder'), acknowledge: false);
+    addTearDown(harness.dispose);
+    await harness.connect(expectSynchronized: false);
+    harness.realtime.handleDataChannelEventForTest(jsonEncode({
+      'type': 'conversation.item.input_audio_transcription.completed',
+      'item_id': 'await-ack',
+      'transcript': '提醒我晚上八點吃藥'
+    }));
+    await pumpEventQueue();
+    expect(harness.reminderController.reminders, hasLength(1));
+    expect(
+        harness.sentRealtimeEvents.where((p) => p.contains('response.create')),
+        isEmpty);
+    final update = harness.sentRealtimeEvents
+        .map((p) => jsonDecode(p) as Map)
+        .lastWhere((e) => e['type'] == 'session.update');
+    harness.realtime.handleDataChannelEventForTest(
+        jsonEncode({'type': 'session.updated', 'session': update['session']}));
+    await pumpEventQueue();
+    expect(harness.realtime.isLanguageSynchronized, isTrue);
+    expect(
+        harness.sentRealtimeEvents.where((p) => p.contains('response.create')),
+        hasLength(1));
+  });
+
+  test('CR0110 integration waits for audio stopped after response done',
+      () async {
+    final harness = await _Harness.create(_intent('create_reminder'));
+    addTearDown(harness.dispose);
+    await harness.connect();
+    harness.realtime.handleDataChannelEventForTest(
+        '{"type":"response.created","response":{"id":"playing"}}');
+    harness.realtime.handleDataChannelEventForTest(
+        '{"type":"response.output_audio.delta","response_id":"playing"}');
+    await pumpEventQueue();
+    harness.realtime.handleDataChannelEventForTest(jsonEncode({
+      'type': 'conversation.item.input_audio_transcription.completed',
+      'item_id': 'list-during-playback',
+      'transcript': '我的提醒'
+    }));
+    await pumpEventQueue();
+    expect(
+        harness.sentRealtimeEvents.where((p) => p.contains('response.create')),
+        isEmpty);
+    harness.realtime.handleDataChannelEventForTest(
+        '{"type":"response.done","response":{"id":"playing"}}');
+    await pumpEventQueue();
+    expect(
+        harness.sentRealtimeEvents.where((p) => p.contains('response.create')),
+        isEmpty);
+    harness.realtime.handleDataChannelEventForTest(
+        '{"type":"output_audio_buffer.stopped"}');
+    await pumpEventQueue();
+    expect(
+        harness.sentRealtimeEvents.where((p) => p.contains('response.create')),
+        hasLength(1));
+  });
 
   test('講完一句 → 交給 Agent Router；高影響工具保留 pending（需確認、不自動執行），語音進 thinking 且不能重複開始',
       () async {
@@ -215,15 +278,17 @@ void main() {
     await harness.connect();
 
     harness.realtime.handleDataChannelEventForTest(
-      '{"type":"conversation.item.input_audio_transcription.completed","transcript":"幫我打給女兒"}',
+      '{"type":"conversation.item.input_audio_transcription.completed","item_id":"confirm-request","transcript":"幫我打給女兒"}',
     );
     await pumpEventQueue();
     await pumpEventQueue();
     expect(harness.agent.pendingIntent, isNotNull);
     expect(harness.executor.executedCount, 0);
 
+    await harness.finishReplyAndStartNextInput('confirmation-question');
+
     harness.realtime.handleDataChannelEventForTest(
-      '{"type":"conversation.item.input_audio_transcription.completed","transcript":"好，確認"}',
+      '{"type":"conversation.item.input_audio_transcription.completed","item_id":"confirm-answer","transcript":"好，確認"}',
     );
     await pumpEventQueue();
     await pumpEventQueue();
@@ -245,14 +310,15 @@ void main() {
     await harness.connect();
 
     harness.realtime.handleDataChannelEventForTest(
-      '{"type":"conversation.item.input_audio_transcription.completed","transcript":"共兒子講我今仔日很好"}',
+      '{"type":"conversation.item.input_audio_transcription.completed","item_id":"cancel-request","transcript":"共兒子講我今仔日很好"}',
     );
     await pumpEventQueue();
     await pumpEventQueue();
     expect(harness.agent.pendingIntent, isNotNull);
 
+    await harness.finishReplyAndStartNextInput('cancel-question');
     harness.realtime.handleDataChannelEventForTest(
-      '{"type":"conversation.item.input_audio_transcription.completed","transcript":"先不用"}',
+      '{"type":"conversation.item.input_audio_transcription.completed","item_id":"cancel-answer","transcript":"先不用"}',
     );
     await pumpEventQueue();
     await pumpEventQueue();
@@ -432,19 +498,53 @@ class _Harness {
 
   int get connectAttempts => attemptsRef['attempts'] ?? 0;
 
-  Future<void> connect() async {
+  Future<void> connect({bool expectSynchronized = true}) async {
     await controller.startRealtimeConversation();
     realtime.handleDataChannelStateForTest('RTCDataChannelStateOpen');
     await pumpEventQueue();
     realtime.forceConnectionUsableForTest();
+    expect(realtime.baselineReady, isTrue);
+    expect(realtime.isLanguageSynchronized, expectSynchronized);
+    expect(
+        controller.languageSyncState,
+        expectSynchronized
+            ? VoiceLanguageSyncState.applied
+            : VoiceLanguageSyncState.applying);
+    if (expectSynchronized) {
+      expect(controller.appliedLanguage, controller.desiredLanguage);
+    }
+  }
+
+  Future<void> finishReplyAndStartNextInput(String responseId) async {
+    realtime.handleDataChannelEventForTest(jsonEncode({
+      'type': 'response.created',
+      'response': {'id': responseId}
+    }));
+    realtime.handleDataChannelEventForTest(jsonEncode(
+        {'type': 'response.output_audio.delta', 'response_id': responseId}));
+    realtime.handleDataChannelEventForTest(jsonEncode({
+      'type': 'response.done',
+      'response': {'id': responseId}
+    }));
+    realtime.handleDataChannelEventForTest(
+        '{"type":"output_audio_buffer.stopped"}');
+    await pumpEventQueue();
+    expect(controller.state, VoiceAgentState.idle);
+    final attempts = connectAttempts;
+    await controller.startRealtimeConversation();
+    await pumpEventQueue();
+    expect(controller.isAwaitingUserSpeech, isTrue);
+    expect(connectAttempts, attempts);
   }
 
   void dispose() => disposeAll();
 
-  static Future<_Harness> create(AgentToolIntent intent) async {
+  static Future<_Harness> create(AgentToolIntent intent,
+      {bool acknowledge = true}) async {
     final harnessRef = <String, int>{'attempts': 0};
     final sentRealtimeEvents = <String>[];
-    final realtime = RealtimeVoiceService(
+    late RealtimeVoiceService realtime;
+    realtime = RealtimeVoiceService(
       healthCheckImplementationForTesting: (_) async => RealtimeHealthStatus(
         ok: true,
         hasOpenAiKey: true,
@@ -453,9 +553,21 @@ class _Harness {
       ),
       connectImplementationForTesting: (_) async {
         harnessRef['attempts'] = (harnessRef['attempts'] ?? 0) + 1;
+        realtime.handleDataChannelEventForTest(jsonEncode({
+          'type': 'session.created',
+          'session': {
+            'instructions':
+                'SYNTHETIC_PERSONA PET_NAME MEMORY TOOL_SAFETY FIXED_COMPLIANCE'
+          },
+        }));
       },
       eventSenderForTesting: (payload) async {
         sentRealtimeEvents.add(payload);
+        final event = jsonDecode(payload) as Map;
+        if (acknowledge && event['type'] == 'session.update') {
+          realtime.handleDataChannelEventForTest(jsonEncode(
+              {'type': 'session.updated', 'session': event['session']}));
+        }
       },
     );
 

@@ -147,7 +147,7 @@ test("回覆指引不堆過度模板化陪伴句（我會陪你 / 不要難過 /
 
 test("hasReminderIntent / hasMemoryRecallIntent / hasEventCue 基本判斷", () => {
   assert.ok(hasReminderIntent("提醒我吃藥", "daily_chat"));
-  assert.ok(hasReminderIntent("隨便講", "reminder_support"));
+  assert.ok(!hasReminderIntent("隨便講", "reminder_support"));
   assert.ok(!hasReminderIntent("今天天氣不錯", "daily_chat"));
 
   assert.ok(hasMemoryRecallIntent("你還記得我兒子嗎"));
@@ -251,4 +251,84 @@ test("一般情境帶最近回覆避重，urgent 不讓去重干擾必要安全�
   assert.equal(urgent.nextStrategy.mode, "safety_check");
   assert.doesNotMatch(urgent.nextStrategy.instruction, /最近幾次已經回過/);
   assert.match(urgent.nextStrategy.instruction, /立刻聯絡家人/);
+});
+
+test("CR-0110 B: mentions, denials, reports, quotes and hypotheticals do not authorize reminders", () => {
+  const inputs = [
+    "我今天有喝水", "我已吃藥", "今天回診", "我量血壓了",
+    "不用提醒我喝水", "不要幫我設鬧鐘", "我不需要提醒", "我沒有要提醒",
+    "女兒提醒我吃藥了", "醫生說提醒我喝水", "你提醒過我了", "提醒我吃藥了嗎",
+    "提醒是什麼意思", "要怎麼設定鬧鐘", "喝水有什麼好處？",
+    "如果提醒我喝水會怎樣", "假如明天提醒我吃藥", "例如提醒我喝水",
+    "他說「提醒我喝水」", "『提醒我吃藥』", "取消了喝水提醒", "我已經取消鬧鐘",
+    "如果可以，提醒我明天八點吃藥", "我不是說，提醒我喝水",
+    "假如明天下雨，提醒我帶傘", "例如，提醒我喝水", "女兒說，提醒我喝水",
+    "提醒我喝水，不用了", "提醒我喝水，不要提醒了", "幫我設鬧鐘，取消吧",
+    "提醒我喝水，不要真的設定", "提醒我八點吃藥，算了不用提醒了",
+    "我明天八點要吃藥", "不用幫我提醒明天八點吃藥", "女兒幫我提醒明天八點吃藥",
+    "你幫我提醒過吃藥了", "他說「幫我提醒明天八點吃藥」", "幫我提醒明天八點吃藥，不用了",
+  ];
+  for (const transcript of inputs) {
+    assert.equal(hasReminderIntent(transcript, "reminder_support"), false, transcript);
+    const strategy = planNextStrategy({ transcript, companionNeed: "reminder_support", safety: { riskLevel: "low" } });
+    assert.notEqual(strategy.mode, "tool_action", transcript);
+    assert.notEqual(analyze(transcript).nextStrategy.mode, "tool_action", `engine: ${transcript}`);
+  }
+  assert.equal(planNextStrategy({ transcript: "我今天有喝水", emotion: "neutral", safety: { riskLevel: "low" } }).mode, "normal_chat");
+});
+
+test("CR-0110 B: explicit requests retain tools, missing details need confirmation, cancellation is not creation", () => {
+  for (const transcript of ["提醒我晚上八點吃藥", "明天早上提醒我喝水", "幫我設鬧鐘", "請幫我設定八點的鬧鐘", "你可以提醒我嗎", "提醒我", "不用提醒我喝水，請提醒我吃藥", "今天回診，請提醒我晚上吃藥", "不要跟我說話，提醒我八點吃藥", "我不是說提醒我喝水，但現在請提醒我吃藥", "如果明天下雨就不出門。請提醒我晚上吃藥", "幫我提醒明天八點吃藥", "請幫我提醒明天八點吃藥", "麻煩你替我提醒晚上喝水"]) {
+    assert.equal(hasReminderIntent(transcript), true, transcript);
+    const strategy = analyze(transcript).nextStrategy;
+    assert.equal(strategy.mode, "tool_action", transcript);
+    assert.match(strategy.instruction, /缺少時間或內容時最多確認一個必要重點/);
+    assert.match(strategy.instruction, /不得提前聲稱成功/);
+  }
+  for (const transcript of ["取消喝水提醒", "幫我取消明天的鬧鐘", "請關掉鬧鐘"]) {
+    assert.equal(hasReminderIntent(transcript), false, transcript);
+    const strategy = analyze(transcript).nextStrategy;
+    assert.equal(strategy.mode, "tool_action", transcript);
+    assert.match(strategy.instruction, /取消既有提醒，不是新增提醒/);
+    assert.match(strategy.instruction, /不支援時坦白說明/);
+  }
+});
+
+test("CR-0110 B: explicit no-topic turns offer one optional topic without adding a mode", () => {
+  const recentTurns = [{ petReply: "聊聊你喜歡的菜好嗎？" }];
+  for (const transcript of ["我不知道要聊什麼", "不知道要說什麼", "想不到聊什麼", "好無聊", "我沒事做", "我不知道要做什麼"]) {
+    const strategy = analyze(transcript, { recentTurns }).nextStrategy;
+    assert.equal(strategy.mode, "normal_chat", transcript);
+    assert.deepEqual(Object.keys(strategy), ["mode", "instruction"]);
+    assert.match(strategy.instruction, /先用短句接住當下感受/);
+    assert.match(strategy.instruction, /一個低壓力、可以拒絕/);
+    assert.match(strategy.instruction, /最多問一個問題/);
+    assert.match(strategy.instruction, /不反問他想聊什麼/);
+    assert.match(strategy.instruction, /不重推最近已提過或被拒絕/);
+    assert.match(strategy.instruction, /聊聊你喜歡的菜/);
+    assert.match(strategy.instruction, /不因沉默繼續說/);
+  }
+});
+
+test("CR-0110 B: ordinary chat, silence, refusal and safety never get the no-topic instruction", () => {
+  for (const transcript of ["今天天氣很好", "", "   ", "我不無聊", "我不是沒事做", "我不是不知道要聊什麼", "他說「好無聊」", "『我不知道要聊什麼』是什麼意思", "他說\"沒事做\"", "她說“我沒有話題”", "女兒說好無聊", "我今天沒事做，但不要建議活動"]) {
+    const strategy = planNextStrategy({ transcript, safety: { riskLevel: "low" } });
+    assert.doesNotMatch(strategy.instruction, /使用者明確表示無話題或無聊/);
+  }
+  const quiet = analyze("好無聊，但我不想聊天", {
+    retrievedMemories: [{ content: "喜歡散步" }],
+  }).nextStrategy;
+  assert.equal(quiet.mode, "normal_chat");
+  assert.match(quiet.instruction, /不提新話題、不問問題、不邀請活動/);
+  assert.doesNotMatch(quiet.instruction, /喜歡散步|使用者明確表示無話題或無聊/);
+  assert.doesNotMatch(analyze("我不是不想聊天").nextStrategy.instruction, /使用者現在不想聊天/);
+  const noSuggestions = analyze("我今天沒事做，但不要建議活動").nextStrategy;
+  assert.match(noSuggestions.instruction, /使用者明確拒絕話題或活動建議/);
+  assert.match(noSuggestions.instruction, /不提話題或活動、不追問/);
+  assert.ok(!noSuggestions.instruction.includes(NORMAL_VOICE_CADENCE));
+  for (const riskLevel of ["high", "urgent"]) {
+    const strategy = planNextStrategy({ transcript: "好無聊，不想聊天，提醒我吃藥", safety: { riskLevel } });
+    assert.equal(strategy.mode, "safety_check");
+    assert.doesNotMatch(strategy.instruction, /使用者明確表示無話題或無聊/);
+  }
 });

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../models/agent_route_result.dart';
@@ -21,6 +23,7 @@ class AgentToolController extends ChangeNotifier {
     required this.searchService,
     required this.navigationController,
     required this.memoryController,
+    this.routeTimeout = const Duration(seconds: 5),
   });
 
   final ProfileController profileController;
@@ -30,6 +33,13 @@ class AgentToolController extends ChangeNotifier {
   final SearchService searchService;
   final AppNavigationController navigationController;
   final MemoryController memoryController;
+  final Duration routeTimeout;
+
+  static const routeFailureMessage = '這次還沒能幫你安排這個動作，請稍後再說一次。';
+  static const executionUnknownMessage =
+      '目前無法確認這個動作是否完成，請先確認結果、不要重複操作。我暫時不能代辦其他動作，但可以繼續陪你聊。';
+  static const executionFailureMessage = '這個動作目前沒辦法完成。';
+  static const busyMessage = '前一個動作還在處理，這次的新要求還沒有執行，請先等一下。';
 
   AgentToolIntent? _pendingIntent;
   AgentToolExecutionResult? _executionResult;
@@ -40,6 +50,9 @@ class AgentToolController extends ChangeNotifier {
   String? _sessionId;
   String? _pendingShopContext;
   final Set<String> _routedTurns = {};
+  bool _disposed = false;
+  Object? _executionOperation;
+  bool _hasUncertainExecution = false;
 
   AgentToolIntent? get pendingIntent {
     if (_pendingIntent?.toolName == 'purchase_shop_item' &&
@@ -52,6 +65,7 @@ class AgentToolController extends ChangeNotifier {
   AgentToolExecutionResult? get executionResult => _executionResult;
   bool get isRouting => _isRouting;
   bool get isExecuting => _isExecuting;
+  bool get hasUncertainExecution => _hasUncertainExecution;
   String? get errorMessage => _errorMessage;
 
   Future<void> routeFromUserText(
@@ -65,8 +79,9 @@ class AgentToolController extends ChangeNotifier {
     List<Map<String, dynamic>> recentTurns = const [],
   }) async {
     final normalized = userText.trim();
-    if (normalized.isEmpty || _isRouting) return;
+    if (_disposed || normalized.isEmpty) return;
     if (_sessionId != null && _sessionId != sessionId) clear();
+    if (_isRouting || _isExecuting || _hasUncertainExecution) return;
     _sessionId = sessionId;
     final turnKey = '$sessionId:$turnId';
     if (!_routedTurns.add(turnKey)) return;
@@ -74,26 +89,29 @@ class AgentToolController extends ChangeNotifier {
     final accountContext = executorService.shopContextKey?.call();
     _isRouting = true;
     _errorMessage = null;
+    _executionResult = null;
     notifyListeners();
     try {
-      final AgentRouteResult result = await routerService.route(
-        sttProxyUrl: profileController.sttProxyUrl,
-        userText: normalized,
-        sessionId: sessionId,
-        turnId: turnId,
-        petName: petName,
-        emotion: emotion,
-        languageHint: languageHint,
-        petState: petState,
-        recentTurns: recentTurns,
-      );
+      final AgentRouteResult result = await routerService
+          .route(
+            sttProxyUrl: profileController.sttProxyUrl,
+            userText: normalized,
+            sessionId: sessionId,
+            turnId: turnId,
+            petName: petName,
+            emotion: emotion,
+            languageHint: languageHint,
+            petState: petState,
+            recentTurns: recentTurns,
+          )
+          .timeout(routeTimeout);
       if (generation != _generation ||
           accountContext != executorService.shopContextKey?.call()) {
         return;
       }
       if (!result.hasToolIntent || result.intent == null) {
         _errorMessage =
-            result.errorMessage.isEmpty ? null : result.errorMessage;
+            result.errorMessage.isEmpty ? null : routeFailureMessage;
         return;
       }
       var intent = result.intent!;
@@ -120,9 +138,10 @@ class AgentToolController extends ChangeNotifier {
         return;
       }
       await _executeCurrentIntent();
-    } catch (error) {
-      _errorMessage = error.toString();
-      AppLog.error('[AgentToolController] route failed', error);
+    } catch (_) {
+      if (generation != _generation || _disposed) return;
+      _errorMessage = routeFailureMessage;
+      AppLog.debug('[AgentToolController] route_failed');
     } finally {
       if (generation == _generation) {
         _isRouting = false;
@@ -132,8 +151,14 @@ class AgentToolController extends ChangeNotifier {
   }
 
   Future<void> confirmAndExecute() async {
+    if (_disposed) return;
     final intent = pendingIntent;
-    if (intent == null || !intent.isExecutable || _isExecuting) return;
+    if (intent == null ||
+        !intent.isExecutable ||
+        _isExecuting ||
+        _hasUncertainExecution) {
+      return;
+    }
     _pendingIntent = intent.copyWith(status: AgentToolStatus.confirmed);
     notifyListeners();
     await _executeCurrentIntent();
@@ -141,11 +166,24 @@ class AgentToolController extends ChangeNotifier {
 
   Future<void> executeLowRiskIfAllowed() async {
     final intent = _pendingIntent;
-    if (intent == null || intent.requiresConfirmation || _isExecuting) return;
+    if (_disposed ||
+        intent == null ||
+        !intent.isExecutable ||
+        intent.requiresConfirmation ||
+        _isExecuting ||
+        _hasUncertainExecution) {
+      return;
+    }
     await _executeCurrentIntent();
   }
 
   void cancelIntent() {
+    if (_disposed) return;
+    if (_isExecuting || _hasUncertainExecution) {
+      _errorMessage = executionUnknownMessage;
+      notifyListeners();
+      return;
+    }
     executorService.cancelShopPurchase();
     final intent = _pendingIntent;
     _pendingIntent = null;
@@ -160,6 +198,7 @@ class AgentToolController extends ChangeNotifier {
   }
 
   void clear() {
+    if (_disposed) return;
     _generation++;
     executorService.cancelShopPurchase();
     _pendingShopContext = null;
@@ -167,34 +206,71 @@ class AgentToolController extends ChangeNotifier {
     _executionResult = null;
     _errorMessage = null;
     _isRouting = false;
-    _isExecuting = false;
+    // Clearing presentation cannot cancel an external side effect in flight.
+    _isExecuting = _executionOperation != null;
     notifyListeners();
   }
 
   Future<void> _executeCurrentIntent() async {
     final intent = _pendingIntent;
-    if (intent == null) return;
+    if (_disposed ||
+        intent == null ||
+        !intent.isExecutable ||
+        _isExecuting ||
+        _hasUncertainExecution) {
+      return;
+    }
     if (intent.toolName == 'purchase_shop_item' &&
         intent.status != AgentToolStatus.confirmed) {
       return;
     }
     final generation = _generation;
+    final operation = Object();
+    _executionOperation = operation;
     _isExecuting = true;
     _errorMessage = null;
     _pendingIntent = intent.copyWith(status: AgentToolStatus.executing);
     notifyListeners();
-    final result = await executorService.execute(
-      intent: intent,
-      reminderController: reminderController,
-      searchService: searchService,
-      navigationController: navigationController,
-      memoryController: memoryController,
-    );
-    if (generation != _generation) return;
-    _executionResult = result;
-    _pendingIntent =
-        result.success ? null : intent.copyWith(status: AgentToolStatus.failed);
-    _isExecuting = false;
-    notifyListeners();
+    try {
+      final result = await executorService.execute(
+        intent: intent,
+        reminderController: reminderController,
+        searchService: searchService,
+        navigationController: navigationController,
+        memoryController: memoryController,
+      );
+      if (generation != _generation || _disposed) return;
+      _executionResult = result.success
+          ? result
+          : AgentToolExecutionResult.failed(
+              toolName: intent.toolName, message: executionFailureMessage);
+      _pendingIntent = result.success
+          ? null
+          : intent.copyWith(status: AgentToolStatus.failed);
+    } catch (_) {
+      // A thrown executor may already have caused a side effect. Keep this
+      // controller fail-closed even across clear/session changes, not retryable.
+      _hasUncertainExecution = true;
+      if (generation != _generation || _disposed) return;
+      AppLog.debug('[AgentToolController] execution_outcome_unknown');
+      _executionResult = AgentToolExecutionResult.failed(
+        toolName: intent.toolName,
+        message: executionUnknownMessage,
+      );
+      _pendingIntent = intent.copyWith(status: AgentToolStatus.failed);
+    } finally {
+      if (identical(_executionOperation, operation)) {
+        _executionOperation = null;
+        _isExecuting = false;
+        if (!_disposed) notifyListeners();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _generation++;
+    super.dispose();
   }
 }
