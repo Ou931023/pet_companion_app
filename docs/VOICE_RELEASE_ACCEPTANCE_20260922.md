@@ -2,6 +2,22 @@
 
 ## Assistant Reliability - CR-0110, 2026-09-29
 
+### Delivery Update - 2026-09-29 15:05 Asia/Taipei
+
+- Implementation committed and pushed to `origin/main` as `70ac792`.
+- Incremental Profile build **1.0.0 (7)** installed over the existing iPhone
+  application without uninstalling. Native launch succeeded at 15:04:44;
+  device app query confirmed build 7 at 15:04:48.
+- Production API URL and prior test flags were retained:
+  `SHOW_APPLE_SIGN_IN=false`, `VOICE_LANGUAGE_DIAGNOSTICS=true`. Personal Team
+  signing remains a device-test configuration, not App Store distribution.
+- Production `/health` returned `status: ok`, but supplies no commit identity.
+  Render dashboard authentication expired; deployment of `70ac792` remains
+  **UNVERIFIED** pending owner sign-in. Push is not proof of deployment.
+- No post-install human speech or live tool acceptance has occurred. All
+  residual gates below remain open. Earlier not-delivered notes describe the
+  preceding code checkpoint, superseded only by the delivery facts above.
+
 User reports all three categories: irrelevant/repeated replies, promised tools
 not completing, and stalled/silent speech. User also requests gentle suggestions
 when unsure what to discuss. These reports remain open physical acceptance
