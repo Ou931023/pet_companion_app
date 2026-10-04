@@ -1,167 +1,60 @@
-# 愛陪伴 v2 Realtime Voice Pet Companion
+# AI 寵物陪伴系統
 
-結合全語音互動、AI 陪伴寵物、長照生活任務與獨立長照商城網站的第一版展示原型。
+以長者陪伴為核心的 Flutter App。長者可與 AI 寵物進行即時語音對話；系統結合長期記憶、生活任務與 Care Alert，讓家屬或照護人員掌握需要關心的事件。本專案仍在開發與驗證中，不是醫療診斷工具。
 
-> 畢業專題 Demo 架構、Realtime 主流程、長期記憶流程、fallback、Demo 腳本與倫理隱私聲明，詳見 [`docs/demo_architecture.md`](docs/demo_architecture.md)。
+## 系統組成
 
-## 專題介紹
+- `lib/`、`test/`：Flutter 長者端與測試。主要功能包含寵物互動、Realtime 語音、對話、記憶、提醒／今日任務、Care Alert 與設定。
+- `backend/stt_proxy/`、`backend/agent/`：Node.js API、Realtime SDP 轉送、代理工具路由、記憶、Care Alert、通知與資料存取。
+- `caregiver_web/`：照護管理網頁，顯示授權範圍內的長者、任務與 Care Alert 資訊。
+- `care_mall_website/`：獨立商城頁面；與照護管理網頁不同，不是目前的主要管理入口。
+- `store_legal_site/`：隱私權政策、服務條款、支援與資料刪除說明的公開靜態頁面。
 
-系統分成三部分：
+架構與 API 契約以 [`PROJECT_ARCHITECTURE.md`](PROJECT_ARCHITECTURE.md) 為準；各模組的修改邊界見 [`docs/TEAM_AGENTS.md`](docs/TEAM_AGENTS.md)。
 
-1. Flutter App（語音互動 + 陪伴寵物 + 任務 + 設定 + 歷史）
-2. STT Proxy 後端（由後端持有 OpenAI API Key）
-3. 獨立商城網站（與 Flutter App 分離）
+## 主要流程
 
-第二版主流程為 Realtime Voice：
-- Flutter 麥克風串流 -> Backend session broker -> OpenAI Realtime API
-- 即時 transcript / 即時回覆文字事件 / 即時語音回覆狀態
-- 寵物狀態在 listening / thinking / speaking 間切換
+正式即時語音採 WebRTC：Flutter 建立 SDP offer，經後端 `POST /api/realtime/call` 轉送至 OpenAI Realtime Calls API，再由 WebRTC/DataChannel 接收語音與事件。正式流程不使用假回覆或 mock 取代。後端保管服務憑證；Flutter 不應包含 API key。
 
-## 專案狀態
+代理工具由後端控制。涉及通知、購買或其他對外行動時，必須遵守既有的權限與確認流程。長期記憶使用 PostgreSQL／pgvector；Care Alert 由陪伴對話中的風險線索產生，前台仍以陪伴語氣互動。台語與中台混合語言是持續驗證項目，不能把語言偏好設定視為台語 ASR 已完成驗收。
 
-已完成第一版整合
-- OpenAI Realtime WebRTC 語音對話穩定性優化
-- 語音中斷、連線異常與 timeout fallback
-- Companion Engine 結構化理解層
-- 隱含情緒與陪伴需求分析
-- pgvector 長期記憶檢索
-- 知識搜尋與可信資料來源整合
-- 台語語音模型路由與 fallback 架構
-- 語音情緒輔助判斷
+## 網頁與後端部署
 
-持續優化中
-- Realtime 多輪對話穩定性壓力測試
-- 台語 ASR 模型準確度提升
-- 語音音量特徵接入
-- 長期記憶品質與去重規則優化
-- 搜尋來源篩選與回答品質提升
-- 陪伴回覆語氣微調
+依目前版本庫的部署設定與交接文件：
 
-## Flutter App 啟動方式
+| 元件 | 平台／位置 | 備註 |
+|---|---|---|
+| 照護管理網頁 `caregiver_web/` | Render Static Site，設定名稱 `ai-companion-caregiver-web` | `render.yaml` 定義建置與發布；實際線上版本仍須到 Render 驗證。 |
+| 後端 API | Render Web Service，文件記載 `https://ai-companion-api-1gm7.onrender.com` | App 的 `API_BASE_URL` 預設指向此網址；資料庫使用 PostgreSQL。 |
+| 法律／支援頁面 `store_legal_site/` | GitHub Pages：`https://ou931023.github.io/pet_companion_app/` | 僅公開靜態說明頁，**不是**照護管理網頁或 API。 |
 
-1. 安裝 Flutter SDK 並確認 `flutter` 指令可用。
-2. 進入專案根目錄（以下用 `<專案根目錄>` 代表實際路徑）：
-   - `cd <專案根目錄>`
-3. 安裝套件：
-   - `flutter pub get`
-4. 啟動（桌機 / 模擬器 / 預設裝置）：
-   - `flutter run`
+Render／GitHub Pages 的網址或其 DNS 位址，**不能直接當成 AMD-ITRI 算力申請表要求的團隊固定出口 Public IP**。若該資源以來源 IP 管制，應提供團隊實際連線用、可持續控制的固定對外 IP（例如經確認適用的雲端跳板）；目前版本庫沒有可據以填報的固定出口 IP。
 
-### iPhone 實機 Demo 啟動方式
+部署與上架檢查見 [`docs/STORE_SUBMISSION_RUNBOOK.md`](docs/STORE_SUBMISSION_RUNBOOK.md)；照護管理網頁的設定見 [`caregiver_web/README.md`](caregiver_web/README.md)。舊展示文件可能保留過時的 Render 網址，正式操作請以目前部署後台與建置設定核對。
 
-iPhone 實機無法用 `127.0.0.1` 連到開發電腦，啟動時要用 `--dart-define` 指定電腦在區域網路（LAN）的 IP：
+## 本機開發
 
-1. 查出開發電腦的 LAN IP（macOS）：
-   - `ipconfig getifaddr en0`（例如 `192.168.0.17`）
-2. 確認 iPhone 與電腦連到同一個 Wi-Fi。
-3. 確認後端已啟動且 `.env` 內 `HOST=0.0.0.0`（見下方 Backend 說明）。
-4. 取得 iPhone 裝置 ID：
-   - `flutter devices`
-5. 以實機啟動並指定後端位址：
-   - `flutter run -d <iPhone裝置ID> --dart-define=BACKEND_BASE_URL=http://<電腦LAN-IP>:3001`
-   - 範例：`flutter run -d 00008110-000XXXXXXXXXXXXX --dart-define=BACKEND_BASE_URL=http://192.168.0.17:3001`
+需要 Flutter SDK，以及符合 [`backend/stt_proxy/package.json`](backend/stt_proxy/package.json) 要求的 Node.js 版本。不要將環境變數檔、金鑰或後端執行時資料加入 Git。
 
-`BACKEND_BASE_URL` 預設為 `http://127.0.0.1:3001`（適合桌機 / 模擬器）；iPhone 實機請務必用 `--dart-define` 覆寫成電腦的 LAN IP。
+```bash
+# Flutter 依賴與檢查
+flutter pub get
+flutter test
 
-## Backend 啟動方式（STT Proxy + Realtime Broker）
-
-1. 進入後端目錄：
-   - `cd <專案根目錄>/backend/stt_proxy`
-2. 安裝套件：
-   - `npm install`
-3. 建立 `.env`：
-   - 複製 `.env.example` 為 `.env`，並填入 `OPENAI_API_KEY`
-   - iPhone 實機 Demo：請確認 `.env` 內 `HOST=0.0.0.0`，後端才會綁定所有網路介面，讓同一個 Wi-Fi 下的 iPhone 連得到（純本機開發可用 `127.0.0.1`）
-4. 啟動服務：
-   - `npm start`
-5. 檢查健康狀態：
-   - 本機：`GET http://localhost:3001/health`
-   - iPhone 實機驗證：用手機瀏覽器開 `http://<電腦LAN-IP>:3001/health`，看得到 JSON 即代表連得到後端
-
-## OpenAI API Key 設定方式
-
-請在 `backend/stt_proxy/.env` 設定：
-
-```env
-OPENAI_API_KEY=your_openai_api_key_here
-HOST=0.0.0.0
-PORT=3001
-REALTIME_MODEL=gpt-realtime
-REALTIME_VOICE=alloy
+# 後端依賴與測試
+cd backend/stt_proxy
+npm install
+npm test
 ```
 
-注意：
-- 不要把 API Key 寫在 Flutter App。
-- `.env` 已在 `.gitignore`，不會被提交。
+後端啟動指令為 `npm start`。正式部署需要的環境變數名稱、資料庫 migration 與驗證步驟，請依 [`docs/BACKEND_DEPLOYMENT_GUIDE.md`](docs/BACKEND_DEPLOYMENT_GUIDE.md) 和 [`docs/PRODUCTION_CONFIG_CHECKLIST.md`](docs/PRODUCTION_CONFIG_CHECKLIST.md) 設定；不要把實際值寫在 README、程式碼或 issue。正式 Flutter 建置使用 `APP_ENV=production` 與 HTTPS `API_BASE_URL`；本機開發須顯式使用 `APP_ENV=development` 並指定可連線的後端。iPhone 實機不能以 `127.0.0.1` 連到開發電腦。
 
-## 商城網站啟動方式
+## AMD AI 代理人創新應用組
 
-商城為獨立網站，路徑在 `care_mall_website/`，非 Flutter 內嵌頁。
+競賽用的 AMD 雲端資源目前屬申請／整合規劃，**尚未在本專案證明已接線或完成推論測試**。預定讓 AMD 資源承載代理規劃與工具選擇；現有 OpenAI Realtime WebRTC 語音主流程維持不變。AMD AI Developer Program 的雲端額度、AMD Developer Cloud 帳號及 AMD-ITRI Joint Lab 競賽算力是不同申請／啟用流程，不能互相視為已開通。只有取得資源並保存實際模型、呼叫與工具結果紀錄後，才能在參賽資料中寫成已實測成果。
 
-可用任一靜態伺服器啟動（例如 VSCode Live Server），預設示範網址：
-- `http://localhost:5500`
+## 安全與現況說明
 
-Android 模擬器若要連本機網站：
-- 請改用 `http://10.0.2.2:5500`
-
-## Realtime 連線方式（正式主流程）
-
-正式 Realtime 語音主流程是 WebRTC SDP 交換：
-
-- Flutter（`RealtimeVoiceService`，WebRTC）
-  → 後端 `POST /api/realtime/call`
-  → OpenAI GA Realtime API `POST /v1/realtime/calls`
-
-流程說明：
-- Flutter 端建立 WebRTC 連線並產生 SDP offer。
-- 將 offer 以 `Content-Type: application/sdp` POST 到後端 `POST /api/realtime/call`。
-- 後端持有 `OPENAI_API_KEY`，代為呼叫 OpenAI GA 端點 `POST /v1/realtime/calls`，取回 answer SDP 後回傳給 App。
-- App 不會拿到正式 API Key。
-
-後端位址：
-- 由 `BACKEND_BASE_URL` 決定，預設 `http://127.0.0.1:3001`，實際呼叫端點為 `<BACKEND_BASE_URL>/api/realtime/call`。
-- iPhone 實機請用 `--dart-define=BACKEND_BASE_URL=http://<電腦LAN-IP>:3001` 覆寫（見上方「iPhone 實機 Demo 啟動方式」）。
-
-> 註：`POST /api/realtime/session`（session secret 模式）為舊版 legacy 端點，目前主流程**不使用**，僅保留作相容用途，請勿作為主流程依據。
-
-## 備援模式（Fallback）
-
-若 Realtime 連線失敗，App 會提示：
-- `目前連線不穩，我先用一般語音模式陪你說話。`
-
-並可切回一般語音模式（第一版流程）。
-
-## 舊版 STT 端點（保留，App 不再提供切換 UI）
-
-第一版檔案上傳式 STT 端點 `POST /api/stt/transcribe` 仍保留在後端作為相容用途，但目前 App 的「設定」頁**已不再提供** STT 模式切換或 STT Proxy URL 輸入欄位。
-
-- 後端位址統一由 `BACKEND_BASE_URL` 決定（見「Realtime 連線方式（正式主流程）」），不需在 App 內手動輸入。
-- 此端點非目前主流程；主流程請見「Realtime 連線方式（正式主流程）」。
-
-## Assets 放置方式
-
-請放置到以下路徑（已在 `pubspec.yaml` 宣告）：
-
-- `assets/pets/talk/dog_talk_01.png` ~ `dog_talk_06.png`
-- `assets/pets/listening/dog_listening.png`
-- `assets/pets/rest/dog_rest_01.png` ~ `dog_rest_03.png`
-- `assets/pets/states/dog_normal.png`
-- `assets/pets/states/dog_caring.png`
-- `assets/pets/states/dog_happy.png`
-- `assets/pets/states/dog_excited.png`
-- `assets/pets/states/dog_thirsty.png`
-- `assets/pets/states/dog_sleepy.png`
-- `assets/pets/states/dog_hungry.png`
-- `assets/pets/states/dog_sad.png`
-
-若 `dog_normal.png` 或 `dog_sad.png` 缺失，程式會 fallback 到 `dog_rest_01.png`，避免 crash。
-
-## Demo 操作流程（v2）
-
-1. 首次開啟進入 Onboarding，輸入寵物名字，按「開始陪伴」。
-2. 進首頁後寵物先 rest 約 1 秒，再主動問候（TTS + talking 動畫）。
-3. 點「啟動即時語音陪伴」。
-4. 直接對手機說話（不需錄音檔上傳）。
-5. App 會即時收到 transcript 與 AI 回覆文字事件，並更新寵物狀態。
-6. 使用者說「孤單、難過、擔心、開心」等關鍵字時，寵物 mood/expression/action 會改變。
-7. 若 Realtime 斷線，顯示 fallback 提示，仍可改用一般語音模式 demo。
+- 不讀取或提交任何 `.env`、token、私鑰與 `backend/stt_proxy/data/*.json` 執行時資料。
+- 不把 Realtime 主流程改成 mock；功能與實機驗收狀態須分開描述。
+- 本 README 描述版本庫的架構與部署設定，不保證線上環境已同步部署最新程式或完成所有實機測試。
