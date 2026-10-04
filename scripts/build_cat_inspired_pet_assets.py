@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Build two pet packs from fixed RGBA bodies and feathered expression patches.
 
-Requires ImageMagick. Sources and output are restricted to CR-0100G art; no
-configuration or credentials are read. Run without --install to inspect first.
+Requires ImageMagick. Reads only artwork from the selected source directory;
+no configuration or credentials are read. Omit --install to inspect first.
 """
 
 import argparse
@@ -30,12 +30,19 @@ def digest_alpha(path):
     return hashlib.sha256(magick(path, "-alpha", "extract", "-depth", "8", "gray:-")).hexdigest()
 
 
-def build(install=False):
+def build(install=False, skin=None, source=None, face_ellipse=None):
+    global SOURCE
+    SOURCE = Path(source).resolve() if source else SOURCE
+    profiles = {skin: dict(PROFILES[skin])} if skin else PROFILES
+    if face_ellipse:
+        if not skin:
+            raise SystemExit('--face-ellipse requires --skin')
+        profiles[skin]['ellipse'] = face_ellipse
     if not shutil.which("magick"):
         raise SystemExit("ImageMagick is required.")
-    required = [SOURCE / f"{skin}_master_v1.png" for skin in PROFILES]
+    required = [SOURCE / f"{skin}_master_v1.png" for skin in profiles]
     required += [SOURCE / f"{skin}_{state}_source.png"
-                 for skin in PROFILES for state in (*STATES[1:], "listening")]
+                 for skin in profiles for state in (*STATES[1:], "listening")]
     missing = [str(path.relative_to(ROOT)) for path in required if not path.is_file()]
     if missing:
         raise SystemExit("Missing source art:\n" + "\n".join(missing))
@@ -43,7 +50,7 @@ def build(install=False):
     output = SOURCE / "prepared"
     output.mkdir(exist_ok=True)
     report = {}
-    for skin, profile in PROFILES.items():
+    for skin, profile in profiles.items():
         folder = output / skin
         folder.mkdir(exist_ok=True)
         normal = folder / "normal.png"
@@ -96,9 +103,9 @@ def build(install=False):
                         "body_outside_face_unchanged": True, "states": list(STATES),
                         "listening": True}
 
-    # Validate both complete packs before replacing any production image.
+    # Validate every selected pack before replacing any production image.
     if install:
-        for skin, profile in PROFILES.items():
+        for skin, profile in profiles.items():
             folder = output / skin
             pets = ROOT / "assets/pets"
             for state in STATES:
@@ -116,4 +123,8 @@ def build(install=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--install", action="store_true", help="Replace only fox and guinea pig assets after validation")
-    build(parser.parse_args().install)
+    parser.add_argument('--skin', choices=PROFILES)
+    parser.add_argument('--source', type=Path)
+    parser.add_argument('--face-ellipse', type=int, nargs=4, metavar=('CX', 'CY', 'RX', 'RY'))
+    args = parser.parse_args()
+    build(args.install, args.skin, args.source, args.face_ellipse)

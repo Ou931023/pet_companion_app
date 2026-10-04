@@ -14,7 +14,7 @@
 - [x] Bundle ID / applicationId：`tw.edu.ncyu.im.aicompanion`。
 - [x] iOS / Android icon、Android adaptive icon、Play Store listing icon。
 - [x] Google Play feature graphic：`store_assets/play_feature_graphic_1024x500.png`。
-- [x] iOS / Android store screenshots：`store_assets/screenshots/`。
+- [ ] iOS / Android store screenshots：現有 `store_assets/screenshots/` 僅為版面草稿，須以實際 App 操作畫面覆蓋後才可送審。
 - [x] iOS / Android launch screen 品牌化。
 - [x] GitHub Pages legal/support URL：
   - `https://ou931023.github.io/pet_companion_app/privacy.html`
@@ -22,6 +22,8 @@
   - `https://ou931023.github.io/pet_companion_app/support.html`
 - [x] Support email：`aicompanion.support@gmail.com`。
 - [x] Production API HTTPS URL：`https://ai-companion-api-1gm7.onrender.com`。
+- [x] Production backend 已由 owner 升級為不休眠的常駐方案；2026-09-18 `/health` 實測 `HTTP 200`、總回應約 `0.40s`。公開送審前仍應保留 Render 方案畫面作 owner 佐證。
+- [x] 2026-09-18 公開面檢查：caregiver_web、Privacy、Terms、Support 全部 `HTTP 200`；正式 caregiver origin CORS preflight `204`，未登入 analytics 請求正確回 `401`。
 - [x] Production PostgreSQL migrations：owner 已回報完成，含 usage tracking schema。
 - [x] Hosted support page includes account / data deletion instructions.
 - [x] Production gating：demo / mock / debug panel / marketplace 等未上架入口關閉；Google 與 iOS Apple 正式登入入口已接上 Firebase，待 owner 完成 provider / provisioning 與真機 smoke。
@@ -39,11 +41,11 @@
 | Blocker | 需要提供 / 完成 | 不可做 |
 |---|---|---|
 | Backend env | 部署平台設定 `DATABASE_URL`、`OPENAI_API_KEY`、Firebase Admin、`ADMIN_API_TOKEN`、`CORS_ALLOWED_ORIGINS`、Telegram 測試通知設定 | 不可貼值到 repo / 文件 / chat |
-| Backend uptime | Render Free 可送內測，但正式公開建議升級，避免 idle 冷啟動造成長者語音等待過久 | 不可把免費方案冷啟動當成正式 SLA |
+| Store screenshots | 提供 iOS 與 Android 實際 App 操作畫面，去識別化後放入 `store_assets/raw_screenshots/` 並執行處理腳本 | 不可使用純文案、icon 海報或跨平台畫面冒充實際截圖 |
 | Firebase 測試帳號 | resident / caregiver / super_admin 三種測試帳號，供審查與 smoke；只填在商店後台受保護欄位 | 不可 hardcode 帳密到 App 或 repo |
 | Android signing / Play 發佈 | 本機 upload keystore、`key.properties` 與 API 36 已完成；owner 尚需在 Play Console 啟用 Play App Signing、上傳最終乾淨 commit 重建的 AAB，並建立 Internal testing release | 不可 commit `.jks`、`.keystore`、`key.properties` |
-| iOS signing | Apple Developer、App Store Connect app record、distribution signing / provisioning | 不可 commit `.p8`、`.cer`、`.p12`、`.mobileprovision` |
-| iPhone pairing | Xcode Devices 完成 pairing，iPhone 信任這台 Mac | 不可把未配對狀態標 PASS |
+| iOS signing | 在 Xcode 登入並選用正式 Apple Developer Team，為 `tw.edu.ncyu.im.aicompanion` 建立含 Sign in with Apple capability 的 development / distribution provisioning，再建立 App Store Connect app record | 不可繼續使用 Personal Team `WAH25TW6U4` 當送審簽章；不可 commit `.p8`、`.cer`、`.p12`、`.mobileprovision` |
+| iPhone pairing | 已可由 Flutter/Xcode 偵測；擷取截圖與 TestFlight smoke 時保持解鎖並信任這台 Mac | 不可把未執行的 TestFlight smoke 標 PASS |
 | Android device | Play Internal testing 可安裝的實機 | 不可只用 desktop/web 當手機驗收 |
 
 ---
@@ -93,7 +95,7 @@
 
 ## 5. 最後執行順序
 
-1. Owner 確認後端 env、Render instance plan、caregiver_web deployment。
+1. Owner 確認後端 env、Render always-on instance 仍有效、caregiver_web deployment，並保留方案畫面作上架佐證。
 2. 以正式後端跑一次 health / Realtime / app_usage_events / Care Alert smoke。
 3. 建立 Firebase resident / caregiver / super_admin 測試帳號與授權關聯。
 4. Android upload keystore 與 production AAB preflight 已完成；owner 在 Play Console 啟用 Play App Signing，並上傳最終乾淨 commit 重建的 AAB。

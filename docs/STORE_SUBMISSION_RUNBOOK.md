@@ -88,6 +88,8 @@ flutter build ipa --release \
 
 Android：
 
+> 目前 Gradle 8.14 release build 請固定使用 JDK 21。JDK 25.0.2 會在 Kotlin DSL 解析 `java.version` 時中止；先用 `flutter doctor -v` 確認 Flutter 選用的 Java，再建置最終 AAB。
+
 ```bash
 flutter build appbundle --release \
   --dart-define=APP_ENV=production \
@@ -155,8 +157,8 @@ flutter build appbundle --release \
 
 ### Screenshots / Store Graphics
 
-- [x] iOS 6.7" screenshots 已輸出；6.5" 可由 6.7" 素材於 App Store Connect 預覽裁切或後續補尺寸。
-- [x] Android phone screenshots 5 張已輸出。
+- [ ] iOS 6.7" screenshots 已由實際 App 操作畫面輸出；不可使用純文案或 icon 海報替代。
+- [ ] Android phone screenshots 5 張已由實際 Android App 操作畫面輸出。
 - [x] Android feature graphic 1024x500 已輸出。
 - [ ] screenshots 不含真實長者個資、真 email、真電話、真對話原文。
 - [ ] screenshots 不截 production 隱藏功能：marketplace / daily-care。

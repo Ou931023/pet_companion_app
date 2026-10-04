@@ -5,6 +5,50 @@
 
 ---
 
+## Run #4 — 2026-09-18 Store Candidate Preflight（自動檢查 PASS；商店真機流程仍 PENDING）
+
+| 欄位 | 內容 |
+|---|---|
+| 日期 | 2026-09-18 |
+| 模式 | **Automated preflight**：完整 Flutter / backend / caregiver_web 測試、正式公開端點唯讀 health、雙平台 release build；未使用測試帳號或管理者權杖 |
+| 後端 URL | `https://ai-companion-api-1gm7.onrender.com` |
+| source revision | `688aa12` + 尚未 commit 的 store / pet visual / navigation working tree；送審前必須由最終乾淨 commit 重建 |
+
+### 已通過
+
+| 檢項 | 結果 | 去敏佐證 |
+|---|---|---|
+| Flutter static analysis | PASS | `flutter analyze`：No issues found |
+| Flutter full regression | PASS | `flutter test`：840 passed、0 failed |
+| Backend regression | PASS | `npm test`：668 passed、0 failed；測試需允許本機 `127.0.0.1` 暫時監聽 |
+| caregiver_web regression | PASS | `node --test caregiver_web/*.test.js`：121 passed、0 failed |
+| Release signing readiness | PASS | upload keystore wiring / gitignore / target API 36 / iOS signing metadata gate 全部通過；未讀取任何 key 內容 |
+| Production backend health | PASS | `/health` → `HTTP 200`、`status:ok`、OpenAI 已設定、Realtime model=`gpt-realtime`；本輪總回應約 `0.40s` |
+| Public hosted surfaces | PASS | caregiver_web、Privacy、Terms、Support 全部 `HTTP 200`；回應時間約 0.35–0.97s |
+| caregiver_web CORS / auth gate | PASS | 正式 caregiver origin 的 analytics preflight → `204` 且 allow-origin 精確匹配；未帶 token 的 analytics GET → `401` |
+| iOS release compile | PASS | `flutter build ios --release --no-codesign` 成功；`Runner.app` 89.4 MB。此項只證明可編譯，TestFlight 仍需正式 distribution signing |
+| Android release AAB | PASS | `flutter build appbundle --release` 成功；AAB 113.3 MB；`jarsigner -verify` 回 `jar verified` |
+| AAB SHA-256 | Recorded | `d4a942700ab175fe7f37f64004b9c3ff15ec8e0fdc91681bc8b7e74ee457255b` |
+| iPhone direct install | BLOCKED | Release build 可編譯，但目前 Xcode 選用 Personal Team `WAH25TW6U4`；該 team 無法建立含 Sign in with Apple entitlement 的 development provisioning profile。需改用正式 Apple Developer Team 後重跑 |
+| iOS Simulator UI smoke | BLOCKED | 已安裝 iOS 26.3 runtime，但 Xcode 首次建置會耗盡磁碟並使 `build.db` 回 disk full；已停止 Simulator 並清理本輪產生的中間檔，不宣稱 UI smoke 通過 |
+
+### 工具鏈注意事項
+
+- 本機系統 JDK 25.0.2 會讓目前 Gradle 8.14 的 Kotlin DSL 在解析 `java.version` 時失敗。
+- 本輪改用已驗證雜湊的 Microsoft OpenJDK 21.0.12.1 LTS 暫存工具鏈完成 AAB；沒有改動 App 程式或系統預設 Java。
+- 正式重建前應固定 CI / 本機使用 JDK 21，避免因開發機 Java 自動升級而無法重現 build。
+
+### 尚未宣稱通過
+
+- **Android Internal testing**：需把最終乾淨 commit 重建的 AAB 上傳 Play Console，從 Play 安裝至 Android 實機。
+- **iOS TestFlight**：目前 Personal Team 無法簽 Sign in with Apple capability；需在 Xcode 選用正式 Apple Developer Team、完成 distribution signing、上傳 App Store Connect，再從 TestFlight 安裝至 iPhone。
+- **真帳號與資料 round trip**：Email / Google 登入、忘記密碼、帳號刪除、Realtime 中文／台語 transcript、Care Alert、Telegram、usage tracking、caregiver analytics 仍需以商店候選 build 驗證。
+- **Store screenshots**：現有輸出仍需由兩平台實際 App 操作畫面取代並去識別化。
+- **本機容量**：Simulator / TestFlight archive 前至少再保留約 15–20 GB 可用空間；本輪已清理新產生的 Simulator、DerivedData 與 Gradle cache，未刪除使用者文件。
+- 本輪 working tree 尚未 commit，因此兩個 build 皆為編譯 preflight，**不是可直接送審的最終 artifact**。
+
+---
+
 ## Run #3 — 2026-09-06 Store Preflight（自動檢查 PASS；真機流程仍 PENDING）
 
 | 欄位 | 內容 |
@@ -45,7 +89,7 @@
 
 > 僅列「正式展示前要逐項確認」的項目，供發表 / 口試前 10 分鐘勾選。完整操作腳本見 `docs/DEMO_SCRIPT.md`。**這不是 smoke 通過紀錄**——實機 smoke 逐項結果見下方 Run #2 / CR-0071 佐證表。
 
-- [ ] 後端 `/health` 回 `status:ok`、`hasOpenAiKey:true`（先打一次喚醒 Render 冷啟動）。
+- [ ] 後端 `/health` 回 `status:ok`、`hasOpenAiKey:true`，並確認 always-on instance 沒有異常延遲。
 - [ ] caregiver_web 可登入（super_admin + Admin Token 已貼好），照護提醒 / 商品管理 / 訂單管理 / 日常任務分頁可載資料。
 - [ ] Telegram bot 可收訊（high 測試句自測過，注意冷卻）。
 - [ ] iPhone App 已用 production flags 安裝（`APP_ENV=production` + `https://ai-companion-api-1gm7.onrender.com`）、已登入、無 debug/demo/dev 字樣。

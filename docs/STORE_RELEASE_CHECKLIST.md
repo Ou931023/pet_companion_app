@@ -74,7 +74,7 @@
 1. ✅ **正式品牌 display name**（CR-0101B 已對齊）：iOS CFBundleDisplayName = Android `android:label` = 商店 App 名稱 = `AI陪伴`（英文品牌 `AI Companion` 可放描述 / 關鍵字）。發行者名稱由商店開發者帳號的正式資料顯示，repo 不使用組別名稱。
 2. ✅ **App 識別碼正式化**（CR-0061 已定值）：iOS Bundle ID = Android `applicationId` = `tw.edu.ncyu.im.aicompanion`（**一旦上架不可更改**；後續 Apple/Google/Firebase 憑證與 Sign in with Apple 設定須對應此 ID）。
 3. ✅ **Hosted 法務/支援 URL** / ✅ **客服信箱**：`privacyPolicyUrl` / `termsOfServiceUrl` / `supportUrl` / `contactEmail` 已支援透過 `--dart-define` 注入；GitHub Pages 已提供公開 HTTPS URL：`https://ou931023.github.io/pet_companion_app/privacy.html`、`https://ou931023.github.io/pet_companion_app/terms.html`、`https://ou931023.github.io/pet_companion_app/support.html`；客服信箱已定為 `aicompanion.support@gmail.com`。
-4. ✅ / 🔁 **視覺素材**：App icon（iOS 全尺寸 + Android adaptive/launcher）、Google Play feature graphic、兩平台 store screenshots 與 launch screen 已輸出正式候選；送審前仍需商店後台與實機人工預覽。
+4. 🔁 **視覺素材**：App icon（iOS 全尺寸 + Android adaptive/launcher）、Google Play feature graphic與 launch screen 已輸出；兩平台 store screenshots 仍須替換為實際 App 操作畫面，送審前再做商店後台人工預覽。
 5. ⛔ **Release signing**：Android Gradle 已接 `android/key.properties` 並不再使用 debug key；仍需正式 upload keystore / CI secret。iOS 仍需簽章憑證 / provisioning profile（**禁止提交進版控**）。
 6. 🟡 **Production 環境**（部分完成）：
    - Firebase：✅ iOS/Android App 已以正式 Bundle ID `tw.edu.ncyu.im.aicompanion` 註冊，`GoogleService-Info.plist`（BUNDLE_ID 對齊）/ `google-services.json`（含對應 client）已落地，**兩檔 gitignored 不進版控**（CR-0062）。🟡 待真機 Firebase Auth smoke。

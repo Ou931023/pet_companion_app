@@ -1,60 +1,93 @@
-# AI 寵物陪伴系統
+# AI Pet Companion | AI 寵物陪伴系統
 
-以長者陪伴為核心的 Flutter App。長者可與 AI 寵物進行即時語音對話；系統結合長期記憶、生活任務與 Care Alert，讓家屬或照護人員掌握需要關心的事件。本專案仍在開發與驗證中，不是醫療診斷工具。
+An AI pet companion app for older adults. It combines real-time voice conversation, personal memory, everyday tasks, and Care Alerts so caregivers can notice when someone may need attention. It is **not a medical diagnosis or emergency response service**.
 
-## 系統組成
+這是一套以長者陪伴為核心的 AI 寵物系統，結合即時語音、長期記憶、生活任務與 Care Alert，協助家屬或照護人員留意需要關心的狀況。它**不是醫療診斷或緊急救援服務**。
 
-- `lib/`、`test/`：Flutter 長者端與測試。主要功能包含寵物互動、Realtime 語音、對話、記憶、提醒／今日任務、Care Alert 與設定。
-- `backend/stt_proxy/`、`backend/agent/`：Node.js API、Realtime SDP 轉送、代理工具路由、記憶、Care Alert、通知與資料存取。
-- `caregiver_web/`：照護管理網頁，顯示授權範圍內的長者、任務與 Care Alert 資訊。
-- `care_mall_website/`：獨立商城頁面；與照護管理網頁不同，不是目前的主要管理入口。
-- `store_legal_site/`：隱私權政策、服務條款、支援與資料刪除說明的公開靜態頁面。
+[繁體中文](#繁體中文) · [English](#english)
 
-架構與 API 契約以 [`PROJECT_ARCHITECTURE.md`](PROJECT_ARCHITECTURE.md) 為準；各模組的修改邊界見 [`docs/TEAM_AGENTS.md`](docs/TEAM_AGENTS.md)。
+## 繁體中文
 
-## 主要流程
+### 專案內容
 
-正式即時語音採 WebRTC：Flutter 建立 SDP offer，經後端 `POST /api/realtime/call` 轉送至 OpenAI Realtime Calls API，再由 WebRTC/DataChannel 接收語音與事件。正式流程不使用假回覆或 mock 取代。後端保管服務憑證；Flutter 不應包含 API key。
+| 目錄 | 用途 |
+|---|---|
+| `lib/`、`test/` | Flutter 長者端與測試：寵物互動、語音對話、記憶、任務、Care Alert、設定。 |
+| `backend/stt_proxy/`、`backend/agent/` | Node.js API、Realtime 連線轉送、代理工具、記憶、通知與資料存取。 |
+| `caregiver_web/` | 照護管理網頁，供授權人員查看任務與風險重點。 |
+| `care_mall_website/` | 獨立商城頁面；不等於照護管理網頁。 |
+| `store_legal_site/` | 隱私權政策、服務條款、支援與帳號資料刪除說明。 |
 
-代理工具由後端控制。涉及通知、購買或其他對外行動時，必須遵守既有的權限與確認流程。長期記憶使用 PostgreSQL／pgvector；Care Alert 由陪伴對話中的風險線索產生，前台仍以陪伴語氣互動。台語與中台混合語言是持續驗證項目，不能把語言偏好設定視為台語 ASR 已完成驗收。
+正式語音主流程為 Flutter → 後端 `POST /api/realtime/call` → OpenAI Realtime Calls API 的 WebRTC SDP 交換；正式服務憑證只放在後端。長期記憶使用 PostgreSQL／pgvector。代理工具與對外行動由後端管理，需遵守授權及確認流程。詳細契約見 [`PROJECT_ARCHITECTURE.md`](PROJECT_ARCHITECTURE.md)。
 
-## 網頁與後端部署
+### 取得與執行
 
-依目前版本庫的部署設定與交接文件：
-
-| 元件 | 平台／位置 | 備註 |
-|---|---|---|
-| 照護管理網頁 `caregiver_web/` | Render Static Site，設定名稱 `ai-companion-caregiver-web` | `render.yaml` 定義建置與發布；實際線上版本仍須到 Render 驗證。 |
-| 後端 API | Render Web Service，文件記載 `https://ai-companion-api-1gm7.onrender.com` | App 的 `API_BASE_URL` 預設指向此網址；資料庫使用 PostgreSQL。 |
-| 法律／支援頁面 `store_legal_site/` | GitHub Pages：`https://ou931023.github.io/pet_companion_app/` | 僅公開靜態說明頁，**不是**照護管理網頁或 API。 |
-
-Render／GitHub Pages 的網址或其 DNS 位址，**不能直接當成 AMD-ITRI 算力申請表要求的團隊固定出口 Public IP**。若該資源以來源 IP 管制，應提供團隊實際連線用、可持續控制的固定對外 IP（例如經確認適用的雲端跳板）；目前版本庫沒有可據以填報的固定出口 IP。
-
-部署與上架檢查見 [`docs/STORE_SUBMISSION_RUNBOOK.md`](docs/STORE_SUBMISSION_RUNBOOK.md)；照護管理網頁的設定見 [`caregiver_web/README.md`](caregiver_web/README.md)。舊展示文件可能保留過時的 Render 網址，正式操作請以目前部署後台與建置設定核對。
-
-## 本機開發
-
-需要 Flutter SDK，以及符合 [`backend/stt_proxy/package.json`](backend/stt_proxy/package.json) 要求的 Node.js 版本。不要將環境變數檔、金鑰或後端執行時資料加入 Git。
+需要 Flutter SDK、Dart SDK，以及 Node.js `>=20.18.1 <25`。iOS 開發另需 macOS 與 Xcode。執行前，先依 [`docs/ENVIRONMENT_SETUP.md`](docs/ENVIRONMENT_SETUP.md) 設定本機後端需要的環境變數；**不要把實際金鑰提交到 Git**。
 
 ```bash
-# Flutter 依賴與檢查
-flutter pub get
-flutter test
+git clone https://github.com/Ou931023/pet_companion_app.git
+cd pet_companion_app
 
-# 後端依賴與測試
+# Terminal 1: backend
 cd backend/stt_proxy
 npm install
-npm test
+npm start
+
+# Terminal 2: Flutter app (from the repository root)
+flutter pub get
+flutter run --dart-define=APP_ENV=development \
+  --dart-define=API_BASE_URL=http://127.0.0.1:3001
 ```
 
-後端啟動指令為 `npm start`。正式部署需要的環境變數名稱、資料庫 migration 與驗證步驟，請依 [`docs/BACKEND_DEPLOYMENT_GUIDE.md`](docs/BACKEND_DEPLOYMENT_GUIDE.md) 和 [`docs/PRODUCTION_CONFIG_CHECKLIST.md`](docs/PRODUCTION_CONFIG_CHECKLIST.md) 設定；不要把實際值寫在 README、程式碼或 issue。正式 Flutter 建置使用 `APP_ENV=production` 與 HTTPS `API_BASE_URL`；本機開發須顯式使用 `APP_ENV=development` 並指定可連線的後端。iPhone 實機不能以 `127.0.0.1` 連到開發電腦。
+桌機或同機模擬器可用上面的本機位址；iPhone 實機必須把 `API_BASE_URL` 換成開發電腦在同一網路中的可連線位址，不能用手機自己的 `127.0.0.1`。後端健康檢查：`GET http://127.0.0.1:3001/health`。Firebase 登入與資料庫相關功能需完成各自的設定，並非只執行上述指令就會全部可用。
 
-## AMD AI 代理人創新應用組
+照護管理網頁的本機啟動及設定方式見 [`caregiver_web/README.md`](caregiver_web/README.md)。如要檢查程式，可在專案根目錄執行 `flutter test`，並在 `backend/stt_proxy/` 執行 `npm test`；本 README 的更新不代表這些測試或實機流程已完成驗收。
 
-競賽用的 AMD 雲端資源目前屬申請／整合規劃，**尚未在本專案證明已接線或完成推論測試**。預定讓 AMD 資源承載代理規劃與工具選擇；現有 OpenAI Realtime WebRTC 語音主流程維持不變。AMD AI Developer Program 的雲端額度、AMD Developer Cloud 帳號及 AMD-ITRI Joint Lab 競賽算力是不同申請／啟用流程，不能互相視為已開通。只有取得資源並保存實際模型、呼叫與工具結果紀錄後，才能在參賽資料中寫成已實測成果。
+### 部署與貢獻
 
-## 安全與現況說明
+版本庫的設定將照護管理網頁部署為 Render Static Site、後端部署於 Render、公開法律／支援頁部署於 GitHub Pages。這些是**部署配置**；線上版本、環境變數與資料庫 migration 仍須由部署者核對。請參閱 [`docs/BACKEND_DEPLOYMENT_GUIDE.md`](docs/BACKEND_DEPLOYMENT_GUIDE.md) 與 [`docs/STORE_SUBMISSION_RUNBOOK.md`](docs/STORE_SUBMISSION_RUNBOOK.md)。Render 或 GitHub Pages 的網站網址不等於固定出口 Public IP。
 
-- 不讀取或提交任何 `.env`、token、私鑰與 `backend/stt_proxy/data/*.json` 執行時資料。
-- 不把 Realtime 主流程改成 mock；功能與實機驗收狀態須分開描述。
-- 本 README 描述版本庫的架構與部署設定，不保證線上環境已同步部署最新程式或完成所有實機測試。
+修改前請先閱讀 [`AGENTS.md`](AGENTS.md)、[`PROJECT_ARCHITECTURE.md`](PROJECT_ARCHITECTURE.md) 與 [`docs/TEAM_AGENTS.md`](docs/TEAM_AGENTS.md)。勿提交 `.env`、金鑰、token、私人資料或 `backend/stt_proxy/data/*.json` 執行時資料；勿以 mock 取代正式 Realtime 流程。功能實作、部署與實機驗收是不同狀態，請據實記錄。
+
+## English
+
+### Repository layout
+
+| Directory | Purpose |
+|---|---|
+| `lib/`, `test/` | Flutter app for older adults and its tests: pet interaction, voice, memory, tasks, Care Alerts, and settings. |
+| `backend/stt_proxy/`, `backend/agent/` | Node.js API, Realtime connection broker, agent tools, memory, notifications, and persistence. |
+| `caregiver_web/` | Caregiver dashboard for authorized users. |
+| `care_mall_website/` | Separate storefront, not the caregiver dashboard. |
+| `store_legal_site/` | Public privacy, terms, support, and account-deletion pages. |
+
+The production voice path uses WebRTC SDP exchange: Flutter → backend `POST /api/realtime/call` → OpenAI Realtime Calls API. Service credentials remain on the backend. Long-term memory uses PostgreSQL/pgvector. Backend-controlled tools enforce authorization and confirmation before external actions. See [`PROJECT_ARCHITECTURE.md`](PROJECT_ARCHITECTURE.md) for the architecture and API contracts.
+
+### Get started
+
+Install Flutter/Dart and Node.js `>=20.18.1 <25`. iOS development also requires macOS and Xcode. Configure the backend's required environment variable **names** using [`docs/ENVIRONMENT_SETUP.md`](docs/ENVIRONMENT_SETUP.md); never commit actual credentials.
+
+```bash
+git clone https://github.com/Ou931023/pet_companion_app.git
+cd pet_companion_app
+
+# Terminal 1: backend
+cd backend/stt_proxy
+npm install
+npm start
+
+# Terminal 2: Flutter app (from the repository root)
+flutter pub get
+flutter run --dart-define=APP_ENV=development \
+  --dart-define=API_BASE_URL=http://127.0.0.1:3001
+```
+
+For a physical iPhone, replace `API_BASE_URL` with an address of your development computer that the phone can reach; `127.0.0.1` on the phone points back to the phone. Check the backend at `GET http://127.0.0.1:3001/health`. Firebase sign-in and database-backed features require their own configuration. For the caregiver dashboard, follow [`caregiver_web/README.md`](caregiver_web/README.md).
+
+Run `flutter test` from the repository root and `npm test` from `backend/stt_proxy/` to check the respective codebases. The presence of a feature in this repository does not imply that its production deployment or physical-device validation is complete.
+
+### Deployment and contributions
+
+The repository configures the caregiver dashboard as a Render Static Site, the backend on Render, and public legal/support pages on GitHub Pages. Verify the live revision, environment, and database migrations before relying on a deployment. See the [`backend deployment guide`](docs/BACKEND_DEPLOYMENT_GUIDE.md) and [`release runbook`](docs/STORE_SUBMISSION_RUNBOOK.md). A website URL is not a fixed outbound public IP.
+
+Before contributing, read [`AGENTS.md`](AGENTS.md), [`PROJECT_ARCHITECTURE.md`](PROJECT_ARCHITECTURE.md), and [`docs/TEAM_AGENTS.md`](docs/TEAM_AGENTS.md). Do not commit `.env` files, keys, tokens, private data, or runtime files under `backend/stt_proxy/data/`. Do not replace the production Realtime flow with a mock. Distinguish implementation, deployment, and device verification in change reports.

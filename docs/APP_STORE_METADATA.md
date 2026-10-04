@@ -58,13 +58,13 @@
 - **內容分級問卷**：⛔ owner 需於 Play Console 依 IARC 問卷實際填寫（含使用者語音/文字對話）；不得由 repo 假完成。
 - **Data Safety 表單**：見 `docs/GOOGLE_PLAY_DATA_SAFETY.md` 與 `docs/STORE_REVIEW_NOTES_TEMPLATE.md`（⛔ 需於後台逐項填寫）
 - **目標客群 / 兒童政策**：本 App 面向成人（長者），非兒童導向。
-- **Feature graphic / screenshots**：✅ feature graphic 與兩平台候選 screenshots 已輸出於 `store_assets/`；送審前仍需商店後台人工預覽裁切。
+- **Feature graphic / screenshots**：🔁 feature graphic 已輸出；兩平台 screenshots 仍須以實際 App 操作畫面覆蓋現有版面草稿，再於商店後台人工預覽。
 
 ---
 
 ## 4. Screenshots（兩平台共用規劃）
 
-✅ 已輸出去識別化候選截圖：
+⏳ 下列路徑與尺寸已建立，但內容仍須替換為去識別化的實際 App 操作截圖：
 1. 首頁語音陪伴入口。
 2. 即時語音陪伴。
 3. 長期記憶。

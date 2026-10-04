@@ -1,6 +1,6 @@
 # STORE_ASSET_CHECKLIST — Icon / Screenshot / Launch Screen 素材檢查
 
-> 建立：CR-0058。狀態：**icon / feature graphic / screenshots / launch screen 已輸出**。
+> 建立：CR-0058。狀態：**icon / feature graphic / launch screen 已輸出；screenshots 待替換為實際 App 操作畫面**。
 > 對照：`docs/STORE_SUBMISSION_RUNBOOK.md`、`docs/APP_STORE_METADATA.md`、`docs/STORE_RELEASE_CHECKLIST.md`。
 
 ---
@@ -14,10 +14,12 @@
 - Google Play feature graphic：✅ `store_assets/play_feature_graphic_1024x500.png` 已輸出。
 - launch screen：✅ 已使用正式候選 icon + `#FFF8EA` 品牌底色；仍需實機/商店後台預覽確認裁切與過場。
 - 無 `flutter_launcher_icons` 設定（icon 為手動放置）。
-- screenshots：✅ 已輸出去識別化商店候選截圖：
+- screenshots：⏳ 現有檔案僅為版面草稿，送審前必須以去識別化的實際 App 操作截圖覆蓋：
   - Android phone：`store_assets/screenshots/android_phone/*.png`（5 張，1080×1920）
   - iPhone 6.7"：`store_assets/screenshots/ios_6_7/*.png`（5 張，1290×2796）
-  - 產出腳本：`scripts/generate_store_screenshots.sh`
+  - 處理腳本：`scripts/generate_store_screenshots.sh`（只接受 `store_assets/raw_screenshots/` 的實機/模擬器 App 截圖，不再產生純文案海報）
+  - iOS 優先：`bash scripts/generate_store_screenshots.sh ios`（預設亦為 iOS）；不需要先準備 Android 截圖。Android 日後使用 `android`，雙平台使用 `all`。
+  - 腳本會先確認選定平台的五張原始截圖都存在，再更新輸出，避免缺圖時只覆蓋部分素材。
 
 ---
 
@@ -46,7 +48,7 @@
 ### Android（Play Console）
 - phone：≥2 張，1080×1920 級別（直）；tablet 若支援另備。
 - Feature graphic：✅ `store_assets/play_feature_graphic_1024x500.png`（1024×500）。
-- Phone screenshots：✅ `store_assets/screenshots/android_phone/`（5 張，1080×1920）。
+- Phone screenshots：⏳ `store_assets/screenshots/android_phone/` 尚待實際 Android App 操作畫面覆蓋。
 
 ### 建議截圖頁面（5）
 1. 首頁 AI 寵物 + 大麥克風按鈕（一眼看出能否說話）。
@@ -74,7 +76,7 @@
 - [x] 正式候選 App icon 美術（iOS 1024 + Android adaptive 前景/背景）。
 - [x] Play Store listing icon 512×512 PNG：`store_assets/play_store_icon_512.png`。
 - [x] Android feature graphic 1024×500 PNG：`store_assets/play_feature_graphic_1024x500.png`。
-- [x] 5 組去識別化 screenshots（兩平台尺寸）：`store_assets/screenshots/`。
+- [ ] 5 組去識別化、可證明 App 實際使用狀態的 screenshots（兩平台尺寸）：`store_assets/screenshots/`。
 - [x] 確認 launch screen 非 Flutter 預設、品牌一致。
 
 ---

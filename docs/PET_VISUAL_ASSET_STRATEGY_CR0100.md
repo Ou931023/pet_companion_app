@@ -2,17 +2,25 @@
 
 > 目標：把 AI 寵物從「目前可用的 PNG 動畫」推進到正式上架可長期維護的素材系統，支援長者偏好、Q 版 / 真實版比較、成長階段、更多互動動畫與後台資料分析。
 
+> **2026-09 production 修正：**原本以多張全身 PNG 快速輪播的 `talk/rest`
+> 方案，已被 `CR-0100F Stable Pet Renderer` 取代。全身影格來源不一致時，
+> 會讓臉型、四肢、比例與腳底位置閃動；正式 App 改用固定角色主圖加程式化
+> 呼吸／傾聽／說話律動，只有情緒狀態改變時才交叉淡入。詳見
+> `docs/PET_STABLE_RENDERER_CR0100F.md`。
+
 ## 決策摘要
 
 本專案短期不建議立刻改成 3D、Rive 或即時生成寵物。正式上架第一版建議採用：
 
-1. **Production v1：高解析透明 PNG frame sequence**
-   - 沿用目前 `PetAvatar` / `AssetPaths` 架構。
-   - 每個寵物維持固定畫布、固定腳底基準線、固定 frame count。
-   - 優先補齊更多互動狀態與 Q 版 / 真實版對照素材。
+1. **Production v1.1：固定透明主圖 + 程式化連續 motion**
+   - 沿用 `PetAvatar` / `AssetPaths` 的素材解析能力。
+   - `talk/rest/listening` 不輪播不同全身姿勢；以同一張主圖做小幅縮放、位移與傾斜。
+   - 情緒狀態圖片只在語意狀態改變時使用短暫 crossfade。
+   - 多張全身 PNG sequence 保留作候選素材，不再是正式即時 renderer。
 
-2. **Production v1.5：Sprite sheet 或 PNG atlas**
-   - 當素材張數變多後，再把同一動作的 PNG frames 合成 atlas，降低載入與檔案管理成本。
+2. **Production v1.5：分層臉部／耳朵／尾巴動態**
+   - 角色身體維持 canonical master，只輸出嘴型、眨眼、耳朵與尾巴等透明局部圖層。
+   - 避免每張圖重新生成整隻角色，才能長期維持身分一致。
    - App 程式仍以 `PetVisualProfile` 管理能力，不讓 UI 寫死路徑。
 
 3. **Production v2：Rive / Lottie 只用於通用特效，不承擔寵物本體**
