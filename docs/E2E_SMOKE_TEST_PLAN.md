@@ -74,7 +74,7 @@ production fail-fast 必檢（`config/env.js validateProductionEnv`，缺即 `pr
 | B2 | 正常啟動 | 補齊 §1.2 後 `APP_ENV=production node server.js` | 啟動成功；啟動摘要全遮蔽（`postgres://***`、`sk-***1234`、chat id 僅 `(set)`） |
 | B3 | DB 連線 | 啟動 + 查任一 PG-only API（如 `/api/admin/users` 帶 admin token） | 連線成功，非 `failed_to_load_users` |
 | B4 | migration 冪等 | `npm run db:migrate`（`node db/migrate.js`）跑兩次 | 第二次無錯、不重建已存在物件（013 resident_caregiver_links / 014 users.status 已有單元測試 `db/migration013/014.test.js`） |
-| B5 | health | `GET /health` | `{status:"ok", hasOpenAiKey:true, realtimeModel, time}` |
+| B5 | health | `GET /health` | `{status:"ok", revision:<本次部署完整 commit SHA>, hasOpenAiKey:true, realtimeModel, time}`；不得包含 DB、migration/schema、service/instance id 或 secret |
 | B6 | 無 JSON fallback | production 下查 marketplace / dailyCareTask | 被 guard 擋（友善 `feature_unavailable_in_production`），不靜默走 JSON |
 | B7 | 無 mock auth | `REQUIRE_AUTH` 未關、`AUTH_ALLOW_MOCK` 未開 | 帶 mock token 被拒 401 |
 | B8 | Realtime call | `POST /api/realtime/call`（帶 resident idToken + offer SDP） | 回正式 answer SDP（非 stub）；見 §4 實機驗證 |

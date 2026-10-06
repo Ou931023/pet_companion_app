@@ -29,7 +29,7 @@ flutter run --release \
 
 ## 1. 展示前檢查清單（開講前 10 分鐘逐項確認）
 
-- [ ] 後端在線：打 `/health` 回 `status:ok`、`hasOpenAiKey:true`（**只看狀態，別把回應投影細節**）。
+- [ ] 後端在線：打 `/health` 回 `status:ok`，且 `revision` 對上本次部署 commit；`hasOpenAiKey` 只確認布林狀態（**別把回應投影細節**）。
 - [ ] 喚醒後端：Render 會冷啟動，開講前先打一次 `/health` 或商品列表，避免第一個請求卡住。
 - [ ] caregiver_web 可登入：以 **super_admin** 登入 + 已貼好 **Admin Token**；「照護提醒 / 商品管理 / 訂單管理 / 日常任務」分頁可開、可載資料。
 - [ ] Telegram 可收訊：開講前自測一句 high 測試句，確認群組收得到（注意冷卻，見備援）。

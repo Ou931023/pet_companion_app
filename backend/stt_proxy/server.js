@@ -24,6 +24,9 @@ const {
 } = require("./config/env");
 assertProductionEnvOrExit(process.env, console);
 const { runStartupMigrations } = require("./db/startupMigrations");
+const {
+  resolveDeploymentRevision,
+} = require("./services/deploymentRevision");
 
 const { createEmbedding } = require("./services/embeddingService");
 const { extractAndStoreMemory } = require("./services/memoryExtractor");
@@ -667,6 +670,7 @@ async function processCareAlert(body) {
 app.get("/health", (_, res) => {
   res.json({
     status: "ok",
+    revision: resolveDeploymentRevision(process.env),
     hasOpenAiKey: Boolean(process.env.OPENAI_API_KEY),
     realtimeModel: process.env.REALTIME_MODEL || "gpt-realtime",
     time: new Date().toISOString(),
