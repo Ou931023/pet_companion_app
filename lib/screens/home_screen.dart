@@ -58,6 +58,8 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _didCheckTaigiAsrStatus = false;
   bool _didTrackAppOpen = false;
   bool _showTextInput = false;
+  int _interactionRevision = 0;
+  DateTime? _lastLocalInteractionAt;
   _PetInteractionEffect _petInteractionEffect = _PetInteractionEffect.none;
   int _petInteractionEffectRevision = 0;
   int? _lastTaskCompletedCount;
@@ -112,6 +114,61 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  Future<void> _stopSpokenGreeting(
+    ConversationController conversationController,
+    PetController petController,
+  ) async {
+    if (!petController.state.isSpeaking) return;
+    try {
+      await conversationController.ttsService.stop();
+    } catch (_) {
+      // 停止舊問候是最佳努力；平台語音服務不可用時仍要讓點選互動繼續。
+    }
+  }
+
+  Future<void> _showLocalPetResponse({
+    required String message,
+    required String source,
+    required PetMode mode,
+    required ConversationController conversationController,
+    required PetController petController,
+    required PetStatsController petStatsController,
+    required PetMode displayedMode,
+    _PetInteractionEffect effect = _PetInteractionEffect.pat,
+  }) async {
+    _interactionRevision += 1;
+    final now = DateTime.now();
+    final last = _lastLocalInteractionAt;
+    if (last != null &&
+        now.difference(last) < const Duration(milliseconds: 650)) {
+      return;
+    }
+    _lastLocalInteractionAt = now;
+
+    // 使用者點選後，以本機回應立即接住；先停掉仍在播放的首次問候，避免舊音訊
+    // 和新的畫面回應互相打架。這裡不會啟動麥克風，也不需要網路。
+    await _stopSpokenGreeting(conversationController, petController);
+    if (!mounted) return;
+    conversationController.showPetBubbleMessage(message);
+    petController.setModeAndMessage(mode, message, isSpeaking: false);
+    petController.showTransientState(mode);
+    _playPetInteractionEffect(effect);
+    unawaited(
+      petStatsController.applyShopEffects(intimacyDelta: 1, moodDelta: 1),
+    );
+    _trackUsage(
+      'pet_interaction',
+      sessionId: conversationController.activeSessionId,
+      metadata: {
+        'source': source,
+        ...petController.currentVisualProfile.toTrackingMetadata(),
+        'mood': displayedMode.name,
+        'satiety': petStatsController.fullness,
+        'intimacy': petStatsController.intimacy,
+      },
+    );
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -121,6 +178,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _conversationForTransient = context.read<ConversationController>();
     _conversationForTransient!.addListener(_maybeFireTransientState);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final welcomeRevision = _interactionRevision;
       final petController = context.read<PetController>();
       final conversationController = context.read<ConversationController>();
       final voiceAgentController = context.read<VoiceAgentController>();
@@ -132,6 +190,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       await petController.enterInitialRestThenListen();
       if (!mounted) return;
+      if (_interactionRevision != welcomeRevision) return;
       if (voiceAgentController.state != VoiceAgentState.idle &&
           voiceAgentController.state != VoiceAgentState.error) {
         return;
@@ -140,7 +199,12 @@ class _HomeScreenState extends State<HomeScreen> {
         petName: petName,
         isRealtimeActive: voiceAgentController.state != VoiceAgentState.idle,
       );
-      if (greeting != null && mounted) {
+      if (greeting != null &&
+          mounted &&
+          _interactionRevision == welcomeRevision &&
+          !conversationController.isBusy &&
+          (voiceAgentController.state == VoiceAgentState.idle ||
+              voiceAgentController.state == VoiceAgentState.error)) {
         await conversationController.playGreeting(greeting);
       }
     });
@@ -244,26 +308,28 @@ class _HomeScreenState extends State<HomeScreen> {
       Navigator.of(context).pushNamed(AppRoute.puzzle);
     }
 
-    void patPet(String source) {
-      if (isDead) {
-        ElderFeedback.showImportant(context, '寵物需要復活後才能互動');
-        return;
-      }
-      _playPetInteractionEffect(_PetInteractionEffect.pat);
-      petController.showTransientState(
-        PetMode.happy,
-        duration: const Duration(seconds: 2),
+    Future<void> patPet(String source) async {
+      await _showLocalPetResponse(
+        message: '謝謝你摸摸我，我就在這裡陪你。',
+        source: source,
+        mode: PetMode.happy,
+        conversationController: conversationController,
+        petController: petController,
+        petStatsController: petStatsController,
+        displayedMode: displayPetMode,
       );
-      _trackUsage(
-        'pet_interaction',
-        sessionId: conversationController.activeSessionId,
-        metadata: {
-          'source': source,
-          ...petController.currentVisualProfile.toTrackingMetadata(),
-          'mood': displayPetMode.name,
-          'satiety': petStatsController.fullness,
-          'intimacy': petStatsController.intimacy,
-        },
+    }
+
+    Future<void> sitTogether() async {
+      await _showLocalPetResponse(
+        message: '好呀，我陪你安靜坐一下。不說話也沒關係。',
+        source: 'pet_tap',
+        mode: PetMode.caring,
+        conversationController: conversationController,
+        petController: petController,
+        petStatsController: petStatsController,
+        displayedMode: displayPetMode,
+        effect: _PetInteractionEffect.none,
       );
     }
 
@@ -335,14 +401,13 @@ class _HomeScreenState extends State<HomeScreen> {
                             children: [
                               SizedBox(
                                 height: detailsSlotHeight,
-                                child: showConversationDetail
-                                    ? SingleChildScrollView(
-                                        key: const ValueKey(
-                                          'home-conversation-detail-scroll',
-                                        ),
-                                        padding:
-                                            const EdgeInsets.only(bottom: 2),
-                                        child: _ConversationDetailPanel(
+                                child: SingleChildScrollView(
+                                  key: const ValueKey(
+                                    'home-conversation-detail-scroll',
+                                  ),
+                                  padding: const EdgeInsets.only(bottom: 2),
+                                  child: showConversationDetail
+                                      ? _ConversationDetailPanel(
                                           conversationController:
                                               conversationController,
                                           agentToolController:
@@ -353,9 +418,16 @@ class _HomeScreenState extends State<HomeScreen> {
                                           compact: compact,
                                           streaming: conversationController
                                               .isRealtimeStreaming,
+                                        )
+                                      : _CompanionInvitation(
+                                          petName: profileController.petName,
+                                          compact: compact,
+                                          onPat: () =>
+                                              unawaited(patPet('pet_tap')),
+                                          onSitTogether: () =>
+                                              unawaited(sitTogether()),
                                         ),
-                                      )
-                                    : null,
+                                ),
                               ),
                               SizedBox(height: compact ? 6 : 8),
                               Expanded(
@@ -374,7 +446,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                     interactionEffect: _petInteractionEffect,
                                     interactionEffectRevision:
                                         _petInteractionEffectRevision,
-                                    onPetTap: () => patPet('pet_tap'),
+                                    onPetTap: () =>
+                                        unawaited(patPet('pet_tap')),
                                     onDragHoverChanged: (hovering) => setState(
                                       () => _isPetDragHovering = hovering,
                                     ),
@@ -416,10 +489,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         enabled: !isDead && !conversationController.isBusy,
                         isBusy: conversationController.isBusy,
                         onChanged: conversationController.updateDraftText,
-                        onSend: (text) => _sendTextMessage(
-                          text,
-                          conversationController,
-                        ),
+                        onSend: (text) =>
+                            _sendTextMessage(text, conversationController),
                       ),
                       SizedBox(height: compact ? 8 : 10),
                     ],
@@ -437,6 +508,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ? null
                                   : () async {
                                       if (useTaigiShortRecording) {
+                                        _interactionRevision += 1;
+                                        await _stopSpokenGreeting(
+                                          conversationController,
+                                          petController,
+                                        );
+                                        if (!context.mounted) return;
                                         if (voiceAgentController.state !=
                                                 VoiceAgentState.idle &&
                                             voiceAgentController.state !=
@@ -454,7 +531,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                             sessionId: conversationController
                                                 .activeSessionId,
                                             metadata: const {
-                                              'mode': 'taigi_short'
+                                              'mode': 'taigi_short',
                                             },
                                           );
                                           await conversationController
@@ -467,7 +544,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                             sessionId: conversationController
                                                 .activeSessionId,
                                             metadata: const {
-                                              'mode': 'taigi_short'
+                                              'mode': 'taigi_short',
                                             },
                                           );
                                           await conversationController
@@ -506,6 +583,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                       // - 正在聽這一句（listening/ready）：再按一次＝結束。
                                       if (voiceAgentController
                                           .canStartVoiceInput) {
+                                        _interactionRevision += 1;
+                                        await _stopSpokenGreeting(
+                                          conversationController,
+                                          petController,
+                                        );
+                                        if (!mounted) return;
                                         if (!voiceAgentController
                                             .hasOpenRealtimeSession) {
                                           conversationController
@@ -560,9 +643,16 @@ class _HomeScreenState extends State<HomeScreen> {
                         _KeyboardToggleButton(
                           expanded: _showTextInput,
                           enabled: !isDead,
-                          onTap: () => setState(
-                            () => _showTextInput = !_showTextInput,
-                          ),
+                          onTap: () {
+                            _interactionRevision += 1;
+                            unawaited(
+                              _stopSpokenGreeting(
+                                conversationController,
+                                petController,
+                              ),
+                            );
+                            setState(() => _showTextInput = !_showTextInput);
+                          },
                         ),
                       ],
                     ),
@@ -603,12 +693,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         _showInventoryPanel = false;
                         _inventoryTrayLowered = false;
                       }),
-                      onItemDragStarted: () => setState(
-                        () => _inventoryTrayLowered = true,
-                      ),
-                      onItemDragEnded: () => setState(
-                        () => _inventoryTrayLowered = false,
-                      ),
+                      onItemDragStarted: () =>
+                          setState(() => _inventoryTrayLowered = true),
+                      onItemDragEnded: () =>
+                          setState(() => _inventoryTrayLowered = false),
                     ),
                   ),
                 ),
@@ -620,7 +708,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openCalendarDialog(
-      BuildContext context, CheckInController checkInController) {
+    BuildContext context,
+    CheckInController checkInController,
+  ) {
     showDialog<void>(
       context: context,
       builder: (_) => _CheckInCalendarDialog(controller: checkInController),
@@ -753,6 +843,12 @@ class _HomeScreenState extends State<HomeScreen> {
   ) async {
     final normalized = text.trim();
     if (normalized.isEmpty) return;
+    _interactionRevision += 1;
+    await _stopSpokenGreeting(
+      conversationController,
+      context.read<PetController>(),
+    );
+    if (!mounted) return;
     FocusScope.of(context).unfocus();
     _messageController.clear();
     conversationController.clearDraftText();
@@ -876,8 +972,10 @@ class _CheckInCalendarDialogState extends State<_CheckInCalendarDialog> {
         final selectedReward = controller.rewardForDay(_selectedDay);
 
         return Dialog(
-          insetPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 24,
+          ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
           ),
@@ -1479,11 +1577,7 @@ class _HomeQuickActionTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  icon,
-                  size: 32,
-                  color: colorScheme.primary,
-                ),
+                Icon(icon, size: 32, color: colorScheme.primary),
                 const SizedBox(height: 10),
                 Text(
                   title,
@@ -1507,6 +1601,92 @@ class _HomeQuickActionTile extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CompanionInvitation extends StatelessWidget {
+  const _CompanionInvitation({
+    required this.petName,
+    required this.compact,
+    required this.onPat,
+    required this.onSitTogether,
+  });
+
+  final String petName;
+  final bool compact;
+  final VoidCallback onPat;
+  final VoidCallback onSitTogether;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = petName.trim().isEmpty ? '寵物' : petName.trim();
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      container: true,
+      label: '$name邀請你互動，不需要開啟麥克風',
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: scheme.primaryContainer.withValues(alpha: 0.42),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: scheme.primary.withValues(alpha: 0.18)),
+        ),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(12, compact ? 8 : 10, 12, 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '$name想陪你一下。可以直接點一個，不用開麥克風。',
+                maxLines: compact ? 1 : 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 16,
+                  height: 1.25,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              SizedBox(height: compact ? 6 : 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      key: const ValueKey('home-invitation-pat'),
+                      onPressed: onPat,
+                      icon: const Icon(Icons.pets, size: 20),
+                      label: const Text('摸摸我'),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 48),
+                        textStyle: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.tonalIcon(
+                      key: const ValueKey('home-invitation-sit'),
+                      onPressed: onSitTogether,
+                      icon: const Icon(Icons.favorite_outline, size: 20),
+                      label: const Text('陪我坐坐'),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(0, 48),
+                        textStyle: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
@@ -1611,9 +1791,7 @@ class _ConversationDetailPanel extends StatelessWidget {
         if (conversationController.latestReplyIsSearch) ...[
           if (conversationController.latestSources.isNotEmpty) ...[
             const SizedBox(height: 8),
-            SourceReferenceList(
-              sources: conversationController.latestSources,
-            ),
+            SourceReferenceList(sources: conversationController.latestSources),
           ],
         ],
         if (!conversationController.latestReplyIsSearch &&
@@ -1858,10 +2036,7 @@ class _PetStage extends StatelessWidget {
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(16),
                         border: isPetDragHovering
-                            ? Border.all(
-                                color: Colors.green,
-                                width: 3,
-                              )
+                            ? Border.all(color: Colors.green, width: 3)
                             : null,
                       ),
                       child: ColorFiltered(
@@ -1878,9 +2053,7 @@ class _PetStage extends StatelessWidget {
                           alignment: Alignment.center,
                           children: [
                             if (showVoiceAura)
-                              _VoiceListeningBubbles(
-                                size: auraSize,
-                              ),
+                              _VoiceListeningBubbles(size: auraSize),
                             PetAvatar(
                               key: const ValueKey('home-pet-avatar'),
                               mode: petMode,
@@ -2078,11 +2251,7 @@ class _FloatingPetCue extends StatelessWidget {
             ),
             child: Padding(
               padding: EdgeInsets.all(size * 0.22),
-              child: Icon(
-                icon,
-                color: color,
-                size: size,
-              ),
+              child: Icon(icon, color: color, size: size),
             ),
           ),
         ),
@@ -2136,10 +2305,7 @@ class _SkinPickerSheet extends StatelessWidget {
           Flexible(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-              child: PetSkinPicker(
-                compact: true,
-                onSkinApplied: onSkinApplied,
-              ),
+              child: PetSkinPicker(compact: true, onSkinApplied: onSkinApplied),
             ),
           ),
           // 完成按鈕（固定在底部，並避開 home indicator）。
@@ -2163,9 +2329,7 @@ class _SkinPickerSheet extends StatelessWidget {
 }
 
 class _VoiceListeningBubbles extends StatefulWidget {
-  const _VoiceListeningBubbles({
-    required this.size,
-  });
+  const _VoiceListeningBubbles({required this.size});
 
   final double size;
 
@@ -2252,19 +2416,14 @@ class _PulseRing extends StatelessWidget {
       height: ringSize,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: Border.all(
-          color: color.withValues(alpha: opacity),
-          width: 4,
-        ),
+        border: Border.all(color: color.withValues(alpha: opacity), width: 4),
       ),
     );
   }
 }
 
 class _AudioDot extends StatelessWidget {
-  const _AudioDot({
-    required this.height,
-  });
+  const _AudioDot({required this.height});
 
   final double height;
 

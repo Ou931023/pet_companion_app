@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -50,6 +52,7 @@ import 'package:pet_companion_app/services/text_to_speech_service.dart';
 import 'package:pet_companion_app/services/web_search_service.dart';
 import 'package:pet_companion_app/widgets/pet_avatar.dart';
 import 'package:pet_companion_app/widgets/source_reference_list.dart';
+import 'package:pet_companion_app/widgets/ui/primary_action_button.dart';
 
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -63,8 +66,9 @@ void main() {
     await _pumpHomeScreen(tester, harness);
   });
 
-  testWidgets('HomeScreen idle state keeps conversation detail hidden',
-      (tester) async {
+  testWidgets('HomeScreen idle state gives a clear no-microphone invitation', (
+    tester,
+  ) async {
     await binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => binding.setSurfaceSize(null));
     final harness = await _HomeHarness.create();
@@ -73,18 +77,18 @@ void main() {
     await tester.pumpWidget(_homeHost(harness));
     await tester.pump();
 
-    expect(
-      find.byKey(const ValueKey('home-conversation-detail-scroll')),
-      findsNothing,
-    );
+    expect(find.textContaining('不用開麥克風'), findsOneWidget);
+    expect(find.byKey(const ValueKey('home-invitation-pat')), findsOneWidget);
+    expect(find.byKey(const ValueKey('home-invitation-sit')), findsOneWidget);
 
-    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(seconds: 9));
     await tester.pumpWidget(const SizedBox.shrink());
     harness.dispose();
   });
 
-  testWidgets('HomeScreen text fallback is discoverable and opens input',
-      (tester) async {
+  testWidgets('HomeScreen text fallback is discoverable and opens input', (
+    tester,
+  ) async {
     await binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => binding.setSurfaceSize(null));
     final harness = await _HomeHarness.create();
@@ -102,13 +106,14 @@ void main() {
     expect(find.text('收起'), findsOneWidget);
     expect(find.text('跟寵物說一句話'), findsOneWidget);
 
-    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(seconds: 9));
     await tester.pumpWidget(const SizedBox.shrink());
     harness.dispose();
   });
 
-  testWidgets('HomeScreen keeps pet stage simple and moves secondary actions',
-      (tester) async {
+  testWidgets('HomeScreen keeps pet stage simple and moves secondary actions', (
+    tester,
+  ) async {
     await binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => binding.setSurfaceSize(null));
     final harness = await _HomeHarness.create();
@@ -142,8 +147,9 @@ void main() {
     harness.dispose();
   });
 
-  testWidgets('HomeScreen pet tap gives feedback without leaving home',
-      (tester) async {
+  testWidgets('HomeScreen pet tap gives feedback without leaving home', (
+    tester,
+  ) async {
     await binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => binding.setSurfaceSize(null));
     final harness = await _HomeHarness.create();
@@ -166,8 +172,99 @@ void main() {
     harness.dispose();
   });
 
-  testWidgets('HomeScreen celebrates when a care task is completed',
-      (tester) async {
+  testWidgets(
+    'HomeScreen local invitation responds offline and debounces taps',
+    (tester) async {
+      await binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => binding.setSurfaceSize(null));
+      final harness = await _HomeHarness.create();
+      addTearDown(harness.dispose);
+
+      await tester.pumpWidget(_homeHost(harness));
+      await tester.pump();
+      final initialIntimacy = harness.petStatsController.intimacy;
+
+      final pat = find.byKey(const ValueKey('home-invitation-pat'));
+      await tester.tap(pat);
+      await tester.tap(pat);
+      await tester.pump();
+
+      expect(find.text('謝謝你摸摸我，我就在這裡陪你。'), findsOneWidget);
+      expect(harness.voiceAgentController.hasOpenRealtimeSession, isFalse);
+      expect(harness.petStatsController.intimacy, initialIntimacy + 1);
+      expect(tester.takeException(), isNull);
+
+      await tester.pump(const Duration(seconds: 9));
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'HomeScreen keeps chat and touch available for legacy zero stats',
+    (tester) async {
+      await binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => binding.setSurfaceSize(null));
+      final harness = await _HomeHarness.create(
+        initialPreferences: const {
+          'petStats.intimacy': 0,
+          'petStats.fullness': 0,
+          'petStats.moodValue': 0,
+        },
+      );
+      addTearDown(harness.dispose);
+
+      await tester.pumpWidget(_homeHost(harness));
+      await tester.pump();
+
+      expect(harness.petStatsController.lifeState.name, 'alive');
+      expect(find.byKey(const ValueKey('home-invitation-pat')), findsOneWidget);
+      expect(find.text('打字'), findsOneWidget);
+      final micButton = tester.widget<PrimaryActionButton>(
+        find.byType(PrimaryActionButton),
+      );
+      expect(micButton.onPressed, isNotNull);
+
+      await tester.tap(find.byKey(const ValueKey('home-invitation-sit')));
+      await tester.pump();
+      expect(find.textContaining('不說話也沒關係'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.pump(const Duration(seconds: 9));
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'HomeScreen ignores a late first greeting after interaction starts',
+    (tester) async {
+      await binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => binding.setSurfaceSize(null));
+      final greetingService = _DeferredGreetingMemoryService();
+      final harness = await _HomeHarness.create(memoryService: greetingService);
+      addTearDown(harness.dispose);
+
+      await tester.pumpWidget(_homeHost(harness));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+      expect(greetingService.requested, isTrue);
+
+      await tester.tap(find.byKey(const ValueKey('home-invitation-pat')));
+      await tester.pump();
+      greetingService.complete('這是一則太晚回來的問候');
+      await tester.pump();
+
+      expect(find.text('謝謝你摸摸我，我就在這裡陪你。'), findsOneWidget);
+      expect(find.text('這是一則太晚回來的問候'), findsNothing);
+      expect(tester.takeException(), isNull);
+
+      await tester.pump(const Duration(seconds: 9));
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets('HomeScreen celebrates when a care task is completed', (
+    tester,
+  ) async {
     await binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => binding.setSurfaceSize(null));
     final harness = await _HomeHarness.create();
@@ -190,8 +287,9 @@ void main() {
     harness.dispose();
   });
 
-  testWidgets('HomeScreen handles long AI reply and sources without overflow',
-      (tester) async {
+  testWidgets('HomeScreen handles long AI reply and sources without overflow', (
+    tester,
+  ) async {
     await binding.setSurfaceSize(const Size(320, 568));
     addTearDown(() => binding.setSurfaceSize(null));
     final harness = await _HomeHarness.create();
@@ -200,10 +298,7 @@ void main() {
       ConversationTurn(
         timestamp: DateTime.now(),
         userText: '幫我查一下睡不好可以怎麼辦',
-        petReply: List.filled(
-          10,
-          '我聽得出來你昨晚很辛苦，我先陪你慢慢把身體放鬆下來。',
-        ).join(),
+        petReply: List.filled(10, '我聽得出來你昨晚很辛苦，我先陪你慢慢把身體放鬆下來。').join(),
         toolName: 'verticalSearch',
         sources: const [
           SourceReference(
@@ -309,8 +404,9 @@ void main() {
     harness.dispose();
   });
 
-  testWidgets('HomeScreen hides ASR route and emotion fusion debug text',
-      (tester) async {
+  testWidgets('HomeScreen hides ASR route and emotion fusion debug text', (
+    tester,
+  ) async {
     await binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => binding.setSurfaceSize(null));
     final harness = await _HomeHarness.create();
@@ -368,8 +464,9 @@ void main() {
     harness.dispose();
   });
 
-  testWidgets('SourceReferenceList shows at most two product sources',
-      (tester) async {
+  testWidgets('SourceReferenceList shows at most two product sources', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(
@@ -408,8 +505,9 @@ void main() {
     expect(find.textContaining('provider'), findsNothing);
   });
 
-  testWidgets('HomeScreen does not overflow with 1.3 text scale',
-      (tester) async {
+  testWidgets('HomeScreen does not overflow with 1.3 text scale', (
+    tester,
+  ) async {
     await binding.setSurfaceSize(const Size(320, 568));
     addTearDown(() => binding.setSurfaceSize(null));
     final harness = await _HomeHarness.create();
@@ -428,6 +526,32 @@ void main() {
 
     await tester.pump(const Duration(seconds: 9));
     expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('HomeScreen invitation stays accessible at 1.3 text scale', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    await binding.setSurfaceSize(const Size(320, 568));
+    addTearDown(() => binding.setSurfaceSize(null));
+    final harness = await _HomeHarness.create();
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(_homeHost(harness, textScale: 1.3));
+    await tester.pump();
+
+    expect(
+      find.bySemanticsLabel(RegExp('小伴邀請你互動，不需要開啟麥克風')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('home-invitation-pat')), findsOneWidget);
+    expect(find.byKey(const ValueKey('home-invitation-sit')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.pump(const Duration(seconds: 9));
+    expect(tester.takeException(), isNull);
+    semantics.dispose();
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -453,8 +577,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('SettingsScreen hides dev panels when SHOW_DEV_PANELS is off',
-      (tester) async {
+  testWidgets('SettingsScreen hides dev panels when SHOW_DEV_PANELS is off', (
+    tester,
+  ) async {
     final harness = await _HomeHarness.create();
     addTearDown(harness.dispose);
 
@@ -687,25 +812,17 @@ Widget _settingsHostWithAuth(_HomeHarness harness, AuthController auth) {
       ChangeNotifierProvider<ProfileController>.value(
         value: harness.profileController,
       ),
-      ChangeNotifierProvider<PetController>.value(
-        value: harness.petController,
-      ),
+      ChangeNotifierProvider<PetController>.value(value: harness.petController),
       ChangeNotifierProvider<ConversationController>.value(
         value: harness.conversationController,
       ),
       ChangeNotifierProvider<VoiceAgentController>.value(
         value: harness.voiceAgentController,
       ),
-      Provider<RealtimeVoiceService>.value(
-        value: harness.realtimeVoiceService,
-      ),
+      Provider<RealtimeVoiceService>.value(value: harness.realtimeVoiceService),
       Provider<CoachMarkKeys>(create: (_) => CoachMarkKeys()),
     ],
-    child: const MaterialApp(
-      home: Scaffold(
-        body: SettingsScreen(),
-      ),
-    ),
+    child: const MaterialApp(home: Scaffold(body: SettingsScreen())),
   );
 }
 
@@ -718,29 +835,21 @@ Widget _settingsHostWithCoach(
       ChangeNotifierProvider<ProfileController>.value(
         value: harness.profileController,
       ),
-      ChangeNotifierProvider<PetController>.value(
-        value: harness.petController,
-      ),
+      ChangeNotifierProvider<PetController>.value(value: harness.petController),
       ChangeNotifierProvider<ConversationController>.value(
         value: harness.conversationController,
       ),
       ChangeNotifierProvider<VoiceAgentController>.value(
         value: harness.voiceAgentController,
       ),
-      Provider<RealtimeVoiceService>.value(
-        value: harness.realtimeVoiceService,
-      ),
+      Provider<RealtimeVoiceService>.value(value: harness.realtimeVoiceService),
       ChangeNotifierProvider<AppNavigationController>.value(
         value: harness.navigationController,
       ),
       ChangeNotifierProvider<CoachMarkController>.value(value: coachController),
       Provider<CoachMarkKeys>(create: (_) => CoachMarkKeys()),
     ],
-    child: const MaterialApp(
-      home: Scaffold(
-        body: SettingsScreen(),
-      ),
-    ),
+    child: const MaterialApp(home: Scaffold(body: SettingsScreen())),
   );
 }
 
@@ -771,9 +880,7 @@ Widget _homeHost(
       ChangeNotifierProvider<ProfileController>.value(
         value: harness.profileController,
       ),
-      ChangeNotifierProvider<PetController>.value(
-        value: harness.petController,
-      ),
+      ChangeNotifierProvider<PetController>.value(value: harness.petController),
       ChangeNotifierProvider<PetStatsController>.value(
         value: harness.petStatsController,
       ),
@@ -813,15 +920,11 @@ Widget _homeHost(
       builder: (context, child) {
         final mediaQuery = MediaQuery.of(context);
         return MediaQuery(
-          data: mediaQuery.copyWith(
-            textScaler: TextScaler.linear(textScale),
-          ),
+          data: mediaQuery.copyWith(textScaler: TextScaler.linear(textScale)),
           child: child ?? const SizedBox.shrink(),
         );
       },
-      home: const Scaffold(
-        body: HomeScreen(),
-      ),
+      home: const Scaffold(body: HomeScreen()),
     ),
   );
 }
@@ -832,18 +935,14 @@ Widget _settingsHost(_HomeHarness harness, {double textScale = 1.0}) {
       ChangeNotifierProvider<ProfileController>.value(
         value: harness.profileController,
       ),
-      ChangeNotifierProvider<PetController>.value(
-        value: harness.petController,
-      ),
+      ChangeNotifierProvider<PetController>.value(value: harness.petController),
       ChangeNotifierProvider<ConversationController>.value(
         value: harness.conversationController,
       ),
       ChangeNotifierProvider<VoiceAgentController>.value(
         value: harness.voiceAgentController,
       ),
-      Provider<RealtimeVoiceService>.value(
-        value: harness.realtimeVoiceService,
-      ),
+      Provider<RealtimeVoiceService>.value(value: harness.realtimeVoiceService),
       Provider<CoachMarkKeys>(create: (_) => CoachMarkKeys()),
     ],
     child: MaterialApp(
@@ -854,9 +953,7 @@ Widget _settingsHost(_HomeHarness harness, {double textScale = 1.0}) {
           child: child ?? const SizedBox.shrink(),
         );
       },
-      home: const Scaffold(
-        body: SettingsScreen(),
-      ),
+      home: const Scaffold(body: SettingsScreen()),
     ),
   );
 }
@@ -910,8 +1007,11 @@ class _HomeHarness {
     profileController.dispose();
   }
 
-  static Future<_HomeHarness> create() async {
-    SharedPreferences.setMockInitialValues({});
+  static Future<_HomeHarness> create({
+    Map<String, Object> initialPreferences = const {},
+    MemoryService? memoryService,
+  }) async {
+    SharedPreferences.setMockInitialValues(initialPreferences);
     final localStorage = LocalStorageService();
     final profileController = ProfileController(localStorage);
     await profileController.completeOnboarding('小伴');
@@ -919,9 +1019,10 @@ class _HomeHarness {
 
     final petController = PetController();
     final petStatsController = PetStatsController(PetStatsStorageService());
+    await petStatsController.load();
     final checkInController = CheckInController(CheckInStorageService());
     final inventoryController = InventoryController(InventoryStorageService());
-    final memoryController = MemoryController(MemoryService());
+    final memoryController = MemoryController(memoryService ?? MemoryService());
     final navigationController = AppNavigationController();
     final walletController = WalletController(profileController);
     final taskController = TaskController(profileController);
@@ -951,10 +1052,7 @@ class _HomeHarness {
     );
     final languageRoutingService = LanguageRoutingService(
       AsrStrategyService(
-        strategies: const [
-          OpenAiRealtimeAsrStrategy(),
-          MockTaigiAsrStrategy(),
-        ],
+        strategies: const [OpenAiRealtimeAsrStrategy(), MockTaigiAsrStrategy()],
       ),
     );
     final conversationController = ConversationController(
@@ -1005,5 +1103,24 @@ class _HomeHarness {
       reminderController: reminderController,
       realtimeVoiceService: realtimeVoiceService,
     );
+  }
+}
+
+class _DeferredGreetingMemoryService extends MemoryService {
+  final Completer<String?> _greeting = Completer<String?>();
+  bool requested = false;
+
+  @override
+  Future<String?> getGreeting({
+    required String userId,
+    required String petName,
+    required int localHour,
+  }) {
+    requested = true;
+    return _greeting.future;
+  }
+
+  void complete(String greeting) {
+    if (!_greeting.isCompleted) _greeting.complete(greeting);
   }
 }
