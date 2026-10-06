@@ -32,12 +32,10 @@ class PetStatsController extends ChangeNotifier {
   }
 
   Future<void> markRealtimeConversationCompleted() async {
-    if (isDead) return;
     await _applyDelta(intimacyDelta: 2, moodDelta: 2);
   }
 
   Future<void> applyConversationEmotion(String emotion) async {
-    if (isDead) return;
     final moodDelta = switch (emotion) {
       'happy' => 4,
       'sad' => -2,
@@ -51,7 +49,6 @@ class PetStatsController extends ChangeNotifier {
   }
 
   Future<void> markPuzzleCompleted() async {
-    if (isDead) return;
     await _applyDelta(intimacyDelta: 2, moodDelta: 5);
   }
 

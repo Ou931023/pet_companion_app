@@ -20,9 +20,9 @@ class PetStatusPanel extends StatelessWidget {
 
   /// 依目前寵物狀態組一句生活化的白話說明（純呈現，不更動任何寵物狀態邏輯）。
   String _statusDescription() {
-    if (isDead) return '$petName正在沉睡，餵牠喝復活藥水就會醒來。';
-    if (fullness < 30) return '$petName肚子有點餓了，找點東西餵餵牠吧。';
-    if (moodValue < 30) return '$petName今天有點沒精神，多陪牠說說話。';
+    if (isDead) return '$petName今天比較安靜，但仍然會一直陪著你。';
+    if (fullness < 30) return '$petName想休息一下，也很歡迎你來摸摸牠。';
+    if (moodValue < 30) return '$petName今天比較安靜，想和你一起坐坐。';
     if (intimacy >= 65 && moodValue >= 60) return '$petName今天精神不錯，想和你聊聊天。';
     return '$petName就在這裡，靜靜陪著你。';
   }

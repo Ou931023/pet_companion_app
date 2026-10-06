@@ -1,5 +1,6 @@
 enum PetLifeState {
   alive,
+  @Deprecated('Companion interaction is no longer blocked by low stats.')
   dead,
 }
 
@@ -16,8 +17,9 @@ class PetStats {
   final int moodValue;
   final String? lastOpenedDate;
 
-  PetLifeState get lifeState =>
-      intimacy <= 0 ? PetLifeState.dead : PetLifeState.alive;
+  /// 陪伴不以數值處罰使用者。既有資料即使親密度已降到 0，寵物仍會陪伴、
+  /// 接受觸摸與對話；數值只用來呈現當下需要，不再代表「死亡」或鎖住功能。
+  PetLifeState get lifeState => PetLifeState.alive;
 
   PetStats copyWith({
     int? intimacy,
