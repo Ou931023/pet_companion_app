@@ -343,12 +343,39 @@ test("production 缺 admin token → 仍 401（authN 先於 store）", async () 
 
 // /health 不受 marketplace DB 平移影響。
 test("smoke：production 下 /health 仍 200", async () => {
+  const originalRevision = process.env.RENDER_GIT_COMMIT;
+  const originalOpenAiKey = process.env.OPENAI_API_KEY;
+  process.env.RENDER_GIT_COMMIT = "e6c6169a46c52b48489062d680ee142e2e486f75";
+  process.env.OPENAI_API_KEY = "test-secret-must-not-be-public";
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
     const res = await withDbProduction(`${baseUrl}/health`, {});
     assert.equal(res.status, 200);
+    assert.equal(res.body.status, "ok");
+    assert.equal(
+      res.body.revision,
+      "e6c6169a46c52b48489062d680ee142e2e486f75",
+    );
+    assert.equal(typeof res.body.hasOpenAiKey, "boolean");
+    assert.equal(typeof res.body.realtimeModel, "string");
+    assert.equal(typeof res.body.time, "string");
+    assert.equal(
+      JSON.stringify(res.body).includes(process.env.OPENAI_API_KEY),
+      false,
+    );
+    assert.deepEqual(Object.keys(res.body).sort(), [
+      "hasOpenAiKey",
+      "realtimeModel",
+      "revision",
+      "status",
+      "time",
+    ]);
   } finally {
     server.close();
+    if (originalRevision === undefined) delete process.env.RENDER_GIT_COMMIT;
+    else process.env.RENDER_GIT_COMMIT = originalRevision;
+    if (originalOpenAiKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = originalOpenAiKey;
   }
 });

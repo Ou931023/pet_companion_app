@@ -48,7 +48,7 @@ GitHub Pages
 | PORT | `process.env.PORT || 3001` | `server.js:133` |
 | HOST | `HOST` 有值優先；production 預設 `0.0.0.0`，development 預設 `127.0.0.1` | `config/env.js resolveListenHost` |
 | listen | `app.listen(port, host, …)`，啟動時 log 一份**遮蔽過**的設定摘要（`describeMaskedConfig`，不印完整值） | `server.js:2793-2794` |
-| health check | `GET /health` → `{ status:"ok", hasOpenAiKey:<bool>, realtimeModel, time }`（**只回布林，不回 key**） | `server.js:554` |
+| health check | `GET /health` → `{ status:"ok", revision, hasOpenAiKey:<bool>, realtimeModel, time }`；`revision` 只接受 Render 提供的 40 位 Git commit SHA，不回 repo、branch、service id 或任意環境值 | `server.js` / `services/deploymentRevision.js` |
 | Node 版本 | `package.json` 已限制 **Node >=20.18.1 且 <25**，目前 Render Node 24 可用 | `NODE_VERSION` 必須落在此範圍 |
 
 ### `package.json` scripts
@@ -58,7 +58,7 @@ GitHub Pages
 | `npm start` / `npm run dev` | `node server.js` | 啟動服務 |
 | `npm run db:migrate` | `node db/migrate.js` | 套用 DB 擴充 + migration（見 §6） |
 | `npm run check` | 一連串 `node --check`（語法檢查，不連線） | CI / 部署前快速健檢 |
-| `npm test` | `node --test …`（目前 654 案，使用 stub / mock pg，不需真環境） | 回歸測試 |
+| `npm test` | `node --test` 自動探索所有測試檔（使用 stub / mock pg，不需真環境） | 回歸測試 |
 
 > production 啟動語義（`config/env.js`）：顯式 `APP_ENV=production` 優先；否則 `NODE_ENV=production` → production。`NODE_ENV=test` 永不解析為 production。
 
@@ -197,10 +197,12 @@ curl https://<你的正式網域>/health
 預期回應（範例形狀，值依環境）：
 
 ```json
-{ "status": "ok", "hasOpenAiKey": true, "realtimeModel": "gpt-realtime", "time": "2026-..." }
+{ "status": "ok", "revision": "e6c6169a46c52b48489062d680ee142e2e486f75", "hasOpenAiKey": true, "realtimeModel": "gpt-realtime", "time": "2026-..." }
 ```
 
+- `revision` 來自 Render 官方 runtime 變數 `RENDER_GIT_COMMIT`，必須是完整 40 位十六進位 SHA；本機或無效值回 `null`，不反射任意環境內容。
 - `hasOpenAiKey` 是**布林**（只表示有沒有設 key，**不洩漏 key**）。
+- `/health` 不加入資料庫 URL、migration/schema、服務 ID、instance ID 或任何 secret；需要詳細基礎設施診斷時應走既有授權管理路徑或 Render 內部介面。
 - 把這個路徑填到 Render 的 **Health Check Path** = `/health`，讓平台用它判斷服務存活。
 - 啟動 log 會有一行遮蔽過的設定摘要（`[config] effective config (masked)`），可用來確認 `databaseUrl`/`openaiApiKey`/`adminApiToken` 等顯示為已設（遮蔽）而非 `(unset)`，但**不會**印出完整值。
 
