@@ -1,7 +1,7 @@
 const dotenv = require("dotenv");
 const { Pool } = require("pg");
 
-dotenv.config();
+if (process.env.NODE_ENV !== "test") dotenv.config();
 
 let pool;
 let availability;

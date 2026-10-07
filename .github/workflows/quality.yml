@@ -62,3 +62,6 @@ jobs:
 
       - name: Run all backend tests
         run: npm test
+
+      - name: Reject high and critical runtime dependency advisories
+        run: npm audit --omit=dev --audit-level=high
