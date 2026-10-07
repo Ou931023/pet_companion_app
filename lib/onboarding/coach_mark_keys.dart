@@ -134,7 +134,7 @@ List<CoachMarkStep> buildHomeCoachMarkSteps(
     // 7：首頁常駐遊戲入口；點寵物本身仍是摸摸互動。
     CoachMarkStep(
       targetKey: keys.playButtonKey,
-      text: '想動動腦時，按「玩遊戲」就能和寵物一起玩拼圖。',
+      text: '按「一起陪伴」可以摸摸寵物、一起坐坐，或玩遊戲拼圖。不用開麥克風。',
     ),
     // 8：更多功能是次要入口 → 高亮右上角更多功能。
     CoachMarkStep(

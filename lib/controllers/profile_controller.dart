@@ -42,6 +42,7 @@ class ProfileController extends ChangeNotifier {
         ? SttMode.openAiProxy
         : SttMode.mock;
   }
+
   List<Map<String, String>> get familyContacts => List.unmodifiable(
         _profile.familyContacts.map((e) => Map<String, String>.from(e)),
       );
@@ -67,6 +68,9 @@ class ProfileController extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     _profile = await _storageService.loadProfile();
+    _profile = _profile.copyWith(
+      fontScale: _normalizeFontScale(_profile.fontScale),
+    );
     final normalizedSttProxyUrl =
         AppConfig.normalizeSttProxyUrl(_profile.sttProxyUrl);
     if (normalizedSttProxyUrl != _profile.sttProxyUrl) {
@@ -127,9 +131,12 @@ class ProfileController extends ChangeNotifier {
   }
 
   Future<void> setFontScale(double value) async {
-    _profile = _profile.copyWith(fontScale: value.clamp(0.9, 1.3));
+    _profile = _profile.copyWith(fontScale: _normalizeFontScale(value));
     await _persist();
   }
+
+  static double _normalizeFontScale(double value) =>
+      value.isFinite ? value.clamp(0.9, 2.0) : 1.0;
 
   Future<void> setPetVolume(double value) async {
     _profile = _profile.copyWith(petVolume: value.clamp(0.0, 1.0));

@@ -9,17 +9,22 @@ class InventoryItemCard extends StatelessWidget {
     this.draggable = false,
     this.onDragStarted,
     this.onDragEnded,
+    this.onTap,
   });
 
   final InventoryItem item;
   final bool draggable;
   final VoidCallback? onDragStarted;
   final VoidCallback? onDragEnded;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final child = Semantics(
       label: '${item.name}，剩下 ${item.quantity} 個',
+      button: onTap != null,
+      hint: onTap != null ? '點一下給寵物使用' : null,
+      onTap: onTap,
       child: Container(
         width: 72,
         height: 72,
@@ -70,7 +75,8 @@ class InventoryItemCard extends StatelessWidget {
       ),
     );
 
-    if (!draggable) return child;
+    final interactiveChild = GestureDetector(onTap: onTap, child: child);
+    if (!draggable) return interactiveChild;
     return Draggable<InventoryItem>(
       data: item,
       onDragStarted: onDragStarted,
@@ -100,7 +106,7 @@ class InventoryItemCard extends StatelessWidget {
         ),
       ),
       childWhenDragging: Opacity(opacity: 0.35, child: child),
-      child: child,
+      child: interactiveChild,
     );
   }
 }

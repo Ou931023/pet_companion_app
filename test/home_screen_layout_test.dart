@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:pet_companion_app/config/app_config.dart';
+import 'package:pet_companion_app/utils/preference_text_scaler.dart';
 import 'package:pet_companion_app/controllers/app_navigation_controller.dart';
 import 'package:pet_companion_app/controllers/auth_controller.dart';
 import 'package:pet_companion_app/controllers/check_in_controller.dart';
@@ -51,11 +52,188 @@ import 'package:pet_companion_app/services/taigi_asr_service.dart';
 import 'package:pet_companion_app/services/text_to_speech_service.dart';
 import 'package:pet_companion_app/services/web_search_service.dart';
 import 'package:pet_companion_app/widgets/pet_avatar.dart';
+import 'package:pet_companion_app/widgets/inventory_item_card.dart';
+import 'package:pet_companion_app/models/pet_status.dart';
 import 'package:pet_companion_app/widgets/source_reference_list.dart';
 import 'package:pet_companion_app/widgets/ui/primary_action_button.dart';
 
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets(
+      '4x combined system and preference size keeps main operations reachable',
+      (tester) async {
+    await binding.setSurfaceSize(const Size(320, 568));
+    addTearDown(() => binding.setSurfaceSize(null));
+    final harness = await _HomeHarness.create();
+    addTearDown(harness.dispose);
+    await harness.profileController.setFontScale(2);
+    await tester
+        .pumpWidget(_homeHost(harness, textScale: 2, applyPreference: true));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(tester.getRect(find.byType(PrimaryActionButton)).bottom,
+        lessThanOrEqualTo(568));
+    expect(
+        MediaQuery.textScalerOf(
+                tester.element(find.byType(PrimaryActionButton)))
+            .scale(21),
+        84);
+    await tester.tap(find.text('打字'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('跟寵物說一句話'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(seconds: 9));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+      'a delayed tap response does not overwrite a newer typing interaction',
+      (tester) async {
+    final tts = _DelayedStopTts();
+    final harness = await _HomeHarness.create(ttsService: tts);
+    addTearDown(harness.dispose);
+    await tester.pumpWidget(_homeHost(harness));
+    await tester.pump();
+    harness.petController.setMode(PetMode.talking, isSpeaking: true);
+    await tester.pump();
+    final intimacy = harness.petStatsController.intimacy;
+    await tester.tap(find.byType(PetAvatar));
+    await tester.tap(find.text('打字'));
+    await tester.pump();
+    tts.stopped.complete();
+    await tester.pump();
+    expect(find.text('跟寵物說一句話'), findsOneWidget);
+    expect(find.text('謝謝你摸摸我，我就在這裡陪你。'), findsNothing);
+    expect(harness.petStatsController.intimacy, intimacy);
+    expect(harness.voiceAgentController.hasOpenRealtimeSession, isFalse);
+    await tester.pump(const Duration(seconds: 9));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+      'tap feeding stops greeting first and repeated taps consume only once',
+      (tester) async {
+    await binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => binding.setSurfaceSize(null));
+    final tts = _DelayedStopTts();
+    final harness = await _HomeHarness.create(ttsService: tts);
+    addTearDown(harness.dispose);
+    final food = const ShopService().allItems().first;
+    await harness.inventoryController.addFromShop(food);
+    await harness.inventoryController.addFromShop(food);
+    await tester.pumpWidget(_homeHost(harness));
+    await tester.pump();
+    await tester.tap(find.byTooltip('更多功能'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.ensureVisible(find.text('背包'));
+    await tester.tap(find.text('背包'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    harness.petController.setMode(PetMode.talking, isSpeaking: true);
+    await tester.pump();
+    await tester.tap(find.byType(InventoryItemCard));
+    await tester.tap(find.byType(InventoryItemCard));
+    await tester.pump();
+    expect(tts.stops, 1);
+    expect(harness.inventoryController.totalQuantity, 2);
+    tts.stopped.complete();
+    await tester.pump();
+    expect(harness.inventoryController.totalQuantity, 1);
+    expect(harness.voiceAgentController.hasOpenRealtimeSession, isFalse);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.byTooltip('收起背包'));
+    await tester.pump(const Duration(seconds: 9));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+      '2x small screen keeps voice, typing, full reply and sheet return reachable',
+      (tester) async {
+    final semantics = tester.ensureSemantics();
+    await binding.setSurfaceSize(const Size(320, 568));
+    addTearDown(() => binding.setSurfaceSize(null));
+    final harness = await _HomeHarness.create();
+    addTearDown(harness.dispose);
+    final reply = List.filled(12, '今天買的番茄很漂亮，我陪你慢慢聊。').join();
+    harness.conversationController.showPetBubbleMessage(reply);
+    await tester.pumpWidget(_homeHost(harness, textScale: 2));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(tester.getRect(find.byType(PrimaryActionButton)).bottom,
+        lessThanOrEqualTo(568));
+    await tester.tap(find.text('打字'));
+    await tester.pump();
+    expect(find.text('跟寵物說一句話'), findsOneWidget);
+    await tester.tap(find.text('收起'));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('home-full-reply')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byType(SelectableText), findsOneWidget);
+    expect(tester.widget<SelectableText>(find.byType(SelectableText)).data,
+        contains(reply));
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('返回首頁'));
+    await tester.tap(find.text('返回首頁'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await _openTogether(tester);
+    expect(find.bySemanticsLabel(RegExp('小伴邀請你互動')), findsOneWidget);
+    await tester.tap(find.text('返回首頁'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byType(PrimaryActionButton), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(seconds: 9));
+    semantics.dispose();
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('pet numbers appear only in scrollable details at 2x',
+      (tester) async {
+    await binding.setSurfaceSize(const Size(320, 568));
+    addTearDown(() => binding.setSurfaceSize(null));
+    final harness = await _HomeHarness.create();
+    addTearDown(harness.dispose);
+    await tester.pumpWidget(_homeHost(harness, textScale: 2));
+    await tester.pump();
+    expect(find.text('親密'), findsNothing);
+    await tester
+        .ensureVisible(find.byKey(const ValueKey('home-status-details')));
+    await tester.tap(find.byKey(const ValueKey('home-status-details')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('親密'), findsOneWidget);
+    expect(find.text('飽足'), findsOneWidget);
+    expect(find.text('心情'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('返回首頁'));
+    await tester.pump(const Duration(seconds: 9));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+      'font preference accepts 2x and normalizes stored out of range values',
+      (tester) async {
+    final harness = await _HomeHarness.create();
+    addTearDown(harness.dispose);
+    await harness.profileController.setFontScale(2);
+    expect(harness.profileController.fontScale, 2);
+    await harness.profileController.load();
+    expect(harness.profileController.fontScale, 2);
+    await harness.profileController.setFontScale(double.nan);
+    expect(harness.profileController.fontScale, 1);
+    await harness.profileController.setFontScale(.9);
+    expect(harness.profileController.fontScale, .9);
+    await LocalStorageService().saveProfile(
+      harness.profileController.profile.copyWith(fontScale: 9),
+    );
+    await harness.profileController.load();
+    expect(harness.profileController.fontScale, 2);
+  });
 
   testWidgets('HomeScreen does not overflow at small height', (tester) async {
     await binding.setSurfaceSize(const Size(320, 568));
@@ -78,6 +256,8 @@ void main() {
     await tester.pump();
 
     expect(find.textContaining('不用開麥克風'), findsOneWidget);
+    expect(find.byKey(const ValueKey('home-invitation-pat')), findsNothing);
+    await _openTogether(tester);
     expect(find.byKey(const ValueKey('home-invitation-pat')), findsOneWidget);
     expect(find.byKey(const ValueKey('home-invitation-sit')), findsOneWidget);
 
@@ -124,7 +304,7 @@ void main() {
 
     expect(find.text('更換外觀'), findsNothing);
     expect(find.text('陪寵物玩'), findsNothing);
-    expect(find.widgetWithText(OutlinedButton, '玩遊戲'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, '一起陪伴'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, '更多'), findsOneWidget);
     expect(find.byTooltip('更多功能'), findsOneWidget);
 
@@ -184,7 +364,7 @@ void main() {
       await tester.pump();
       final initialIntimacy = harness.petStatsController.intimacy;
 
-      final pat = find.byKey(const ValueKey('home-invitation-pat'));
+      final pat = find.byType(PetAvatar);
       await tester.tap(pat);
       await tester.tap(pat);
       await tester.pump();
@@ -217,14 +397,18 @@ void main() {
       await tester.pump();
 
       expect(harness.petStatsController.lifeState.name, 'alive');
-      expect(find.byKey(const ValueKey('home-invitation-pat')), findsOneWidget);
+      expect(find.byType(PetAvatar), findsOneWidget);
       expect(find.text('打字'), findsOneWidget);
       final micButton = tester.widget<PrimaryActionButton>(
         find.byType(PrimaryActionButton),
       );
       expect(micButton.onPressed, isNotNull);
 
+      await _openTogether(tester);
       await tester.tap(find.byKey(const ValueKey('home-invitation-sit')));
+      await tester.tap(find.byKey(const ValueKey('home-invitation-sit')));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byType(HomeScreen), findsOneWidget);
       await tester.pump();
       expect(find.textContaining('不說話也沒關係'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -248,7 +432,7 @@ void main() {
       await tester.pump();
       expect(greetingService.requested, isTrue);
 
-      await tester.tap(find.byKey(const ValueKey('home-invitation-pat')));
+      await tester.tap(find.byType(PetAvatar));
       await tester.pump();
       greetingService.complete('這是一則太晚回來的問候');
       await tester.pump();
@@ -345,7 +529,7 @@ void main() {
     await tester.pump();
 
     expect(
-      find.byKey(const ValueKey('home-conversation-detail-scroll')),
+      find.byKey(const ValueKey('home-full-reply')),
       findsOneWidget,
     );
     final conversationSize = tester.getSize(
@@ -520,7 +704,7 @@ void main() {
     await tester.pump();
     expect(tester.takeException(), isNull);
 
-    final playContext = tester.element(find.text('玩遊戲'));
+    final playContext = tester.element(find.text('一起陪伴'));
     final effectiveFontSize = MediaQuery.textScalerOf(playContext).scale(17);
     expect(effectiveFontSize, closeTo(22.1, 0.01));
 
@@ -541,6 +725,7 @@ void main() {
     await tester.pumpWidget(_homeHost(harness, textScale: 1.3));
     await tester.pump();
 
+    await _openTogether(tester);
     expect(
       find.bySemanticsLabel(RegExp('小伴邀請你互動，不需要開啟麥克風')),
       findsOneWidget,
@@ -870,9 +1055,16 @@ Future<void> _pumpHomeScreen(
   harness.dispose();
 }
 
+Future<void> _openTogether(WidgetTester tester) async {
+  await tester.tap(find.widgetWithText(OutlinedButton, '一起陪伴'));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 300));
+}
+
 Widget _homeHost(
   _HomeHarness harness, {
   double textScale = 1.0,
+  bool applyPreference = false,
   CoachMarkController? coach,
 }) {
   return MultiProvider(
@@ -920,7 +1112,9 @@ Widget _homeHost(
       builder: (context, child) {
         final mediaQuery = MediaQuery.of(context);
         return MediaQuery(
-          data: mediaQuery.copyWith(textScaler: TextScaler.linear(textScale)),
+          data: mediaQuery.copyWith(
+              textScaler: PreferenceTextScaler(TextScaler.linear(textScale),
+                  applyPreference ? harness.profileController.fontScale : 1)),
           child: child ?? const SizedBox.shrink(),
         );
       },
@@ -956,6 +1150,16 @@ Widget _settingsHost(_HomeHarness harness, {double textScale = 1.0}) {
       home: const Scaffold(body: SettingsScreen()),
     ),
   );
+}
+
+class _DelayedStopTts extends TextToSpeechService {
+  final stopped = Completer<void>();
+  int stops = 0;
+  @override
+  Future<void> stop() {
+    stops += 1;
+    return stopped.future;
+  }
 }
 
 class _HomeHarness {
@@ -1010,6 +1214,7 @@ class _HomeHarness {
   static Future<_HomeHarness> create({
     Map<String, Object> initialPreferences = const {},
     MemoryService? memoryService,
+    TextToSpeechService? ttsService,
   }) async {
     SharedPreferences.setMockInitialValues(initialPreferences);
     final localStorage = LocalStorageService();
@@ -1059,7 +1264,7 @@ class _HomeHarness {
       profileController: profileController,
       petController: petController,
       toolRouter: toolRouter,
-      ttsService: TextToSpeechService(),
+      ttsService: ttsService ?? TextToSpeechService(),
       sttService: MockSpeechToTextService(),
       storageService: localStorage,
       searchService: SearchService(),
