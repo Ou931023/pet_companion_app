@@ -15,7 +15,15 @@
 - 三個 multipart parser 設有界 file/field/parts/name/value/nesting/index；STT 依上游 25 MB ceiling，不新增錄音時長截斷、不新增會封鎖既有 App 的音訊驗證。
 - Flutter octet-stream 音訊及照片保留已知副檔名相容；照片仍 8 MiB、台語預設 10 MiB。所有早退、失敗與中止暫存清理須本機 synthetic 回歸；production proof 保留既有持久化語義。
 - 不讀 .env、不測正式惡意流量／真實警示，不改資料結構、模型、Realtime 或持續存取權限。獨立 revert 回復，無資料遷移。
-- Checkpoint：architecture-agent Approve（2026-10-07），完整 backend check + 735 tests 通過；Flutter 真實照片 multipart suite 6 tests 通過；fresh full/runtime audit 均 8 moderate、0 high/critical，high gate 通過；diff check 通過。CI 為合併前最後門檻，剩餘 UUID/Firebase 與真機限制見 UPLOAD_SECURITY_REVIEW。
+- Checkpoint：architecture-agent Approve（2026-10-07），stt_proxy check + 735 tests 通過；Flutter 真實照片 multipart suite 6 tests 通過；fresh full/runtime audit 均 8 moderate、0 high/critical，high gate 通過；diff check 通過。CI 為合併前最後門檻，剩餘 UUID/Firebase 與真機限制見 UPLOAD_SECURITY_REVIEW。
+
+## CR-ROUND3-C：低負擔同話題接應與測試探索（2026-10-07）
+
+- architecture-agent 實作前及最終 checkpoint Approve；保留模型、按鍵收音、工具 truth、風險優先與跨次記憶管線。
+- 一般分享允許同話題小觀察／可拒絕一問，不例行問、不重問已答或未答。疲累／拒絕停止邀聊和記憶附加；高／危急安全指令不再附加敏感回憶。「嗯／喔」只在近期明確普通敘事接應，不能批准工具。
+- 實際整合發現原 npm test 只探索 stt_proxy，不能保護 sibling companion 改動。改從 backend 根探索；舊 search wrapper test 改合成 provider，避免外部 dummy-key 請求與 runtime 寫入。此 scripts/test 跨邊界修復已另獲核准，無新增依賴。
+- 原 735 為 stt_proxy 範圍；本輪完整 backend 877 tests（包含 companion/agent/memory/search）通過。合成八回合與人工規則不代表真模型或留存驗證；CI 為最後門檻。
+- 無資料遷移，以獨立 PR revert 回復；每日活動僅留下可選共同成果、無扣分／streak 的後續小規格。
 
 本檔記錄所有觸及 🔒 邊界或跨 agent 範圍的變更提案與審查結果。
 由 `architecture-agent` 維護裁決；其他 agent 在動工前於此開提案。
