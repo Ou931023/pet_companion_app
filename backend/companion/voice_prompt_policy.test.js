@@ -16,6 +16,16 @@ test("ordinary prompts end the turn without suppressing requested detail or urge
   assert.ok(!urgent.instruction.includes(COMPANIONSHIP_VOICE_POLICY));
 });
 
+test("sharing permits one same-topic observation or optional invitation without repetitive questions or invented memory", () => {
+  assert.match(COMPANIONSHIP_VOICE_POLICY, /1–3 句/);
+  assert.match(COMPANIONSHIP_VOICE_POLICY, /分享事情或表示想聊.*同一話題.*小觀察/);
+  assert.match(COMPANIONSHIP_VOICE_POLICY, /容易回答、可拒絕.*不必每次都問/);
+  assert.match(COMPANIONSHIP_VOICE_POLICY, /未回答的問題也不反覆催問/);
+  assert.match(COMPANIONSHIP_VOICE_POLICY, /不編造共同經歷或使用者喜好/);
+  assert.match(COMPANIONSHIP_VOICE_POLICY, /不主動帶出健康、家庭衝突等敏感記憶/);
+  assert.match(COMPANIONSHIP_VOICE_POLICY, /不把普通聊天拉回任務或養成進度/);
+});
+
 test("selected Taiwanese wins over Mandarin ASR, including tool outcomes", () => {
   for (const replyLanguage of ["taigi", "mixed-zh-taigi"]) {
     const prompt = outputLanguageInstruction({ replyLanguage, languageHint: "zh", mode: "realtime" });

@@ -43,11 +43,129 @@ test("情境①：『今天我跟朋友吵架了』→ 針對事件追問，不�
   }
 });
 
-test("情境②：『我今天好累』→ 區分身體累 / 心裡累，不直接長篇鼓勵", () => {
+test("情境②：『我今天好累』→ 接住就停，不直接長篇鼓勵或繼續追問", () => {
   const r = analyze("我今天好累");
   assert.equal(r.nextStrategy.mode, "comfort_lightly");
-  assert.match(r.nextStrategy.instruction, /身體累|心裡累/);
+  assert.match(r.nextStrategy.instruction, /讓他休息|說完就停/);
+  assert.match(r.nextStrategy.instruction, /不邀聊、不追問/);
   assert.match(r.nextStrategy.instruction, /不要.*長篇|別.*長篇|不要說教|最多/);
+});
+
+test("分享市場番茄與想聊時，可同話題觀察或邀請但不例行追問", () => {
+  for (const transcript of ["今天去市場買番茄，很紅很漂亮", "我想聊聊今天去市場買菜"]) {
+    const strategy = analyze(transcript).nextStrategy;
+    assert.equal(strategy.mode, "normal_chat");
+    assert.match(strategy.instruction, /同話題的小觀察或可拒絕的小邀請/);
+    assert.match(strategy.instruction, /不必每次追問/);
+    assert.match(strategy.instruction, /不把話題拉回任務/);
+  }
+});
+
+test("近期問句已答或未答均不重問，承接使用者具體答案", () => {
+  const recentTurns = [{ userText: "市場的番茄很紅", petReply: "你打算煮什麼呢？" }];
+  const answered = analyze("我要煮番茄蛋湯", { recentTurns }).nextStrategy;
+  assert.match(answered.instruction, /最近使用者說過「市場的番茄很紅」/);
+  assert.match(answered.instruction, /已回答就承接答案，不再重問/);
+  assert.match(answered.instruction, /未回答或拒絕也不要重問或催答/);
+  const unanswered = analyze("我只是想說今天市場很熱鬧", { recentTurns }).nextStrategy;
+  assert.match(unanswered.instruction, /未回答或拒絕也不要重問或催答/);
+});
+
+test("短嗯喔僅在近期普通敘事聊天接應，不批准動作且不注入記憶", () => {
+  const recentTurns = [{ userText: "今天去市場買番茄", petReply: "紅紅的番茄，市場看起來很熱鬧。", emotionTag: "happy" }];
+  for (const transcript of ["嗯", "嗯嗯。", "喔", "哦…"]) {
+    const strategy = analyze(transcript, { recentTurns, retrievedMemories: [{ content: "synthetic-private-health" }] }).nextStrategy;
+    assert.equal(strategy.mode, "normal_chat", transcript);
+    assert.match(strategy.instruction, /不要求他重說/);
+    assert.match(strategy.instruction, /不得把接應視為任何動作的批准/);
+    assert.match(strategy.instruction, /不加新問題或話題/);
+    assert.doesNotMatch(strategy.instruction, /synthetic-private-health/);
+  }
+  for (const transcript of ["嗯", "喔", "那個", "嗯那個", "蛤", "啊"]) {
+    assert.equal(analyze(transcript).nextStrategy.mode, "clarify", transcript);
+  }
+  assert.equal(analyze("那個", { recentTurns }).nextStrategy.mode, "clarify");
+});
+
+test("工具、敏感、問句及欠缺內容脈絡不將短語當聊天批准", () => {
+  const ordinary = { userText: "今天去市場買菜", petReply: "市場很熱鬧。" };
+  const blocked = [
+    [{ userText: "提醒我八點吃藥", petReply: "要設定嗎？" }],
+    [{ userText: "市場番茄", petReply: "可以幫你通知女兒。" }],
+    [{ userText: "今天去市場", petReply: "番茄要煮什麼？" }],
+    [{ userText: "今天去市場", petReply: "要煮什麼呢。" }],
+    [{ userText: "今天去公園很孤單", petReply: "慢慢說。" }],
+    [{ userText: "今天去市場", petReply: "已設定提醒。" }],
+    [{ userText: "今天去市場", petReply: "市場很熱鬧。", emotionTag: "sad" }],
+    [{ userText: "今天去市場", petReply: "市場很熱鬧。", nextStrategy: { mode: "tool_action" } }],
+    [{ petReply: "市場很熱鬧。" }],
+    [{ userText: "今天去市場", petReply: "" }],
+    [ordinary, { userText: "幫我買商城飼料", petReply: "請確認商品數量。" }],
+    [ordinary, { userText: "我生病了", petReply: "慢慢休息。" }],
+  ];
+  for (const recentTurns of blocked) {
+    assert.equal(analyze("嗯", { recentTurns }).nextStrategy.mode, "clarify", JSON.stringify(recentTurns));
+  }
+});
+
+test("累、拒絕和台語想安靜不邀聊、不注入敏感記憶，安全工具仍優先", () => {
+  for (const transcript of ["我今天好累", "好無聊但我好累", "今天吵架了，好累", "好無聊但我不想聊天", "我想安靜", "今仔日毋想閣講話"]) {
+    const strategy = analyze(transcript, { retrievedMemories: [{ content: "synthetic-family-conflict" }] }).nextStrategy;
+    assert.match(strategy.instruction, /不邀聊、不追問|不提新話題、不問問題、不邀請活動/);
+    assert.doesNotMatch(strategy.instruction, /synthetic-family-conflict/);
+  }
+  for (const riskLevel of ["high", "urgent"]) {
+    const strategy = planNextStrategy({ transcript: "嗯", recentTurns: [{ userText: "今天去市場", petReply: "很熱鬧。" }], safety: { riskLevel } });
+    assert.equal(strategy.mode, "safety_check");
+  }
+  const tool = analyze("好累，提醒我八點吃藥").nextStrategy;
+  assert.equal(tool.mode, "tool_action");
+  assert.match(tool.instruction, /不得提前聲稱成功/);
+  assert.equal(analyze("你還記得我上次說很累嗎").nextStrategy.mode, "memory_recall");
+  assert.equal(planNextStrategy({ transcript: "很累的時候為什麼想休息？", emotion: "neutral", safety: { riskLevel: "low" }, searchIntent: { needsSearch: true } }).mode, "knowledge_response");
+});
+
+test("台語接應保留語言指引；無聊提供一個可拒絕具體選項而非功能清單", () => {
+  const taigi = analyze("嗯", { languageHint: "taigi", recentTurns: [{ userText: "今仔日去市場買番茄", petReply: "市場真鬧熱。" }] }).nextStrategy;
+  assert.equal(taigi.mode, "normal_chat");
+  assert.match(taigi.instruction, /以台語為主/);
+  const bored = analyze("好無聊").nextStrategy;
+  assert.match(bored.instruction, /一個低壓力、可以拒絕/);
+  assert.match(bored.instruction, /不反問他想聊什麼、不列功能清單/);
+  assert.match(bored.instruction, /不因沉默繼續說/);
+});
+
+test("high／urgent 安全優先但不附加敏感回憶，安靜要求也不改變風險模式", () => {
+  for (const riskLevel of ["high", "urgent"]) {
+    const strategy = planNextStrategy({
+      transcript: "我想安靜，不要提以前的事",
+      safety: { riskLevel },
+      retrievedMemories: [{ content: "synthetic-sensitive-family-history" }],
+    });
+    assert.equal(strategy.mode, "safety_check");
+    assert.doesNotMatch(strategy.instruction, /synthetic-sensitive-family-history|可自然參考使用者過去/);
+    assert.match(strategy.instruction, /不要做醫療診斷/);
+    if (riskLevel === "urgent") assert.match(strategy.instruction, /立刻聯絡家人/);
+  }
+});
+
+test("合成回合6與台語活動拒絕停止邀請，不帶入敏感記憶；引用查詢不當拒絕", () => {
+  for (const transcript of ["不要建議活動了", "我今天沒事做，但不要建議活動", "毋免閣建議活動", "毋想做活動", "莫閣推薦話題"]) {
+    const strategy = analyze(transcript, {
+      languageHint: "taigi",
+      retrievedMemories: [{ content: "synthetic-private-family-context" }],
+    }).nextStrategy;
+    assert.equal(strategy.mode, "normal_chat", transcript);
+    assert.match(strategy.instruction, /使用者明確拒絕話題或活動建議/);
+    assert.match(strategy.instruction, /不提話題或活動、不追問/);
+    assert.doesNotMatch(strategy.instruction, /synthetic-private-family-context|小邀請/);
+  }
+  for (const transcript of ["『不要建議活動了』是什麼意思？", "「毋免閣建議活動」是什麼意思？", "女兒說「不要建議活動了」，是什麼意思？"]) {
+    const strategy = planNextStrategy({ transcript, safety: { riskLevel: "low" } });
+    assert.equal(strategy.mode, "answer_directly", transcript);
+    assert.doesNotMatch(strategy.instruction, /使用者明確拒絕話題或活動建議|使用者現在不想聊天/);
+  }
+  assert.equal(analyze("取消喝水提醒").nextStrategy.mode, "tool_action");
 });
 
 test("情境③：『提醒我晚上八點吃藥』→ 走 tool_action 交給工具，不只聊天", () => {

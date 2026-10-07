@@ -1,6 +1,21 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
+// Exercise the wrapper with a synthetic provider. Legacy tests otherwise call
+// live search/summary services with a dummy key and write search runtime data.
+const providerPath = require.resolve("../stt_proxy/services/search/searchService");
+require.cache[providerPath] = {
+  id: providerPath, filename: providerPath, loaded: true,
+  exports: { search: async ({ query }) => ({
+    answer: "合成測試資料的防詐提醒。",
+    sources: query.includes("zzzzzz") ? [] : [{
+      title: "合成防詐來源", url: "https://synthetic.example/fraud", summary: "虛構測試來源",
+    }],
+    shouldShowSources: true,
+    provider: "synthetic-test",
+  }) },
+};
+
 const { classifySearchIntent } = require("./search_intent_classifier");
 const { filterTrustedSources } = require("./trusted_source_filter");
 const { searchKnowledge } = require("./search_service");
