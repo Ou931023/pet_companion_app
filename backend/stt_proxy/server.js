@@ -7,7 +7,7 @@ const path = require("path");
 const rateLimit = require('express-rate-limit');
 const OpenAI = require("openai");
 
-dotenv.config();
+if (process.env.NODE_ENV !== "test") dotenv.config();
 
 // CR-0034 B1：集中化環境設定 + production 啟動 fail-fast。
 // 非 production / NODE_ENV=test 一律 no-op（不影響既有啟動與測試）；
@@ -157,24 +157,17 @@ const trustProxyHops =
     : 1;
 app.set("trust proxy", trustProxyHops);
 const port = process.env.PORT || 3001;
-const upload = multer({ dest: "uploads/" });
-const dailyCareProofUploadDir = path.join(
-  os.tmpdir(),
-  "pet_companion_daily_care_proofs",
-);
+const { STT_MAX_BYTES, multipartLimits, taigiMaxBytes, photoMimeType, uploadDirectory } = require("./services/uploadPolicy");
+const upload = multer({ dest: uploadDirectory("pet_companion_stt"), limits: multipartLimits(STT_MAX_BYTES) });
+const dailyCareProofUploadDir = uploadDirectory("pet_companion_daily_care_proofs");
 fs.mkdirSync(dailyCareProofUploadDir, { recursive: true });
 const dailyCareProofUpload = multer({
   dest: dailyCareProofUploadDir,
-  limits: { fileSize: 8 * 1024 * 1024, files: 1 },
+  limits: multipartLimits(8 * 1024 * 1024),
   fileFilter: (_req, file, callback) => {
-    const allowed = new Set([
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-      "image/heic",
-      "image/heif",
-    ]);
-    callback(null, allowed.has(String(file.mimetype || "").toLowerCase()));
+    const mime = photoMimeType(file);
+    if (mime) file.mimetype = mime;
+    callback(null, Boolean(mime));
   },
 });
 function receiveDailyCareProof(req, res, next) {
@@ -183,13 +176,11 @@ function receiveDailyCareProof(req, res, next) {
     return res.status(400).json({ success: false, error: "invalid_photo" });
   });
 }
-const taigiAsrUploadDir = path.join(os.tmpdir(), "pet_companion_taigi_asr");
+const taigiAsrUploadDir = uploadDirectory("pet_companion_taigi_asr");
 fs.mkdirSync(taigiAsrUploadDir, { recursive: true });
 const taigiAsrUpload = multer({
   dest: taigiAsrUploadDir,
-  limits: {
-    fileSize: Number(process.env.TAIGI_ASR_MAX_UPLOAD_BYTES) || 10 * 1024 * 1024,
-  },
+  limits: multipartLimits(taigiMaxBytes(process.env.TAIGI_ASR_MAX_UPLOAD_BYTES)),
   fileFilter: (req, file, callback) => {
     const allowedMimeTypes = new Set([
       "audio/wav",
@@ -2306,47 +2297,17 @@ ${memoryContextSummary}
   });
 });
 
-app.post("/api/stt/transcribe", upload.single("audio"), async (req, res) => {
-  if (!process.env.OPENAI_API_KEY) {
-    return res.status(500).json({
-      success: false,
-      code: "missing_api_key",
-      message: "Missing OPENAI_API_KEY",
-    });
-  }
-  if (!req.file) {
-    return res.status(400).json({
-      success: false,
-      message: "audio file is required",
-    });
-  }
-
-  try {
-    const result = await client.audio.transcriptions.create({
-      file: fs.createReadStream(req.file.path),
-      model: "gpt-4o-transcribe",
-      response_format: "json",
-    });
-    const text = (result.text || "").trim();
-    if (!text) {
-      return res.status(422).json({
-        success: false,
-        message: "Empty transcript",
-      });
+const sttUploadHandler = require("./services/sttUploadHandler").createSttUploadHandler({
+  client, isConfigured: () => Boolean(process.env.OPENAI_API_KEY),
+});
+app.post("/api/stt/transcribe", (req, res) => {
+  upload.single("audio")(req, res, (error) => {
+    if (error) {
+      if (res.destroyed) return;
+      return res.status(400).json({ success: false, code: "invalid_audio", message: "Invalid audio upload" });
     }
-    return res.json({
-      success: true,
-      text,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "STT failed",
-      error: error?.message || "Unknown error",
-    });
-  } finally {
-    fs.unlink(req.file.path, () => {});
-  }
+    return sttUploadHandler(req, res);
+  });
 });
 
 app.get("/api/asr/taigi/status", async (_, res) => {
@@ -2384,7 +2345,7 @@ app.post("/api/asr/taigi", (req, res) => {
         : uploadError.code || "TAIGI_ASR_INVALID_AUDIO";
       return res.status(uploadError.status || 400).json({
         error: code,
-        message: uploadError.message || "Invalid audio upload",
+        message: "Invalid audio upload",
       });
     }
     if (!req.file) {

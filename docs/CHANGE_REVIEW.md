@@ -1,5 +1,14 @@
 # docs/CHANGE_REVIEW.md — 變更提案與 phase 批次審查
 
+## CR-ROUND3-A：上傳邊界與依賴安全（2026-10-07）
+
+- 使用者授權安全修復、測試、PR、合併及已確認 Render 部署；architecture-agent 實作前核准，合併前另做 checkpoint。
+- 升級 Multer 2.4.0；以 fresh audit 修補可相容的 runtime 依賴，critical 為 proxy-addr，不能以 Multer 升級代替排除證據。不使用 audit fix --force。
+- 三個 multipart parser 設有界 file/field/parts/name/value/nesting/index；STT 依上游 25 MB ceiling，不新增錄音時長截斷、不新增會封鎖既有 App 的音訊驗證。
+- Flutter octet-stream 音訊及照片保留已知副檔名相容；照片仍 8 MiB、台語預設 10 MiB。所有早退、失敗與中止暫存清理須本機 synthetic 回歸；production proof 保留既有持久化語義。
+- 不讀 .env、不測正式惡意流量／真實警示，不改資料結構、模型、Realtime 或持續存取權限。獨立 revert 回復，無資料遷移。
+- Checkpoint：architecture-agent Approve（2026-10-07），完整 backend check + 735 tests 通過；Flutter 真實照片 multipart suite 6 tests 通過；fresh full/runtime audit 均 8 moderate、0 high/critical，high gate 通過；diff check 通過。CI 為合併前最後門檻，剩餘 UUID/Firebase 與真機限制見 UPLOAD_SECURITY_REVIEW。
+
 本檔記錄所有觸及 🔒 邊界或跨 agent 範圍的變更提案與審查結果。
 由 `architecture-agent` 維護裁決；其他 agent 在動工前於此開提案。
 
