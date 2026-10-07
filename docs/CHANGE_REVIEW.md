@@ -1,5 +1,13 @@
 # docs/CHANGE_REVIEW.md — 變更提案與 phase 批次審查
 
+## CR-ROUND3-B：首頁減法與系統大字（2026-10-07）
+
+- architecture-agent 實作前及最終 checkpoint Approve；主要說話／停止與打字可達，摸摸／坐坐／拼圖合併一起陪伴層級，數值移詳情、完整回覆可讀且持續更新。
+- 系統非線性 TextScaler 保留，偏好 0.9–2.0 乘上系統字級，既有不合法值 normalize；設定 slider 同步合法範圍。320×568 測 2x 及系統 2×偏好 2 的 4x，極大字時 header 可捲動且打字改 sheet，不縮系統字級、不隐藏主要操作。
+- 背包可點選餵食；先停既有聲音，連點消耗一次；互動 revision 防延遲舊動作覆蓋新打字。Sheet 返回與選項皆一次性守門，防退場連點多 pop。
+- 整合安全基線後完整 Flutter 1349 tests 通過；analyze 通過（18 項既有 info，無新增），diff check 通過；CI 為最後合併門檻。
+- 新版實機音訊、離線、大字／VoiceOver 尚未驗證；不更新過期 profile，不能以 widget 測試取代實機。無資料遷移，以獨立 PR revert 回復，不反向刪除任何寵物／背包資料。
+
 ## CR-ROUND3-A：上傳邊界與依賴安全（2026-10-07）
 
 - 使用者授權安全修復、測試、PR、合併及已確認 Render 部署；architecture-agent 實作前核准，合併前另做 checkpoint。

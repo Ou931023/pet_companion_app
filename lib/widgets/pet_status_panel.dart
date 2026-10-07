@@ -37,13 +37,11 @@ class PetStatusPanel extends StatelessWidget {
       required int value,
       required Color color,
     }) {
-      return Expanded(
-        child: _StatItem(
-          icon: icon,
-          label: label,
-          value: value,
-          color: color,
-        ),
+      return _StatItem(
+        icon: icon,
+        label: label,
+        value: value,
+        color: color,
       );
     }
 
@@ -76,8 +74,6 @@ class PetStatusPanel extends StatelessWidget {
                   children: [
                     Text(
                       '$petName的狀態',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
@@ -86,8 +82,6 @@ class PetStatusPanel extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       _statusDescription(),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 13.5,
                         height: 1.3,
@@ -101,7 +95,8 @@ class PetStatusPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          Row(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               item(
                 icon: Icons.favorite,
@@ -109,14 +104,14 @@ class PetStatusPanel extends StatelessWidget {
                 value: intimacy,
                 color: Colors.pink.shade400,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(height: 8),
               item(
                 icon: Icons.restaurant,
                 label: '飽足',
                 value: fullness,
                 color: Colors.orange.shade500,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(height: 8),
               item(
                 icon: Icons.mood,
                 label: '心情',

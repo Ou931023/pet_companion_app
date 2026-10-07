@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'utils/preference_text_scaler.dart';
 
 import 'config/app_config.dart';
 import 'onboarding/coach_mark_controller.dart';
@@ -484,7 +485,10 @@ class PetCompanionApp extends StatelessWidget {
                 ),
                 child: MediaQuery(
                   data: mediaQuery.copyWith(
-                    textScaler: TextScaler.linear(profile.fontScale),
+                    textScaler: PreferenceTextScaler(
+                      mediaQuery.textScaler,
+                      profile.fontScale,
+                    ),
                   ),
                   child: child ?? const SizedBox.shrink(),
                 ),

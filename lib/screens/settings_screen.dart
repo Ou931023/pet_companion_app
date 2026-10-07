@@ -156,11 +156,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       Slider(
                         value: profile.fontScale,
                         min: 0.9,
-                        max: 1.3,
-                        divisions: 4,
+                        max: 2.0,
+                        divisions: 11,
                         label: _fontScaleLabel(profile.fontScale),
                         onChanged: profile.setFontScale,
                       ),
+                      const Text('這裡可以再放大文字，也會保留手機的大字設定。'),
                     ],
                   ),
                 ),
@@ -913,8 +914,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   String _fontScaleLabel(double value) {
-    if (value >= 1.25) return '文字：最大';
-    if (value >= 1.1) return '文字：較大';
+    if (value >= 1.1) return '文字：加大 ${(value * 100).round()}%';
     if (value < 1.0) return '文字：較小';
     return '文字：標準';
   }
