@@ -1206,8 +1206,16 @@ class ConversationController extends ChangeNotifier {
     );
   }
 
-  static String _newSessionId() =>
-      DateTime.now().microsecondsSinceEpoch.toString();
+  static int _lastSessionTimestamp = 0;
+
+  static String _newSessionId() {
+    final timestamp = DateTime.now().microsecondsSinceEpoch;
+    // Windows clock resolution can repeat across consecutive session starts.
+    _lastSessionTimestamp = timestamp > _lastSessionTimestamp
+        ? timestamp
+        : _lastSessionTimestamp + 1;
+    return _lastSessionTimestamp.toString();
+  }
 
   Future<void> _persistHistory() async {
     await storageService.saveConversationHistory(_history);
