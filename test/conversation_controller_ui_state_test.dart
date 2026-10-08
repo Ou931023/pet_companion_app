@@ -487,6 +487,19 @@ void main() {
   group('對話紀錄標題與刪除（CR-0027）', () {
     setUp(() => SharedPreferences.setMockInitialValues({}));
 
+    test('consecutive session starts keep distinct increasing numeric IDs', () {
+      final controller = _createConversationController(
+          titleService: const _FakeTitleService(null));
+      addTearDown(controller.dispose);
+      var previous = int.parse(controller.activeSessionId);
+      for (var i = 0; i < 1000; i++) {
+        controller.startNewSession();
+        final current = int.parse(controller.activeSessionId);
+        expect(current, greaterThan(previous));
+        previous = current;
+      }
+    });
+
     ConversationTurn makeTurn(
             String sid, DateTime ts, String user, String pet,
             {String emotion = 'neutral'}) =>

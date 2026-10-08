@@ -1,3 +1,11 @@
+## CR-WINDOWS-SETUP: Windows setup compatibility (2026-10-08)
+
+- Architecture-agent checkpoint approved the complete six-file patch after reviewing the actual diff (2026-10-08). No findings; final validation complete.
+- Scope: CRLF-safe migration 015/016 static test parsing, portable synthetic ASR command probe, and monotonic numeric session IDs to prevent repeated Windows timestamps merging distinct sessions.
+- Keep numeric string ID format, existing stored IDs, API/schema/provider behavior and production security unchanged; add consecutive-session regression coverage.
+- Synthetic validation only. No credentials, resident data, provider calls, security settings, Android licenses or iOS signing changes.
+- Validation reported by setup agent, final corrected-source rerun: backend check passed; full backend 877/877 passed; Flutter analysis passed with 18 existing info and no errors/warnings; full Flutter 1350/1350 passed; high/critical audit gate passed (8 moderate advisories). Architecture approval gate complete.
+
 # docs/CHANGE_REVIEW.md — 變更提案與 phase 批次審查
 
 ## CR-ROUND3-B：首頁減法與系統大字（2026-10-07）

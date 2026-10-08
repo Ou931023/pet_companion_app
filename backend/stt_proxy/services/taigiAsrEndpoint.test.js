@@ -3,6 +3,15 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const test = require("node:test");
+const childProcess = require("node:child_process");
+
+// A synthetic ffmpeg version probe works without a platform-specific executable.
+const originalSpawn = childProcess.spawn;
+test.mock.method(childProcess, "spawn", (command, args, options) =>
+  command === "test-ffmpeg-version"
+    ? originalSpawn(process.execPath, ["--version"], options)
+    : originalSpawn(command, args, options),
+);
 
 process.env.NODE_ENV = "test";
 const app = require("../server");
@@ -99,7 +108,7 @@ test("POST /api/asr/taigi/warmup runs dry-run and returns ready", async () => {
   process.env.TAIGI_ASR_MODEL = "test-model";
   process.env.TAIGI_ASR_PYTHON = process.execPath;
   process.env.TAIGI_ASR_SCRIPT = dryRun.scriptPath;
-  process.env.FFMPEG_PATH = "/bin/echo";
+  process.env.FFMPEG_PATH = "test-ffmpeg-version";
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -129,7 +138,7 @@ test("POST /api/asr/taigi/warmup returns unavailable when dry-run fails", async 
   process.env.TAIGI_ASR_MODEL = "test-model";
   process.env.TAIGI_ASR_PYTHON = process.execPath;
   process.env.TAIGI_ASR_SCRIPT = dryRun.scriptPath;
-  process.env.FFMPEG_PATH = "/bin/echo";
+  process.env.FFMPEG_PATH = "test-ffmpeg-version";
   const server = await startServer();
   try {
     const baseUrl = `http://127.0.0.1:${server.address().port}`;

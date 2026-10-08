@@ -15,7 +15,7 @@ function readSql() {
 
 function statements(sql) {
   const stripped = sql
-    .split("\n")
+    .split(/\r?\n/)
     .map((line) => line.replace(/--.*$/, ""))
     .join("\n");
   return stripped
