@@ -60,6 +60,32 @@ import 'package:pet_companion_app/widgets/ui/primary_action_button.dart';
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
 
+  testWidgets('daily invitation uses the existing silent pet response without care-task rewards', (tester) async {
+    await binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => binding.setSurfaceSize(null));
+    final harness = await _HomeHarness.create();
+    addTearDown(harness.dispose);
+    final coins = harness.walletController.coins;
+    final tasks = Map<String, bool>.from(harness.profileController.taskState);
+    await tester.pumpWidget(_homeHost(harness));
+    await tester.pump();
+    await tester.ensureVisible(find.byKey(const ValueKey('daily-moment-pat')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('daily-moment-pat')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(harness.petController.message, '謝謝你摸摸我，我就在這裡陪你。');
+    expect(find.byKey(const ValueKey('daily-moment-resolved')), findsOneWidget);
+    expect(harness.walletController.coins, coins);
+    expect(harness.profileController.taskState, tasks);
+    expect(harness.petController.mode, PetMode.happy);
+    expect(harness.petController.state.isSpeaking, isFalse);
+    expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(seconds: 9));
+    await tester.pumpWidget(const SizedBox.shrink());
+    harness.dispose();
+  });
+
   testWidgets(
       '4x combined system and preference size keeps main operations reachable',
       (tester) async {
@@ -993,6 +1019,7 @@ void main() {
 Widget _settingsHostWithAuth(_HomeHarness harness, AuthController auth) {
   return MultiProvider(
     providers: [
+      Provider<LocalStorageService>.value(value: harness.localStorage),
       ChangeNotifierProvider<AuthController>.value(value: auth),
       ChangeNotifierProvider<ProfileController>.value(
         value: harness.profileController,
@@ -1017,6 +1044,7 @@ Widget _settingsHostWithCoach(
 ) {
   return MultiProvider(
     providers: [
+      Provider<LocalStorageService>.value(value: harness.localStorage),
       ChangeNotifierProvider<ProfileController>.value(
         value: harness.profileController,
       ),
@@ -1069,6 +1097,7 @@ Widget _homeHost(
 }) {
   return MultiProvider(
     providers: [
+      Provider<LocalStorageService>.value(value: harness.localStorage),
       ChangeNotifierProvider<ProfileController>.value(
         value: harness.profileController,
       ),
@@ -1126,6 +1155,7 @@ Widget _homeHost(
 Widget _settingsHost(_HomeHarness harness, {double textScale = 1.0}) {
   return MultiProvider(
     providers: [
+      Provider<LocalStorageService>.value(value: harness.localStorage),
       ChangeNotifierProvider<ProfileController>.value(
         value: harness.profileController,
       ),
@@ -1164,6 +1194,7 @@ class _DelayedStopTts extends TextToSpeechService {
 
 class _HomeHarness {
   _HomeHarness({
+    required this.localStorage,
     required this.profileController,
     required this.petController,
     required this.petStatsController,
@@ -1179,6 +1210,7 @@ class _HomeHarness {
     required this.realtimeVoiceService,
   });
 
+  final LocalStorageService localStorage;
   final ProfileController profileController;
   final PetController petController;
   final PetStatsController petStatsController;
@@ -1294,6 +1326,7 @@ class _HomeHarness {
     );
 
     return _HomeHarness(
+      localStorage: localStorage,
       profileController: profileController,
       petController: petController,
       petStatsController: petStatsController,
