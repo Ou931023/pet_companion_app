@@ -12,13 +12,17 @@ class ReminderController extends ChangeNotifier {
     required ReminderService reminderService,
     required NotificationService notificationService,
     AppUsageTrackingService? trackingService,
+    DateTime Function()? now,
   })  : _reminderService = reminderService,
         _notificationService = notificationService,
-        _trackingService = trackingService;
+        _trackingService = trackingService,
+        _now = now ?? DateTime.now;
 
   final ReminderService _reminderService;
   final NotificationService _notificationService;
   final AppUsageTrackingService? _trackingService;
+  final DateTime Function() _now;
+  static int _lastReminderTimestamp = 0;
 
   List<Reminder> _reminders = [];
   bool _isLoading = true;
@@ -132,6 +136,20 @@ class ReminderController extends ChangeNotifier {
     return '$period$displayHour點$minuteLabel';
   }
 
+  String _newReminderId() {
+    final timestamp = _now().microsecondsSinceEpoch;
+    var candidate = timestamp > _lastReminderTimestamp
+        ? timestamp
+        : _lastReminderTimestamp + 1;
+    final existingIds = _reminders.map((reminder) => reminder.id).toSet();
+    while (existingIds.contains(candidate.toString())) {
+      candidate++;
+    }
+    // Reserve before persistence awaits; repeated or rolled-back clocks stay safe.
+    _lastReminderTimestamp = candidate;
+    return candidate.toString();
+  }
+
   Reminder? _parseVoiceReminder(String text) {
     final time = _parseTime(text);
     if (time == null) return null;
@@ -142,7 +160,7 @@ class ReminderController extends ChangeNotifier {
             ? 'weekly'
             : 'none';
     return Reminder(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      id: _newReminderId(),
       title: title,
       hour: time.hour,
       minute: time.minute,
