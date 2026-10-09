@@ -1,3 +1,12 @@
+## CR-LOGIN-UNAVAILABLE-GUIDANCE: Retry guidance for unavailable email login (2026-10-09)
+
+- Architecture-agent proposal and final actual three-file diff checkpoint approved on fix/login-unavailable-guidance; low risk, no findings. Only unavailable email-error wording changes; rollback is a small revert with no data migration. Setup agent reports expected failing regression before correction, focused login/auth 58 passed after, and isolated startup/render/navigation 75 passed. Full Flutter analysis/tests and native build pending.
+- Problem: unavailable email authentication advises the hidden quick-start action. AppConfig defaults SHOW_DEMO_LOGIN to false and production always hides demo login, so the instruction can point to an absent control.
+- Scope: replace only the unavailable email-error message with actionable later-retry wording. Do not change authentication, session handling, account creation, visibility flags, navigation or other error mappings.
+- Regression: through the actual LoginScreen email-button tap, use an injected synthetic AuthService that throws EmailAuthException('unavailable'); assert the retry message, enabled retry control after completion, absence of hidden-demo guidance, unauthenticated state and no successful-login navigation. A focused controller mapping test is optional. No AppRoot launch, provider calls, real credentials, local-data restoration or native notification scheduling.
+- Compatibility: same exception-to-error-state path and string return type; applies to existing callers sharing the email error mapping. No dependency/API/schema/security or iOS changes.
+- Rollback: revert the small message/test patch; no stored-data migration. Validate focused widget/auth tests and applicable full checks before draft PR; existing merge/deployment gates remain.
+
 ## CR-WINDOWS-REMINDER-ID: Distinct voice reminder IDs (2026-10-09)
 
 - Architecture-agent proposal and actual three-file implementation checkpoint approved on fix/windows-reminder-ids (2026-10-09); low risk, no findings. Windows serial validation approved; merge gate remains pending Linux default-worker CI and review of the Windows concurrency limitation below.

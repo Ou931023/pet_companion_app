@@ -337,7 +337,7 @@ class AuthController extends ChangeNotifier {
       case 'network-request-failed':
         return '現在網路好像不太穩，待會再試一次好嗎？';
       case 'unavailable':
-        return '帳號登入暫時還不能用，可以先用「先進去陪伴」進去喔。';
+        return '帳號登入暫時無法使用，請稍後再試一次。';
       default:
         return '現在連線不太順，待會再試一次好嗎？';
     }
