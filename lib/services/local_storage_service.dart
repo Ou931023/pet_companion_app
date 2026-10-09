@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/conversation_turn.dart';
+import '../models/daily_companion_moment.dart';
 import '../models/pet_skin.dart';
 import '../models/pet_visual_profile.dart';
 import '../models/user_profile.dart';
@@ -85,6 +86,30 @@ class LocalStorageService {
   String get userId => _userId;
 
   String _k(String key) => _userId == defaultUserId ? key : 'u:$_userId:$key';
+
+  // Capture an explicit account before any await to avoid cross-account writes.
+  String _dailyMomentKey(String userId) => userId == defaultUserId
+      ? 'dailyCompanionMoment'
+      : 'u:$userId:dailyCompanionMoment';
+
+  Future<DailyCompanionMomentRecord?> loadDailyCompanionMoment({
+    required String userId,
+  }) async {
+    final key = _dailyMomentKey(userId);
+    final prefs = await SharedPreferences.getInstance();
+    return DailyCompanionMomentRecord.decode(prefs.getString(key));
+  }
+
+  Future<void> saveDailyCompanionMoment({
+    required String userId,
+    required DailyCompanionMomentRecord record,
+  }) async {
+    final key = _dailyMomentKey(userId);
+    final prefs = await SharedPreferences.getInstance();
+    if (!await prefs.setString(key, record.encode())) {
+      throw StateError('Daily companion choice was not saved');
+    }
+  }
 
   Future<UserProfile> loadProfile() async {
     final prefs = await SharedPreferences.getInstance();

@@ -19,6 +19,8 @@ import '../controllers/voice_agent_controller.dart';
 import '../controllers/wallet_controller.dart';
 import '../services/app_usage_tracking_service.dart';
 import '../services/notification_service.dart';
+import '../services/local_storage_service.dart';
+import '../widgets/daily_companion_moment.dart';
 import '../models/inventory_item.dart';
 import '../models/language_route.dart';
 import '../models/pet_skin.dart';
@@ -126,7 +128,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _showLocalPetResponse({
+  Future<bool> _showLocalPetResponse({
     required String message,
     required String source,
     required PetMode mode,
@@ -134,13 +136,14 @@ class _HomeScreenState extends State<HomeScreen> {
     required PetController petController,
     required PetStatsController petStatsController,
     required PetMode displayedMode,
+    String? expectedUserId,
     _PetInteractionEffect effect = _PetInteractionEffect.pat,
   }) async {
     final now = DateTime.now();
     final last = _lastLocalInteractionAt;
     if (last != null &&
         now.difference(last) < const Duration(milliseconds: 650)) {
-      return;
+      return false;
     }
     _lastLocalInteractionAt = now;
     final interactionRevision = ++_interactionRevision;
@@ -148,7 +151,11 @@ class _HomeScreenState extends State<HomeScreen> {
     // 使用者點選後，以本機回應立即接住；先停掉仍在播放的首次問候，避免舊音訊
     // 和新的畫面回應互相打架。這裡不會啟動麥克風，也不需要網路。
     await _stopSpokenGreeting(conversationController, petController);
-    if (!mounted || interactionRevision != _interactionRevision) return;
+    if (!mounted || interactionRevision != _interactionRevision) return false;
+    if (expectedUserId != null &&
+        context.read<LocalStorageService>().userId != expectedUserId) {
+      return false;
+    }
     conversationController.showPetBubbleMessage(message);
     petController.setModeAndMessage(mode, message, isSpeaking: false);
     petController.showTransientState(mode);
@@ -167,6 +174,7 @@ class _HomeScreenState extends State<HomeScreen> {
         'intimacy': petStatsController.intimacy,
       },
     );
+    return true;
   }
 
   @override
@@ -213,6 +221,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final profileController = context.watch<ProfileController>();
+    final storage = context.read<LocalStorageService>();
+    final momentUserId = storage.userId;
     final petController = context.watch<PetController>();
     final conversationController = context.watch<ConversationController>();
     final voiceAgentController = context.watch<VoiceAgentController>();
@@ -308,8 +318,9 @@ class _HomeScreenState extends State<HomeScreen> {
       Navigator.of(context).pushNamed(AppRoute.puzzle);
     }
 
-    Future<void> patPet(String source) async {
-      await _showLocalPetResponse(
+    Future<bool> patPet(String source, {String? expectedUserId}) async {
+      return _showLocalPetResponse(
+        expectedUserId: expectedUserId,
         message: '謝謝你摸摸我，我就在這裡陪你。',
         source: source,
         mode: PetMode.happy,
@@ -517,6 +528,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                 ),
                                 SizedBox(height: compact ? 6 : 8),
+                                if (!isDead)
+                                  DailyCompanionMoment(
+                                    storage: storage,
+                                    userId: momentUserId,
+                                    petName: profileController.petName,
+                                    onPat: () => patPet('daily_companion_moment',
+                                        expectedUserId: momentUserId),
+                                  ),
                                 KeyedSubtree(
                                   key: coachKeys.statusKey,
                                   child: TextButton(
