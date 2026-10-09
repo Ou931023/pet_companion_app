@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -97,7 +98,14 @@ class NotificationService {
     );
     // 先取消舊的，避免重複排程造成通知洗版。
     await cancelTodayCheckInReminder();
-    await _plugin.zonedSchedule(
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    final exactAllowed = android == null ||
+        await android.canScheduleExactNotifications() == true;
+    final mode = exactAllowed
+        ? AndroidScheduleMode.exactAllowWhileIdle
+        : AndroidScheduleMode.inexactAllowWhileIdle;
+    Future<void> schedule(AndroidScheduleMode mode) => _plugin.zonedSchedule(
       id: CheckInReminderSchedule.notificationId,
       title: CheckInReminderSchedule.title,
       body: CheckInReminderSchedule.body,
@@ -113,8 +121,18 @@ class NotificationService {
         ),
         iOS: DarwinNotificationDetails(),
       ),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      androidScheduleMode: mode,
     );
+    try {
+      await schedule(mode);
+    } on PlatformException catch (error) {
+      if (android == null ||
+          mode != AndroidScheduleMode.exactAllowWhileIdle ||
+          error.code != 'exact_alarms_not_permitted') {
+        rethrow;
+      }
+      await schedule(AndroidScheduleMode.inexactAllowWhileIdle);
+    }
   }
 
   /// 取消今天的簽到提醒（id 10001）。用於：已簽到、或 App 啟動發現今天已簽到。
