@@ -39,6 +39,7 @@ class _FakeAuthService extends AuthService {
   /// 密碼重設要丟的錯（測 controller 回傳的白話訊息）。
   final Object? passwordResetError;
 
+  int emailSignInCalls = 0;
   int passwordResetCalls = 0;
   String? lastPasswordResetEmail;
 
@@ -58,6 +59,7 @@ class _FakeAuthService extends AuthService {
     required String email,
     required String password,
   }) async {
+    emailSignInCalls += 1;
     if (emailError != null) throw emailError!;
     return AuthSession.mockFallback();
   }
@@ -254,6 +256,48 @@ void main() {
     expect(find.text('Email 或密碼不太對，請再確認一次。'), findsOneWidget);
     expect(find.textContaining('wrong-password'), findsNothing);
     expect(find.textContaining('Exception'), findsNothing);
+  });
+
+  testWidgets('Windows unavailable email login keeps a visible retry without hidden demo guidance',
+      (tester) async {
+    addTearDown(tester.view.reset);
+    tester.view.physicalSize = const Size(1280, 720);
+    tester.view.devicePixelRatio = 1;
+    final service = _FakeAuthService(
+      emailError: const EmailAuthException('unavailable'),
+    );
+    final controller = AuthController(authService: service);
+    addTearDown(controller.dispose);
+    var signedIn = false;
+    await _pumpLogin(
+      tester,
+      controller,
+      platform: TargetPlatform.windows,
+      showDemoLogin: false,
+      onSignedIn: () => signedIn = true,
+    );
+    await tester.tap(find.text('Email 登入'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).at(0), 'smoke@example.invalid');
+    await tester.enterText(find.byType(TextField).at(1), 'synthetic-password');
+    await tester.ensureVisible(find.text('登入'));
+    await tester.tap(find.text('登入'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('帳號登入暫時無法使用，請稍後再試一次。'), findsOneWidget);
+    expect(find.textContaining('先進去陪伴'), findsNothing);
+    expect(find.textContaining('unavailable'), findsNothing);
+    expect(controller.status, AuthStatus.error);
+    expect(controller.isAuthenticated, isFalse);
+    expect(signedIn, isFalse);
+    expect(service.emailSignInCalls, 1);
+    await tester.ensureVisible(find.text('登入'));
+    await tester.tap(find.text('登入'));
+    await tester.pumpAndSettle();
+    expect(service.emailSignInCalls, 2);
+    expect(controller.isAuthenticated, isFalse);
+    expect(signedIn, isFalse);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('Apple 正式登入成功 → authenticated 並呼叫 onSignedIn', (tester) async {
