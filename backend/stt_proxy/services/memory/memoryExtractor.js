@@ -71,6 +71,20 @@ function falseResult(reason) {
   };
 }
 
+// Only boundary-only turns are excluded; mixed facts/preferences keep existing extraction.
+function isTemporaryConversationBoundary(text) {
+  const unquoted = text.replace(/「[^」]*」|『[^』]*』|“[^”]*”|"[^"]*"/g, "");
+  const clauses = unquoted.split(/[，,。.!！?？；;\n]+/).map((clause) => clause.trim()).filter(Boolean);
+  let foundBoundary = false;
+  return clauses.length > 0 && clauses.every((clause) => {
+    if (/^(?:謝謝(?:你)?|抱歉|不好意思)$/.test(clause)) return true;
+    if (/(?:但是|但|不過|可是|而且|另外|還有|其實|我喜歡|我不喜歡|請記住|記得|提醒我)/.test(clause)) return false;
+    const direct = /^(?:我)?(?:今天|現在|這次|這回)?(?:請)?(?:你)?(?:先|暫時)?(?:不要再(?:問|追問)|別(?:再)?(?:問|追問)|(?:先不|暫時不|不想|不要|不太想)(?:再)?(?:聊|談|說話|講話))/.test(clause);
+    foundBoundary ||= direct;
+    return direct;
+  }) && foundBoundary;
+}
+
 function buildMemory({
   memoryType,
   memoryText,
@@ -95,6 +109,7 @@ function buildMemory({
 function ruleBasedExtract({ userText, emotion }) {
   const text = (userText || "").toString().trim();
   if (!text) return falseResult("userText is required");
+  if (isTemporaryConversationBoundary(text)) return falseResult("temporary_conversation_boundary");
   if (CHATTER.has(text)) return falseResult("普通寒暄，不需保存");
   if (
     chineseCharCount(text) < 4 &&
@@ -296,6 +311,7 @@ async function extractMemoryFromTurn(input) {
 
   const precheck = ruleBasedExtract(normalized);
   if (!precheck.shouldRemember && (
+    precheck.reason === "temporary_conversation_boundary" ||
     CHATTER.has(normalized.userText) ||
     normalized.userText.includes("天氣不錯") ||
     chineseCharCount(normalized.userText) < 4 ||
