@@ -269,3 +269,17 @@ test("CR-0090 語音 persona：無工程字眼指示（不出現 tool call / JSO
     assert.ok(!voice.includes(term), `persona 不應外漏工程字眼：${term}`);
   }
 });
+
+test("current conversation boundaries outrank memories in both text and voice prompts", () => {
+  const memory = buildMemoryBlock("synthetic-existing-interest");
+  const text = buildCompanionChatInstructions("小伴", memory, {});
+  const voice = buildRealtimeInstructions("小伴", ["synthetic-existing-interest"], memory, "", {});
+  for (const prompt of [text, voice]) {
+    assert.match(prompt, /使用者最新明確意願優先於長期記憶/);
+    assert.match(prompt, /本次對話不主動重開該話題/);
+    assert.match(prompt, /只有使用者主動明確重開/);
+    assert.match(prompt, /不推斷永久不喜歡、不刪除記憶/);
+    assert.match(prompt, /必要安全處置仍維持/);
+    assert.match(prompt, /synthetic-existing-interest/);
+  }
+});

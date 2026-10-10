@@ -132,6 +132,8 @@ function hasReminderIntent(text) {
 
 function wantsQuiet(text) {
   const unquoted = withoutQuotedText(text).replace(/(?:不是|沒有)(?:不想|不要)(?:聊天|聊|說話|講話)/g, "");
+  // A direct request to stop questions is not a new memory invitation.
+  if (/(?:^|[，,。；;])\s*(?:今天|現在)?(?:請)?(?:你)?不要再(?:問|追問)/.test(unquoted)) return true;
   return /(?:不想|不要|不想要|不太想|先不|暫時不)(?:再)?(?:跟我)?(?:聊|說話|講話)|想(?:要)?(?:安靜|靜一靜)|別(?:再)?(?:問|說|講)|毋想(?:閣)?(?:講|聊)|莫閣(?:問|講)/.test(unquoted);
 }
 

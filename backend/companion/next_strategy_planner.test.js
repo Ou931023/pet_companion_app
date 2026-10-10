@@ -450,3 +450,29 @@ test("CR-0110 B: ordinary chat, silence, refusal and safety never get the no-top
     assert.doesNotMatch(strategy.instruction, /使用者明確表示無話題或無聊/);
   }
 });
+
+test("current don't-ask boundary stops without old memory; quotes and negation are not requests", () => {
+  for (const transcript of ["不要再問了", "請你不要再問我女兒的事", "今天先不聊這個", "我有點煩，不要再問了"]) {
+    const strategy = analyze(transcript, { retrievedMemories: [{ content: "synthetic-old-topic" }] }).nextStrategy;
+    assert.equal(strategy.mode, "normal_chat");
+    assert.match(strategy.instruction, /不提新話題、不問問題、不邀請活動/);
+    assert.doesNotMatch(strategy.instruction, /synthetic-old-topic|可自然參考/);
+  }
+  for (const transcript of ["「不要再問了」是什麼意思？", "我不是說不要再問了", "女兒說不要再問了，是什麼意思？"]) {
+    const strategy = planNextStrategy({ transcript, safety: { riskLevel: "low" } });
+    assert.doesNotMatch(strategy.instruction, /使用者現在不想聊天/);
+  }
+});
+
+test("explicit reopening and unrelated safety remain available after a topic refusal", () => {
+  const recentTurns = [{ userText: "今天先不聊我女兒", petReply: "好，我們先不聊。" }];
+  const reopened = analyze("現在我想聊聊女兒的事", { recentTurns, retrievedMemories: [{ content: "synthetic-family-topic" }] }).nextStrategy;
+  assert.equal(reopened.mode, "normal_chat");
+  assert.match(reopened.instruction, /使用者主動明確重開/);
+  assert.match(reopened.instruction, /synthetic-family-topic/);
+  for (const riskLevel of ["high", "urgent"]) {
+    const safety = planNextStrategy({ transcript: "不要再問了，我胸口很痛", recentTurns, safety: { riskLevel } });
+    assert.equal(safety.mode, "safety_check");
+    assert.match(safety.instruction, /不要做醫療診斷/);
+  }
+});

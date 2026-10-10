@@ -59,6 +59,7 @@ const {
 const { analyzeCompanionTurn } = require("../companion/companion_engine");
 const {
   COMPANIONSHIP_VOICE_POLICY,
+  CONVERSATION_BOUNDARY_POLICY,
   TOOL_TRUTH_POLICY,
   outputLanguageInstruction,
 } = require("../companion/voice_prompt_policy");
@@ -504,9 +505,12 @@ function buildCompanionChatInstructions(petName, memoryBlock, languageOptions = 
   const header = `你的名字是 ${normalizedPetName}。
 ${COMPANION_CHAT_PERSONA}
 ${outputLanguageInstruction(languageOptions)}`;
-  return memoryBlock ? `${header}
+  const context = memoryBlock ? `${header}
 
 ${memoryBlock}` : header;
+  return `${context}
+
+${CONVERSATION_BOUNDARY_POLICY}`;
 }
 
 async function loadRelevantMemorySummaries(userId, query, topK) {
