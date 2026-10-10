@@ -8,6 +8,76 @@ const { test } = require("node:test");
 
 const { ruleBasedExtract } = require("./memoryExtractor");
 
+const temporaryBoundaries = [
+  "今天先不聊我女兒",
+  "不要再問我睡不好了",
+  "我今天不想聊喜歡的故事",
+  "現在暫時不聊每天散步的事",
+  "請你不要再問我女兒，謝謝",
+  "今天先不聊這個。不要再問我睡不好了",
+  "不要再問了",
+  "今天先不聊「女兒」",
+];
+
+test("boundary-only turns are not durable memories", () => {
+  for (const userText of temporaryBoundaries) {
+    const result = ruleBasedExtract({ userText, emotion: "neutral" });
+    assert.equal(result.shouldRemember, false, userText);
+    assert.equal(result.reason, "temporary_conversation_boundary", userText);
+  }
+});
+
+test("quoted, reported, negated, durable and mixed statements retain existing extraction", () => {
+  for (const userText of [
+    "女兒說今天先不聊她的工作",
+    "我不是說不要再問我睡不好了",
+    "「不要再問我女兒」是什麼意思？",
+    "我不喜歡恐怖故事",
+    "以後永遠不要聊我女兒",
+    "我喜歡散步，今天先不聊女兒",
+    "今天先不聊女兒，但我喜歡散步",
+    "現在我想聊女兒，她住在台中",
+  ]) {
+    assert.equal(ruleBasedExtract({ userText, emotion: "neutral" }).shouldRemember, true, userText);
+  }
+});
+
+test("boundary hardblock precedes AI even when a provider client is available", () => {
+  const { spawnSync } = require("node:child_process");
+  const script = `
+    const assert = require('node:assert/strict');
+    const Module = require('node:module');
+    const originalLoad = Module._load;
+    let calls = 0;
+    Module._load = function(name, ...args) {
+      if (name === 'openai') return class {
+        constructor() { this.chat = { completions: { create: async () => {
+          calls++; return { choices: [{ message: { content: JSON.stringify({
+            shouldRemember: true, memoryType: 'preference', memorySummary: 'synthetic',
+            importance: 3, confidence: 0.8
+          }) } }] };
+        } } }; }
+      };
+      return originalLoad.call(this, name, ...args);
+    };
+    process.env.OPENAI_API_KEY = 'test-only-placeholder';
+    const { extractMemoryFromTurn } = require('./memoryExtractor');
+    (async () => {
+      for (const userText of ${JSON.stringify(temporaryBoundaries)}) {
+        const result = await extractMemoryFromTurn({userText});
+        assert.equal(result.shouldRemember, false);
+        assert.equal(result.reason, 'temporary_conversation_boundary');
+      }
+      assert.equal(calls, 0);
+    })().catch(error => { console.error(error); process.exitCode = 1; });
+  `;
+  const result = spawnSync(process.execPath, ["-e", script], {
+    cwd: __dirname, encoding: "utf8",
+    env: { SystemRoot: process.env.SystemRoot, PATH: process.env.PATH, NODE_ENV: "test" },
+  });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
 test("CR-0073 自我介紹「我叫阿明」→ shouldRemember、memoryType personal_story", () => {
   const r = ruleBasedExtract({ userText: "我叫阿明", emotion: "neutral" });
   assert.equal(r.shouldRemember, true);
