@@ -8,6 +8,10 @@ const FAMILY = "(?:我(?:的)?)?(?:女兒|兒子|孫女|孫子|老伴|先生|太
 const PLACE = "(?:台|臺)(?:北|中|南|東)|高雄|桃園|新竹|苗栗|彰化|南投|雲林|嘉義|屏東|宜蘭|花蓮|澎湖|基隆";
 const PREFERENCE = "我(?:不)?喜歡(?:散步|運動|聽老歌|聽音樂|看書|種花|唱歌|台灣地方故事|恐怖故事)";
 const preference = new RegExp(`^${PREFERENCE}$`);
+// Recognize a complete declaration, without stripping or rewriting its source.
+// A single full stop or exclamations are declarative; ellipses are not.
+const declarativePreference = new RegExp(`^\\s*${PREFERENCE}\\s*(?:[。.]|[!！]+)?\\s*$`);
+const preferenceQuestion = new RegExp(`^\\s*${PREFERENCE}\\s*(?:[。.!！]\\s*)*(?:[?？]|嗎|呢)`);
 const familyFact = new RegExp(`^${FAMILY}(?:住(?:在)?(?:${PLACE})|(?:可能|已經?|確定)?搬(?:去|到)(?:${PLACE}))(?:[，,](?:她喜歡散步|他喜歡散步|後來確定下週搬|後來取消了|還沒決定))?$`);
 const appointment = /^明天我(?:要)?去醫院回診$/;
 const direct = "(?:我)?(?:今天|現在|這次|這回)(?:先|暫時)?(?:不想|不太想|不|不要)(?:再)?(?:聊|談)(?:我(?:的)?)?(?:女兒|兒子|她|他|這個)(?:的事)?";
@@ -33,6 +37,9 @@ function independentSource(text) {
 }
 
 function projectMemorySource(userText) {
+  // These bounded interrogatives are not asserted preferences or care needs.
+  // Abstain before provider/fallback can reinterpret them as an established fact.
+  if (preferenceQuestion.test(userText)) return { text: null, projected: true };
   // Saving exclusions concern eligibility, not conversational topic boundaries.
   // Only this explicit disjoint scope is projected; "this part" is unresolved.
   const exclusions = [...userText.matchAll(storageExclusion)];
@@ -43,6 +50,7 @@ function projectMemorySource(userText) {
   const visible = unquotedText(userText);
   const cues = [...visible.matchAll(boundaryCue)];
   if (!cues.length) {
+    if (declarativePreference.test(userText)) return { text: userText, projected: false };
     // Do not let a keyword rule save every statement when eligibility differs.
     if (/[。！？!?；;\n].+/.test(userText.trim())) return { text: userText, projected: false, requiresSelection: true };
     return { text: userText, projected: false };
@@ -84,4 +92,4 @@ function validateMemorySelection(userText, selectedText) {
   return selected;
 }
 
-module.exports = { projectMemorySource, validateMemorySelection, isIndependentPreference: text => preference.test(text) };
+module.exports = { projectMemorySource, validateMemorySelection, isIndependentPreference: text => declarativePreference.test(text) };

@@ -2,7 +2,28 @@
 
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { projectMemorySource, validateMemorySelection } = require("./memorySourceContent");
+const { projectMemorySource, validateMemorySelection, isIndependentPreference } = require("./memorySourceContent");
+
+test("declarative preference punctuation is recognized without altering the source", () => {
+  for (const stem of ["我喜歡運動", "我不喜歡運動"]) {
+    for (const ending of ["", "。", ".", "！", "!", "！！", "!!", " 。 ", "\t！", "　."]) {
+      const text = ` \t${stem}${ending}\n`;
+      assert.equal(isIndependentPreference(text), true, JSON.stringify(text));
+      assert.deepEqual(projectMemorySource(text.trim()), { text: text.trim(), projected: false });
+    }
+  }
+});
+
+test("preference recognition never removes questions, quotes, negation or trailing scope", () => {
+  for (const text of [
+    "我喜歡運動嗎？", "我喜歡運動?", "我不喜歡運動嗎。", "我喜歡運動呢", "我喜歡運動！？",
+    "「我喜歡運動。」", '"我不喜歡運動!"', "女兒說我喜歡運動。", "我不是說我喜歡運動。",
+    "我喜歡運動...", "我喜歡運動…", "我喜歡運動，", "我喜歡運動；", "我喜歡運動。這部分別記住",
+  ]) assert.equal(isIndependentPreference(text), false, text);
+  for (const text of ["我喜歡運動嗎？", "我喜歡運動?", "我不喜歡運動嗎。", "我喜歡運動呢", "我喜歡運動！？"]) {
+    assert.deepEqual(projectMemorySource(text), { text: null, projected: true }, text);
+  }
+});
 
 test("whole-turn recognition retains only an unchanged, independently asserted source span", () => {
   for (const fact of ["我不喜歡恐怖故事", "我喜歡種花", "我兒子住在新竹", "媽媽可能搬去嘉義", "我女兒已經搬到臺北", "明天我要去醫院回診"]) {

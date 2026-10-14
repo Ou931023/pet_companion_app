@@ -9,6 +9,15 @@ const { spawnSync } = require("node:child_process");
 const { assertContentContract } = require("./memoryContentContract.testsupport");
 
 const cases = [
+  ...["我喜歡運動", "我不喜歡運動"].flatMap(stem => ["。", ".", "！", "!", "！！", "!!", " 。 ", "\t！", "　."].map(ending => [
+    stem.includes("不喜歡") ? "negative exercise preference control" : "positive exercise preference control",
+    ` \t${stem}${ending}\n`, `${stem}${ending}`.trim(),
+  ])),
+  ...[
+    "我喜歡運動嗎？", "我喜歡運動?", "我不喜歡運動嗎。", "我喜歡運動呢", "我喜歡運動！？",
+    "「我喜歡運動。」今天先不聊女兒", "我不是說我喜歡運動。今天先不聊女兒",
+    "我不喜歡運動。這部分別記住", "我喜歡運動!這部分不要保存",
+  ].map(text => ["nonassertion or excluded preference: " + text, text, null]),
   ["fact first", "我喜歡散步，今天先不聊女兒", "我喜歡散步"],
   ["boundary first", "今天先不聊女兒，但我喜歡散步", "我喜歡散步"],
   ["positive exercise preference", "我喜歡運動，今天先不聊女兒", "我喜歡運動"],
@@ -52,7 +61,7 @@ const cases = [
   ["plural is not a singular referent", "今天先不聊女兒，她們住台中", null],
 ];
 
-function runCases(mode) {
+function runCases(mode, batch) {
   const script = `
     const assert = require('node:assert/strict');
     const Module = require('node:module');
@@ -118,7 +127,7 @@ function runCases(mode) {
     (async () => {
       const server = await new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
       try {
-        for (const [label, userText, sourceExpected, selection, kind] of ${JSON.stringify(cases)}) {
+        for (const [label, userText, sourceExpected, selection, kind] of ${JSON.stringify(batch)}) {
           const expected = kind === 'selective' && !['normal', 'invalid', 'rewritten_summary', 'appended_summary'].includes(mode) ? null : sourceExpected;
           saved = []; embeddingInputs = []; currentText = userText; currentExpected = expected; currentSelection = selection;
           const callsBefore = providerCalls;
@@ -128,7 +137,7 @@ function runCases(mode) {
           });
           const result = await response.json();
           try {
-            for (const request of providerRequests.slice(callsBefore)) assert.equal(request.userText, userText, 'provider evidence must be the current user turn');
+            for (const request of providerRequests.slice(callsBefore)) assert.equal(request.userText, userText.trim(), 'provider evidence must be the current user turn');
             if (expected === null) {
               assert.equal(providerCalls - callsBefore, kind === 'selective' && mode !== 'none' ? 1 : 0, 'only explicitly selectable input may reach the provider');
               assert.equal(result.shouldRemember, false);
@@ -147,7 +156,7 @@ function runCases(mode) {
             assert.equal(response.status, 201);
             assert.equal(saved.length, 1, 'one source turn must still create only one record');
             assert.equal(saved[0].sourceTurnId, 'synthetic-turn');
-            if (expected !== userText && kind !== 'selective') assert.equal(providerCalls, callsBefore, 'projected source must not be rewritten by a provider');
+            if (expected !== userText.trim() && kind !== 'selective') assert.equal(providerCalls, callsBefore, 'projected source must not be rewritten by a provider');
             if (kind === 'selective') assert.equal(providerCalls - callsBefore, 1, 'exercise a real provider-selected proper source span');
             assert.equal(saved[0].sourceSessionId, 'synthetic-session');
             assert.equal(saved[0].userId, '11111111-1111-1111-1111-111111111111');
@@ -159,6 +168,8 @@ function runCases(mode) {
             const context = buildPromptBlock(saved).memoryContext;
             const greeting = greetingFromMemory(saved[0]);
             if (label.includes('exercise preference')) {
+              assert.equal(saved[0].memoryText, expected, 'retain original punctuation, whitespace and polarity inside the trimmed source');
+              assert.equal(saved[0].memorySummary, '使用者偏好：' + expected);
               assert.doesNotMatch(saved[0].memorySummary, /照護|提醒|需要/, 'preference wrapper must not invent a care need');
               assert.doesNotMatch(greeting, /提醒|需要.*運動/, 'preference must not become an exercise reminder');
             }
@@ -178,7 +189,7 @@ function runCases(mode) {
           assert.match(request.schema.memoryText, /逐字.*完整.*保存條件/, 'provider contract must request a complete eligible source selection');
           assert.ok(!JSON.stringify(request).includes('高雄'), 'assistant-only claim must never enter provider request');
         }
-        console.log('CONTENT_MATRIX ' + JSON.stringify({ mode, total: ${cases.length}, passed: ${cases.length} - failures.length, failed: failures.length }));
+        console.log('CONTENT_MATRIX ' + JSON.stringify({ mode, total: ${batch.length}, passed: ${batch.length} - failures.length, failed: failures.length }));
         assert.deepEqual(failures, [], failures.join('\\n'));
       } finally {
         restore();
@@ -204,8 +215,12 @@ function runCases(mode) {
 
 for (const mode of ["none", "false", "malformed", "invalid", "throw", "normal", "paraphrase", "rewritten_summary", "rewritten_text", "misattributed_text", "invented_text", "appended_summary", "assistant_only"]) {
   test(`mixed boundary content through HTTP/store/embedding/context/greeting: ${mode}`, () => {
-    const result = runCases(mode);
-    assert.equal(result.status, 0, result.stdout + result.stderr);
+    // Fresh processes keep each batch below the real HTTP rate limit. Do not
+    // relax production security or replace its middleware for a larger matrix.
+    for (let offset = 0; offset < cases.length; offset += 40) {
+      const result = runCases(mode, cases.slice(offset, offset + 40));
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+    }
   });
 }
 
