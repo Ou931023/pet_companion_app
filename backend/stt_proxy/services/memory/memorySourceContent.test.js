@@ -2,7 +2,7 @@
 
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { projectMemorySource } = require("./memorySourceContent");
+const { projectMemorySource, validateMemorySelection } = require("./memorySourceContent");
 
 test("whole-turn recognition retains only an unchanged, independently asserted source span", () => {
   for (const fact of ["我不喜歡恐怖故事", "我喜歡種花", "我兒子住在新竹", "媽媽可能搬去嘉義", "我女兒已經搬到臺北", "明天我要去醫院回診"]) {
@@ -50,4 +50,37 @@ test("unscoped refusal is legacy compatibility, not evidence of an enduring pref
   for (const text of ["我不聊女兒", "以後永遠不要聊我女兒"]) {
     assert.deepEqual(projectMemorySource(text), { text, projected: false });
   }
+});
+
+test("storage exclusions are eligibility boundaries; ambiguous pointers never broaden storage", () => {
+  assert.deepEqual(projectMemorySource("我喜歡散步。我的住址是測試路一號，住址不要保存"), { text: "我喜歡散步", projected: true });
+  for (const text of [
+    "我喜歡散步。我的住址是測試路一號，這部分別記住",
+    "我喜歡散步。這部分別記住", "我的住址是測試路一號，住址不要保存",
+    "我喜歡散步。我的住址是測試路一號，住址不要保存。散步也別記住",
+    "我喜歡散步，這件事不想記錄", "請不要儲存我的喜好",
+    "我喜歡散步，我的住址是測試路一號，請不要把住址保存",
+    "我喜歡散步，住址不要被保存", "我喜歡散步，這部分別 記住",
+  ]) assert.deepEqual(projectMemorySource(text), { text: null, projected: true });
+});
+
+test("provider selection keeps one complete eligible source unit, never the unselected turn", () => {
+  const text = "我喜歡散步。我喜歡聽老歌";
+  assert.equal(projectMemorySource(text).requiresSelection, true);
+  assert.equal(validateMemorySelection(text, "我喜歡散步"), "我喜歡散步");
+  assert.equal(validateMemorySelection(text, "我喜歡聽老歌"), "我喜歡聽老歌");
+  assert.equal(validateMemorySelection(text, text), null);
+  assert.equal(validateMemorySelection(text, "使用者喜歡散步"), null);
+});
+
+test("source substring alone cannot prove eligibility or preserve qualifiers", () => {
+  for (const [text, selection] of [
+    ["女兒可能搬去台南，後來取消了", "女兒可能搬去台南"],
+    ["女兒可能搬去台南，還沒決定", "女兒可能搬去台南"],
+    ["女兒說「今天先不聊工作」，她還沒決定搬家", "今天先不聊工作"],
+    ["我喜歡散步。我不喜歡散步", "我喜歡散步"],
+    ["我喜歡散步。今天穿藍色外套", "我喜歡散步"],
+    ["我喜歡散步。這部分別記住", "我喜歡散步"],
+    ["我喜歡散步", ""], ["我喜歡散步", null],
+  ]) assert.equal(validateMemorySelection(text, selection), null);
 });

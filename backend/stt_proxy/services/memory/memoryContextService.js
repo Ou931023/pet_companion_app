@@ -279,6 +279,10 @@ function greetingFromMemory(memory) {
   if (EMOTIONAL_GREETING_TYPES.has(type) || EMOTIONAL_GREETING_PATTERN.test(content)) {
     return pickGentleGreeting(content.length + chineseCharCount(content));
   }
+  // Explicit preference classification outranks activity keywords such as 運動.
+  if (PREFERENCE_GREETING_TYPES.has(type)) {
+    return `你之前說${compact(content, 24)}，今天想聊聊這個嗎？`;
+  }
   // 照護提醒：不假裝已經設好提醒，改成詢問是否要提醒。
   if (REMINDER_GREETING_TYPES.has(type) || /吃藥|喝水|回診|醫院|運動|提醒/.test(content)) {
     return `你之前提過${compact(content, 24)}，今天需要我晚點提醒你嗎？`;

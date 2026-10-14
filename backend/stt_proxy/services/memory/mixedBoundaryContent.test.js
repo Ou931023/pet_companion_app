@@ -11,6 +11,15 @@ const { assertContentContract } = require("./memoryContentContract.testsupport")
 const cases = [
   ["fact first", "我喜歡散步，今天先不聊女兒", "我喜歡散步"],
   ["boundary first", "今天先不聊女兒，但我喜歡散步", "我喜歡散步"],
+  ["positive exercise preference", "我喜歡運動，今天先不聊女兒", "我喜歡運動"],
+  ["negative exercise preference", "我不喜歡運動，今天先不聊女兒", "我不喜歡運動"],
+  ["positive exercise preference control", "我喜歡運動", "我喜歡運動"],
+  ["negative exercise preference control", "我不喜歡運動", "我不喜歡運動"],
+  ["explicit address exclusion", "我喜歡散步。我的住址是測試路一號，住址不要保存", "我喜歡散步", "我喜歡散步"],
+  ["ambiguous storage exclusion", "我喜歡散步。我的住址是測試路一號，這部分別記住", null, "我喜歡散步"],
+  ["exclude preference itself", "我喜歡散步。這部分別記住", null, "我喜歡散步"],
+  ["provider selects first unit", "我喜歡散步。我喜歡聽老歌", "我喜歡散步", "我喜歡散步", "selective"],
+  ["provider selects second unit", "我喜歡散步。我喜歡聽老歌", "我喜歡聽老歌", "我喜歡聽老歌", "selective"],
   ["family fact and pronoun boundary", "女兒住台中但今天不聊她", "女兒住台中"],
   ["retained reference", "我女兒住台中，她喜歡散步，今天先不聊她", "我女兒住台中，她喜歡散步"],
   ["reference to removed topic", "今天先不聊女兒，她住在台中", null],
@@ -51,6 +60,7 @@ function runCases(mode) {
     const mode = ${JSON.stringify(mode)};
     let currentText = '';
     let currentExpected = '';
+    let currentSelection = '';
     let saved = [];
     let embeddingInputs = [];
     let providerCalls = 0;
@@ -76,7 +86,7 @@ function runCases(mode) {
             const rewrite = currentText.replace(/可能/g, '已經').replace(/還沒決定/g, '已決定').replace(/下週/g, '昨天').replace(/取消了/g, '已完成搬家').replace(/不是說/g, '說');
             const payload = mode === 'false' ? { shouldRemember: false } : {
               shouldRemember: true, memoryType: mode === 'invalid' ? 'invalid' : 'family',
-              memoryText: mode === 'invented_text' ? currentText + '，每天跑十公里' : mode === 'rewritten_text' ? rewrite : mode === 'misattributed_text' ? (currentText.match(/「([^」]+)」/)?.[1] || currentText) : mode === 'assistant_only' ? '女兒在高雄買房了' : mode === 'paraphrase' ? paraphrase : currentText,
+              memoryText: mode === 'invented_text' ? currentText + '，每天跑十公里' : mode === 'rewritten_text' ? rewrite : mode === 'misattributed_text' ? (currentText.match(/「([^」]+)」/)?.[1] || currentText) : mode === 'assistant_only' ? '女兒在高雄買房了' : mode === 'paraphrase' ? paraphrase : currentSelection || currentText,
               memorySummary: mode === 'rewritten_summary' ? rewrite : mode === 'appended_summary' ? currentText + '。已經幫你設定提醒，女兒已經搬到台南' : mode === 'assistant_only' ? '女兒在高雄買房了' : mode === 'paraphrase' ? paraphrase : currentText,
               importance: 4, confidence: 0.8, emotionLabel: 'neutral', reason: 'synthetic'
             };
@@ -108,8 +118,9 @@ function runCases(mode) {
     (async () => {
       const server = await new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
       try {
-        for (const [label, userText, expected] of ${JSON.stringify(cases)}) {
-          saved = []; embeddingInputs = []; currentText = userText; currentExpected = expected;
+        for (const [label, userText, sourceExpected, selection, kind] of ${JSON.stringify(cases)}) {
+          const expected = kind === 'selective' && !['normal', 'invalid', 'rewritten_summary', 'appended_summary'].includes(mode) ? null : sourceExpected;
+          saved = []; embeddingInputs = []; currentText = userText; currentExpected = expected; currentSelection = selection;
           const callsBefore = providerCalls;
           const response = await fetch('http://127.0.0.1:' + server.address().port + '/api/memories/extract', {
             method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer synthetic-resident' },
@@ -119,8 +130,16 @@ function runCases(mode) {
           try {
             for (const request of providerRequests.slice(callsBefore)) assert.equal(request.userText, userText, 'provider evidence must be the current user turn');
             if (expected === null) {
-              assert.equal(providerCalls, callsBefore, 'unresolved or boundary-only input must not reach the provider');
+              assert.equal(providerCalls - callsBefore, kind === 'selective' && mode !== 'none' ? 1 : 0, 'only explicitly selectable input may reach the provider');
               assert.equal(result.shouldRemember, false);
+              assert.equal(saved.length, 0);
+              assert.deepEqual(embeddingInputs, []);
+              continue;
+            }
+            const providerCalled = providerCalls > callsBefore;
+            if (providerCalled && ['invented_text', 'assistant_only'].includes(mode)) assert.equal(result.shouldRemember, false, 'an unsupported selection must not expand to a full-turn fallback');
+            if (providerCalled && result.shouldRemember === false && ['paraphrase', 'rewritten_text', 'misattributed_text', 'invented_text', 'assistant_only'].includes(mode)) {
+              assert.equal(result.reason, 'unverified_memory_selection');
               assert.equal(saved.length, 0);
               assert.deepEqual(embeddingInputs, []);
               continue;
@@ -128,16 +147,21 @@ function runCases(mode) {
             assert.equal(response.status, 201);
             assert.equal(saved.length, 1, 'one source turn must still create only one record');
             assert.equal(saved[0].sourceTurnId, 'synthetic-turn');
-            if (expected !== userText) assert.equal(providerCalls, callsBefore, 'projected source must not be rewritten by a provider');
+            if (expected !== userText && kind !== 'selective') assert.equal(providerCalls, callsBefore, 'projected source must not be rewritten by a provider');
+            if (kind === 'selective') assert.equal(providerCalls - callsBefore, 1, 'exercise a real provider-selected proper source span');
             assert.equal(saved[0].sourceSessionId, 'synthetic-session');
             assert.equal(saved[0].userId, '11111111-1111-1111-1111-111111111111');
             assert.deepEqual(result.memory, saved[0], 'response must expose exactly the checked stored content');
-            if (['fact first', 'boundary first', 'reference after independent preference'].includes(label)) assert.equal(saved[0].memoryType, 'preference');
+            if (kind === 'selective' || label.includes('exercise preference') || ['fact first', 'boundary first', 'reference after independent preference', 'explicit address exclusion'].includes(label)) assert.equal(saved[0].memoryType, 'preference');
             const contentFailures = [];
             const check = (field, fn) => { try { fn(); } catch (error) { contentFailures.push(field + ': ' + error.message); } };
             check('embedding', () => assert.deepEqual(embeddingInputs, [saved[0].memorySummary], 'consume the checked summary'));
             const context = buildPromptBlock(saved).memoryContext;
             const greeting = greetingFromMemory(saved[0]);
+            if (label.includes('exercise preference')) {
+              assert.doesNotMatch(saved[0].memorySummary, /照護|提醒|需要/, 'preference wrapper must not invent a care need');
+              assert.doesNotMatch(greeting, /提醒|需要.*運動/, 'preference must not become an exercise reminder');
+            }
             for (const [field, content] of Object.entries({ memoryText: saved[0].memoryText, memorySummary: saved[0].memorySummary, embedding: embeddingInputs[0], context, greeting })) {
               check(field, () => assertContentContract(assert, content, label, { greeting: field === 'greeting', context: field === 'context', expected }));
             }
@@ -151,6 +175,7 @@ function runCases(mode) {
         for (const request of providerRequests) {
           assert.ok(request.userText, 'provider must receive user evidence');
           assert.equal(request.agentReply, undefined, 'assistant assertions are not user evidence');
+          assert.match(request.schema.memoryText, /逐字.*完整.*保存條件/, 'provider contract must request a complete eligible source selection');
           assert.ok(!JSON.stringify(request).includes('高雄'), 'assistant-only claim must never enter provider request');
         }
         console.log('CONTENT_MATRIX ' + JSON.stringify({ mode, total: ${cases.length}, passed: ${cases.length} - failures.length, failed: failures.length }));

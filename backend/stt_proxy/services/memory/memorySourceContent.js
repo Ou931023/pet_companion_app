@@ -15,6 +15,9 @@ const join = "(?:[，,。；;]\\s*(?:但是|但|不過|可是)?|但是|但|不�
 const instructionLast = new RegExp(`^(.+?)${join}(${direct})[。！!]?$`);
 const instructionFirst = new RegExp(`^(${direct})${join}(.+?)[。！!]?$`);
 const boundaryCue = /(?:先不|暫時不|不想|不太想|不要|不)(?:再)?(?:聊|談|說話|講話)|(?:不要再|別(?:再)?)(?:問|追問)/g;
+const storageExclusion = /(?:不要|不用|不必|別|不想)[^，,。；;！？!?\n]{0,12}(?:保存|記住|記錄|記下|儲存|留存)/g;
+const excludedAddress = new RegExp(`^(${PREFERENCE})[。；;]我的住址是[^，,。；;「」『』!?！？\\n]{1,80}[，,]住址(?:不要|不用|別)(?:保存|記住|記錄|儲存)[。！!]?$`);
+const twoPreferences = new RegExp(`^(${PREFERENCE})[。；;](${PREFERENCE})[。]?$`);
 
 function unquotedText(text) {
   // Removing quotes is only for detection. It never changes persisted content.
@@ -30,9 +33,20 @@ function independentSource(text) {
 }
 
 function projectMemorySource(userText) {
+  // Saving exclusions concern eligibility, not conversational topic boundaries.
+  // Only this explicit disjoint scope is projected; "this part" is unresolved.
+  const exclusions = [...userText.matchAll(storageExclusion)];
+  if (exclusions.length) {
+    const allowed = exclusions.length === 1 && userText.match(excludedAddress);
+    return { text: allowed ? allowed[1] : null, projected: true };
+  }
   const visible = unquotedText(userText);
   const cues = [...visible.matchAll(boundaryCue)];
-  if (!cues.length) return { text: userText, projected: false };
+  if (!cues.length) {
+    // Do not let a keyword rule save every statement when eligibility differs.
+    if (/[。！？!?；;\n].+/.test(userText.trim())) return { text: userText, projected: false, requiresSelection: true };
+    return { text: userText, projected: false };
+  }
 
   // Preserve a single reported/negated scope in full, including punctuation.
   // A second refusal, or a contrasting scope, is not proven to be the same speech.
@@ -56,4 +70,18 @@ function projectMemorySource(userText) {
   return { text: null, projected: true };
 }
 
-module.exports = { projectMemorySource };
+function validateMemorySelection(userText, selectedText) {
+  if (typeof selectedText !== "string" || !selectedText.trim()) return null;
+  const selected = selectedText.trim();
+  const source = projectMemorySource(userText);
+  if (source.projected) return null; // handled before provider invocation
+  if (!source.requiresSelection && selected === userText) return selected;
+  // An exact substring alone does not prove scope: a suffix may cancel or
+  // qualify it. Accept only a complete independent unit in this bounded form.
+  const pair = userText.match(twoPreferences);
+  if (!pair || ![pair[1], pair[2]].includes(selected)) return null;
+  if (pair[1].replace(/^我不?喜歡/, "") === pair[2].replace(/^我不?喜歡/, "")) return null;
+  return selected;
+}
+
+module.exports = { projectMemorySource, validateMemorySelection, isIndependentPreference: text => preference.test(text) };

@@ -5,6 +5,11 @@
 const contracts = {
   "fact first": [/喜歡|愛好/, /散步/],
   "boundary first": [/喜歡|愛好/, /散步/],
+  "positive exercise preference": [/喜歡運動/],
+  "negative exercise preference": [/不喜歡運動/],
+  "explicit address exclusion": [/喜歡.*散步/],
+  "provider selects first unit": [/喜歡.*散步/],
+  "provider selects second unit": [/喜歡.*聽老歌/],
   "family fact and pronoun boundary": [/女兒/, /住(?:在|於)?.*(?:台中|臺中)/],
   "retained reference": [/女兒/, /住(?:在|於)?.*(?:台中|臺中)/, /喜歡.*散步/],
   "reference to removed topic": [/女兒/, /住(?:在|於)?.*(?:台中|臺中)/],
@@ -27,6 +32,8 @@ const contracts = {
 };
 
 for (const [alias, original] of Object.entries({
+  "positive exercise preference control": "positive exercise preference",
+  "negative exercise preference control": "negative exercise preference",
   "uncertain move control": "uncertain move",
   "confirmed future control": "move confirmed",
   "cancelled control": "move cancelled",
@@ -71,7 +78,7 @@ function assertContentContract(assert, content, label, { greeting = false, conte
   const patterns = contracts[label];
   assert.ok(patterns, `missing contract: ${label}`);
   for (const pattern of patterns) assert.match(content, pattern, `missing semantic qualifier: ${pattern}`);
-  assert.doesNotMatch(content, /高雄|買房|每天跑十公里/, "unsupported or assistant-only claim");
+  assert.doesNotMatch(content, /高雄|買房|每天跑十公里|住址|測試路/, "unsupported, excluded or assistant-only claim");
   if (mixed.has(label)) assert.doesNotMatch(content, /今天.*不聊|先不聊/, "temporary boundary leaked");
   if (/uncertain|unresolved|cancelled|confirmed|move confirmed/.test(label)) {
     assert.doesNotMatch(content, /已經?搬|搬好了|已完成搬家/, "pending/cancelled/future move asserted complete");
