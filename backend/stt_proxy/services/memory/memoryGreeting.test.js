@@ -135,3 +135,21 @@ test("所有高品質記憶產生的開場都不含任何禁用字", () => {
     assertNoBanned(greetingFromMemory(m));
   }
 });
+
+test("reported quotes and colons retain the original speaker and qualifying context", () => {
+  for (const text of [
+    "女兒說「今天先不聊工作」，她還沒決定搬家",
+    "女兒說：今天先不聊工作，她還沒決定搬家",
+    "我不是說，今天先不聊女兒",
+    "女兒可能搬去台南，後來取消了",
+  ]) {
+    const memory = { memoryText: text, memoryType: "family" };
+    assert.equal(extractMemoryContent(memory), text);
+    assert.ok(GENTLE.includes(greetingFromMemory(memory)), "abstain instead of replaying a misleading fragment");
+  }
+});
+
+test("long source cannot lose a late negation through greeting truncation", () => {
+  const text = `女兒原先考慮搬去台南，${"她一直考慮各種生活安排，".repeat(8)}但最後取消搬家了`;
+  assert.ok(GENTLE.includes(greetingFromMemory({ memoryText: text, memoryType: "family" })));
+});

@@ -1,5 +1,6 @@
 const OpenAI = require("openai");
 const { safeErrorMessage } = require("../privacy/redaction");
+const { projectMemorySource } = require("./memorySourceContent");
 
 const MEMORY_TYPES = new Set([
   "preference",
@@ -71,7 +72,7 @@ function falseResult(reason) {
   };
 }
 
-// Only boundary-only turns are excluded; mixed facts/preferences keep existing extraction.
+// Legacy boundary-only guard; mixed source handling follows in projectMemorySource.
 function isTemporaryConversationBoundary(text) {
   const unquoted = text.replace(/「[^」]*」|『[^』]*』|“[^”]*”|"[^"]*"/g, "");
   const clauses = unquoted.split(/[，,。.!！?？；;\n]+/).map((clause) => clause.trim()).filter(Boolean);
@@ -107,7 +108,11 @@ function buildMemory({
 }
 
 function ruleBasedExtract({ userText, emotion }) {
-  const text = (userText || "").toString().trim();
+  const original = (userText || "").toString().trim();
+  if (isTemporaryConversationBoundary(original)) return falseResult("temporary_conversation_boundary");
+  const source = projectMemorySource(original);
+  if (source.text == null) return falseResult("unresolved_memory_source_scope");
+  const text = source.text;
   if (!text) return falseResult("userText is required");
   if (isTemporaryConversationBoundary(text)) return falseResult("temporary_conversation_boundary");
   if (CHATTER.has(text)) return falseResult("普通寒暄，不需保存");
@@ -238,12 +243,14 @@ function sanitizeAiResult(data, fallbackInput) {
   }
   return buildMemory({
     memoryType: data.memoryType,
-    memoryText: (data.memoryText || fallbackInput.userText || "").toString().trim(),
-    memorySummary: (data.memorySummary || "").toString().trim(),
+    // Model text is not independently verifiable evidence. The provider may
+    // classify a turn, but both durable fields retain the complete user source.
+    memoryText: fallbackInput.userText,
+    memorySummary: fallbackInput.userText,
     importance,
     emotionLabel: data.emotionLabel,
     confidence,
-    reason: (data.reason || "AI 判斷值得保存").toString(),
+    reason: "AI 分類；記憶內容保留使用者來源",
   });
 }
 
@@ -277,7 +284,6 @@ async function aiExtract(input) {
             reason: "為什麼值得記住或不保存",
           },
           userText: input.userText,
-          agentReply: input.agentReply,
           emotion: input.emotion,
         }),
       },
@@ -310,6 +316,9 @@ async function extractMemoryFromTurn(input) {
   };
 
   const precheck = ruleBasedExtract(normalized);
+  if (projectMemorySource(normalized.userText).projected) {
+    return logDecision(precheck, "verified_source_rule");
+  }
   if (!precheck.shouldRemember && (
     precheck.reason === "temporary_conversation_boundary" ||
     CHATTER.has(normalized.userText) ||

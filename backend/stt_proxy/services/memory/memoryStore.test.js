@@ -426,3 +426,18 @@ test("no memories returns normalized empty context", async (t) => {
     assert.equal(result.reason, "no_relevant_memory");
   });
 });
+
+test("an over-budget memory is not claimed or marked as used when its complete source cannot fit", async (t) => {
+  await withJsonFallback(t, async () => {
+    const text = `女兒可能搬去台南，${"她還在考慮各種生活安排，".repeat(50)}最後取消了`;
+    const created = await createMemory(sampleMemory({
+      memoryText: text, memorySummary: text, sourceTurnId: "oversized_source", embedding: [1, 0, 0],
+    }));
+    const result = await buildMemoryContext({ userId: "default_user", userText: "最近的生活安排", queryEmbedding: [1, 0, 0] });
+    assert.equal(result.memoryUsed, false);
+    assert.equal(result.memoryContext, "");
+    assert.deepEqual(result.usedMemoryIds, []);
+    const listed = await listMemories("default_user");
+    assert.equal(listed.memories.find(memory => memory.id === created.memory.id).useCount, 0);
+  });
+});
