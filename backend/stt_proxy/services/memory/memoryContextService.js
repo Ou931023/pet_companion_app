@@ -86,24 +86,42 @@ function rankMemories(memories = [], provider = "none") {
   return ranked;
 }
 
-function buildPromptBlock(memories = []) {
-  if (!memories.length) return { memoryContext: "", memoryContextSummary: "" };
-  const lines = memories.map((memory, index) =>
-    `${index + 1}. ${compact(memory.memorySummary || memory.memoryText || "", 80)}`.trim(),
-  );
-  const rawContext = `可參考的使用者長期記憶：
-${lines.join("\n")}
-
-使用規則：
+const CONTEXT_HEADER = "可參考的使用者長期記憶：";
+const CONTEXT_RULES = `使用規則：
 - 這些記憶只作為陪伴脈絡。
 - 可以自然延續相關話題，但不要硬提。
 - 不要說「我查到你的記憶」或「資料庫顯示」。
 - 健康相關內容不可做醫療診斷。
 - 如果和目前問題無關，請忽略。`;
-  const topic = compact(memories[0].memorySummary || memories[0].memoryText || "相關近況", 40);
+
+function promptMemoryText(memory) {
+  return (memory.memorySummary || memory.memoryText || "").toString().replace(/\s+/g, " ").trim();
+}
+
+function selectPromptMemories(memories) {
+  let length = compact(`${CONTEXT_HEADER} ${CONTEXT_RULES}`, Infinity).length;
+  let count = 0;
+  return memories.filter(memory => {
+    const text = promptMemoryText(memory);
+    const nextLength = length + text.length + String(count + 1).length + 3;
+    if (!text || nextLength > 500) return false;
+    length = nextLength;
+    count += 1;
+    return true;
+  });
+}
+
+function buildPromptBlock(memories = []) {
+  const selected = selectPromptMemories(memories);
+  if (!selected.length) return { memoryContext: "", memoryContextSummary: "" };
+  const lines = selected.map((memory, index) => `${index + 1}. ${promptMemoryText(memory)}`);
+  const rawContext = `${CONTEXT_HEADER} ${lines.join(" ")} ${CONTEXT_RULES}`;
+  const topic = promptMemoryText(selected[0]);
   return {
-    memoryContext: compact(rawContext, 500),
-    memoryContextSummary: `使用了 ${memories.length} 筆長期記憶：${topic}`,
+    // Skip whole memories that exceed the budget; never cut off a cancellation,
+    // speaker or uncertainty qualifier at an arbitrary character boundary.
+    memoryContext: compact(rawContext, Infinity),
+    memoryContextSummary: `使用了 ${selected.length} 筆長期記憶${topic.length <= 40 ? `：${topic}` : ""}`,
   };
 }
 
@@ -135,7 +153,7 @@ async function buildMemoryContext({
 
     const searchResult = await searchMemoriesByEmbedding(userId, embedding, limit);
     const candidates = searchResult.memories || [];
-    const ranked = rankMemories(candidates, searchResult.provider);
+    const ranked = selectPromptMemories(rankMemories(candidates, searchResult.provider));
     // CR-0073 去敏觀測：只記筆數 / 最高相似度（數字）/ provider / 門檻，不記任何記憶內容或 userId。
     const topSimilarity = candidates.reduce(
       (max, m) => (typeof m.similarity === "number" && m.similarity > max ? m.similarity : max),
@@ -199,9 +217,11 @@ function stripGreetingPunct(text) {
 // 這類後端摘要包裝，只留下使用者實際說的事，避免把摘要原文或分類標籤講出來。
 function extractMemoryContent(memory) {
   const text = (memory.memoryText || memory.memorySummary || "").toString().trim();
-  const quoted = text.match(/「([^」]+)」/);
+  // Only unwrap the exact legacy generated wrapper. Quotes inside a user's
+  // report carry speaker/scope information and are not standalone user claims.
+  const quoted = text.match(/^使用者提到「([^」]+)」，可能需要情緒支持。?$/);
   if (quoted && quoted[1].trim()) return quoted[1].trim();
-  const colon = text.match(/[:：]\s*([\s\S]+)$/);
+  const colon = text.match(/^使用者(?:自我介紹|提到家人|需要照護提醒|提到未來事項|近期情緒狀態|近期睡眠或精神狀態|的生活習慣或近期狀況|偏好)[:：]\s*([\s\S]+)$/);
   if (colon && colon[1].trim()) {
     return colon[1].replace(/[，。、！？!?,.]+$/, "").trim();
   }
@@ -249,9 +269,19 @@ function greetingFromMemory(memory) {
   const content = extractMemoryContent(memory);
   const type = (memory.memoryType || "").toString();
 
+  // Do not quote a fragment of reported/negated speech or truncate away a late
+  // qualification. A neutral greeting makes no claim about these memories.
+  if (content.length > 24 || /[「」『』“”"]|說|表示|提到|不是|不聊|不談|不要再問|永遠|可能|或許|取消|沒決定|未決定|下週|下周|明天/.test(content)) {
+    return pickGentleGreeting(content.length);
+  }
+
   // 情緒 / 健康狀態類：只用溫和開場，不回放內容、不貼標籤。
   if (EMOTIONAL_GREETING_TYPES.has(type) || EMOTIONAL_GREETING_PATTERN.test(content)) {
     return pickGentleGreeting(content.length + chineseCharCount(content));
+  }
+  // Explicit preference classification outranks activity keywords such as 運動.
+  if (PREFERENCE_GREETING_TYPES.has(type)) {
+    return `你之前說${compact(content, 24)}，今天想聊聊這個嗎？`;
   }
   // 照護提醒：不假裝已經設好提醒，改成詢問是否要提醒。
   if (REMINDER_GREETING_TYPES.has(type) || /吃藥|喝水|回診|醫院|運動|提醒/.test(content)) {

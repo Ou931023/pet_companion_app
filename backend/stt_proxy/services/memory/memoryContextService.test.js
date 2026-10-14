@@ -6,6 +6,21 @@ const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
 const { rankMemories } = require("./memoryContextService");
+const { buildPromptBlock } = require("./memoryContextService");
+
+test("context preserves complete qualifying source or skips the whole over-budget record", () => {
+  const text = `女兒可能搬去台南，${"她一直考慮各種生活安排，".repeat(8)}但最後取消搬家了`;
+  const block = buildPromptBlock([{ memorySummary: text }]);
+  assert.ok(block.memoryContext.includes(text));
+  assert.ok(block.memoryContext.length <= 500);
+  assert.doesNotMatch(block.memoryContext, /…/);
+  assert.equal(block.memoryContextSummary, "使用了 1 筆長期記憶");
+  const oversized = buildPromptBlock([{ memorySummary: text.repeat(10) }]);
+  assert.deepEqual(oversized, { memoryContext: "", memoryContextSummary: "" });
+  const selected = buildPromptBlock([{ memorySummary: text.repeat(10) }, { memorySummary: "我喜歡散步" }]);
+  assert.match(selected.memoryContext, /1\. 我喜歡散步/);
+  assert.equal(selected.memoryContextSummary, "使用了 1 筆長期記憶：我喜歡散步");
+});
 
 const nowIso = "2026-06-11T00:00:00.000Z";
 

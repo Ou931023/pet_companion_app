@@ -1,5 +1,6 @@
 const OpenAI = require("openai");
 const { safeErrorMessage } = require("../privacy/redaction");
+const { projectMemorySource, validateMemorySelection, isIndependentPreference } = require("./memorySourceContent");
 
 const MEMORY_TYPES = new Set([
   "preference",
@@ -71,7 +72,7 @@ function falseResult(reason) {
   };
 }
 
-// Only boundary-only turns are excluded; mixed facts/preferences keep existing extraction.
+// Legacy boundary-only guard; mixed source handling follows in projectMemorySource.
 function isTemporaryConversationBoundary(text) {
   const unquoted = text.replace(/「[^」]*」|『[^』]*』|“[^”]*”|"[^"]*"/g, "");
   const clauses = unquoted.split(/[，,。.!！?？；;\n]+/).map((clause) => clause.trim()).filter(Boolean);
@@ -107,7 +108,12 @@ function buildMemory({
 }
 
 function ruleBasedExtract({ userText, emotion }) {
-  const text = (userText || "").toString().trim();
+  const original = (userText || "").toString().trim();
+  if (isTemporaryConversationBoundary(original)) return falseResult("temporary_conversation_boundary");
+  const source = projectMemorySource(original);
+  if (source.text == null) return falseResult("unresolved_memory_source_scope");
+  if (source.requiresSelection) return falseResult("memory_selection_required");
+  const text = source.text;
   if (!text) return falseResult("userText is required");
   if (isTemporaryConversationBoundary(text)) return falseResult("temporary_conversation_boundary");
   if (CHATTER.has(text)) return falseResult("普通寒暄，不需保存");
@@ -125,6 +131,15 @@ function ruleBasedExtract({ userText, emotion }) {
   }
 
   const emotionLabel = normalizeEmotionLabel(emotion);
+  // A complete positive/negative preference is not an exercise/care request.
+  if (isIndependentPreference(text)) {
+    return buildMemory({
+      memoryType: text.includes("故事") ? "story_preference" : "preference",
+      memoryText: text, memorySummary: `使用者偏好：${text}`,
+      importance: text.includes("故事") ? 4 : 3,
+      emotionLabel, confidence: 0.82, reason: "使用者明確表達偏好",
+    });
+  }
 
   // CR-0073：自我介紹 / 家人關係是「要記住」的核心，但原本沒有對應 rule 分支
   // （production 只能靠 AI 補、無 key 則漏）。在此補上，確保穩定存入。
@@ -225,25 +240,31 @@ function sanitizeAiResult(data, fallbackInput) {
   if (!data || data.shouldRemember !== true) {
     return falseResult(data?.reason || "AI 判斷不需保存");
   }
+  const selected = validateMemorySelection(fallbackInput.userText, data.memoryText);
+  if (selected == null) return falseResult("unverified_memory_selection");
+  const selectedInput = { ...fallbackInput, userText: selected };
   if (!MEMORY_TYPES.has(data.memoryType)) {
-    return ruleBasedExtract(fallbackInput);
+    return ruleBasedExtract(selectedInput);
   }
   const importance = Number(data.importance);
   const confidence = Number(data.confidence);
   if (!Number.isInteger(importance) || importance < 1 || importance > 5) {
-    return ruleBasedExtract(fallbackInput);
+    return ruleBasedExtract(selectedInput);
   }
   if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
-    return ruleBasedExtract(fallbackInput);
+    return ruleBasedExtract(selectedInput);
   }
+  if (isIndependentPreference(selected)) return ruleBasedExtract(selectedInput);
   return buildMemory({
     memoryType: data.memoryType,
-    memoryText: (data.memoryText || fallbackInput.userText || "").toString().trim(),
-    memorySummary: (data.memorySummary || "").toString().trim(),
+    // Persist only the verified selected unit, never expand to the whole turn.
+    // A generated summary cannot add claims or erase qualifiers from that unit.
+    memoryText: selected,
+    memorySummary: selected,
     importance,
     emotionLabel: data.emotionLabel,
     confidence,
-    reason: (data.reason || "AI 判斷值得保存").toString(),
+    reason: "AI 分類；記憶內容保留使用者來源",
   });
 }
 
@@ -269,7 +290,7 @@ async function aiExtract(input) {
             shouldRemember: "boolean",
             memoryType:
               "preference | routine | emotion | reminder | care_need | story_preference | health_lifestyle | other",
-            memoryText: "原始可依據文字",
+            memoryText: "逐字複製一段完整且符合保存條件的使用者來源文字；保留否定、不確定與時間限定，排除要求不保存的內容。無法安全選取就 shouldRemember=false",
             memorySummary: "一句話摘要",
             importance: "integer 1-5",
             emotionLabel: "happy | neutral | sad | lonely | anxious | tired | angry | unknown",
@@ -277,7 +298,6 @@ async function aiExtract(input) {
             reason: "為什麼值得記住或不保存",
           },
           userText: input.userText,
-          agentReply: input.agentReply,
           emotion: input.emotion,
         }),
       },
@@ -310,6 +330,9 @@ async function extractMemoryFromTurn(input) {
   };
 
   const precheck = ruleBasedExtract(normalized);
+  if (projectMemorySource(normalized.userText).projected) {
+    return logDecision(precheck, "verified_source_rule");
+  }
   if (!precheck.shouldRemember && (
     precheck.reason === "temporary_conversation_boundary" ||
     CHATTER.has(normalized.userText) ||
@@ -325,6 +348,7 @@ async function extractMemoryFromTurn(input) {
     if (aiResult) {
       const sanitized = sanitizeAiResult(aiResult, normalized);
       if (sanitized.shouldRemember) return logDecision(sanitized, "ai");
+      if (sanitized.reason === "unverified_memory_selection") return logDecision(sanitized, "source_abstention");
       if (precheck.shouldRemember) {
         return logDecision(
           {
