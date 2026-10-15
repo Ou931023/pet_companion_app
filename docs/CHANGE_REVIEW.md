@@ -5593,3 +5593,7 @@ caregiver 身分不得因分組看到 super_admin-only 入口；hidden feature �
 - B2 rollback 保留既有 owned skins，不做反向刪除；只退回新的 pending / claim 接線。
 - B5 model A/B 若品質、延遲、成本或工具 / safety regression 任一不符，立即保留現有 production model；prompt 與 model config 分開提交，避免綁死回滾。
 - B6 rollback 只回復導覽 / 分組，不回復或刪除 underlying view、API 與資料。
+
+## CR-20261015-CHAT-QUALITY — four-request review-only evaluator
+
+Independent artifacts only: frozen synthetic request fixtures derived offline from exact PR58 b84c524, standalone dry-run runner, bounded one-shot Bash launcher, offline tests and CI. No runtime/app changes, API calls or deployment. Fixed two cases x two models; no SDK/server load in dry-run. Reuse PR57 transport/TLS/logging/retry/resource safeguards, output bounded synthetic reply for human review, hash all inputs and freeze source provenance. Architecture scope/actual review requested; parent review required before execution. Shared overall $2 budget retains prior estimated $0.0000293; actual prior bill unknown.
