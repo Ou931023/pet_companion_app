@@ -1,6 +1,6 @@
 # Offline model migration — 2026-10-15
 
-Status: proposed defaults, draft review only. No paid inference, production configuration change, merge or deployment is part of this verification. Baseline: `62682854220f8e4cb50fc75842ff3f97e8974b13`.
+Status: proposed defaults, draft review only. Original offline verification performed no paid inference or production changes. Subsequent user-reported PR57 smoke and estimated nonzero spend are recorded in [text release readiness](TEXT_RELEASE_READINESS_20261015.md); they do not approve this full migration. Baseline: `62682854220f8e4cb50fc75842ff3f97e8974b13`.
 
 ## Request inventory and compatibility
 
