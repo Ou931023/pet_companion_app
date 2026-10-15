@@ -16,7 +16,7 @@
 
 const { safeErrorMessage } = require("./privacy/redaction");
 
-const DEFAULT_MODEL = "gpt-4o-mini";
+const { DEFAULT_TEXT_MODEL: DEFAULT_MODEL, chatModelParameters, completionContent } = require("./openAiModelParameters");
 const DEFAULT_TEMPERATURE = 0.6;
 const DEFAULT_MAX_TOKENS = 220;
 
@@ -93,12 +93,20 @@ async function generateCompanionReply(
 
   try {
     const response = await client.chat.completions.create({
-      model,
-      temperature,
-      max_tokens: maxTokens,
+      ...chatModelParameters(model, { temperature, maxTokens }),
       messages,
     });
-    const reply = response?.choices?.[0]?.message?.content?.toString().trim();
+    let content;
+    try {
+      content = completionContent(response);
+    } catch (_) {
+      // Preserve baseline safety side-recording only for nonempty completions
+      // newly rejected by the guard. This flag stays inside the backend.
+      const hadContent = Boolean(response?.choices?.[0]?.message?.content?.toString().trim());
+      return { success: false, error: "openai_unavailable",
+        ...(hadContent ? { rejectedNonemptyCompletion: true } : {}) };
+    }
+    const reply = content?.toString().trim();
     if (!reply) {
       // OpenAI 回空內容：不假裝成功、不退罐頭。
       return { success: false, error: "openai_unavailable" };

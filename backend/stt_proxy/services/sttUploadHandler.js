@@ -1,4 +1,5 @@
 const fs = require("node:fs");
+const { fileTranscriptionParameters } = require("./openAiModelParameters");
 
 // Injection keeps failure/abort coverage local: tests never call a real provider.
 function createSttUploadHandler({ client, isConfigured }) {
@@ -17,7 +18,7 @@ function createSttUploadHandler({ client, isConfigured }) {
       if (res.destroyed) return;
       audioStream = fs.createReadStream(req.file.path);
       const result = await client.audio.transcriptions.create({
-        file: audioStream, model: "gpt-4o-transcribe", response_format: "json",
+        file: audioStream, ...fileTranscriptionParameters(),
       }, { signal: controller.signal });
       if (res.destroyed) return;
       const text = (result.text || "").trim();

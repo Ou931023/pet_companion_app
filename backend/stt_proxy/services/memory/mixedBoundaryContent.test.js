@@ -89,6 +89,10 @@ function runCases(mode, batch) {
         constructor() {
           this.chat = { completions: { create: async request => {
             providerCalls++;
+            assert.equal(request.model, 'gpt-6-luna');
+            assert.equal(request.reasoning_effort, 'none');
+            assert.equal(request.max_completion_tokens, 2048);
+            assert.equal(request.max_tokens, undefined);
             providerRequests.push(JSON.parse(request.messages.find(message => message.role === 'user').content));
             if (mode === 'throw') throw new Error('synthetic provider failure');
             const paraphrase = (currentExpected || currentText).replace(/我喜歡/g, '使用者喜歡').replace(/台中/g, '臺中').replace(/可能搬去/g, '或許會搬到').replace(/還沒決定/g, '尚未決定').replace(/下週/g, '下周');
@@ -99,7 +103,7 @@ function runCases(mode, batch) {
               memorySummary: mode === 'rewritten_summary' ? rewrite : mode === 'appended_summary' ? currentText + '。已經幫你設定提醒，女兒已經搬到台南' : mode === 'assistant_only' ? '女兒在高雄買房了' : mode === 'paraphrase' ? paraphrase : currentText,
               importance: 4, confidence: 0.8, emotionLabel: 'neutral', reason: 'synthetic'
             };
-            return { choices: [{ message: { content: mode === 'malformed' ? '{broken' : JSON.stringify(payload) } }] };
+            return { choices: [{ finish_reason: mode === 'length' ? 'length' : mode === 'content_filter' ? 'content_filter' : 'stop', message: { refusal: mode === 'refusal' ? 'synthetic refusal' : null, content: mode === 'malformed' ? '{broken' : JSON.stringify(payload) } }] };
           } } };
         }
       };
@@ -213,7 +217,7 @@ function runCases(mode, batch) {
   });
 }
 
-for (const mode of ["none", "false", "malformed", "invalid", "throw", "normal", "paraphrase", "rewritten_summary", "rewritten_text", "misattributed_text", "invented_text", "appended_summary", "assistant_only"]) {
+for (const mode of ["none", "false", "malformed", "invalid", "throw", "normal", "paraphrase", "rewritten_summary", "rewritten_text", "misattributed_text", "invented_text", "appended_summary", "assistant_only", "length", "content_filter", "refusal"]) {
   test(`mixed boundary content through HTTP/store/embedding/context/greeting: ${mode}`, () => {
     // Fresh processes keep each batch below the real HTTP rate limit. Do not
     // relax production security or replace its middleware for a larger matrix.

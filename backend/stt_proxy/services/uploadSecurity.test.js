@@ -77,6 +77,34 @@ function harness({ configured = true, provider = async () => ({ text: " syntheti
 }
 const audio = { name: "audio", file: "sample.m4a", value: "synthetic audio" };
 
+test("upload forwards recorded STT parameters and keeps text-only response and cleanup", deadline, async () => {
+  const previous = { model: process.env.STT_MODEL, languages: process.env.STT_LANGUAGES };
+  try {
+    delete process.env.STT_MODEL;
+    process.env.STT_LANGUAGES = "zh-tw,en";
+    let request;
+    const { app, dir } = harness({ provider: async body => {
+      request = body;
+      return { text: " synthetic transcript ", languages: ["en"] };
+    } });
+    await serve(app, async url => {
+      const response = await post(`${url}/upload`, [audio]);
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), { success: true, text: "synthetic transcript" });
+      assert.equal(request.model, "gpt-transcribe");
+      assert.deepEqual(request.languages, ["zh-tw", "en"]);
+      assert.equal(request.language, undefined);
+      assert.equal(request.response_format, "json");
+      await eventuallyEmpty(dir);
+    });
+  } finally {
+    if (previous.model === undefined) delete process.env.STT_MODEL;
+    else process.env.STT_MODEL = previous.model;
+    if (previous.languages === undefined) delete process.env.STT_LANGUAGES;
+    else process.env.STT_LANGUAGES = previous.languages;
+  }
+});
+
 for (const [name, entries, code] of [
   ["file bytes", [{ ...audio, value: Buffer.alloc(65) }], "LIMIT_FILE_SIZE"],
   ["files", [audio, audio], "LIMIT_FILE_COUNT"],

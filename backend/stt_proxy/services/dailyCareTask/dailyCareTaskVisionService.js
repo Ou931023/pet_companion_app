@@ -13,6 +13,7 @@
 
 const fs = require("fs/promises");
 const OpenAI = require("openai");
+const { DEFAULT_TEXT_MODEL, chatModelParameters, completionContent } = require("../openAiModelParameters");
 
 // 各任務類型的通過信心門檻（見 CR SECTION 07D）。
 const CONFIDENCE_THRESHOLDS = {
@@ -161,10 +162,10 @@ async function verifyProof(input = {}, options = {}) {
       options.imageDataUrl ||
       (await imagePathToDataUrl(input.imagePath, input.mimeType));
     const model =
-      options.model || process.env.DAILY_CARE_VISION_MODEL || "gpt-4o-mini";
+      options.model || process.env.DAILY_CARE_VISION_MODEL || DEFAULT_TEXT_MODEL;
 
     const response = await client.chat.completions.create({
-      model,
+      ...chatModelParameters(model, { lunaMaxTokens: 1024 }),
       response_format: { type: "json_object" },
       messages: [
         {
@@ -177,7 +178,7 @@ async function verifyProof(input = {}, options = {}) {
       ],
     });
 
-    const content = response?.choices?.[0]?.message?.content;
+    const content = completionContent(response);
     const parsed = parseModelJson(content);
     return interpret(taskType, parsed);
   } catch (error) {

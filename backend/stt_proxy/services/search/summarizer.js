@@ -1,4 +1,5 @@
 const OpenAI = require("openai");
+const { DEFAULT_TEXT_MODEL, chatModelParameters, completionContent } = require("../openAiModelParameters");
 const { safeErrorMessage } = require("../privacy/redaction");
 
 let client;
@@ -66,8 +67,10 @@ async function summarizeWithAi({ query, mode, results, webAnswer = "" }) {
 
   try {
     const response = await getClient().chat.completions.create({
-      model: process.env.SEARCH_SUMMARY_MODEL || process.env.MEMORY_MODEL || "gpt-4o-mini",
-      temperature: 0.25,
+      ...chatModelParameters(
+        process.env.SEARCH_SUMMARY_MODEL || process.env.MEMORY_MODEL || DEFAULT_TEXT_MODEL,
+        { temperature: 0.25, lunaMaxTokens: 768 },
+      ),
       messages: [
         {
           role: "system",
@@ -92,7 +95,7 @@ async function summarizeWithAi({ query, mode, results, webAnswer = "" }) {
       ],
     });
     const answer = limitSentences(
-      (response.choices?.[0]?.message?.content || "").trim(),
+      (completionContent(response) || "").trim(),
     );
     return {
       answer: answer || fallbackSummary({ query, results, mode }).answer,

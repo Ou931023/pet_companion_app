@@ -1,4 +1,5 @@
 const OpenAI = require("openai");
+const { DEFAULT_TEXT_MODEL, chatModelParameters, completionContent } = require("./openAiModelParameters");
 
 const { createEmbedding } = require("./embeddingService");
 const {
@@ -132,8 +133,10 @@ async function summarizeMemoryWithLLM({ userText, aiReply, emotion }) {
 
   try {
     const response = await openai.chat.completions.create({
-      model: process.env.MEMORY_MODEL || "gpt-4o-mini",
-      temperature: 0.2,
+      ...chatModelParameters(
+        process.env.MEMORY_MODEL || DEFAULT_TEXT_MODEL,
+        { temperature: 0.2 },
+      ),
       response_format: { type: "json_object" },
       messages: [
         {
@@ -148,7 +151,7 @@ async function summarizeMemoryWithLLM({ userText, aiReply, emotion }) {
       ],
     });
 
-    const content = response.choices?.[0]?.message?.content || "{}";
+    const content = completionContent(response) || "{}";
     let parsed = {};
     try {
       parsed = JSON.parse(content);

@@ -6,6 +6,7 @@ const os = require("os");
 const path = require("path");
 const rateLimit = require('express-rate-limit');
 const OpenAI = require("openai");
+const { DEFAULT_TEXT_MODEL, DEFAULT_REALTIME_MODEL, chatModelParameters, realtimeModelParameters, completionContent } = require("./services/openAiModelParameters");
 
 if (process.env.NODE_ENV !== "test") dotenv.config();
 
@@ -667,7 +668,7 @@ app.get("/health", (_, res) => {
     status: "ok",
     revision: resolveDeploymentRevision(process.env),
     hasOpenAiKey: Boolean(process.env.OPENAI_API_KEY),
-    realtimeModel: process.env.REALTIME_MODEL || "gpt-realtime",
+    realtimeModel: process.env.REALTIME_MODEL || DEFAULT_REALTIME_MODEL,
     time: new Date().toISOString(),
   });
 });
@@ -2179,7 +2180,7 @@ app.post("/api/companion/analyze", async (req, res) => {
 //   - 掛 requireResidentCaller（與 /notify 同一中介層），server 權威 elderId 取自
 //     req.residentCaller.elderId；無 / 無效 token → 401，跨住民 / 未綁定 / 停用 → 403。
 //     body.elderId 若帶且與 caller 不符 → 403 forbidden_resident（永不採信 client elderId）。
-//   - 回覆生成成功後，以 analyzeCompanionTurn 做**純函式**風險側錄（不重查記憶 / 不查知識 /
+//   - 回覆成功或此次 guard 拒絕非空回應時，以 analyzeCompanionTurn 做**純函式**風險側錄（不重查記憶 / 不查知識 /
 //     不寫記憶），僅當 riskLevel ∈ {medium,high,urgent} 才經共用 processCareAlert 建立 Care Alert
 //     （source='companion_chat' 為獨立 cooldown 來源）。風險分析 fail-open，永不阻擋回覆。
 //     回應新增向後相容欄位 careAlert（low / neutral 一律省略）；只暴露 riskLevel，不外洩摘要 / debug。
@@ -2226,18 +2227,18 @@ ${memoryContextSummary}
       model:
         process.env.COMPANION_CHAT_MODEL ||
         process.env.MEMORY_MODEL ||
-        "gpt-4o-mini",
+        DEFAULT_TEXT_MODEL,
       logError,
     },
   );
 
-  if (!result.success) {
+  if (!result.success && !result.rejectedNonemptyCompletion) {
     const status = result.error === "invalid_input" ? 400 : 503;
     return res.status(status).json({ success: false, error: result.error });
   }
 
   // 風險側錄（fail-open）：以 analyzeCompanionTurn 做純函式風險判斷，不重查記憶 /
-  // 不查知識 / 不寫記憶（避免跨住民 I/O），不改動回覆文字。任何例外都不阻擋 200 回覆。
+  // 不查知識 / 不寫記憶（避免跨住民 I/O），不改動回覆文字。任何例外都不改變原本成功或失敗回應。
   let careAlert;
   try {
     const analysis = analyzeCompanionTurn({
@@ -2285,6 +2286,10 @@ ${memoryContextSummary}
     logError("companion chat risk analysis failed", {
       error: analysisError?.message || analysisError,
     });
+  }
+
+  if (!result.success) {
+    return res.status(503).json({ success: false, error: result.error });
   }
 
   // CR-0096 合規：使用者問股票 / 投資相關內容時，回覆結尾固定附上投資風險提醒
@@ -2498,8 +2503,7 @@ app.get("/api/memory/greeting", requireResidentCaller, async (req, res) => {
       .map((row, index) => `${index + 1}. ${row.memorySummary || row.summary}`)
       .join("\n");
     const greetingResponse = await client.chat.completions.create({
-      model: process.env.MEMORY_MODEL || "gpt-4o-mini",
-      temperature: 0.5,
+      ...chatModelParameters(process.env.MEMORY_MODEL || DEFAULT_TEXT_MODEL, { temperature: 0.5, lunaMaxTokens: 256 }),
       messages: [
         {
           role: "system",
@@ -2517,7 +2521,7 @@ ${memoryLines}
       ],
     });
     const greeting =
-      greetingResponse.choices?.[0]?.message?.content?.trim() ||
+      completionContent(greetingResponse)?.trim() ||
       fallbackGreeting({ petName, localHour });
     const usedIds = contextResult.usedMemoryIds || memoryRows.map((row) => row.id);
 
@@ -2569,8 +2573,7 @@ app.post("/api/conversation/title", async (req, res) => {
       return res.json({ title: fallback });
     }
     const response = await client.chat.completions.create({
-      model: process.env.CONVERSATION_TITLE_MODEL || "gpt-4o-mini",
-      temperature: 0.3,
+      ...chatModelParameters(process.env.CONVERSATION_TITLE_MODEL || DEFAULT_TEXT_MODEL, { temperature: 0.3, lunaMaxTokens: 128 }),
       messages: [
         {
           role: "system",
@@ -2584,7 +2587,7 @@ app.post("/api/conversation/title", async (req, res) => {
       ],
     });
     const title =
-      sanitizeConversationTitle(response.choices?.[0]?.message?.content) ||
+      sanitizeConversationTitle(completionContent(response)) ||
       fallback;
     return res.json({ title });
   } catch (error) {
@@ -2953,7 +2956,8 @@ app.post("/api/realtime/session", realtimeLimiter, async (req, res) => {
   }
 
   try {
-    const realtimeModel = process.env.REALTIME_MODEL || "gpt-realtime";
+    // Beta compatibility is isolated from the GA voice-model rollout.
+    const realtimeModel = process.env.LEGACY_REALTIME_MODEL || "gpt-realtime";
     const languageHint = (req.body?.languageHint || req.query?.languageHint || "")
       .toString()
       .replace(/\r|\n/g, " ")
@@ -3069,7 +3073,7 @@ app.post(
       });
     }
 
-    const realtimeModel = process.env.REALTIME_MODEL || "gpt-realtime";
+    const realtimeModel = process.env.REALTIME_MODEL || DEFAULT_REALTIME_MODEL;
     let petName = (req.query?.petName || "").toString().trim();
     let userId = (req.query?.userId || "").toString().trim();
     let companionContext = (req.query?.companionContext || "").toString().trim();
@@ -3113,7 +3117,7 @@ app.post(
 
     const sessionConfig = {
       type: "realtime",
-      model: realtimeModel,
+      ...realtimeModelParameters(realtimeModel),
       audio: {
         input: {
           transcription: {
