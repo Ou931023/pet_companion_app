@@ -66,5 +66,14 @@ jobs:
       - name: Test offline voice evaluation tools
         run: node --test ../../scripts/evaluate_realtime_turns.test.mjs ../../scripts/read_voice_language_diagnostics.test.mjs
 
+      - name: Fetch pinned chat prompt source for offline provenance verification
+        run: git fetch --depth=1 origin b84c52428ce043a145c96e04ecb7b18dc63e6fc5
+
+      - name: Test fixed synthetic quality runner with fake transport
+        run: node --test ../../scripts/companion_quality.test.cjs
+
+      - name: Test fixed quality launcher on Linux with fake download and model process
+        run: node --test ../../scripts/companion_quality_launcher.test.cjs
+
       - name: Reject high and critical runtime dependency advisories
         run: npm audit --omit=dev --audit-level=high
