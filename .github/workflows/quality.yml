@@ -69,5 +69,8 @@ jobs:
       - name: Test standalone text smoke safety with fake transport
         run: node --test ../../scripts/render_text_smoke.test.cjs
 
+      - name: Test documented Bash launcher offline on Linux
+        run: node --test ../../scripts/render_text_smoke_launcher.test.cjs
+
       - name: Reject high and critical runtime dependency advisories
         run: npm audit --omit=dev --audit-level=high

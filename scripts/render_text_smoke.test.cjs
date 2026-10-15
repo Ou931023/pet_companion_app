@@ -132,6 +132,14 @@ test('SDK initialization failure is redacted', async () => {
   assert.equal(await probe.run({ execute: true, loadSDK() { throw new Error(SENTINEL); }, emit: x => output.push(x) }), 1);
   assert.deepEqual(output, [{ status: 'setup-failed', attempts: 0 }]);
 });
+test('live CLI rejects disabled TLS verification before SDK load or credential use', () => {
+  const child = spawnSync(process.execPath, ['--max-old-space-size=64', '--max-http-header-size=8192',
+    resolve(__dirname, 'render_text_smoke.cjs'), '--execute', '--standard-pricing-reviewed-2026-10-15'],
+  { encoding: 'utf8', env: { NODE_TLS_REJECT_UNAUTHORIZED: '0' } });
+  assert.equal(child.status, 2);
+  assert.deepEqual(JSON.parse(child.stdout), { status: 'unsafe-launch-options' });
+  assert.equal(child.stderr, '');
+});
 for (const text of ['我不喜歡散步', '我喜歡散步，也有三個兒子', '可能喜歡散步', '我喜歡散步，今天不聊女兒', '喜歡散步但只有明天']) {
   test(`fixed memory fixture rejects altered meaning: ${text}`, () => {
     const p = payload(1); p.choices[0].message.content = JSON.stringify({ memoryText: text });

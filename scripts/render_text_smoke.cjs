@@ -125,7 +125,8 @@ async function main(args) {
   }
   if (!live) return run({ emit });
   // Refuse ambient debugging/preloads; do not print their values. Shell launcher also removes them before Node starts.
-  if (process.env.DEBUG || process.env.NODE_DEBUG || process.env.NODE_DEBUG_NATIVE ||
+  if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0' ||
+      process.env.DEBUG || process.env.NODE_DEBUG || process.env.NODE_DEBUG_NATIVE ||
       process.env.NODE_V8_COVERAGE || process.env.NODE_REDIRECT_WARNINGS ||
       process.env.NODE_OPTIONS || process.env.NODE_PATH || process.env.NODE_USE_ENV_PROXY ||
       !process.execArgv.includes('--max-old-space-size=64') || !process.execArgv.includes('--max-http-header-size=8192')) {

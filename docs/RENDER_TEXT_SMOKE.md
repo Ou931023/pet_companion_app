@@ -6,7 +6,7 @@ Prepared 2026-10-15. No Render Shell session or paid request has been run. The a
 
 `scripts/render_text_smoke.cjs` is standalone CommonJS and defaults to dry-run. Its SHA-256 (UTF-8, LF, including final newline) is:
 
-`cd5c067c3e3bbef82335401e0754467a9536303f75e432cca43fc593a8dbc20c`
+`84a84e1ae57c96763d4732ee9bb28503b70bc2d8f2a152cafd08c640801af293`
 
 It loads no application code, dotenv, DB, scheduler, notification, or test runner. It accepts no input files or custom prompts and makes no application API call. Node necessarily loads its own runtime and installed SDK code; "no file reads" means no application/configuration/data files, not a claim that module loading avoids the filesystem. The SDK alone consumes the inherited OpenAI credential during an explicitly enabled live run. Nothing copies or prints that credential. Dry-run does not even load the SDK.
 
@@ -42,7 +42,7 @@ Copy the **reviewed exact script from the final commit**, not a moving branch. P
 IFS= read -r -d '' probe_source <<'SMOKE_SOURCE' || true
 PASTE THE COMPLETE REVIEWED scripts/render_text_smoke.cjs HERE
 SMOKE_SOURCE
-expected_probe_sha=cd5c067c3e3bbef82335401e0754467a9536303f75e432cca43fc593a8dbc20c
+expected_probe_sha=84a84e1ae57c96763d4732ee9bb28503b70bc2d8f2a152cafd08c640801af293
 actual_probe_sha=$(printf '%s' "$probe_source" | sha256sum)
 test "${actual_probe_sha%% *}" = "$expected_probe_sha" || { echo 'STOP: source hash mismatch'; unset probe_source; }
 ```
@@ -50,26 +50,40 @@ test "${actual_probe_sha%% *}" = "$expected_probe_sha" || { echo 'STOP: source h
 Stop on mismatch; do not fix it by changing the expected hash. First run dry-run using stdin, with ambient Node preload/debug/proxy options removed for this child process only:
 
 ```bash
-printf '%s' "$probe_source" | env -u NODE_OPTIONS -u NODE_PATH -u DEBUG -u NODE_USE_ENV_PROXY -u NODE_DEBUG -u NODE_DEBUG_NATIVE -u NODE_V8_COVERAGE -u NODE_REDIRECT_WARNINGS \
+printf '%s' "$probe_source" | env -u NODE_OPTIONS -u NODE_PATH -u DEBUG -u NODE_USE_ENV_PROXY -u NODE_DEBUG -u NODE_DEBUG_NATIVE -u NODE_V8_COVERAGE -u NODE_REDIRECT_WARNINGS -u NODE_TLS_REJECT_UNAUTHORIZED \
   node --max-old-space-size=64 --max-http-header-size=8192 - --dry-run
 ```
 
 After parent review and explicit execution approval, run **once**, only if the hash matches and `timeout` is already available. No installation or fallback if unavailable:
 
+<!-- live-launcher -->
 ```bash
-(
+run_smoke_once() {
+  local probe_status
+  if (
   command -v timeout >/dev/null || exit 2
   actual_probe_sha=$(printf '%s' "$probe_source" | sha256sum)
   test "${actual_probe_sha%% *}" = "$expected_probe_sha" || exit 2
   ulimit -c 0 || exit 2
   ulimit -t 10 || exit 2
   printf '%s' "$probe_source" | timeout --signal=TERM --kill-after=2s 65s \
-    env -u NODE_OPTIONS -u NODE_PATH -u DEBUG -u NODE_USE_ENV_PROXY -u NODE_DEBUG -u NODE_DEBUG_NATIVE -u NODE_V8_COVERAGE -u NODE_REDIRECT_WARNINGS \
+    env -u NODE_OPTIONS -u NODE_PATH -u DEBUG -u NODE_USE_ENV_PROXY -u NODE_DEBUG -u NODE_DEBUG_NATIVE -u NODE_V8_COVERAGE -u NODE_REDIRECT_WARNINGS -u NODE_TLS_REJECT_UNAUTHORIZED \
     node --max-old-space-size=64 --max-http-header-size=8192 - \
     --execute --standard-pricing-reviewed-2026-10-15
-)
-unset probe_source
+  ); then
+    probe_status=0
+  else
+    probe_status=$?
+  fi
+  unset probe_source
+  printf '{"launcherExitCode":%s}\n' "$probe_status"
+  return "$probe_status"
+}
+run_smoke_once
 ```
+<!-- /live-launcher -->
+
+The function captures the subshell status before cleanup, prints it and returns that same status (including timeout 124). It preserves failure even when the calling shell enables `errexit`. The launcher removes `NODE_TLS_REJECT_UNAUTHORIZED` only for this child; direct live invocation refuses value `0` before SDK loading or credential use. Neither changes the service environment. Linux CI tests this exact documentation block with fake executables, including success, failure and an actual shortened GNU timeout; no model request occurs.
 
 Limits: 64 MiB V8 old-generation heap, 8 KiB HTTP headers, 64 KiB response body, 20-second per-request abort covering body consumption, 60-second internal wall timer, 128 MiB sampled RSS stop, 10-second CPU limit and 65-second external wall timeout with 2-second kill grace. RSS can briefly exceed the sampled threshold and native allocations are outside the V8 heap limit. These are containment measures, not a hard cgroup memory quota. No provider completion text is printed even on failure. Retain only the sanitized JSON lines and exit status. Timeout/termination means cost unknown, never free retry.
 
