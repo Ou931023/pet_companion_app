@@ -66,5 +66,8 @@ jobs:
       - name: Test offline voice evaluation tools
         run: node --test ../../scripts/evaluate_realtime_turns.test.mjs ../../scripts/read_voice_language_diagnostics.test.mjs
 
+      - name: Test standalone text smoke safety with fake transport
+        run: node --test ../../scripts/render_text_smoke.test.cjs
+
       - name: Reject high and critical runtime dependency advisories
         run: npm audit --omit=dev --audit-level=high
