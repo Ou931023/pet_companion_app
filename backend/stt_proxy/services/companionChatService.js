@@ -95,9 +95,19 @@ async function generateCompanionReply(
     const response = await client.chat.completions.create({
       model,
       temperature,
-      max_tokens: maxTokens,
+      ...(model === "gpt-6-luna"
+        ? { reasoning_effort: "none", max_completion_tokens: maxTokens }
+        : { max_tokens: maxTokens }),
       messages,
     });
+    const choice = response?.choices?.[0];
+    if (["length", "content_filter"].includes(choice?.finish_reason) || choice?.message?.refusal) {
+      // Only newly rejected nonempty replies previously reached the route's risk side-recording.
+      // This marker is internal and never part of the HTTP response.
+      const hadContent = Boolean(choice?.message?.content?.toString().trim());
+      return { success: false, error: "openai_unavailable",
+        ...(hadContent ? { rejectedNonemptyCompletion: true } : {}) };
+    }
     const reply = response?.choices?.[0]?.message?.content?.toString().trim();
     if (!reply) {
       // OpenAI 回空內容：不假裝成功、不退罐頭。

@@ -21,13 +21,18 @@ const path = require("node:path");
 
 // ---- 注入假 OpenAI client（在 require server 之前覆寫 require.cache）----
 const FIXED_REPLY = "我在這裡陪你，慢慢說沒關係。";
+let completionMode = "stop";
+let capturedCompletion;
 class FakeOpenAI {
   constructor() {
     this.chat = {
       completions: {
-        create: async () => ({
-          choices: [{ message: { content: FIXED_REPLY } }],
-        }),
+        create: async (params) => {
+          capturedCompletion = params;
+          if (completionMode === "throw") throw new Error("synthetic provider failure");
+          return ({
+          choices: [{ finish_reason: completionMode === "refusal" ? "stop" : completionMode === "length_empty" ? "length" : completionMode, message: { content: ["empty_response", "length_empty"].includes(completionMode) ? " " : FIXED_REPLY, refusal: completionMode === "refusal" ? "synthetic refusal" : null } }],
+        }); },
       },
     };
   }
@@ -67,6 +72,10 @@ const RES_A = { Authorization: "Bearer res-a-token" };
 let restoreResident = null;
 
 beforeEach(() => {
+  completionMode = "stop";
+  capturedCompletion = null;
+  delete process.env.COMPANION_CHAT_MODEL;
+  delete process.env.MEMORY_MODEL;
   process.env.CARE_ALERTS_DATA_FILE = path.join(
     fs.mkdtempSync(path.join(os.tmpdir(), "companion_chat_alert_")),
     "care_alerts.json",
@@ -79,9 +88,37 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete process.env.COMPANION_CHAT_MODEL;
+  delete process.env.MEMORY_MODEL;
   if (restoreResident) restoreResident();
   restoreResident = null;
 });
+
+for (const selection of ["default", "memory-fallback", "chat-override"]) {
+  test("chat model selection and actual app prompt: " + selection, async () => {
+    if (selection !== "default") process.env.MEMORY_MODEL = "gpt-4o";
+    if (selection === "chat-override") process.env.COMPANION_CHAT_MODEL = "gpt-6-luna";
+    const server = await startServer();
+    try {
+      const res = await postChat("http://127.0.0.1:" + server.address().port,
+        { userText: "今天散步很開心", petName: "合成小白", memoryContextSummary: "使用者喜歡散步", replyLanguage: "zh-TW" });
+      assert.equal(res.status, 200);
+      assert.equal(capturedCompletion.model, selection === "default" ? "gpt-4o-mini" : selection === "memory-fallback" ? "gpt-4o" : "gpt-6-luna");
+      assert.equal(capturedCompletion.temperature, 0.6);
+      assert.equal(capturedCompletion.messages[0].role, "system");
+      assert.ok(capturedCompletion.messages[0].content.includes("合成小白"));
+      assert.ok(capturedCompletion.messages[0].content.includes("使用者喜歡散步"));
+      if (selection === "chat-override") {
+        assert.equal(capturedCompletion.reasoning_effort, "none");
+        assert.equal(capturedCompletion.max_completion_tokens, 220);
+        assert.equal(capturedCompletion.max_tokens, undefined);
+      } else {
+        assert.equal(capturedCompletion.max_tokens, 220);
+        assert.equal(capturedCompletion.reasoning_effort, undefined);
+      }
+    } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+  });
+}
 
 function startServer() {
   return new Promise((resolve) => {
@@ -369,3 +406,40 @@ test("回應不外洩 token / 完整摘要文字", async () => {
     server.close();
   }
 });
+
+// Provider rejection must not suppress authorized user-text safety processing.
+for (const mode of ["length", "content_filter", "refusal", "throw", "empty_response", "length_empty"]) {
+  for (const scenario of ["urgent", "ordinary", "unauthorized", "cross-resident", "empty"]) {
+    test(mode + " completion: safety remains scoped for " + scenario, async () => {
+      completionMode = mode;
+      const spy = installTelegramSpy();
+      const server = await startServer();
+      try {
+        const base = "http://127.0.0.1:" + server.address().port;
+        const input = { userText: scenario === "empty" ? " " : scenario === "ordinary" ? "今天天氣不錯" : "我不想活了" };
+        if (scenario === "cross-resident") input.elderId = ELDER_B;
+        const res = await postChat(base, input, scenario === "unauthorized" ? {} : RES_A);
+        const body = await res.json();
+        const status = scenario === "empty" ? 400 : scenario === "unauthorized" ? 401 : scenario === "cross-resident" ? 403 : 503;
+        assert.equal(res.status, status);
+        if (status === 503) assert.deepEqual(body, { success: false, error: "openai_unavailable" });
+        assert.equal(body.reply, undefined);
+        // Inspect this test-owned fixture directly to stay below the real HTTP rate limit.
+        const alerts = fs.existsSync(process.env.CARE_ALERTS_DATA_FILE)
+          ? JSON.parse(fs.readFileSync(process.env.CARE_ALERTS_DATA_FILE, "utf8")) : [];
+        const expected = scenario === "urgent" && ["length", "content_filter", "refusal"].includes(mode) ? 1 : 0;
+        assert.equal(alerts.length, expected, "authorized urgent risk must be recorded exactly once");
+        assert.equal(spy.calls.length, expected, "only authorized urgent risk reaches Telegram spy once");
+        if (expected) {
+          assert.equal(alerts[0].elderId, ELDER_A);
+          assert.equal(alerts[0].riskLevel, "urgent");
+          assert.equal(alerts[0].source, "companion_chat");
+        }
+      } finally {
+        spy.restore();
+        server.closeAllConnections();
+        await new Promise(resolve => server.close(resolve));
+      }
+    });
+  }
+}
