@@ -1,5 +1,7 @@
 ## CR-MODELS-20261015: Offline model migration proposal
 
+- Parent-review correction: guard-rejected nonempty chat completions now carry an internal marker so authorized user-text risk side-recording still runs once before the unchanged 503 response. Existing empty/throw/missing-key failures retain their early return. No risk rule, threshold, cooldown, recipient or auth change. Three urgent synthetic cases reproduced the missing record before repair; actual-diff architecture review approved the narrowed implementation. Tests use only test-owned temporary records and a Telegram spy.
+
 - User authorized GPT-6 Luna text/image tasks, GPT-Realtime 2.1 voice and GPT-Transcribe recorded audio; no billed calls, merge or deployment before parent review.
 - Proposed batches: (A) bounded Chat Completions parameters and all current GPT-4o mini callers, preserving environment overrides and existing parsers/fallbacks; (B) completed-file STT with separate model/languages configuration and SDK multipart tests; (C) GA WebRTC voice model with existing VAD/events/API shape, keeping compatible session transcription.
 - Luna: explicitly select none reasoning to preserve current non-reasoning latency role, use max_completion_tokens and bounded output; low is an evaluation candidate only. Keep JSON mode and source attribution/refusal guards unchanged. Do not upgrade SDK unless wire-format tests establish a need.

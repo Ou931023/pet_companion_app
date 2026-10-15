@@ -96,7 +96,17 @@ async function generateCompanionReply(
       ...chatModelParameters(model, { temperature, maxTokens }),
       messages,
     });
-    const reply = completionContent(response)?.toString().trim();
+    let content;
+    try {
+      content = completionContent(response);
+    } catch (_) {
+      // Preserve baseline safety side-recording only for nonempty completions
+      // newly rejected by the guard. This flag stays inside the backend.
+      const hadContent = Boolean(response?.choices?.[0]?.message?.content?.toString().trim());
+      return { success: false, error: "openai_unavailable",
+        ...(hadContent ? { rejectedNonemptyCompletion: true } : {}) };
+    }
+    const reply = content?.toString().trim();
     if (!reply) {
       // OpenAI 回空內容：不假裝成功、不退罐頭。
       return { success: false, error: "openai_unavailable" };

@@ -53,7 +53,7 @@ for (const choice of unsafeChoices) {
     assert.throws(() => completionContent(response), /Incomplete or refused/);
     const client = { chat: { completions: { create: async () => response } } };
     const chat = await generateCompanionReply({ userText: "synthetic" }, { client });
-    assert.deepEqual(chat, { success: false, error: "openai_unavailable" });
+    assert.deepEqual(chat, { success: false, error: "openai_unavailable", rejectedNonemptyCompletion: true });
     const image = await verifyProof({ taskType: "medication" }, { client, imageDataUrl: "data:image/jpeg;base64,AAAA" });
     assert.equal(image.verificationStatus, "uncertain");
     assert.equal(image.reviewRequired, true);
