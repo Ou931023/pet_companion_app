@@ -1,0 +1,246 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "events": [
+    {
+      "sequence": 1,
+      "atMs": 0,
+      "session": 1,
+      "generation": 0,
+      "turn": 1,
+      "event": "input.started"
+    },
+    {
+      "sequence": 2,
+      "atMs": 1000,
+      "session": 1,
+      "generation": 0,
+      "turn": 1,
+      "event": "input.ended"
+    },
+    {
+      "sequence": 3,
+      "atMs": 1300,
+      "session": 1,
+      "generation": 0,
+      "turn": 1,
+      "event": "output_audio_buffer.started"
+    },
+    {
+      "sequence": 4,
+      "atMs": 1500,
+      "session": 1,
+      "generation": 0,
+      "turn": 1,
+      "event": "response.done"
+    },
+    {
+      "sequence": 5,
+      "atMs": 2000,
+      "session": 1,
+      "generation": 0,
+      "turn": 1,
+      "event": "output_audio_buffer.stopped"
+    },
+    {
+      "sequence": 6,
+      "atMs": 0,
+      "session": 2,
+      "generation": 0,
+      "turn": 1,
+      "event": "input.started"
+    },
+    {
+      "sequence": 7,
+      "atMs": 500,
+      "session": 2,
+      "generation": 0,
+      "turn": 1,
+      "event": "input.ended"
+    },
+    {
+      "sequence": 8,
+      "atMs": 2500,
+      "session": 2,
+      "generation": 0,
+      "turn": 1,
+      "event": "synthetic.continuation"
+    },
+    {
+      "sequence": 9,
+      "atMs": 3000,
+      "session": 2,
+      "generation": 0,
+      "turn": 1,
+      "event": "input.ended"
+    },
+    {
+      "sequence": 10,
+      "atMs": 3300,
+      "session": 2,
+      "generation": 0,
+      "turn": 1,
+      "event": "output_audio_buffer.started"
+    },
+    {
+      "sequence": 11,
+      "atMs": 4000,
+      "session": 2,
+      "generation": 0,
+      "turn": 1,
+      "event": "output_audio_buffer.stopped"
+    },
+    {
+      "sequence": 12,
+      "atMs": 0,
+      "session": 3,
+      "generation": 0,
+      "turn": 1,
+      "event": "input.started"
+    },
+    {
+      "sequence": 13,
+      "atMs": 100,
+      "session": 3,
+      "generation": 0,
+      "turn": 1,
+      "event": "input.ended"
+    },
+    {
+      "sequence": 14,
+      "atMs": 300,
+      "session": 3,
+      "generation": 0,
+      "turn": 1,
+      "event": "output_audio_buffer.started"
+    },
+    {
+      "sequence": 15,
+      "atMs": 400,
+      "session": 3,
+      "generation": 0,
+      "turn": 1,
+      "event": "synthetic.backchannel"
+    },
+    {
+      "sequence": 16,
+      "atMs": 600,
+      "session": 3,
+      "generation": 0,
+      "turn": 1,
+      "event": "output_audio_buffer.stopped"
+    },
+    {
+      "sequence": 17,
+      "atMs": 0,
+      "session": 4,
+      "generation": 0,
+      "turn": 1,
+      "event": "input.started"
+    },
+    {
+      "sequence": 18,
+      "atMs": 100,
+      "session": 4,
+      "generation": 0,
+      "turn": 1,
+      "event": "input.ended"
+    },
+    {
+      "sequence": 19,
+      "atMs": 300,
+      "session": 4,
+      "generation": 0,
+      "turn": 1,
+      "event": "output_audio_buffer.started"
+    },
+    {
+      "sequence": 20,
+      "atMs": 400,
+      "session": 4,
+      "generation": 0,
+      "turn": 1,
+      "event": "response.done"
+    },
+    {
+      "sequence": 21,
+      "atMs": 0,
+      "session": 5,
+      "generation": 0,
+      "turn": 1,
+      "event": "input.started"
+    },
+    {
+      "sequence": 22,
+      "atMs": 100,
+      "session": 5,
+      "generation": 0,
+      "turn": 1,
+      "event": "input.ended"
+    },
+    {
+      "sequence": 23,
+      "atMs": 300,
+      "session": 5,
+      "generation": 0,
+      "turn": 1,
+      "event": "output_audio_buffer.started"
+    },
+    {
+      "sequence": 24,
+      "atMs": 300,
+      "session": 5,
+      "generation": 0,
+      "turn": 1,
+      "event": "output_audio_buffer.started"
+    },
+    {
+      "sequence": 25,
+      "atMs": 600,
+      "session": 5,
+      "generation": 0,
+      "turn": 1,
+      "event": "output_audio_buffer.stopped"
+    },
+    {
+      "sequence": 26,
+      "atMs": 0,
+      "session": 6,
+      "generation": 0,
+      "turn": 1,
+      "event": "input.started"
+    },
+    {
+      "sequence": 27,
+      "atMs": 100,
+      "session": 6,
+      "generation": 0,
+      "turn": 1,
+      "event": "input.ended"
+    },
+    {
+      "sequence": 28,
+      "atMs": 0,
+      "session": 6,
+      "generation": 1,
+      "turn": 1,
+      "event": "output_audio_buffer.started"
+    },
+    {
+      "sequence": 29,
+      "atMs": 200,
+      "session": 6,
+      "generation": 1,
+      "turn": 1,
+      "event": "output_audio_buffer.stopped"
+    },
+    {
+      "sequence": 30,
+      "atMs": 300,
+      "session": 6,
+      "generation": 0,
+      "turn": 1,
+      "event": "output_audio_buffer.stopped"
+    }
+  ]
+}
