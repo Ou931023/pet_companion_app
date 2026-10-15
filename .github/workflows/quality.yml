@@ -63,5 +63,8 @@ jobs:
       - name: Run all backend tests
         run: npm test
 
+      - name: Test offline voice evaluation tools
+        run: node --test ../../scripts/evaluate_realtime_turns.test.mjs ../../scripts/read_voice_language_diagnostics.test.mjs
+
       - name: Reject high and critical runtime dependency advisories
         run: npm audit --omit=dev --audit-level=high
