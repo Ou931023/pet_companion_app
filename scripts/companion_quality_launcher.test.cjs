@@ -11,7 +11,7 @@ test('documentation contains the exact default-dry-run launcher', () => {
   const doc = readFileSync(resolve(__dirname, '../docs/COMPANION_QUALITY_RUNNER.md'), 'utf8').replace(/\r\n/g, '\n');
   assert.ok(doc.includes('```bash\n' + launcher + '```'));
 });
-for (const scenario of ['dry-run', 'success', 'failure', 'timeout', 'http-error', 'hash-mismatch', 'oversize', 'download-timeout']) {
+for (const scenario of ['dry-run', 'success', 'failure', 'timeout', 'http-error', 'hash-mismatch', 'oversize', 'download-timeout', 'old-curl', 'unknown-curl']) {
   for (const errexit of [false, true]) {
     test(`pinned launcher ${scenario}, errexit=${errexit}`, { skip: process.platform !== 'linux' }, () => {
       const dir = mkdtempSync(join(tmpdir(), 'quality-launcher-'));
@@ -19,6 +19,7 @@ for (const scenario of ['dry-run', 'success', 'failure', 'timeout', 'http-error'
         writeFileSync(join(dir, 'runner'), runner);
         const corrupt = scenario === 'hash-mismatch' ? 'echo altered' : scenario === 'oversize' ? "head -c 131073 /dev/zero | tr '\\0' x" : 'cat "$FIXTURE_SOURCE"';
         writeFileSync(join(dir, 'curl'), '#!/bin/bash\n' +
+          `if [ "$2" = "--version" ]; then printf '%s\\n' '${scenario === 'old-curl' ? 'curl 8.3.0 synthetic' : scenario === 'unknown-curl' ? 'unknown' : 'curl 8.4.0 synthetic'}'; exit 0; fi\n` +
           '[ "$1" = "--disable" ] && [[ "$*" == *"--max-filesize 131072"* ]] && [[ "$*" == *"--max-time 10"* ]] && [[ "$*" == *"--max-redirs 0"* ]] && [[ "$*" == *"--proto =https"* ]] || exit 94\n' +
           '[ "${!#}" = "https://raw.githubusercontent.com/Ou931023/pet_companion_app/d7c7dd3c1fedb7a7575c9e13502549ba8d30770d/scripts/companion_quality.cjs" ] || exit 94\n' +
           (scenario === 'http-error' ? 'exit 22' : scenario === 'download-timeout' ? 'exit 28' : corrupt) + '\n', { mode: 0o700 });
@@ -32,7 +33,7 @@ for (const scenario of ['dry-run', 'success', 'failure', 'timeout', 'http-error'
         const result = spawnSync('/bin/bash', ['--noprofile', '--norc'], { input, encoding: 'utf8', timeout: 5000,
           env: { PATH: `${dir}:/usr/bin:/bin`, FIXTURE_SOURCE: join(dir, 'runner'), INVOKED: join(dir, 'invoked'),
             NODE_TLS_REJECT_UNAUTHORIZED: '0', NODE_OPTIONS: 'synthetic-preload', NODE_DEBUG: 'synthetic-debug' } });
-        const early = ['http-error', 'hash-mismatch', 'oversize', 'download-timeout'].includes(scenario);
+        const early = ['http-error', 'hash-mismatch', 'oversize', 'download-timeout', 'old-curl', 'unknown-curl'].includes(scenario);
         const expected = early ? 2 : scenario === 'failure' ? 7 : scenario === 'timeout' ? 124 : 0;
         assert.equal(result.error, undefined); assert.equal(result.status, expected, result.stderr);
         assert.deepEqual(JSON.parse(result.stdout), { launcherExitCode: expected }); assert.equal(result.stderr, '');

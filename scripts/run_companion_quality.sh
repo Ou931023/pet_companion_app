@@ -3,12 +3,16 @@ quality_once() {
   local quality_rc
   if (
     set -o pipefail
+    export LC_ALL=C
     case "${1:---dry-run}" in
       --dry-run) quality_args=(--dry-run) ;;
       --execute) quality_args=(--execute --standard-pricing-reviewed-2026-10-15 --prior-charge-and-overall-budget-reviewed) ;;
       *) exit 2 ;;
     esac
     command -v curl >/dev/null && command -v sha256sum >/dev/null && command -v timeout >/dev/null || exit 2
+    quality_curl_version=$(curl --disable --version) || exit 2
+    [[ "$quality_curl_version" =~ ^curl\ ([0-9]+)\.([0-9]+)\.([0-9]+)\  ]] || exit 2
+    (( 10#${BASH_REMATCH[1]} > 8 || (10#${BASH_REMATCH[1]} == 8 && 10#${BASH_REMATCH[2]} >= 4) )) || exit 2
     ulimit -c 0 || exit 2
     ulimit -t 10 || exit 2
     quality_source=$(curl --disable --fail --silent --show-error --proto '=https' --tlsv1.2 --max-redirs 0 --connect-timeout 5 --max-time 10 --max-filesize 131072 'https://raw.githubusercontent.com/Ou931023/pet_companion_app/d7c7dd3c1fedb7a7575c9e13502549ba8d30770d/scripts/companion_quality.cjs' && printf '\001') || exit 2

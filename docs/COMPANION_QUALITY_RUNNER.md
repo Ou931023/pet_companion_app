@@ -41,7 +41,7 @@ Limits: 20s request timeout including body read; 90s runner wall deadline; exter
 
 ## Single-paste command draft
 
-Use only after review, in the existing backend working directory where SDK 4.104.0 is installed. The command below is complete and **dry-run by default**. It downloads only the fixed public runner commit to a subshell variable, with curl config disabled and bounded HTTPS/time/size; redirects are not followed. It checks the fixed hash before Node receives any source. Curl/download/hash failure stops without loading SDK. This is not curl-pipe-to-execute.
+Use only after review, in the existing backend working directory where SDK 4.104.0 is installed. The command below is complete and **dry-run by default**. It downloads only the fixed public runner commit to a subshell variable, with curl config disabled and bounded HTTPS/time/size; redirects are not followed. curl 8.4.0 or newer is required so unknown-length responses also obey the size bound; older or unrecognized versions stop without installation. LC_ALL=C makes the shell length check count bytes. It checks the fixed hash before Node receives any source. Curl/download/hash failure stops without loading SDK. This is not curl-pipe-to-execute.
 
 For a later explicitly approved live invocation, change only the final `quality_once --dry-run` to `quality_once --execute`. Do not paste both invocations. Source variables die with the subshell, and the launcher prints/returns the original exit code even with errexit. Diagnostic/preload/TLS-disable environment values are removed for the child only; the service configuration is unchanged. Do not run this command during this implementation/review task.
 
@@ -51,12 +51,16 @@ quality_once() {
   local quality_rc
   if (
     set -o pipefail
+    export LC_ALL=C
     case "${1:---dry-run}" in
       --dry-run) quality_args=(--dry-run) ;;
       --execute) quality_args=(--execute --standard-pricing-reviewed-2026-10-15 --prior-charge-and-overall-budget-reviewed) ;;
       *) exit 2 ;;
     esac
     command -v curl >/dev/null && command -v sha256sum >/dev/null && command -v timeout >/dev/null || exit 2
+    quality_curl_version=$(curl --disable --version) || exit 2
+    [[ "$quality_curl_version" =~ ^curl\ ([0-9]+)\.([0-9]+)\.([0-9]+)\  ]] || exit 2
+    (( 10#${BASH_REMATCH[1]} > 8 || (10#${BASH_REMATCH[1]} == 8 && 10#${BASH_REMATCH[2]} >= 4) )) || exit 2
     ulimit -c 0 || exit 2
     ulimit -t 10 || exit 2
     quality_source=$(curl --disable --fail --silent --show-error --proto '=https' --tlsv1.2 --max-redirs 0 --connect-timeout 5 --max-time 10 --max-filesize 131072 'https://raw.githubusercontent.com/Ou931023/pet_companion_app/d7c7dd3c1fedb7a7575c9e13502549ba8d30770d/scripts/companion_quality.cjs' && printf '\001') || exit 2
