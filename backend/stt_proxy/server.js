@@ -6,6 +6,7 @@ const os = require("os");
 const path = require("path");
 const rateLimit = require('express-rate-limit');
 const OpenAI = require("openai");
+const { DEFAULT_TEXT_MODEL, DEFAULT_REALTIME_MODEL, chatModelParameters, realtimeModelParameters, completionContent } = require("./services/openAiModelParameters");
 
 if (process.env.NODE_ENV !== "test") dotenv.config();
 
@@ -667,7 +668,7 @@ app.get("/health", (_, res) => {
     status: "ok",
     revision: resolveDeploymentRevision(process.env),
     hasOpenAiKey: Boolean(process.env.OPENAI_API_KEY),
-    realtimeModel: process.env.REALTIME_MODEL || "gpt-realtime",
+    realtimeModel: process.env.REALTIME_MODEL || DEFAULT_REALTIME_MODEL,
     time: new Date().toISOString(),
   });
 });
@@ -2226,7 +2227,7 @@ ${memoryContextSummary}
       model:
         process.env.COMPANION_CHAT_MODEL ||
         process.env.MEMORY_MODEL ||
-        "gpt-4o-mini",
+        DEFAULT_TEXT_MODEL,
       logError,
     },
   );
@@ -2498,8 +2499,7 @@ app.get("/api/memory/greeting", requireResidentCaller, async (req, res) => {
       .map((row, index) => `${index + 1}. ${row.memorySummary || row.summary}`)
       .join("\n");
     const greetingResponse = await client.chat.completions.create({
-      model: process.env.MEMORY_MODEL || "gpt-4o-mini",
-      temperature: 0.5,
+      ...chatModelParameters(process.env.MEMORY_MODEL || DEFAULT_TEXT_MODEL, { temperature: 0.5, lunaMaxTokens: 256 }),
       messages: [
         {
           role: "system",
@@ -2517,7 +2517,7 @@ ${memoryLines}
       ],
     });
     const greeting =
-      greetingResponse.choices?.[0]?.message?.content?.trim() ||
+      completionContent(greetingResponse)?.trim() ||
       fallbackGreeting({ petName, localHour });
     const usedIds = contextResult.usedMemoryIds || memoryRows.map((row) => row.id);
 
@@ -2569,8 +2569,7 @@ app.post("/api/conversation/title", async (req, res) => {
       return res.json({ title: fallback });
     }
     const response = await client.chat.completions.create({
-      model: process.env.CONVERSATION_TITLE_MODEL || "gpt-4o-mini",
-      temperature: 0.3,
+      ...chatModelParameters(process.env.CONVERSATION_TITLE_MODEL || DEFAULT_TEXT_MODEL, { temperature: 0.3, lunaMaxTokens: 128 }),
       messages: [
         {
           role: "system",
@@ -2584,7 +2583,7 @@ app.post("/api/conversation/title", async (req, res) => {
       ],
     });
     const title =
-      sanitizeConversationTitle(response.choices?.[0]?.message?.content) ||
+      sanitizeConversationTitle(completionContent(response)) ||
       fallback;
     return res.json({ title });
   } catch (error) {
@@ -2953,7 +2952,8 @@ app.post("/api/realtime/session", realtimeLimiter, async (req, res) => {
   }
 
   try {
-    const realtimeModel = process.env.REALTIME_MODEL || "gpt-realtime";
+    // Beta compatibility is isolated from the GA voice-model rollout.
+    const realtimeModel = process.env.LEGACY_REALTIME_MODEL || "gpt-realtime";
     const languageHint = (req.body?.languageHint || req.query?.languageHint || "")
       .toString()
       .replace(/\r|\n/g, " ")
@@ -3069,7 +3069,7 @@ app.post(
       });
     }
 
-    const realtimeModel = process.env.REALTIME_MODEL || "gpt-realtime";
+    const realtimeModel = process.env.REALTIME_MODEL || DEFAULT_REALTIME_MODEL;
     let petName = (req.query?.petName || "").toString().trim();
     let userId = (req.query?.userId || "").toString().trim();
     let companionContext = (req.query?.companionContext || "").toString().trim();
@@ -3113,7 +3113,7 @@ app.post(
 
     const sessionConfig = {
       type: "realtime",
-      model: realtimeModel,
+      ...realtimeModelParameters(realtimeModel),
       audio: {
         input: {
           transcription: {

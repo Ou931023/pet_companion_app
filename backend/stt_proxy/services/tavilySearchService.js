@@ -1,4 +1,5 @@
 const OpenAI = require("openai");
+const { DEFAULT_TEXT_MODEL, chatModelParameters, completionContent } = require("./openAiModelParameters");
 
 let client;
 
@@ -326,8 +327,10 @@ async function summarizeForElderly({ query, tavilyData }) {
   }
 
   const response = await getOpenAIClient().chat.completions.create({
-    model: process.env.WEB_SEARCH_SUMMARY_MODEL || process.env.MEMORY_MODEL || "gpt-4o-mini",
-    temperature: 0.3,
+    ...chatModelParameters(
+      process.env.WEB_SEARCH_SUMMARY_MODEL || process.env.MEMORY_MODEL || DEFAULT_TEXT_MODEL,
+      { temperature: 0.3, lunaMaxTokens: 768 },
+    ),
     messages: [
       {
         role: "system",
@@ -349,7 +352,7 @@ async function summarizeForElderly({ query, tavilyData }) {
 
   return {
     answer: trimAnswer(
-      response.choices?.[0]?.message?.content || tavilyData.answer || "",
+      completionContent(response) || tavilyData.answer || "",
       highRisk,
       { maxLength: newsQuery ? 140 : 220 },
     ),

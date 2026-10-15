@@ -1,4 +1,5 @@
 const OpenAI = require("openai");
+const { DEFAULT_TEXT_MODEL, chatModelParameters, completionContent } = require("../openAiModelParameters");
 const { safeErrorMessage } = require("../privacy/redaction");
 const { projectMemorySource, validateMemorySelection, isIndependentPreference } = require("./memorySourceContent");
 
@@ -272,10 +273,9 @@ async function aiExtract(input) {
   const openai = getClient();
   if (!openai) return null;
 
-  const model = process.env.MEMORY_EXTRACT_MODEL || "gpt-4o-mini";
+  const model = process.env.MEMORY_EXTRACT_MODEL || DEFAULT_TEXT_MODEL;
   const response = await openai.chat.completions.create({
-    model,
-    temperature: 0,
+    ...chatModelParameters(model, { temperature: 0 }),
     response_format: { type: "json_object" },
     messages: [
       {
@@ -303,7 +303,7 @@ async function aiExtract(input) {
       },
     ],
   });
-  const raw = response.choices?.[0]?.message?.content || "{}";
+  const raw = completionContent(response) || "{}";
   return JSON.parse(raw);
 }
 
