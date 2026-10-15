@@ -72,5 +72,8 @@ jobs:
       - name: Test fixed synthetic quality runner with fake transport
         run: node --test ../../scripts/companion_quality.test.cjs
 
+      - name: Test fixed quality launcher on Linux with fake download and model process
+        run: node --test ../../scripts/companion_quality_launcher.test.cjs
+
       - name: Reject high and critical runtime dependency advisories
         run: npm audit --omit=dev --audit-level=high
