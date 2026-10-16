@@ -5593,3 +5593,9 @@ caregiver 身分不得因分組看到 super_admin-only 入口；hidden feature �
 - B2 rollback 保留既有 owned skins，不做反向刪除；只退回新的 pending / claim 接線。
 - B5 model A/B 若品質、延遲、成本或工具 / safety regression 任一不符，立即保留現有 production model；prompt 與 model config 分開提交，避免綁死回滾。
 - B6 rollback 只回復導覽 / 分組，不回復或刪除 underlying view、API 與資料。
+
+## 2026-10-16: Portable backend test entry point
+
+Problem: npm test uses POSIX inline environment assignment and fails under the native Windows shell. Scope: package.json test entry, a dependency-free Node launcher, contract tests and this record. Preserve backend test discovery cwd, default concurrency, stdio and inherited environment while overriding APP_ENV/NODE_ENV/OPENAI_API_KEY exactly as before. No runtime/dependency changes. Architecture checkpoint approved (low risk). Validate failure propagation and run the Windows backend suite; require Linux exact-head CI before final review. Rollback is reverting the test-only commit; no data migration or deployment setting is involved.
+
+Validation: Windows Node 24.19.0 npm test now passes 917/917 (0 failed/skipped); npm run check and git diff --check pass. Independent actual-diff review passed; reviewer also ran 5/5 launcher contracts. Dependencies restored from existing offline cache after sandbox EPERM; lockfile unchanged. Linux exact-head CI pending. No API, database migration, model request, Render operation or deployment performed.
