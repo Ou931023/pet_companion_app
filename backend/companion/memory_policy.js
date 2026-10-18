@@ -1,4 +1,18 @@
+const { projectMemorySource } = require("../stt_proxy/services/memory/memorySourceContent");
+
+// This emotional-candidate path retains the whole turn; it cannot safely select
+// independent facts. Keep ambiguous/projected turns as current-turn context only.
+function canStoreCompanionSource(transcript) {
+  if (typeof transcript !== "string" || !transcript.trim()) return false;
+  const text = transcript.trim();
+  const source = projectMemorySource(text);
+  return !source.projected && !source.requiresSelection && source.text === text;
+}
+
 function shouldSaveMemory({ transcript = "", emotion, companionNeed } = {}) {
+  if (!canStoreCompanionSource(transcript)) {
+    return { shouldSave: false, candidate: "", type: "none" };
+  }
   const text = transcript.toString().trim();
   if (text.length < 4) {
     return { shouldSave: false, candidate: "", type: "none" };
@@ -29,5 +43,6 @@ function memoryNeedLabel(need) {
 }
 
 module.exports = {
+  canStoreCompanionSource,
   shouldSaveMemory,
 };
