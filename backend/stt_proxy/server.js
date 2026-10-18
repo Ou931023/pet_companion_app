@@ -65,6 +65,7 @@ const {
 } = require("../companion/voice_prompt_policy");
 const { retrieveRelevantMemories } = require("../memory/memory_retriever");
 const { storeCompanionMemoryCandidate } = require("../memory/memory_policy");
+const { canStoreCompanionSource } = require("../companion/memory_policy");
 const { classifySearchIntent } = require("../search/search_intent_classifier");
 const { searchKnowledge } = require("../search/search_service");
 const {
@@ -2082,11 +2083,13 @@ app.post("/api/companion/analyze", async (req, res) => {
     const searchResult = searchIntent.needsSearch
       ? await searchKnowledge({ query: transcript, topic: searchIntent.topic, userId })
       : null;
-    const retrieved = await retrieveRelevantMemories({
-      userId,
-      transcript,
-      topK: req.body?.topK || process.env.MEMORY_TOP_K || 5,
-    });
+    const retrieved = canStoreCompanionSource(transcript)
+      ? await retrieveRelevantMemories({
+          userId,
+          transcript,
+          topK: req.body?.topK || process.env.MEMORY_TOP_K || 5,
+        })
+      : { memories: [] };
     const result = analyzeCompanionTurn({
       userId,
       sessionId: req.body?.sessionId,
@@ -2104,6 +2107,7 @@ app.post("/api/companion/analyze", async (req, res) => {
     if (result.memory?.shouldSave && result.memory?.candidate?.trim()) {
       storeCompanionMemoryCandidate({
         userId,
+        transcript,
         sessionId: req.body?.sessionId,
         turnId: req.body?.turnId,
         emotion: result.emotion,

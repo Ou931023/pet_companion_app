@@ -61,6 +61,7 @@ test("shouldSave memory candidate is stored", async (t) => {
       userId: "demo-user",
       sessionId: "session-001",
       turnId: "turn-save-001",
+      transcript: "家裡很安靜",
       emotion: "lonely",
       memory: {
         shouldSave: true,
