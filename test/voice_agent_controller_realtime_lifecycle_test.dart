@@ -2027,6 +2027,42 @@ void main() {
       });
     }
 
+    for (final outcome in ['null', 'exception']) {
+      test('foreground analysis retains local pet fallback: $outcome', () async {
+        final analysis = _DeferredPetStateCompanionEngine();
+        final service = _acknowledgingRealtimeService(
+          healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+          connectImplementationForTesting: (_) async {},
+        );
+        final harness = await _VoiceControllerHarness.create(service,
+            companionEngineService: analysis);
+        addTearDown(harness.dispose);
+        await _reachListening(harness, service);
+        expect(await harness.controller.sendTextDuringRealtime('我的心情不好'),
+            isTrue);
+        await pumpEventQueue();
+        expect(analysis.calls, 1);
+        // Replace the already-applied local state, so the assertion proves the
+        // delayed fallback actually ran rather than merely retaining it.
+        harness.petController.updateEmotionState(
+          mood: 'synthetic-before',
+          expression: 'synthetic-before',
+          action: 'synthetic-before',
+          mode: harness.petController.state.mode,
+        );
+        if (outcome == 'exception') {
+          analysis.result.completeError(StateError('synthetic analysis failure'));
+        } else {
+          analysis.result.complete(null);
+        }
+        await pumpEventQueue();
+        expect(harness.petController.mood, 'caring');
+        expect(harness.petController.expression, 'concerned');
+        expect(harness.petController.action, 'comfort');
+        expect(harness.petController.state.mode.name, 'concerned');
+      });
+    }
+
     test('寵物回覆中抵達的使用者 final transcript 仍被接住記錄（不被守衛丟掉）', () async {
       // 迴歸：server VAD 的 create_response 讓寵物常在使用者這句轉錄完成前就先開口，
       // 本輪 final transcript 比 response 晚到。修正前會被 turn-based 守衛整個丟掉，
