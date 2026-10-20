@@ -1,0 +1,1676 @@
+{
+  "schemaVersion": 1,
+  "evidence": "authored_scenarios_and_synthetic_events",
+  "audioStatus": "not_collected",
+  "annotationStatus": "not_performed",
+  "languageReviewStatus": "pending_human_review",
+  "expectedSource": "manually_defined_event_contract",
+  "scenarios": [
+    {
+      "id": "01-zh-TW",
+      "pairId": "01",
+      "category": "simple_request",
+      "language": "zh-TW",
+      "prompt": "我想聽一個故事。",
+      "fixture": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "events": [
+          {
+            "sequence": 1,
+            "atMs": 0,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.started"
+          },
+          {
+            "sequence": 2,
+            "atMs": 1000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 3,
+            "atMs": 1300,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.started"
+          },
+          {
+            "sequence": 4,
+            "atMs": 1500,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "response.done"
+          },
+          {
+            "sequence": 5,
+            "atMs": 2000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.stopped"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "policy": "no_interruption",
+        "measurement": "synthetic_ordering_only",
+        "turns": [
+          {
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "status": "complete",
+            "missing": [],
+            "inputEndToOutputStartMs": 300,
+            "playbackDurationMs": 700,
+            "generationDoneMs": 1500,
+            "playbackStoppedMs": 2000,
+            "continuationGapsMs": [],
+            "issues": []
+          }
+        ],
+        "diagnostics": [],
+        "completeTurns": 1
+      }
+    },
+    {
+      "id": "01-nan-TW",
+      "pairId": "01",
+      "category": "simple_request",
+      "language": "nan-TW",
+      "prompt": "我想欲聽一个故事。",
+      "fixture": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "events": [
+          {
+            "sequence": 1,
+            "atMs": 0,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.started"
+          },
+          {
+            "sequence": 2,
+            "atMs": 1000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 3,
+            "atMs": 1300,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.started"
+          },
+          {
+            "sequence": 4,
+            "atMs": 1500,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "response.done"
+          },
+          {
+            "sequence": 5,
+            "atMs": 2000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.stopped"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "policy": "no_interruption",
+        "measurement": "synthetic_ordering_only",
+        "turns": [
+          {
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "status": "complete",
+            "missing": [],
+            "inputEndToOutputStartMs": 300,
+            "playbackDurationMs": 700,
+            "generationDoneMs": 1500,
+            "playbackStoppedMs": 2000,
+            "continuationGapsMs": [],
+            "issues": []
+          }
+        ],
+        "diagnostics": [],
+        "completeTurns": 1
+      }
+    },
+    {
+      "id": "02-zh-TW",
+      "pairId": "02",
+      "category": "short_labelled_pause",
+      "language": "zh-TW",
+      "prompt": "我今天……想去散步。",
+      "fixture": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "events": [
+          {
+            "sequence": 1,
+            "atMs": 0,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.started"
+          },
+          {
+            "sequence": 2,
+            "atMs": 500,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 3,
+            "atMs": 800,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "synthetic.continuation"
+          },
+          {
+            "sequence": 4,
+            "atMs": 1000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 5,
+            "atMs": 1300,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.started"
+          },
+          {
+            "sequence": 6,
+            "atMs": 2000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.stopped"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "policy": "no_interruption",
+        "measurement": "synthetic_ordering_only",
+        "turns": [
+          {
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "status": "complete",
+            "missing": [],
+            "inputEndToOutputStartMs": 300,
+            "playbackDurationMs": 700,
+            "generationDoneMs": null,
+            "playbackStoppedMs": 2000,
+            "continuationGapsMs": [
+              300
+            ],
+            "issues": []
+          }
+        ],
+        "diagnostics": [],
+        "completeTurns": 1
+      }
+    },
+    {
+      "id": "02-nan-TW",
+      "pairId": "02",
+      "category": "short_labelled_pause",
+      "language": "nan-TW",
+      "prompt": "我今仔日……想欲去散步。",
+      "fixture": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "events": [
+          {
+            "sequence": 1,
+            "atMs": 0,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.started"
+          },
+          {
+            "sequence": 2,
+            "atMs": 500,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 3,
+            "atMs": 800,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "synthetic.continuation"
+          },
+          {
+            "sequence": 4,
+            "atMs": 1000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 5,
+            "atMs": 1300,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.started"
+          },
+          {
+            "sequence": 6,
+            "atMs": 2000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.stopped"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "policy": "no_interruption",
+        "measurement": "synthetic_ordering_only",
+        "turns": [
+          {
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "status": "complete",
+            "missing": [],
+            "inputEndToOutputStartMs": 300,
+            "playbackDurationMs": 700,
+            "generationDoneMs": null,
+            "playbackStoppedMs": 2000,
+            "continuationGapsMs": [
+              300
+            ],
+            "issues": []
+          }
+        ],
+        "diagnostics": [],
+        "completeTurns": 1
+      }
+    },
+    {
+      "id": "03-zh-TW",
+      "pairId": "03",
+      "category": "long_labelled_pause",
+      "language": "zh-TW",
+      "prompt": "我想一下……還是聽故事好了。",
+      "fixture": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "events": [
+          {
+            "sequence": 1,
+            "atMs": 0,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.started"
+          },
+          {
+            "sequence": 2,
+            "atMs": 500,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 3,
+            "atMs": 2500,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "synthetic.continuation"
+          },
+          {
+            "sequence": 4,
+            "atMs": 3000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 5,
+            "atMs": 3300,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.started"
+          },
+          {
+            "sequence": 6,
+            "atMs": 4000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.stopped"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "policy": "no_interruption",
+        "measurement": "synthetic_ordering_only",
+        "turns": [
+          {
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "status": "complete",
+            "missing": [],
+            "inputEndToOutputStartMs": 300,
+            "playbackDurationMs": 700,
+            "generationDoneMs": null,
+            "playbackStoppedMs": 4000,
+            "continuationGapsMs": [
+              2000
+            ],
+            "issues": []
+          }
+        ],
+        "diagnostics": [],
+        "completeTurns": 1
+      }
+    },
+    {
+      "id": "03-nan-TW",
+      "pairId": "03",
+      "category": "long_labelled_pause",
+      "language": "nan-TW",
+      "prompt": "予我想一下……猶是聽故事好矣。",
+      "fixture": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "events": [
+          {
+            "sequence": 1,
+            "atMs": 0,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.started"
+          },
+          {
+            "sequence": 2,
+            "atMs": 500,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 3,
+            "atMs": 2500,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "synthetic.continuation"
+          },
+          {
+            "sequence": 4,
+            "atMs": 3000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 5,
+            "atMs": 3300,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.started"
+          },
+          {
+            "sequence": 6,
+            "atMs": 4000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.stopped"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "policy": "no_interruption",
+        "measurement": "synthetic_ordering_only",
+        "turns": [
+          {
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "status": "complete",
+            "missing": [],
+            "inputEndToOutputStartMs": 300,
+            "playbackDurationMs": 700,
+            "generationDoneMs": null,
+            "playbackStoppedMs": 4000,
+            "continuationGapsMs": [
+              2000
+            ],
+            "issues": []
+          }
+        ],
+        "diagnostics": [],
+        "completeTurns": 1
+      }
+    },
+    {
+      "id": "04-zh-TW",
+      "pairId": "04",
+      "category": "unlabelled_silence_control",
+      "language": "zh-TW",
+      "prompt": "我想聽音樂。",
+      "fixture": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "events": [
+          {
+            "sequence": 1,
+            "atMs": 0,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.started"
+          },
+          {
+            "sequence": 2,
+            "atMs": 500,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 3,
+            "atMs": 3300,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.started"
+          },
+          {
+            "sequence": 4,
+            "atMs": 4000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.stopped"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "policy": "no_interruption",
+        "measurement": "synthetic_ordering_only",
+        "turns": [
+          {
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "status": "complete",
+            "missing": [],
+            "inputEndToOutputStartMs": 2800,
+            "playbackDurationMs": 700,
+            "generationDoneMs": null,
+            "playbackStoppedMs": 4000,
+            "continuationGapsMs": [],
+            "issues": []
+          }
+        ],
+        "diagnostics": [],
+        "completeTurns": 1
+      }
+    },
+    {
+      "id": "04-nan-TW",
+      "pairId": "04",
+      "category": "unlabelled_silence_control",
+      "language": "nan-TW",
+      "prompt": "我想欲聽音樂。",
+      "fixture": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "events": [
+          {
+            "sequence": 1,
+            "atMs": 0,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.started"
+          },
+          {
+            "sequence": 2,
+            "atMs": 500,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 3,
+            "atMs": 3300,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.started"
+          },
+          {
+            "sequence": 4,
+            "atMs": 4000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.stopped"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "policy": "no_interruption",
+        "measurement": "synthetic_ordering_only",
+        "turns": [
+          {
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "status": "complete",
+            "missing": [],
+            "inputEndToOutputStartMs": 2800,
+            "playbackDurationMs": 700,
+            "generationDoneMs": null,
+            "playbackStoppedMs": 4000,
+            "continuationGapsMs": [],
+            "issues": []
+          }
+        ],
+        "diagnostics": [],
+        "completeTurns": 1
+      }
+    },
+    {
+      "id": "05-zh-TW",
+      "pairId": "05",
+      "category": "self_correction_continuation",
+      "language": "zh-TW",
+      "prompt": "我想聽故事……不，我想聽音樂。",
+      "fixture": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "events": [
+          {
+            "sequence": 1,
+            "atMs": 0,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.started"
+          },
+          {
+            "sequence": 2,
+            "atMs": 500,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 3,
+            "atMs": 1000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "synthetic.continuation"
+          },
+          {
+            "sequence": 4,
+            "atMs": 1600,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 5,
+            "atMs": 1900,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.started"
+          },
+          {
+            "sequence": 6,
+            "atMs": 2400,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.stopped"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "policy": "no_interruption",
+        "measurement": "synthetic_ordering_only",
+        "turns": [
+          {
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "status": "complete",
+            "missing": [],
+            "inputEndToOutputStartMs": 300,
+            "playbackDurationMs": 500,
+            "generationDoneMs": null,
+            "playbackStoppedMs": 2400,
+            "continuationGapsMs": [
+              500
+            ],
+            "issues": []
+          }
+        ],
+        "diagnostics": [],
+        "completeTurns": 1
+      }
+    },
+    {
+      "id": "05-nan-TW",
+      "pairId": "05",
+      "category": "self_correction_continuation",
+      "language": "nan-TW",
+      "prompt": "我想欲聽故事……毋是，我想欲聽音樂。",
+      "fixture": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "events": [
+          {
+            "sequence": 1,
+            "atMs": 0,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.started"
+          },
+          {
+            "sequence": 2,
+            "atMs": 500,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 3,
+            "atMs": 1000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "synthetic.continuation"
+          },
+          {
+            "sequence": 4,
+            "atMs": 1600,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 5,
+            "atMs": 1900,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.started"
+          },
+          {
+            "sequence": 6,
+            "atMs": 2400,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.stopped"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "policy": "no_interruption",
+        "measurement": "synthetic_ordering_only",
+        "turns": [
+          {
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "status": "complete",
+            "missing": [],
+            "inputEndToOutputStartMs": 300,
+            "playbackDurationMs": 500,
+            "generationDoneMs": null,
+            "playbackStoppedMs": 2400,
+            "continuationGapsMs": [
+              500
+            ],
+            "issues": []
+          }
+        ],
+        "diagnostics": [],
+        "completeTurns": 1
+      }
+    },
+    {
+      "id": "06-zh-TW",
+      "pairId": "06",
+      "category": "backchannel_during_playback",
+      "language": "zh-TW",
+      "prompt": "請說故事給我聽。[播放中：嗯。]",
+      "fixture": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "events": [
+          {
+            "sequence": 1,
+            "atMs": 0,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.started"
+          },
+          {
+            "sequence": 2,
+            "atMs": 1000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 3,
+            "atMs": 1300,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.started"
+          },
+          {
+            "sequence": 4,
+            "atMs": 1400,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "synthetic.backchannel"
+          },
+          {
+            "sequence": 5,
+            "atMs": 2000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.stopped"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "policy": "no_interruption",
+        "measurement": "synthetic_ordering_only",
+        "turns": [
+          {
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "status": "unsupported_policy",
+            "missing": [],
+            "inputEndToOutputStartMs": null,
+            "playbackDurationMs": null,
+            "generationDoneMs": null,
+            "playbackStoppedMs": 2000,
+            "continuationGapsMs": [],
+            "issues": [
+              {
+                "sequence": 4,
+                "code": "backchannel_unsupported_by_current_policy"
+              }
+            ]
+          }
+        ],
+        "diagnostics": [],
+        "completeTurns": 0
+      }
+    },
+    {
+      "id": "06-nan-TW",
+      "pairId": "06",
+      "category": "backchannel_during_playback",
+      "language": "nan-TW",
+      "prompt": "講故事予我聽。[播放中：嗯。]",
+      "fixture": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "events": [
+          {
+            "sequence": 1,
+            "atMs": 0,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.started"
+          },
+          {
+            "sequence": 2,
+            "atMs": 1000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 3,
+            "atMs": 1300,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.started"
+          },
+          {
+            "sequence": 4,
+            "atMs": 1400,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "synthetic.backchannel"
+          },
+          {
+            "sequence": 5,
+            "atMs": 2000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.stopped"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "policy": "no_interruption",
+        "measurement": "synthetic_ordering_only",
+        "turns": [
+          {
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "status": "unsupported_policy",
+            "missing": [],
+            "inputEndToOutputStartMs": null,
+            "playbackDurationMs": null,
+            "generationDoneMs": null,
+            "playbackStoppedMs": 2000,
+            "continuationGapsMs": [],
+            "issues": [
+              {
+                "sequence": 4,
+                "code": "backchannel_unsupported_by_current_policy"
+              }
+            ]
+          }
+        ],
+        "diagnostics": [],
+        "completeTurns": 0
+      }
+    },
+    {
+      "id": "07-zh-TW",
+      "pairId": "07",
+      "category": "generation_done_missing_stop",
+      "language": "zh-TW",
+      "prompt": "我想聽一首歌。",
+      "fixture": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "events": [
+          {
+            "sequence": 1,
+            "atMs": 0,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.started"
+          },
+          {
+            "sequence": 2,
+            "atMs": 1000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 3,
+            "atMs": 1300,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.started"
+          },
+          {
+            "sequence": 4,
+            "atMs": 1500,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "response.done"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "policy": "no_interruption",
+        "measurement": "synthetic_ordering_only",
+        "turns": [
+          {
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "status": "incomplete",
+            "missing": [
+              "output_audio_buffer.stopped"
+            ],
+            "inputEndToOutputStartMs": null,
+            "playbackDurationMs": null,
+            "generationDoneMs": 1500,
+            "playbackStoppedMs": null,
+            "continuationGapsMs": [],
+            "issues": []
+          }
+        ],
+        "diagnostics": [],
+        "completeTurns": 0
+      }
+    },
+    {
+      "id": "07-nan-TW",
+      "pairId": "07",
+      "category": "generation_done_missing_stop",
+      "language": "nan-TW",
+      "prompt": "我想欲聽一首歌。",
+      "fixture": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "events": [
+          {
+            "sequence": 1,
+            "atMs": 0,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.started"
+          },
+          {
+            "sequence": 2,
+            "atMs": 1000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 3,
+            "atMs": 1300,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.started"
+          },
+          {
+            "sequence": 4,
+            "atMs": 1500,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "response.done"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "policy": "no_interruption",
+        "measurement": "synthetic_ordering_only",
+        "turns": [
+          {
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "status": "incomplete",
+            "missing": [
+              "output_audio_buffer.stopped"
+            ],
+            "inputEndToOutputStartMs": null,
+            "playbackDurationMs": null,
+            "generationDoneMs": 1500,
+            "playbackStoppedMs": null,
+            "continuationGapsMs": [],
+            "issues": []
+          }
+        ],
+        "diagnostics": [],
+        "completeTurns": 0
+      }
+    },
+    {
+      "id": "08-zh-TW",
+      "pairId": "08",
+      "category": "duplicate_output_start",
+      "language": "zh-TW",
+      "prompt": "可以再說一次嗎？",
+      "fixture": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "events": [
+          {
+            "sequence": 1,
+            "atMs": 0,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.started"
+          },
+          {
+            "sequence": 2,
+            "atMs": 1000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 3,
+            "atMs": 1300,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.started"
+          },
+          {
+            "sequence": 4,
+            "atMs": 1300,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.started"
+          },
+          {
+            "sequence": 5,
+            "atMs": 2000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.stopped"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "policy": "no_interruption",
+        "measurement": "synthetic_ordering_only",
+        "turns": [
+          {
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "status": "complete",
+            "missing": [],
+            "inputEndToOutputStartMs": 300,
+            "playbackDurationMs": 700,
+            "generationDoneMs": null,
+            "playbackStoppedMs": 2000,
+            "continuationGapsMs": [],
+            "issues": [
+              {
+                "sequence": 4,
+                "code": "duplicate_event"
+              }
+            ]
+          }
+        ],
+        "diagnostics": [],
+        "completeTurns": 1
+      }
+    },
+    {
+      "id": "08-nan-TW",
+      "pairId": "08",
+      "category": "duplicate_output_start",
+      "language": "nan-TW",
+      "prompt": "會使閣講一擺無？",
+      "fixture": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "events": [
+          {
+            "sequence": 1,
+            "atMs": 0,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.started"
+          },
+          {
+            "sequence": 2,
+            "atMs": 1000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 3,
+            "atMs": 1300,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.started"
+          },
+          {
+            "sequence": 4,
+            "atMs": 1300,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.started"
+          },
+          {
+            "sequence": 5,
+            "atMs": 2000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.stopped"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "policy": "no_interruption",
+        "measurement": "synthetic_ordering_only",
+        "turns": [
+          {
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "status": "complete",
+            "missing": [],
+            "inputEndToOutputStartMs": 300,
+            "playbackDurationMs": 700,
+            "generationDoneMs": null,
+            "playbackStoppedMs": 2000,
+            "continuationGapsMs": [],
+            "issues": [
+              {
+                "sequence": 4,
+                "code": "duplicate_event"
+              }
+            ]
+          }
+        ],
+        "diagnostics": [],
+        "completeTurns": 1
+      }
+    },
+    {
+      "id": "09-zh-TW",
+      "pairId": "09",
+      "category": "closed_generation_late_output",
+      "language": "zh-TW",
+      "prompt": "我想散步。[新一輪：我想聽故事。]",
+      "fixture": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "events": [
+          {
+            "sequence": 1,
+            "atMs": 0,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.started"
+          },
+          {
+            "sequence": 2,
+            "atMs": 1000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 3,
+            "atMs": 0,
+            "session": 1,
+            "generation": 1,
+            "turn": 1,
+            "event": "input.started"
+          },
+          {
+            "sequence": 4,
+            "atMs": 1300,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.started"
+          },
+          {
+            "sequence": 5,
+            "atMs": 2000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.stopped"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "policy": "no_interruption",
+        "measurement": "synthetic_ordering_only",
+        "turns": [
+          {
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "status": "incomplete",
+            "missing": [
+              "output_audio_buffer.started",
+              "output_audio_buffer.stopped"
+            ],
+            "inputEndToOutputStartMs": null,
+            "playbackDurationMs": null,
+            "generationDoneMs": null,
+            "playbackStoppedMs": null,
+            "continuationGapsMs": [],
+            "issues": []
+          },
+          {
+            "session": 1,
+            "generation": 1,
+            "turn": 1,
+            "status": "incomplete",
+            "missing": [
+              "input.ended",
+              "output_audio_buffer.started",
+              "output_audio_buffer.stopped"
+            ],
+            "inputEndToOutputStartMs": null,
+            "playbackDurationMs": null,
+            "generationDoneMs": null,
+            "playbackStoppedMs": null,
+            "continuationGapsMs": [],
+            "issues": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "sequence": 4,
+            "code": "closed_scope_event"
+          },
+          {
+            "sequence": 5,
+            "code": "closed_scope_event"
+          }
+        ],
+        "completeTurns": 0
+      }
+    },
+    {
+      "id": "09-nan-TW",
+      "pairId": "09",
+      "category": "closed_generation_late_output",
+      "language": "nan-TW",
+      "prompt": "我想欲散步。[新一輪：我想欲聽故事。]",
+      "fixture": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "events": [
+          {
+            "sequence": 1,
+            "atMs": 0,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.started"
+          },
+          {
+            "sequence": 2,
+            "atMs": 1000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 3,
+            "atMs": 0,
+            "session": 1,
+            "generation": 1,
+            "turn": 1,
+            "event": "input.started"
+          },
+          {
+            "sequence": 4,
+            "atMs": 1300,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.started"
+          },
+          {
+            "sequence": 5,
+            "atMs": 2000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.stopped"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "policy": "no_interruption",
+        "measurement": "synthetic_ordering_only",
+        "turns": [
+          {
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "status": "incomplete",
+            "missing": [
+              "output_audio_buffer.started",
+              "output_audio_buffer.stopped"
+            ],
+            "inputEndToOutputStartMs": null,
+            "playbackDurationMs": null,
+            "generationDoneMs": null,
+            "playbackStoppedMs": null,
+            "continuationGapsMs": [],
+            "issues": []
+          },
+          {
+            "session": 1,
+            "generation": 1,
+            "turn": 1,
+            "status": "incomplete",
+            "missing": [
+              "input.ended",
+              "output_audio_buffer.started",
+              "output_audio_buffer.stopped"
+            ],
+            "inputEndToOutputStartMs": null,
+            "playbackDurationMs": null,
+            "generationDoneMs": null,
+            "playbackStoppedMs": null,
+            "continuationGapsMs": [],
+            "issues": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "sequence": 4,
+            "code": "closed_scope_event"
+          },
+          {
+            "sequence": 5,
+            "code": "closed_scope_event"
+          }
+        ],
+        "completeTurns": 0
+      }
+    },
+    {
+      "id": "10-zh-TW",
+      "pairId": "10",
+      "category": "premature_output_before_continuation",
+      "language": "zh-TW",
+      "prompt": "我今天……還想說一件事。",
+      "fixture": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "events": [
+          {
+            "sequence": 1,
+            "atMs": 0,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.started"
+          },
+          {
+            "sequence": 2,
+            "atMs": 500,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 3,
+            "atMs": 600,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.started"
+          },
+          {
+            "sequence": 4,
+            "atMs": 1000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "synthetic.continuation"
+          },
+          {
+            "sequence": 5,
+            "atMs": 1500,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 6,
+            "atMs": 2000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.stopped"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "policy": "no_interruption",
+        "measurement": "synthetic_ordering_only",
+        "turns": [
+          {
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "status": "invalid",
+            "missing": [],
+            "inputEndToOutputStartMs": null,
+            "playbackDurationMs": null,
+            "generationDoneMs": null,
+            "playbackStoppedMs": 2000,
+            "continuationGapsMs": [
+              500
+            ],
+            "issues": [
+              {
+                "sequence": 4,
+                "code": "continuation_after_output_started"
+              },
+              {
+                "code": "invalid_event_order"
+              }
+            ]
+          }
+        ],
+        "diagnostics": [],
+        "completeTurns": 0
+      }
+    },
+    {
+      "id": "10-nan-TW",
+      "pairId": "10",
+      "category": "premature_output_before_continuation",
+      "language": "nan-TW",
+      "prompt": "我今仔日……閣想欲講一項代誌。",
+      "fixture": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "events": [
+          {
+            "sequence": 1,
+            "atMs": 0,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.started"
+          },
+          {
+            "sequence": 2,
+            "atMs": 500,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 3,
+            "atMs": 600,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.started"
+          },
+          {
+            "sequence": 4,
+            "atMs": 1000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "synthetic.continuation"
+          },
+          {
+            "sequence": 5,
+            "atMs": 1500,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "input.ended"
+          },
+          {
+            "sequence": 6,
+            "atMs": 2000,
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "event": "output_audio_buffer.stopped"
+          }
+        ]
+      },
+      "expected": {
+        "schemaVersion": 1,
+        "synthetic": true,
+        "policy": "no_interruption",
+        "measurement": "synthetic_ordering_only",
+        "turns": [
+          {
+            "session": 1,
+            "generation": 0,
+            "turn": 1,
+            "status": "invalid",
+            "missing": [],
+            "inputEndToOutputStartMs": null,
+            "playbackDurationMs": null,
+            "generationDoneMs": null,
+            "playbackStoppedMs": 2000,
+            "continuationGapsMs": [
+              500
+            ],
+            "issues": [
+              {
+                "sequence": 4,
+                "code": "continuation_after_output_started"
+              },
+              {
+                "code": "invalid_event_order"
+              }
+            ]
+          }
+        ],
+        "diagnostics": [],
+        "completeTurns": 0
+      }
+    }
+  ]
+}
