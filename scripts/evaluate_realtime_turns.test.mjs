@@ -149,3 +149,70 @@ test('CLI is bounded and does not echo unknown content or paths; empty fixture y
     assert.equal(main([], io), 2);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+// Authored language prompts stay outside the evaluator's strict event-only schema.
+const pairedScenarios = JSON.parse(readFileSync(new URL(
+  './fixtures/realtime_turns.paired.synthetic.json', import.meta.url), 'utf8'));
+
+function assertPairedScenarioContract(pack) {
+  assert.deepEqual(Object.keys(pack).sort(), ['schemaVersion', 'evidence', 'audioStatus',
+    'annotationStatus', 'languageReviewStatus', 'expectedSource', 'scenarios'].sort());
+  assert.equal(pack.schemaVersion, 1);
+  assert.equal(pack.evidence, 'authored_scenarios_and_synthetic_events');
+  assert.equal(pack.audioStatus, 'not_collected');
+  assert.equal(pack.annotationStatus, 'not_performed');
+  assert.equal(pack.languageReviewStatus, 'pending_human_review');
+  assert.equal(pack.expectedSource, 'manually_defined_event_contract');
+  assert.equal(pack.scenarios.length, 20);
+  assert.equal(new Set(pack.scenarios.map(row => row.id)).size, 20);
+  const expectedCategories = ['simple_request', 'short_labelled_pause', 'long_labelled_pause',
+    'unlabelled_silence_control', 'self_correction_continuation', 'backchannel_during_playback',
+    'generation_done_missing_stop', 'duplicate_output_start', 'closed_generation_late_output',
+    'premature_output_before_continuation'];
+  for (const row of pack.scenarios) {
+    assert.deepEqual(Object.keys(row).sort(), ['id', 'pairId', 'category', 'language', 'prompt',
+      'fixture', 'expected'].sort());
+    assert.match(row.pairId, /^(0[1-9]|10)$/);
+    assert.ok(['zh-TW', 'nan-TW'].includes(row.language));
+    assert.equal(row.id, `${row.pairId}-${row.language}`);
+    assert.equal(row.category, expectedCategories[Number(row.pairId) - 1]);
+    assert.equal(typeof row.prompt, 'string');
+    assert.ok(row.prompt.trim().length > 0 && row.prompt.length <= 200);
+    validateFixture(row.fixture);
+    assert.equal(row.expected.policy, 'no_interruption');
+    assert.equal(row.expected.measurement, 'synthetic_ordering_only');
+  }
+  for (let i = 1; i <= 10; i++) {
+    const pair = pack.scenarios.filter(row => row.pairId === String(i).padStart(2, '0'));
+    assert.equal(pair.length, 2);
+    assert.deepEqual(pair.map(row => row.language).sort(), ['nan-TW', 'zh-TW']);
+    assert.notEqual(pair[0].prompt, pair[1].prompt);
+    // Matched event timelines are controls, not independent speech observations.
+    assert.deepEqual(pair[0].fixture, pair[1].fixture);
+    assert.deepEqual(pair[0].expected, pair[1].expected);
+  }
+}
+
+test('paired scenario pack has ten matched language pairs with honest evidence metadata', () => {
+  assertPairedScenarioContract(pairedScenarios);
+});
+
+test('paired specification rejects missing pairs, copied labels and invented audio evidence', () => {
+  for (const mutate of [pack => pack.scenarios.pop(),
+    pack => { pack.scenarios[1].language = 'zh-TW'; },
+    pack => { pack.audioStatus = 'human_labelled'; },
+    pack => { pack.scenarios[0].fixture.events[0].transcript = 'SYNTHETIC_SENTINEL'; }]) {
+    const changed = structuredClone(pairedScenarios);
+    mutate(changed);
+    assert.throws(() => assertPairedScenarioContract(changed));
+  }
+});
+
+for (const row of pairedScenarios.scenarios) {
+  test(`authored scenario ${row.id}: ${row.category}`, () => {
+    // Compare the complete report, including exclusions, null metrics and diagnostics.
+    assert.deepEqual(evaluateTurns(row.fixture), row.expected);
+    assert.throws(() => validateFixture({ ...row.fixture, prompt: row.prompt }),
+      /INVALID_SYNTHETIC_FIXTURE/);
+  });
+}
