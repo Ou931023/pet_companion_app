@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const { test } = require("node:test");
+const { test, after, mock } = require("node:test");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -16,6 +16,44 @@ delete process.env.CARE_ALERT_TELEGRAM_COOLDOWN_MS;
 
 // CR-0039：Care Alert 讀取 / 狀態變更路由掛了 requireAdmin。
 process.env.ADMIN_API_TOKEN = "test-admin-token";
+
+// Install before server (and its DB-first services) loads. Never inspect inherited
+// DATABASE_URL: both persistence and audit use explicit offline seams instead.
+let poolIoAttempts = 0;
+const poolGuard = mock.method(require("pg"), "Pool", function () {
+  // Legacy db/pool.js constructs a pool eagerly. Replace construction entirely;
+  // even accidental calls through that path can never reach the real driver.
+  const rejectIo = () => {
+    poolIoAttempts += 1;
+    throw new Error("PostgreSQL IO forbidden in care-alert demo tests");
+  };
+  return { query: rejectIo, connect: rejectIo, on() { return this; }, async end() {} };
+});
+// Other routes in this file also write status audit logs through defaultPg.
+// Keep their availability probes offline before destructured imports are loaded.
+const availabilityGuard = mock.method(require("../db/postgres"), "isPostgresAvailable", async () => false);
+const careAlertStore = require("./careAlertStoreService");
+const notificationLog = require("./notificationLogService");
+const pgCalls = { store: 0, audit: 0, query: 0 };
+function offlinePg(kind) {
+  return {
+    async isPostgresAvailable() { pgCalls[kind] += 1; return false; },
+    async query() {
+      pgCalls.query += 1;
+      throw new Error("SQL forbidden in care-alert demo tests");
+    },
+  };
+}
+careAlertStore.setPgForTest(offlinePg("store"));
+notificationLog.setPgForTest(offlinePg("audit"));
+after(() => {
+  careAlertStore.setPgForTest(null);
+  notificationLog.setPgForTest(null);
+  availabilityGuard.mock.restore();
+  poolGuard.mock.restore();
+  assert.equal(poolIoAttempts, 0, "no PG query or connection may be attempted");
+  assert.equal(pgCalls.query, 0, "no SQL may be issued");
+});
 
 const app = require("../server");
 const { resetCooldown } = require("./careAlertCooldown");
@@ -90,6 +128,77 @@ async function postNotify(baseUrl, body) {
   });
   return { status: res.status, body: await res.json() };
 }
+
+test("explicit Telegram rejection permits retry; only success starts cooldown", async (t) => {
+  const envKeys = [
+    "CARE_ALERTS_DATA_FILE", "CARE_ALERT_TELEGRAM_COOLDOWN_ENABLED",
+    "CARE_ALERT_TELEGRAM_COOLDOWN_MS", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CARE_CHAT_ID",
+  ];
+  const previousEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "care_alert_retry_"));
+  let server;
+  const realFetch = global.fetch;
+  const calls = [];
+  const blocked = [];
+  const pgBefore = { ...pgCalls };
+  resetCooldown();
+  try {
+    process.env.CARE_ALERTS_DATA_FILE = path.join(tempDir, "alerts.json");
+    process.env.CARE_ALERT_TELEGRAM_COOLDOWN_ENABLED = "true";
+    process.env.CARE_ALERT_TELEGRAM_COOLDOWN_MS = "60000";
+    process.env.TELEGRAM_BOT_TOKEN = "test-token";
+    process.env.TELEGRAM_CARE_CHAT_ID = "123456";
+    // Fixed time makes the cooldown assertion independent of machine speed.
+    t.mock.method(Date, "now", () => 1800000000000);
+    server = await startServer();
+    const base = `http://127.0.0.1:${server.address().port}`;
+    t.mock.method(global, "fetch", async (url, options) => {
+      if (url === "https://api.telegram.org/bottest-token/sendMessage") {
+        calls.push(JSON.parse(options.body));
+        // A definite HTTP rejection, not a timeout or unknown delivery outcome.
+        return calls.length === 1
+          ? { ok: false, status: 400 }
+          : { ok: true, status: 200 };
+      }
+      if (url === `${base}/api/care-alerts/notify`) return realFetch(url, options);
+      blocked.push(String(url));
+      throw new Error("Unexpected network request blocked by test");
+    });
+    const body = baseBody({ riskLevel: "urgent", source: "explicit_rejection_retry" });
+    const first = await postNotify(base, body);
+    assert.equal(first.status, 200);
+    assert.equal(first.body.success, false);
+    assert.equal(first.body.error, "telegram_send_failed");
+    assert.equal(first.body.status, 400);
+    assert.equal(calls.length, 1);
+
+    const retry = await postNotify(base, body);
+    assert.equal(retry.status, 200);
+    assert.equal(retry.body.success, true);
+    assert.equal(calls.length, 2, "explicit rejection must not consume cooldown");
+    assert.deepEqual(calls[1], calls[0]);
+
+    const third = await postNotify(base, body);
+    assert.equal(third.status, 200);
+    assert.equal(third.body.success, true);
+    assert.equal(third.body.telegram, "skipped_cooldown");
+    assert.equal(calls.length, 2, "successful retry must start cooldown");
+    assert.deepEqual(blocked, []);
+    assert.equal(pgCalls.store - pgBefore.store, 3, "all three requests use offline persistence");
+    assert.equal(pgCalls.audit - pgBefore.audit, 3, "all three outcomes use offline audit");
+    assert.equal(pgCalls.query, 0);
+    assert.equal(poolIoAttempts, 0);
+  } finally {
+    if (server) await new Promise((resolve) => server.close(resolve));
+    t.mock.restoreAll();
+    resetCooldown();
+    for (const key of envKeys) {
+      if (previousEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = previousEnv[key];
+    }
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
 
 test("#1 high 風險會觸發 Telegram 推播（訊息含 triggerSummary 與四級 label）", async () => {
   resetCooldown();
