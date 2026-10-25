@@ -1968,6 +1968,101 @@ void main() {
       harness.dispose();
     });
 
+    for (final outcome in ['success', 'null', 'exception']) {
+      test('background analysis preserves speaking pet state: $outcome',
+          () async {
+        final analysis = _DeferredPetStateCompanionEngine();
+        final service = _acknowledgingRealtimeService(
+          healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+          connectImplementationForTesting: (_) async {},
+        );
+        final harness = await _VoiceControllerHarness.create(service,
+            companionEngineService: analysis);
+        addTearDown(harness.dispose);
+        await _reachSpeaking(harness, service);
+
+        List<Object> petSnapshot() => [
+              harness.petController.mood,
+              harness.petController.expression,
+              harness.petController.action,
+              harness.petController.state.mode,
+              harness.petController.state.isSpeaking,
+              harness.controller.petMood,
+              harness.controller.petExpression,
+              harness.controller.petAction,
+            ];
+        final before = petSnapshot();
+        const transcript = '我的心情不好覺得很累';
+        service.handleDataChannelEventForTest(jsonEncode({
+          'type': 'conversation.item.input_audio_transcription.completed',
+          'transcript': transcript,
+        }));
+        await pumpEventQueue();
+        expect(analysis.calls, 1);
+        expect(analysis.turnId, isNotEmpty);
+        expect(harness.conversationController.latestUserText, transcript);
+        expect(petSnapshot(), before);
+
+        if (outcome == 'exception') {
+          analysis.result.completeError(StateError('synthetic analysis failure'));
+        } else if (outcome == 'null') {
+          analysis.result.complete(null);
+        } else {
+          analysis.result.complete(CompanionAnalysisResult.fromJson({
+            'turnId': analysis.turnId,
+            'emotion': 'happy',
+            'petExpression': 'excited',
+            'petAction': 'cheer',
+            'safety': {'riskLevel': 'low', 'needsHumanSupport': false},
+          }));
+        }
+        await pumpEventQueue();
+
+        expect(harness.controller.state, VoiceAgentState.speaking);
+        expect(service.isMicEnabled, isFalse);
+        expect(harness.conversationController.latestUserText, transcript);
+        // Check both the voice state and the separate pet animation state:
+        // the former alone stays speaking even when fallback mutates the pet.
+        expect(petSnapshot(), before);
+      });
+    }
+
+    for (final outcome in ['null', 'exception']) {
+      test('foreground analysis retains local pet fallback: $outcome', () async {
+        final analysis = _DeferredPetStateCompanionEngine();
+        final service = _acknowledgingRealtimeService(
+          healthCheckImplementationForTesting: (_) async => _healthyBackend(),
+          connectImplementationForTesting: (_) async {},
+        );
+        final harness = await _VoiceControllerHarness.create(service,
+            companionEngineService: analysis);
+        addTearDown(harness.dispose);
+        await _reachListening(harness, service);
+        expect(await harness.controller.sendTextDuringRealtime('我的心情不好'),
+            isTrue);
+        await pumpEventQueue();
+        expect(analysis.calls, 1);
+        // Replace the already-applied local state, so the assertion proves the
+        // delayed fallback actually ran rather than merely retaining it.
+        harness.petController.updateEmotionState(
+          mood: 'synthetic-before',
+          expression: 'synthetic-before',
+          action: 'synthetic-before',
+          mode: harness.petController.state.mode,
+        );
+        if (outcome == 'exception') {
+          analysis.result.completeError(StateError('synthetic analysis failure'));
+        } else {
+          analysis.result.complete(null);
+        }
+        await pumpEventQueue();
+        expect(harness.petController.mood, 'caring');
+        expect(harness.petController.expression, 'concerned');
+        expect(harness.petController.action, 'comfort');
+        expect(harness.petController.state.mode.name, 'concerned');
+      });
+    }
+
     test('寵物回覆中抵達的使用者 final transcript 仍被接住記錄（不被守衛丟掉）', () async {
       // 迴歸：server VAD 的 create_response 讓寵物常在使用者這句轉錄完成前就先開口，
       // 本輪 final transcript 比 response 晚到。修正前會被 turn-based 守衛整個丟掉，
@@ -3097,6 +3192,30 @@ class _DeferredLanguageRoutingService extends LanguageRoutingService {
   }) {
     _wasCalled = true;
     return _route.future;
+  }
+}
+
+class _DeferredPetStateCompanionEngine extends CompanionEngineService {
+  final result = Completer<CompanionAnalysisResult?>();
+  int calls = 0;
+  String turnId = '';
+
+  @override
+  Future<CompanionAnalysisResult?> analyze({
+    required String sttProxyUrl,
+    required String userId,
+    required String sessionId,
+    required String turnId,
+    required String petName,
+    required String transcript,
+    required Map<String, dynamic> petState,
+    List<Map<String, dynamic>> recentTurns = const [],
+    String languageHint = 'zh',
+    Map<String, dynamic> audioFeatures = const {},
+  }) {
+    calls++;
+    this.turnId = turnId;
+    return result.future;
   }
 }
 

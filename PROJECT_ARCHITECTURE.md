@@ -86,6 +86,14 @@ transcript 規則（沿用 CLAUDE.md）：不可讓 assistant transcript 被誤�
 
 ---
 
+### Realtime 記憶使用記錄契約（2026-10-18）
+
+- `retrieved` 表示檢索取得候選；Realtime 的 `used_in_prompt` 表示所選記憶已放入送往上游的 instructions，且上游 SDP 交換依既有成功條件完成。不代表模型實際採用、使用者聽到或前端連線完成。
+- `buildMemoryContext` 增加內部選項 `recordUsage=true`，保留既有呼叫端行為。Realtime 明確傳 `false`，僅針對本次實際送出 context 的 selected IDs，在上游成功後進行一次 best-effort 使用記錄。
+- 1200 ms context 等待逾時不取消背景檢索；晚完成可留下 `retrieved`，不得補記 `used_in_prompt`。無 context、上游失敗或讀取回應失敗均不得記使用；不可使用晚到的結果或另一請求的 IDs。
+- 記錄失敗不得將已成功的 SDP 交換轉為錯誤，也不得讓記錄 I/O 無界阻塞 SDP 回覆。不新增自動重試、跨請求去重或 exactly-once 保證；保留原有 active-memory 與資料寫入規則。
+- 此修補不改 HTTP response、模型、WebRTC/VAD、安全或隱私 gate、schema；不回補或刪除歷史事件。其他呼叫端仍沿用原 usage 時點，本契約不宣稱已一併修正。
+
 ## 4. 後端 API 契約（以 `backend/stt_proxy/server.js` 現況為準）
 
 > 改動任一路由的路徑、方法或 response 形狀 = 🔒，需更新本表並核准。

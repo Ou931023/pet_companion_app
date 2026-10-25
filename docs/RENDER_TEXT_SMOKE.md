@@ -1,6 +1,6 @@
 # One-time synthetic text probe — review only
 
-Prepared 2026-10-15. No Render Shell session or paid request has been run. The approved batch budget is US$2; spend so far is US$0. Parent review and separate Shell execution authorization remain required. This branch does not change PR55 or deploy anything.
+Prepared 2026-10-15; refreshed against main on 2026-10-23. The later readiness record reports one user-executed batch (88 input + 41 output tokens; both narrow fixture verdicts passed), not an independently observed run or reconciled bill. Actual billed amount remains unknown; the previous zero-spend claim is obsolete. This refresh performs offline validation only; prior account spend is not verified here. Do not rerun that completed batch. For any different future probe, this document or a PR merge is not authorization: live execution needs a separately confirmed scope, current pricing/access checks and authorization. No paid request or Render Shell execution occurs in this refresh.
 
 ## Artifact and isolation
 

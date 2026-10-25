@@ -6,7 +6,7 @@ const { tmpdir } = require('node:os');
 const { join, resolve } = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
-const doc = readFileSync(resolve(__dirname, '../docs/RENDER_TEXT_SMOKE.md'), 'utf8');
+const doc = readFileSync(resolve(__dirname, '../docs/RENDER_TEXT_SMOKE.md'), 'utf8').replace(/\r\n/g, '\n');
 const launcher = doc.match(/<!-- live-launcher -->\s*```bash\n([\s\S]*?)\n```/)[1];
 
 for (const scenario of ['success', 'failure', 'timeout']) {

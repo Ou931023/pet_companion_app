@@ -1,5 +1,6 @@
 const { createEmbedding } = require("./memory_embedding_service");
 const { createLongTermMemory } = require("./memory_repository");
+const { canStoreCompanionSource } = require("../companion/memory_policy");
 
 const TYPE_MAP = {
   preference: "preference",
@@ -29,11 +30,16 @@ async function storeCompanionMemoryCandidate({
   sessionId = null,
   turnId = null,
   emotion = "unknown",
+  transcript,
   memory,
   safety,
 } = {}) {
   if (!memory?.shouldSave || !memory?.candidate?.trim()) {
     return { stored: false, reason: "memory_not_requested" };
+  }
+
+  if (!canStoreCompanionSource(transcript)) {
+    return { stored: false, reason: "memory_source_not_eligible" };
   }
 
   const content = memory.candidate.trim();
