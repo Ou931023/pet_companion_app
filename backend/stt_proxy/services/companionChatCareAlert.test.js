@@ -14,25 +14,46 @@
 //   - log / response 不外洩 token / 完整對話 / 完整摘要。
 
 const assert = require("node:assert/strict");
-const { test, beforeEach, afterEach } = require("node:test");
+const { test, beforeEach, afterEach, after, mock } = require("node:test");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
+// Preserve the environment object without reading inherited credentials. Only OS
+// plumbing and the Node test reporter context enter this test process; the DB
+// URL below is deliberately synthetic. Preserve reporter IPC accounting.
+const originalEnv = process.env;
+process.env = Object.fromEntries(
+  ["PATH", "Path", "SystemRoot", "WINDIR", "TEMP", "TMP", "COMSPEC", "PATHEXT", "NODE_TEST_CONTEXT"]
+    .filter(key => originalEnv[key] !== undefined).map(key => [key, originalEnv[key]]),
+);
+process.env.APP_ENV = "test";
+process.env.DATABASE_URL = "postgresql://synthetic:synthetic@db-isolation.invalid:5432/synthetic";
+const tempParent = path.resolve(os.tmpdir());
+const fixtureRoot = fs.mkdtempSync(path.join(tempParent, "companion-chat-isolated-"));
+assert.equal(path.dirname(path.resolve(fixtureRoot)), tempParent);
+let currentFixtureDir;
+
 // ---- 注入假 OpenAI client（在 require server 之前覆寫 require.cache）----
 const FIXED_REPLY = "我在這裡陪你，慢慢說沒關係。";
+let completionMode = "stop";
+let capturedCompletion;
 class FakeOpenAI {
   constructor() {
     this.chat = {
       completions: {
-        create: async () => ({
-          choices: [{ message: { content: FIXED_REPLY } }],
-        }),
+        create: async (params) => {
+          capturedCompletion = params;
+          if (completionMode === "throw") throw new Error("synthetic provider failure");
+          return ({
+          choices: [{ finish_reason: completionMode === "refusal" ? "stop" : completionMode === "length_empty" ? "length" : completionMode, message: { content: ["empty_response", "length_empty"].includes(completionMode) ? " " : FIXED_REPLY, refusal: completionMode === "refusal" ? "synthetic refusal" : null } }],
+        }); },
       },
     };
   }
 }
 const openaiPath = require.resolve("openai");
+const originalOpenAI = require.cache[openaiPath];
 require.cache[openaiPath] = {
   id: openaiPath,
   filename: openaiPath,
@@ -45,17 +66,65 @@ process.env.ADMIN_API_TOKEN = "test-admin-token";
 // 假 client + 有金鑰 → generateCompanionReply 走「成功回覆」分支。
 process.env.OPENAI_API_KEY = "test-key";
 process.env.CARE_ALERTS_DATA_FILE = path.join(
-  fs.mkdtempSync(path.join(os.tmpdir(), "companion_chat_alert_")),
+  fixtureRoot,
   "care_alerts.json",
 );
 
+// Install before server (and its DB-first services) loads. Never inspect inherited
+// DATABASE_URL: both persistence and audit use explicit offline seams instead.
+let poolIoAttempts = 0;
+const poolGuard = mock.method(require("pg"), "Pool", function () {
+  // Legacy db/pool.js constructs a pool eagerly. Replace construction entirely;
+  // even accidental calls through that path can never reach the real driver.
+  const rejectIo = () => {
+    poolIoAttempts += 1;
+    throw new Error("PostgreSQL IO forbidden in companion chat tests");
+  };
+  return { query: rejectIo, connect: rejectIo, on() { return this; }, async end() {} };
+});
+// Other routes in this file also write status audit logs through defaultPg.
+// Keep their availability probes offline before destructured imports are loaded.
+const availabilityGuard = mock.method(require("../db/postgres"), "isPostgresAvailable", async () => false);
+const careAlertStore = require("./careAlertStoreService");
+const notificationLog = require("./notificationLogService");
+const pgCalls = { store: 0, audit: 0, query: 0 };
+function offlinePg(kind) {
+  return {
+    async isPostgresAvailable() { pgCalls[kind] += 1; return false; },
+    async query() {
+      pgCalls.query += 1;
+      throw new Error("SQL forbidden in companion chat tests");
+    },
+  };
+}
+careAlertStore.setPgForTest(offlinePg("store"));
+notificationLog.setPgForTest(offlinePg("audit"));
+after(() => {
+  careAlertStore.setPgForTest(null);
+  notificationLog.setPgForTest(null);
+  availabilityGuard.mock.restore();
+  poolGuard.mock.restore();
+  assert.equal(poolIoAttempts, 0, "no PG query or connection may be attempted");
+  assert.equal(pgCalls.query, 0, "no SQL may be issued");
+});
+
+// Global fence is installed before server loads; only synthetic Telegram and loopback HTTP are allowed.
+const originalFetch = global.fetch;
+let unexpectedOutbound = 0;
+const fetchGuard = mock.method(global, "fetch", async (url, options) => {
+  const target = new URL(typeof url === "string" ? url : url.url);
+  if (target.protocol === "http:" && target.hostname === "127.0.0.1") return originalFetch(url, options);
+  unexpectedOutbound += 1;
+  throw new Error("Unexpected external request blocked by companion chat test");
+});
+after(() => { fetchGuard.mock.restore(); assert.equal(unexpectedOutbound, 0); });
 const app = require("../server");
 const {
   installResidentCallerStub,
 } = require("./auth/residentCallerContext.testsupport");
 const { resetCooldown } = require("./careAlertCooldown");
 
-// require server 會載入 .env（可能含真 Telegram token）；清掉以確保預設不外送。
+// NODE_ENV=test skips dotenv; notifications remain disabled unless a test installs its spy.
 delete process.env.TELEGRAM_BOT_TOKEN;
 delete process.env.TELEGRAM_CARE_CHAT_ID;
 
@@ -67,8 +136,13 @@ const RES_A = { Authorization: "Bearer res-a-token" };
 let restoreResident = null;
 
 beforeEach(() => {
+  completionMode = "stop";
+  capturedCompletion = null;
+  delete process.env.COMPANION_CHAT_MODEL;
+  delete process.env.MEMORY_MODEL;
+  currentFixtureDir = fs.mkdtempSync(path.join(fixtureRoot, "case-"));
   process.env.CARE_ALERTS_DATA_FILE = path.join(
-    fs.mkdtempSync(path.join(os.tmpdir(), "companion_chat_alert_")),
+    currentFixtureDir,
     "care_alerts.json",
   );
   resetCooldown();
@@ -79,9 +153,57 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete process.env.COMPANION_CHAT_MODEL;
+  delete process.env.MEMORY_MODEL;
   if (restoreResident) restoreResident();
   restoreResident = null;
+  resetCooldown();
+  if (currentFixtureDir) {
+    assert.equal(path.dirname(path.resolve(currentFixtureDir)), fixtureRoot);
+    fs.rmSync(currentFixtureDir, { recursive: true, force: true });
+    assert.equal(fs.existsSync(currentFixtureDir), false);
+    currentFixtureDir = null;
+  }
 });
+
+after(() => {
+  try {
+    resetCooldown();
+    assert.equal(path.dirname(path.resolve(fixtureRoot)), tempParent);
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+    assert.equal(fs.existsSync(fixtureRoot), false);
+  } finally {
+    if (originalOpenAI) require.cache[openaiPath] = originalOpenAI;
+    else delete require.cache[openaiPath];
+    process.env = originalEnv;
+  }
+});
+
+for (const selection of ["default", "memory-fallback", "chat-override"]) {
+  test("chat model selection and actual app prompt: " + selection, async () => {
+    if (selection !== "default") process.env.MEMORY_MODEL = "gpt-4o";
+    if (selection === "chat-override") process.env.COMPANION_CHAT_MODEL = "gpt-6-luna";
+    const server = await startServer();
+    try {
+      const res = await postChat("http://127.0.0.1:" + server.address().port,
+        { userText: "今天散步很開心", petName: "合成小白", memoryContextSummary: "使用者喜歡散步", replyLanguage: "zh-TW" });
+      assert.equal(res.status, 200);
+      assert.equal(capturedCompletion.model, selection === "default" ? "gpt-4o-mini" : selection === "memory-fallback" ? "gpt-4o" : "gpt-6-luna");
+      assert.equal(capturedCompletion.temperature, 0.6);
+      assert.equal(capturedCompletion.messages[0].role, "system");
+      assert.ok(capturedCompletion.messages[0].content.includes("合成小白"));
+      assert.ok(capturedCompletion.messages[0].content.includes("使用者喜歡散步"));
+      if (selection === "chat-override") {
+        assert.equal(capturedCompletion.reasoning_effort, "none");
+        assert.equal(capturedCompletion.max_completion_tokens, 220);
+        assert.equal(capturedCompletion.max_tokens, undefined);
+      } else {
+        assert.equal(capturedCompletion.max_tokens, 220);
+        assert.equal(capturedCompletion.reasoning_effort, undefined);
+      }
+    } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+  });
+}
 
 function startServer() {
   return new Promise((resolve) => {
@@ -109,7 +231,7 @@ function installTelegramSpy() {
   process.env.TELEGRAM_BOT_TOKEN = "test-token";
   process.env.TELEGRAM_CARE_CHAT_ID = "123456";
   global.fetch = async (url, options) => {
-    if (typeof url === "string" && url.includes("api.telegram.org")) {
+    if (typeof url === "string" && url === "https://api.telegram.org/bottest-token/sendMessage") {
       calls.push(options && options.body);
       return { ok: true, status: 200, json: async () => ({ ok: true }) };
     }
@@ -369,3 +491,40 @@ test("回應不外洩 token / 完整摘要文字", async () => {
     server.close();
   }
 });
+
+// Provider rejection must not suppress authorized user-text safety processing.
+for (const mode of ["length", "content_filter", "refusal", "throw", "empty_response", "length_empty"]) {
+  for (const scenario of ["urgent", "ordinary", "unauthorized", "cross-resident", "empty"]) {
+    test(mode + " completion: safety remains scoped for " + scenario, async () => {
+      completionMode = mode;
+      const spy = installTelegramSpy();
+      const server = await startServer();
+      try {
+        const base = "http://127.0.0.1:" + server.address().port;
+        const input = { userText: scenario === "empty" ? " " : scenario === "ordinary" ? "今天天氣不錯" : "我不想活了" };
+        if (scenario === "cross-resident") input.elderId = ELDER_B;
+        const res = await postChat(base, input, scenario === "unauthorized" ? {} : RES_A);
+        const body = await res.json();
+        const status = scenario === "empty" ? 400 : scenario === "unauthorized" ? 401 : scenario === "cross-resident" ? 403 : 503;
+        assert.equal(res.status, status);
+        if (status === 503) assert.deepEqual(body, { success: false, error: "openai_unavailable" });
+        assert.equal(body.reply, undefined);
+        // Inspect this test-owned fixture directly to stay below the real HTTP rate limit.
+        const alerts = fs.existsSync(process.env.CARE_ALERTS_DATA_FILE)
+          ? JSON.parse(fs.readFileSync(process.env.CARE_ALERTS_DATA_FILE, "utf8")) : [];
+        const expected = scenario === "urgent" && ["length", "content_filter", "refusal"].includes(mode) ? 1 : 0;
+        assert.equal(alerts.length, expected, "authorized urgent risk must be recorded exactly once");
+        assert.equal(spy.calls.length, expected, "only authorized urgent risk reaches Telegram spy once");
+        if (expected) {
+          assert.equal(alerts[0].elderId, ELDER_A);
+          assert.equal(alerts[0].riskLevel, "urgent");
+          assert.equal(alerts[0].source, "companion_chat");
+        }
+      } finally {
+        spy.restore();
+        server.closeAllConnections();
+        await new Promise(resolve => server.close(resolve));
+      }
+    });
+  }
+}

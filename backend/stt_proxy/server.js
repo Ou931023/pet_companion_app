@@ -2184,7 +2184,7 @@ app.post("/api/companion/analyze", async (req, res) => {
 //   - 掛 requireResidentCaller（與 /notify 同一中介層），server 權威 elderId 取自
 //     req.residentCaller.elderId；無 / 無效 token → 401，跨住民 / 未綁定 / 停用 → 403。
 //     body.elderId 若帶且與 caller 不符 → 403 forbidden_resident（永不採信 client elderId）。
-//   - 回覆生成成功後，以 analyzeCompanionTurn 做**純函式**風險側錄（不重查記憶 / 不查知識 /
+//   - 回覆成功或 guard 拒絕非空回應時，以 analyzeCompanionTurn 做**純函式**風險側錄（不重查記憶 / 不查知識 /
 //     不寫記憶），僅當 riskLevel ∈ {medium,high,urgent} 才經共用 processCareAlert 建立 Care Alert
 //     （source='companion_chat' 為獨立 cooldown 來源）。風險分析 fail-open，永不阻擋回覆。
 //     回應新增向後相容欄位 careAlert（low / neutral 一律省略）；只暴露 riskLevel，不外洩摘要 / debug。
@@ -2236,13 +2236,13 @@ ${memoryContextSummary}
     },
   );
 
-  if (!result.success) {
+  if (!result.success && !result.rejectedNonemptyCompletion) {
     const status = result.error === "invalid_input" ? 400 : 503;
     return res.status(status).json({ success: false, error: result.error });
   }
 
   // 風險側錄（fail-open）：以 analyzeCompanionTurn 做純函式風險判斷，不重查記憶 /
-  // 不查知識 / 不寫記憶（避免跨住民 I/O），不改動回覆文字。任何例外都不阻擋 200 回覆。
+  // 不查知識 / 不寫記憶（避免跨住民 I/O），不改動回覆文字。新 guard 拒絕非空回應時仍保留原側錄。
   let careAlert;
   try {
     const analysis = analyzeCompanionTurn({
@@ -2290,6 +2290,10 @@ ${memoryContextSummary}
     logError("companion chat risk analysis failed", {
       error: analysisError?.message || analysisError,
     });
+  }
+
+  if (!result.success) {
+    return res.status(503).json({ success: false, error: result.error });
   }
 
   // CR-0096 合規：使用者問股票 / 投資相關內容時，回覆結尾固定附上投資風險提醒

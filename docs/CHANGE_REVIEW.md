@@ -5594,6 +5594,12 @@ caregiver 身分不得因分組看到 super_admin-only 入口；hidden feature �
 - B5 model A/B 若品質、延遲、成本或工具 / safety regression 任一不符，立即保留現有 production model；prompt 與 model config 分開提交，避免綁死回滾。
 - B6 rollback 只回復導覽 / 分組，不回復或刪除 underlying view、API 與資料。
 
+## CR-20261015-CHAT-ONLY — isolated companion chat candidate
+
+Proposal: from main dc07c3d, change only companionChatService request compatibility/completion guards and the chat route's preservation of authorized risk side-recording. Keep gpt-4o-mini default and existing override precedence until separate quality/activation review. No shared helper/default affecting other consumers; no memory, Vision, STT, Realtime, schema, dependency or alert rule changes. Port synthetic regression cases from PR55 and add app-parameter/SDK checks. No paid calls, merge or deploy. Architecture review requested before runtime edits.
+
+Actual-diff checkpoint approved by architecture-agent; runtime remains limited to two chat files. Full backend 962/962 passed; reviewer SDK/service 17/17 passed; npm check/syntax/diff passed; audit 8 moderate, zero high/critical. Existing dependency lockfile installed offline; initial local sandbox/dependency setup failures resolved before the passing full run. No activation, paid calls, merge or deployment; parent review and exact-head CI required.
+
 ## CR-20261015-RENDER-SMOKE — standalone synthetic probe (proposal)
 
 Scope: scripts/render_text_smoke.cjs, its offline tests, and docs/RENDER_TEXT_SMOKE.md only. No runtime, dependencies, PR55, deploy, credentials, DB or notifications changes. Default dry-run; explicit execute requires separately approved Render Shell access and reviewed standard pricing. Two fixed GPT-6 Luna requests, SDK retries disabled, strict transport allowlist and output redaction, bounded wall time/response size/heap. Offline fake-transport SDK tests only this round. Architecture review requested before final publication.
