@@ -5594,6 +5594,12 @@ caregiver 身分不得因分組看到 super_admin-only 入口；hidden feature �
 - B5 model A/B 若品質、延遲、成本或工具 / safety regression 任一不符，立即保留現有 production model；prompt 與 model config 分開提交，避免綁死回滾。
 - B6 rollback 只回復導覽 / 分組，不回復或刪除 underlying view、API 與資料。
 
+## CR-20261015-RENDER-SMOKE — standalone synthetic probe (proposal)
+
+Scope: scripts/render_text_smoke.cjs, its offline tests, and docs/RENDER_TEXT_SMOKE.md only. No runtime, dependencies, PR55, deploy, credentials, DB or notifications changes. Default dry-run; explicit execute requires separately approved Render Shell access and reviewed standard pricing. Two fixed GPT-6 Luna requests, SDK retries disabled, strict transport allowlist and output redaction, bounded wall time/response size/heap. Offline fake-transport SDK tests only this round. Architecture review requested before final publication.
+
+Review/result: architecture-agent approved the offline candidate after replacing the memory substring verdict with a narrow equivalence allowlist and blocking Node diagnostic environment options. Main agent ran 75/75 script tests (27 new + 48 existing); reviewer independently ran 27/27 new tests. Syntax and diff checks passed. Added CI fake-transport test step; no live Shell/model execution or deployment. Parent independent review remains required. Source SHA-256: cd5c067c3e3bbef82335401e0754467a9536303f75e432cca43fc593a8dbc20c.
+
 ## 2026-10-16: Portable backend test entry point
 
 Problem: npm test uses POSIX inline environment assignment and fails under the native Windows shell. Scope: package.json test entry, a dependency-free Node launcher, contract tests and this record. Preserve backend test discovery cwd, default concurrency, stdio and inherited environment while overriding APP_ENV/NODE_ENV/OPENAI_API_KEY exactly as before. No runtime/dependency changes. Architecture checkpoint approved (low risk). Validate failure propagation and run the Windows backend suite; require Linux exact-head CI before final review. Rollback is reverting the test-only commit; no data migration or deployment setting is involved.
