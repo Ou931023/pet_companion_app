@@ -288,3 +288,64 @@ test("low：careAlertSummary 為一般狀態、不誇大警示", () => {
   assert.match(r.careAlertSummary, /大致平穩|不需特別處理/);
   assert.doesNotMatch(r.careAlertSummary, /緊急|危險|立即|嚴重/);
 });
+
+// Synthetic acoustic values exercise fusion inputs, not measured emotion or clinical efficacy.
+// Only the pure eligibility predicate is used; never invoke a notification sender.
+const { shouldNotify } = require('../stt_proxy/services/telegramNotifyService');
+const acousticSafetyCases = [
+  ['slow', { audioFeatures: { estimatedSpeechRate: 1.1, pauseDensity: 0.1, confidence: 0.8 } }],
+  ['high-pause', { audioFeatures: { estimatedSpeechRate: 2.5, pauseDensity: 0.7, confidence: 0.8 } }],
+  ['slow-with-high-pause', { audioFeatures: { estimatedSpeechRate: 1.1, pauseDensity: 0.65, confidence: 0.8 } }],
+  ['fast-unstable', { audioFeatures: { estimatedSpeechRate: 4.8, volumeVariance: 0.6, confidence: 0.8 } }],
+  ['missing', {}],
+  ['null', { audioFeatures: null }],
+];
+
+for (const [label, transcript, riskLevel] of [
+  ['neutral', '今天下午在客廳坐了一下', 'low'],
+  ['medium', '最近都睡不好', 'medium'],
+]) {
+  for (const [voiceLabel, voiceInput] of acousticSafetyCases) {
+    test(`text safety stays ${riskLevel} for ${label} with ${voiceLabel} acoustics`, () => {
+      const input = { transcript, turnId: `synthetic-safety-${label}` };
+      const baseline = analyzeCompanionTurn(input);
+      const result = analyzeCompanionTurn({ ...input, ...voiceInput });
+      const expectedSafety = { riskLevel, needsHumanSupport: false };
+      assert.deepEqual(baseline.safety, expectedSafety);
+      assert.deepEqual(result.safety, expectedSafety);
+      assert.equal(result.companionNeed, baseline.companionNeed);
+      assert.equal(result.needConfidence, baseline.needConfidence);
+      assert.equal(shouldNotify(baseline.safety), false);
+      assert.equal(shouldNotify(result.safety), false);
+      if (label === 'neutral' && voiceLabel === 'slow-with-high-pause') {
+        // Prove the matrix exercises an actual fusion change while safety stays fixed.
+        assert.equal(baseline.fusion.finalEmotion, 'neutral');
+        assert.equal(result.fusion.finalEmotion, 'tired');
+      }
+    });
+  }
+}
+
+// The API accepts numeric features, not a 'happy audio' label. Energetic/steady
+// profiles are authored controls and do not assert that real audio sounds happy.
+for (const [riskLevel, transcript] of [
+  ['high', '我覺得好痛苦撐不下去'],
+  ['urgent', '我胸痛'],
+]) {
+  for (const [voiceLabel, audioFeatures] of [
+    ['energetic-steady', { estimatedSpeechRate: 4.8, pauseDensity: 0.05, volumeVariance: 0.05, confidence: 0.8 }],
+    ['calm-steady', { estimatedSpeechRate: 2.5, pauseDensity: 0.1, volumeVariance: 0.05, confidence: 0.8 }],
+  ]) {
+    test(`${riskLevel} text cannot be downgraded by ${voiceLabel} acoustics`, () => {
+      const input = { transcript, turnId: `synthetic-safety-${riskLevel}` };
+      const baseline = analyzeCompanionTurn(input);
+      const result = analyzeCompanionTurn({ ...input, audioFeatures });
+      const expectedSafety = { riskLevel, needsHumanSupport: true };
+      assert.deepEqual(baseline.safety, expectedSafety);
+      assert.deepEqual(result.safety, expectedSafety);
+      assert.equal(result.companionNeed, baseline.companionNeed);
+      assert.equal(shouldNotify(baseline.safety), true);
+      assert.equal(shouldNotify(result.safety), true);
+    });
+  }
+}

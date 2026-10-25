@@ -1762,7 +1762,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
         }).toList(),
       );
       if (result == null) {
-        _applyLocalCompanionFallback(transcript, turnId);
+        if (applyPetState) _applyLocalCompanionFallback(transcript, turnId);
         return;
       }
       if (result.turnId != turnId) return;
@@ -1784,7 +1784,7 @@ class VoiceAgentController extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
     } catch (error) {
       AppLog.debug('[COMPANION_ENGINE] fallback: $error');
-      _applyLocalCompanionFallback(transcript, turnId);
+      if (applyPetState) _applyLocalCompanionFallback(transcript, turnId);
     }
   }
 

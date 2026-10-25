@@ -130,6 +130,7 @@ async function buildMemoryContext({
   userId = "default_user",
   limit = 5,
   queryEmbedding = null,
+  recordUsage = true,
 } = {}) {
   const normalized = (userText || "").toString().trim();
   if (!normalized || CHATTER.has(normalized) || chineseCharCount(normalized) < 4) {
@@ -172,7 +173,9 @@ async function buildMemoryContext({
     }
 
     const usedMemoryIds = ranked.map((memory) => memory.id);
-    await markMemoriesUsed(usedMemoryIds);
+    // Callers that may discard prepared context (e.g. a timeout) record only
+    // after accepting it into their prompt. Preserve existing caller behavior.
+    if (recordUsage) await markMemoriesUsed(usedMemoryIds);
     const { memoryContext, memoryContextSummary } = buildPromptBlock(ranked);
     return {
       memoryUsed: true,

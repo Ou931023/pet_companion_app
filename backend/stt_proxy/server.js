@@ -49,6 +49,7 @@ const {
   deleteMemoriesByUserId,
   normalizeEmbedding,
   normalizeLimit,
+  markMemoriesUsed: markPromptMemoriesUsed,
 } = require("./services/memory/memoryStore");
 const { extractMemoryFromTurn } = require("./services/memory/memoryExtractor");
 const { createEmbedding: createMemoryEmbedding } = require("./services/memory/embeddingService");
@@ -65,6 +66,7 @@ const {
 } = require("../companion/voice_prompt_policy");
 const { retrieveRelevantMemories } = require("../memory/memory_retriever");
 const { storeCompanionMemoryCandidate } = require("../memory/memory_policy");
+const { canStoreCompanionSource } = require("../companion/memory_policy");
 const { classifySearchIntent } = require("../search/search_intent_classifier");
 const { searchKnowledge } = require("../search/search_service");
 const {
@@ -2082,11 +2084,13 @@ app.post("/api/companion/analyze", async (req, res) => {
     const searchResult = searchIntent.needsSearch
       ? await searchKnowledge({ query: transcript, topic: searchIntent.topic, userId })
       : null;
-    const retrieved = await retrieveRelevantMemories({
-      userId,
-      transcript,
-      topK: req.body?.topK || process.env.MEMORY_TOP_K || 5,
-    });
+    const retrieved = canStoreCompanionSource(transcript)
+      ? await retrieveRelevantMemories({
+          userId,
+          transcript,
+          topK: req.body?.topK || process.env.MEMORY_TOP_K || 5,
+        })
+      : { memories: [] };
     const result = analyzeCompanionTurn({
       userId,
       sessionId: req.body?.sessionId,
@@ -2104,6 +2108,7 @@ app.post("/api/companion/analyze", async (req, res) => {
     if (result.memory?.shouldSave && result.memory?.candidate?.trim()) {
       storeCompanionMemoryCandidate({
         userId,
+        transcript,
         sessionId: req.body?.sessionId,
         turnId: req.body?.turnId,
         emotion: result.emotion,
@@ -3093,6 +3098,7 @@ app.post(
         userId,
         userText: "找出最近值得自然關心使用者的長期偏好、生活習慣或近況",
         limit: memoryTopK,
+        recordUsage: false,
       }).catch((error) => {
         logError("Realtime memory context failed", { error: error?.message || error });
         return null;
@@ -3187,7 +3193,16 @@ app.post(
       }
 
       res.setHeader("Content-Type", "application/sdp");
-      return res.status(200).send(responseText);
+      res.status(200).send(responseText);
+      // Account only for this accepted prompt, never a late timeout result.
+      // This means prompt injection, not evidence of model use. Best-effort
+      // accounting must not delay or fail the successful SDP response.
+      if (contextResult?.memoryContext && contextResult.usedMemoryIds?.length) {
+        void markPromptMemoriesUsed(contextResult.usedMemoryIds).catch(() => {
+          logError("Realtime prompt usage accounting failed");
+        });
+      }
+      return;
     } catch (error) {
       logError("Realtime call exception", { error: error?.message || error });
       return res.status(500).json({
