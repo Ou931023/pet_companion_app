@@ -83,8 +83,8 @@ for (const [name, entries, code] of [
   ["fields", Array.from({ length: 9 }, (_, i) => ({ name: `f${i}` })), "LIMIT_FIELD_COUNT"],
   ["field name", [{ name: "n".repeat(101) }], "LIMIT_FIELD_KEY"],
   ["file field name", [{ ...audio, name: "n".repeat(101) }], "LIMIT_FIELD_KEY"],
-  // Busboy marks a value truncated as soon as its buffer reaches fieldSize.
-  ["field value at truncation boundary", [{ name: "note", value: "v".repeat(4096) }], "LIMIT_FIELD_VALUE"],
+  // Multer 2.5 accepts the exact limit; exceeding it must still clean prior files.
+  ["field value after file", [audio, { name: "note", value: "v".repeat(4097) }], "LIMIT_FIELD_VALUE"],
   ["field value", [{ name: "note", value: "v".repeat(4097) }], "LIMIT_FIELD_VALUE"],
   ["nesting", [audio, { name: "note[a][b][c]" }], "LIMIT_FIELD_NESTING"],
   ["array index", [audio, { name: "note[21]" }], "LIMIT_FIELD_ARRAY_INDEX"],
